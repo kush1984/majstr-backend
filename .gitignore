@@ -15,5 +15,8 @@ out/
 .env.local
 *.log
 
+# Claude Code: keep shared commands, ignore local-only settings
+.claude/settings.local.json
+
 .DS_Store
 Thumbs.db

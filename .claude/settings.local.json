@@ -1,8 +1,0 @@
-{
-  "permissions": {
-    "allow": [
-      "Read(//c/Users/AndriyKushka/.claude/projects/C--Work-Majstr-app/**)",
-      "Read(//c/Users/AndriyKushka/.claude/projects//**)"
-    ]
-  }
-}
