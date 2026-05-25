@@ -1,0 +1,210 @@
+# Majstr Backend — Claude guide
+
+SaaS backend for Ukrainian contractors. Current scope: authentication +
+project foundation. See [README.md](README.md) for end-user setup and the
+public REST contract; this file is for Claude / contributors working *in*
+the codebase.
+
+## Stack (pinned)
+
+- **Spring Boot 4.0.6** (Spring Framework 7, Jakarta EE 11) on **Java 25**
+- **Gradle Kotlin DSL** — toolchain pinned to JDK 25 in `build.gradle.kts`
+- **PostgreSQL 17** via `docker-compose.yml`, schema owned by **Flyway**
+- **Spring Security 7**, stateless, JWT via **jjwt 0.12.x** (HS256)
+- **Bucket4j 8.x** (`bucket4j_jdk17-core`) — login rate limiting
+- **Jackson 3** — **note the package change** (see *Gotchas*)
+- **Lombok**, **springdoc-openapi 2.8.x**, **JUnit 5 + MockMvc**
+
+Don't bump these without a clear reason — the combo is chosen for Spring
+Boot 4 / Spring 7 / Jakarta EE 11 / Java 25 compatibility.
+
+## Common commands
+
+```bash
+# bring Postgres up (requires .env with POSTGRES_PASSWORD)
+docker compose up -d
+
+# run the app (env vars from .env must be exported)
+./gradlew bootRun
+
+# tests
+./gradlew test
+
+# full build with verification
+./gradlew build
+```
+
+JWT secret and DB credentials come from **env vars only** — never hardcode.
+The base `application.yml` references `${JWT_SECRET}` with no default;
+startup fails fast if it isn't set.
+
+## Package layout
+
+```
+com.majstr.backend
+├── MajstrApplication.java     — @SpringBootApplication, registers @ConfigurationProperties
+├── config/                    — SecurityConfig, OpenApiConfig, *Properties records
+├── controller/                — REST endpoints (thin, delegate to services)
+├── service/                   — business logic, @Transactional boundaries
+├── repository/                — Spring Data JPA interfaces
+├── entity/                    — JPA entities (Lombok-annotated)
+├── dto/                       — request/response **records**, validated with jakarta.validation
+├── security/                  — JwtService, filters, UserPrincipal, body-cache wrapper
+└── exception/                 — typed exceptions + GlobalExceptionHandler
+```
+
+Layering rule: `controller → service → repository`. Entities never leave
+the service layer — controllers return DTOs. `passwordHash` never appears
+in any response (`UserResponse` excludes it; `User#toString` excludes it).
+
+## Architecture notes (non-obvious)
+
+### Auth flow
+
+1. `POST /api/auth/register` — `AuthService.register` hashes via BCrypt(12),
+   persists the user, issues access + refresh tokens.
+2. `POST /api/auth/login` — `LoginRateLimitFilter` runs first
+   (`addFilterBefore(UsernamePasswordAuthenticationFilter)`), then the
+   controller delegates to `AuthService.login`.
+3. `POST /api/auth/refresh` — `RefreshTokenService.rotate` revokes the old
+   refresh token and issues a new pair (rotation pattern).
+4. `GET /api/auth/me` — `JwtAuthenticationFilter` parses the Bearer token,
+   loads the user, sets `SecurityContextHolder` with `UserPrincipal`.
+
+### Refresh tokens are hashed at rest
+
+Raw refresh token = 48 random bytes, base64url-encoded, returned to the
+client **only once** on issue. The DB stores only its SHA-256 hash
+(`refresh_tokens.token_hash`, UNIQUE). On `/refresh`, the incoming raw
+token is re-hashed and looked up by hash. `revoked = true` is set on the
+old row before issuing the new one. Don't change this to store raw tokens.
+
+### Login rate limit relies on a custom request wrapper
+
+`LoginRateLimitFilter` needs to read the JSON body to extract `email` for
+the rate-limit key, **and** Spring still needs to read it for `@RequestBody`.
+Servlet input streams aren't re-readable, and `ContentCachingRequestWrapper`
+doesn't replay reads — so we use a custom
+[CachedBodyHttpServletRequest](src/main/java/com/majstr/backend/security/CachedBodyHttpServletRequest.java)
+that buffers the body once and yields a fresh `ServletInputStream` per
+`getInputStream()` call. The filter passes the wrapped request downstream.
+
+Bucket key is `lowercased-email + "|" + clientIp`, where `clientIp`
+respects the first entry of `X-Forwarded-For` if present. Buckets live in
+a `ConcurrentHashMap` — fine for single-instance dev/prod but a known
+limitation for multi-node deployments (would need a shared store).
+
+### Spring Security 7 wiring
+
+`SecurityConfig.filterChain` uses the lambda DSL only (Spring 7 removed
+the deprecated chained forms). Both custom filters are added with
+`addFilterBefore(..., UsernamePasswordAuthenticationFilter.class)` —
+order matters: `LoginRateLimitFilter` must run before
+`JwtAuthenticationFilter` so login attempts are rate-limited even when no
+JWT is presented. Public paths are listed in `SecurityConfig.PUBLIC_PATHS`;
+everything else requires authentication.
+
+CORS is configured via `CorsConfigurationSource` bean fed by
+`CorsProperties.allowedOrigins` (comma-separated env var).
+
+### Error response shape
+
+All errors flow through `GlobalExceptionHandler` and use
+[ErrorResponse](src/main/java/com/majstr/backend/dto/ErrorResponse.java):
+
+```
+{ timestamp, status, error, message, path, retryAfterSeconds? }
+```
+
+`retryAfterSeconds` is set only by `ErrorResponse.rateLimited(...)` from
+the rate-limit filter. Null fields are stripped globally via
+`spring.jackson.default-property-inclusion: non_null`.
+
+Status mapping:
+- 400 — `MethodArgumentNotValidException`, `ConstraintViolationException`,
+  `HttpMessageNotReadableException`
+- 401 — `BadCredentialsException`, `UsernameNotFoundException`,
+  `InvalidTokenException`, any other `AuthenticationException`
+- 403 — `AccessDeniedException`
+- 409 — `EmailAlreadyExistsException`
+- 429 — emitted directly by `LoginRateLimitFilter` (does **not** go through
+  the advice — it bypasses Spring MVC because the filter writes the
+  response itself)
+- 500 — fallback, with a logged stack trace
+
+### Schema is owned by Flyway
+
+`hibernate.ddl-auto: validate`. Never put schema changes in entity
+annotations expecting Hibernate to apply them. Add a new
+`V<N>__<desc>.sql` under `src/main/resources/db/migration/`. The
+`users.trade` column has a `CHECK` constraint enumerating the allowed
+values — if you add a `Trade` enum constant, write a migration to extend
+the CHECK.
+
+### Entities vs. records
+
+- **Entities** (`User`, `RefreshToken`) — mutable JPA, Lombok
+  `@Getter @Setter @Builder @NoArgsConstructor @AllArgsConstructor`,
+  `@EqualsAndHashCode(of = "id")` to avoid the lazy-loading pitfall.
+  `@ToString(exclude = "passwordHash")` on `User`.
+- **DTOs** — `record`s with `jakarta.validation` constraints on
+  components. Don't mix Lombok with records.
+
+## Gotchas
+
+- **Jackson 3 package**: Spring Boot 4 ships Jackson 3, whose package is
+  `tools.jackson.*` (not `com.fasterxml.jackson.*`). When injecting
+  `ObjectMapper`, use `import tools.jackson.databind.ObjectMapper;`. The
+  `com.fasterxml.jackson.*` classes may still be on the classpath
+  (transitively via `jjwt-jackson`) — they're for jjwt's internal use,
+  don't pull them into application code.
+- **Lombok + Java 25**: works via the Spring Boot–managed Lombok version.
+  If you bump Java further, verify Lombok supports it.
+- **JWT secret length**: HS256 requires ≥ 32 bytes (256 bits). Validated
+  by `JwtProperties` (`@Size(min = 32)`). Generate with
+  `openssl rand -base64 48`.
+- **`-parameters` compile flag** is enabled — required for
+  `@PathVariable`/`@RequestParam` without explicit names and for Spring 6+
+  parameter-name discovery. Don't remove it from `build.gradle.kts`.
+- **`open-in-view: false`** — JPA sessions don't extend into the view
+  layer. If you need a lazy association in a controller, fetch it
+  explicitly in the service.
+
+## Testing
+
+`AuthControllerTest` is a `@WebMvcTest` slice with
+`@AutoConfigureMockMvc(addFilters = false)` (security filters bypassed for
+controller-focused tests) and `@MockitoBean` (Spring 6.2+ replacement for
+the deprecated `@MockBean`). Service-layer / integration tests against a
+real Postgres are not yet wired — when adding them, prefer **Testcontainers**
+over an embedded DB because the migrations are PostgreSQL-specific.
+
+`application-test.yml` provides a test JWT secret so the
+`@ConfigurationProperties` validation passes.
+
+## Conventions
+
+- **Language**: all code, comments, log messages, SQL, YAML, and
+  Markdown — **English only**. The user prefers chatting in Ukrainian but
+  artifacts stay English.
+- **Comments**: default to none. Write a one-liner only when the *why* is
+  non-obvious (e.g. the body-cache wrapper rationale). Don't restate code.
+- **Boundaries of change**: keep changes scoped. Bug fix ≠ refactor.
+  Don't add abstractions for hypothetical future needs.
+- **No backwards-compat shims** for code that hasn't shipped — this is a
+  greenfield project; just change it.
+
+## Not implemented yet
+
+These are intentional gaps to be aware of (don't claim they exist):
+
+- No `actuator` starter — `/actuator/health` is permitted in
+  `SecurityConfig` for future use but the dependency isn't on the
+  classpath yet.
+- No scheduled cleanup of expired refresh tokens (the
+  `RefreshTokenRepository.deleteExpired` query exists; nothing calls it).
+- No `User` profile / logo upload endpoints — only the column is in V1.
+- No integration tests (only the MockMvc slice).
+- No multi-instance rate-limit store (in-memory `ConcurrentHashMap`).
+- No estimates / projects / client-communication domain — that's the
+  next iteration.
