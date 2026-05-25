@@ -152,6 +152,16 @@ the CHECK.
 
 ## Gotchas
 
+- **Spring Boot 4 split many auto-configs into per-feature modules** that
+  starters do *not* pull transitively. So far we've hit:
+  - **`spring-boot-flyway`** — required for Flyway auto-config. Without it
+    Flyway silently does nothing, Hibernate then fails schema validation.
+    Already declared in `build.gradle.kts`; don't remove it.
+  - Test-slice annotations (`@WebMvcTest` etc.) are also gone — see
+    *Testing* below.
+  Expect similar surprises for other auto-configs (`spring-boot-liquibase`,
+  `spring-boot-jpa-test`, `spring-boot-jdbc-test`, ...). Symptom is
+  usually "feature X silently doesn't run" or a NoClassDefFound.
 - **Jackson 3 package**: Spring Boot 4 ships Jackson 3, whose package is
   `tools.jackson.*` (not `com.fasterxml.jackson.*`). When injecting
   `ObjectMapper`, use `import tools.jackson.databind.ObjectMapper;`. The
