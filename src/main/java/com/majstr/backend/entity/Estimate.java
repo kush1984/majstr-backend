@@ -50,6 +50,18 @@ public class Estimate {
     @Column(name = "notes", columnDefinition = "TEXT")
     private String notes;
 
+    @Column(name = "signed_at")
+    private Instant signedAt;
+
+    @Column(name = "signer_name", length = 255)
+    private String signerName;
+
+    @Column(name = "signer_phone", length = 50)
+    private String signerPhone;
+
+    @Column(name = "signer_ip", length = 64)
+    private String signerIp;
+
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
 

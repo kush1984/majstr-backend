@@ -24,8 +24,17 @@ public record UserResponse(
                 user.getTrade(),
                 user.getPhone(),
                 user.getCompanyName(),
-                user.getLogoUrl(),
+                logoUrlFromKey(user.getLogoUrl()),
                 user.getCreatedAt()
         );
+    }
+
+    /**
+     * {@code User#logoUrl} stores the storage key (e.g. {@code logos/abc.png}).
+     * Clients want a URL they can {@code <img src>}, so we prefix the public
+     * file endpoint.
+     */
+    private static String logoUrlFromKey(String key) {
+        return (key == null || key.isBlank()) ? null : "/api/files/" + key;
     }
 }

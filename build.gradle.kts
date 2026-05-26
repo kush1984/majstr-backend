@@ -1,3 +1,7 @@
+import java.io.File
+import java.net.URI
+import java.util.zip.ZipFile
+
 plugins {
     java
     id("org.springframework.boot") version "4.0.6"
@@ -43,10 +47,17 @@ dependencies {
 
     implementation("org.springdoc:springdoc-openapi-starter-webmvc-ui:2.8.6")
 
+    // PDF generation. OpenPDF is LGPL fork of iText 4, actively maintained.
+    implementation("com.github.librepdf:openpdf:2.0.3")
+
     runtimeOnly("org.postgresql:postgresql")
 
     compileOnly("org.projectlombok:lombok")
     annotationProcessor("org.projectlombok:lombok")
+
+    // DevTools: hot-reload of static resources + automatic restart on classpath changes.
+    // developmentOnly so it never ships in a production jar.
+    developmentOnly("org.springframework.boot:spring-boot-devtools")
 
     testImplementation("org.springframework.boot:spring-boot-starter-test")
     testImplementation("org.springframework.security:spring-security-test")
@@ -60,3 +71,53 @@ tasks.withType<Test> {
 tasks.withType<JavaCompile> {
     options.compilerArgs.add("-parameters")
 }
+
+// PDF generation needs Cyrillic-capable fonts. Bundled JDK fonts cannot do
+// Ukrainian, and OpenPDF ships no fonts of its own. The DejaVu source repo
+// holds only FontForge .sfd files; pre-built .ttf binaries live only in
+// SourceForge release zips. Download the zip on first build and extract
+// the two TTFs we need. Both .ttf files are .gitignore'd so the repo stays
+// small. If your network blocks SourceForge, see README for manual setup.
+val downloadPdfFonts by tasks.registering {
+    description = "Download DejaVu fonts used by EstimatePdfService"
+    group = "build setup"
+    val fontDir = layout.projectDirectory.dir("src/main/resources/fonts")
+    val zipUrl = "https://downloads.sourceforge.net/project/dejavu/dejavu/2.37/dejavu-fonts-ttf-2.37.zip"
+    val needed = setOf("DejaVuSans.ttf", "DejaVuSans-Bold.ttf")
+    outputs.files(needed.map { fontDir.file(it).asFile })
+    onlyIf { needed.any { !fontDir.file(it).asFile.exists() } }
+    doLast {
+        val dir = fontDir.asFile
+        dir.mkdirs()
+        val temp = File.createTempFile("dejavu-", ".zip")
+        try {
+            logger.lifecycle("Downloading DejaVu fonts from $zipUrl")
+            val connection = URI(zipUrl).toURL().openConnection() as java.net.HttpURLConnection
+            connection.connectTimeout = 30_000
+            connection.readTimeout = 60_000
+            connection.setRequestProperty("User-Agent", "majstr-backend-gradle")
+            connection.instanceFollowRedirects = true
+            connection.inputStream.use { input ->
+                temp.outputStream().use { output -> input.copyTo(output) }
+            }
+            ZipFile(temp).use { zip ->
+                val entries = zip.entries()
+                while (entries.hasMoreElements()) {
+                    val entry = entries.nextElement()
+                    val basename = entry.name.substringAfterLast('/')
+                    if (basename in needed) {
+                        val target = File(dir, basename)
+                        zip.getInputStream(entry).use { input ->
+                            target.outputStream().use { output -> input.copyTo(output) }
+                        }
+                        logger.lifecycle("Extracted $basename")
+                    }
+                }
+            }
+        } finally {
+            temp.delete()
+        }
+    }
+}
+
+tasks.named("processResources") { dependsOn(downloadPdfFonts) }

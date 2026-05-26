@@ -2,6 +2,7 @@ package com.majstr.backend.config;
 
 import com.majstr.backend.security.JwtAuthenticationFilter;
 import com.majstr.backend.security.LoginRateLimitFilter;
+import com.majstr.backend.security.PublicPortalRateLimitFilter;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -29,6 +30,9 @@ public class SecurityConfig {
             "/api/auth/register",
             "/api/auth/login",
             "/api/auth/refresh",
+            "/api/public/**",
+            "/api/files/**",
+            "/portal/**",
             "/v3/api-docs/**",
             "/swagger-ui.html",
             "/swagger-ui/**",
@@ -37,6 +41,7 @@ public class SecurityConfig {
 
     private final JwtAuthenticationFilter jwtAuthenticationFilter;
     private final LoginRateLimitFilter loginRateLimitFilter;
+    private final PublicPortalRateLimitFilter publicPortalRateLimitFilter;
     private final CorsProperties corsProperties;
 
     @Bean
@@ -60,6 +65,7 @@ public class SecurityConfig {
                         .requestMatchers(PUBLIC_PATHS).permitAll()
                         .anyRequest().authenticated())
                 .addFilterBefore(loginRateLimitFilter, UsernamePasswordAuthenticationFilter.class)
+                .addFilterBefore(publicPortalRateLimitFilter, UsernamePasswordAuthenticationFilter.class)
                 .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
         return http.build();
     }

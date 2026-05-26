@@ -7,14 +7,19 @@ import com.majstr.backend.dto.EstimateItemResponse;
 import com.majstr.backend.dto.EstimateResponse;
 import com.majstr.backend.dto.EstimateSummary;
 import com.majstr.backend.dto.EstimateUpdateRequest;
+import com.lowagie.text.DocumentException;
+import com.majstr.backend.dto.ShareLinkResponse;
 import com.majstr.backend.security.UserPrincipal;
 import com.majstr.backend.service.EstimateService;
+import com.majstr.backend.service.ShareLinkService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -26,6 +31,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.io.IOException;
 import java.util.List;
 import java.util.UUID;
 
@@ -36,6 +42,7 @@ import java.util.UUID;
 public class EstimateController {
 
     private final EstimateService estimateService;
+    private final ShareLinkService shareLinkService;
 
     // ---- estimates under a project ----------------------------------------
 
@@ -77,6 +84,38 @@ public class EstimateController {
     public ResponseEntity<Void> delete(@PathVariable UUID id,
                                        @AuthenticationPrincipal UserPrincipal principal) {
         estimateService.delete(id, principal.id());
+        return ResponseEntity.noContent().build();
+    }
+
+    @Operation(summary = "Download the estimate as a PDF")
+    @GetMapping(value = "/api/estimates/{id}/pdf", produces = MediaType.APPLICATION_PDF_VALUE)
+    public ResponseEntity<byte[]> pdf(@PathVariable UUID id,
+                                      @AuthenticationPrincipal UserPrincipal principal)
+            throws IOException, DocumentException {
+        byte[] body = estimateService.renderPdf(id, principal.id());
+        return ResponseEntity.ok()
+                .contentType(MediaType.APPLICATION_PDF)
+                .header(HttpHeaders.CONTENT_DISPOSITION,
+                        "attachment; filename=\"estimate-" + id + ".pdf\"")
+                .body(body);
+    }
+
+    // ---- share links ------------------------------------------------------
+
+    @Operation(summary = "Create a public share link for the estimate")
+    @PostMapping("/api/estimates/{id}/share")
+    public ResponseEntity<ShareLinkResponse> createShareLink(@PathVariable UUID id,
+                                                             @AuthenticationPrincipal UserPrincipal principal) {
+        return ResponseEntity.status(HttpStatus.CREATED)
+                .body(shareLinkService.create(id, principal.id()));
+    }
+
+    @Operation(summary = "Revoke a share link so the public URL stops working")
+    @DeleteMapping("/api/estimates/{id}/share/{linkId}")
+    public ResponseEntity<Void> revokeShareLink(@PathVariable UUID id,
+                                                @PathVariable UUID linkId,
+                                                @AuthenticationPrincipal UserPrincipal principal) {
+        shareLinkService.revoke(id, linkId, principal.id());
         return ResponseEntity.noContent().build();
     }
 

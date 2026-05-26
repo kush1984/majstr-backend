@@ -7,6 +7,7 @@ import com.majstr.backend.dto.EstimateItemResponse;
 import com.majstr.backend.dto.EstimateResponse;
 import com.majstr.backend.dto.EstimateSummary;
 import com.majstr.backend.dto.EstimateUpdateRequest;
+import com.lowagie.text.DocumentException;
 import com.majstr.backend.entity.CatalogItem;
 import com.majstr.backend.entity.Estimate;
 import com.majstr.backend.entity.EstimateItem;
@@ -20,6 +21,7 @@ import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.io.IOException;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.util.List;
@@ -37,6 +39,7 @@ public class EstimateService {
     private final EstimateItemRepository itemRepository;
     private final ProjectService projectService;
     private final CatalogService catalogService;
+    private final EstimatePdfService pdfService;
 
     // ---- estimates ---------------------------------------------------------
 
@@ -81,6 +84,29 @@ public class EstimateService {
     public void delete(UUID estimateId, UUID ownerId) {
         Estimate estimate = loadOwned(estimateId, ownerId);
         estimateRepository.delete(estimate);
+    }
+
+    @Transactional(readOnly = true)
+    public byte[] renderPdf(UUID estimateId, UUID ownerId) throws IOException, DocumentException {
+        Estimate estimate = loadOwned(estimateId, ownerId);
+        return renderPdf(estimate);
+    }
+
+    /**
+     * Used by both authenticated and public flows. Caller has already
+     * validated access (ownership or share-link token).
+     */
+    @Transactional(readOnly = true)
+    public byte[] renderPdf(Estimate estimate) throws IOException, DocumentException {
+        Project project = estimate.getProject();
+        List<EstimateItem> items = itemRepository.findByEstimateIdOrderBySortOrderAscIdAsc(estimate.getId());
+        return pdfService.render(new EstimatePdfService.PdfModel(
+                project.getOwner(),
+                project,
+                project.getClient(),
+                estimate,
+                items
+        ));
     }
 
     // ---- items -------------------------------------------------------------

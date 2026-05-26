@@ -4,6 +4,18 @@ spring:
     properties:
       hibernate:
         format_sql: true
+  # DevTools watches src/main/resources/static/** and reloads on edit;
+  # disable HTTP caching of static files so the browser always picks up
+  # the new version on the next request.
+  web:
+    resources:
+      cache:
+        period: 0
+  devtools:
+    livereload:
+      enabled: true
+    restart:
+      enabled: true
 
 logging:
   level:

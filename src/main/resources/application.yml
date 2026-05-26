@@ -32,6 +32,10 @@ spring:
 server:
   port: 8080
 
+spring.servlet.multipart:
+  max-file-size: 2MB
+  max-request-size: 4MB
+
 app:
   jwt:
     # HS256 requires >= 32 bytes (256 bits). Set via env in all environments.
@@ -45,6 +49,14 @@ app:
     login:
       max-attempts: 5
       window-minutes: 15
+    portal:
+      max-attempts: 30
+      window-minutes: 1
+  storage:
+    local:
+      directory: ${STORAGE_DIR:./data/uploads}
+  portal:
+    public-base-url: ${PORTAL_BASE_URL:http://localhost:8080}
 
 springdoc:
   swagger-ui:

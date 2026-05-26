@@ -18,5 +18,11 @@ out/
 # Claude Code: keep shared commands, ignore local-only settings
 .claude/settings.local.json
 
+# Auto-downloaded by the downloadPdfFonts Gradle task
+src/main/resources/fonts/
+
+# Local file storage (logos and other uploads)
+data/
+
 .DS_Store
 Thumbs.db
