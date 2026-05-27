@@ -131,6 +131,8 @@ class AuthControllerTest {
                 "+15551234567",
                 "Smith Electrical LLC",
                 null,
+                com.majstr.backend.entity.Plan.FREE,
+                com.majstr.backend.entity.Role.USER,
                 Instant.now());
         return AuthResponse.of("access-jwt", "refresh-token", 900L, user);
     }

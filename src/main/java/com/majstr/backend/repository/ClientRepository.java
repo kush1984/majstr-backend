@@ -11,4 +11,6 @@ import java.util.UUID;
 public interface ClientRepository extends JpaRepository<Client, UUID> {
 
     List<Client> findByOwnerIdOrderByFullNameAsc(UUID ownerId);
+
+    long countByOwnerId(UUID ownerId);
 }

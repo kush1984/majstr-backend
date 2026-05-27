@@ -7,6 +7,8 @@ import com.majstr.backend.entity.Project;
 import com.majstr.backend.entity.ProjectStatus;
 import com.majstr.backend.entity.User;
 import com.majstr.backend.exception.ResourceNotFoundException;
+import com.majstr.backend.feature.Limit;
+import com.majstr.backend.feature.LimitService;
 import com.majstr.backend.repository.ProjectRepository;
 import com.majstr.backend.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
@@ -24,9 +26,11 @@ public class ProjectService {
     private final ProjectRepository projectRepository;
     private final UserRepository userRepository;
     private final ClientService clientService;
+    private final LimitService limitService;
 
     @Transactional
     public ProjectResponse create(ProjectRequest req, UUID ownerId) {
+        limitService.requireWithinLimit(ownerId, Limit.MAX_PROJECTS);
         User owner = userRepository.getReferenceById(ownerId);
         Client client = req.clientId() == null ? null : clientService.loadOwned(req.clientId(), ownerId);
         Project project = Project.builder()

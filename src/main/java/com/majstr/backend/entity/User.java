@@ -56,6 +56,19 @@ public class User {
     @Column(name = "logo_url", length = 512)
     private String logoUrl;
 
+    @Enumerated(EnumType.STRING)
+    @Column(name = "plan", nullable = false, length = 20)
+    @Builder.Default
+    private Plan plan = Plan.FREE;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "role", nullable = false, length = 20)
+    @Builder.Default
+    private Role role = Role.USER;
+
+    @Column(name = "last_active_at")
+    private Instant lastActiveAt;
+
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
 
@@ -66,6 +79,12 @@ public class User {
     void onCreate() {
         if (id == null) {
             id = UUID.randomUUID();
+        }
+        if (plan == null) {
+            plan = Plan.FREE;
+        }
+        if (role == null) {
+            role = Role.USER;
         }
         Instant now = Instant.now();
         createdAt = now;

@@ -47,7 +47,8 @@ class ProjectControllerTest {
     private ObjectMapper objectMapper;
 
     private final UUID userId = UUID.randomUUID();
-    private final UserPrincipal principal = new UserPrincipal(userId, "john@example.com", "hash");
+    private final UserPrincipal principal = new UserPrincipal(
+            userId, "john@example.com", "hash", com.majstr.backend.entity.Role.USER);
 
     @BeforeEach
     void setUp() {

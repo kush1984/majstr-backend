@@ -9,5 +9,6 @@ public enum Feature {
     BRANDED_PDF,
     CLIENT_PORTAL,
     ONLINE_SIGNATURE,
-    PHOTO_REPORTS
+    PHOTO_REPORTS,
+    AI_ASSISTANT
 }

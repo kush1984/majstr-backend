@@ -39,6 +39,10 @@ public class SecurityConfig {
             "/actuator/health"
     };
 
+    /** The admin HTML lives in /static/admin/; the JS inside performs its own
+     *  Bearer-JWT calls against /api/admin/**, which require ROLE_ADMIN. */
+    private static final String[] ADMIN_PATHS = {"/api/admin/**"};
+
     private final JwtAuthenticationFilter jwtAuthenticationFilter;
     private final LoginRateLimitFilter loginRateLimitFilter;
     private final PublicPortalRateLimitFilter publicPortalRateLimitFilter;
@@ -63,6 +67,8 @@ public class SecurityConfig {
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
                         .requestMatchers(PUBLIC_PATHS).permitAll()
+                        .requestMatchers("/admin/**").permitAll()
+                        .requestMatchers(ADMIN_PATHS).hasRole("ADMIN")
                         .anyRequest().authenticated())
                 .addFilterBefore(loginRateLimitFilter, UsernamePasswordAuthenticationFilter.class)
                 .addFilterBefore(publicPortalRateLimitFilter, UsernamePasswordAuthenticationFilter.class)

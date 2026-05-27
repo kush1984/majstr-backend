@@ -22,6 +22,7 @@ public class AuthService {
     private final PasswordEncoder passwordEncoder;
     private final JwtService jwtService;
     private final RefreshTokenService refreshTokenService;
+    private final CatalogTemplateService catalogTemplateService;
 
     @Transactional
     public AuthResponse register(RegisterRequest req) {
@@ -38,6 +39,9 @@ public class AuthService {
                 .companyName(req.companyName().trim())
                 .build();
         user = userRepository.save(user);
+        // Copy starter catalog templates for the user's trade so they
+        // never see an empty library on first login.
+        catalogTemplateService.seedForUser(user);
         return issueTokens(user);
     }
 

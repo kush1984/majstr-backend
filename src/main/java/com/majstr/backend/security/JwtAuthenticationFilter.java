@@ -27,6 +27,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
     private final JwtService jwtService;
     private final UserRepository userRepository;
+    private final LastActiveTracker lastActiveTracker;
 
     @Override
     protected void doFilterInternal(HttpServletRequest request,
@@ -42,6 +43,8 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                             new UsernamePasswordAuthenticationToken(principal, null, principal.getAuthorities());
                     auth.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
                     SecurityContextHolder.getContext().setAuthentication(auth);
+                    // Stamp last_active_at (throttled per user to avoid DB churn).
+                    lastActiveTracker.touch(user.getId());
                 });
             } catch (JwtException ex) {
                 log.debug("Invalid JWT: {}", ex.getMessage());

@@ -198,6 +198,20 @@ Tests therefore use one of two patterns:
 `application-test.yml` still holds a test JWT secret for the day we add
 an integration slice that loads the real context.
 
+## Open-question log
+
+[docs/open-questions.md](docs/open-questions.md) keeps deferred decisions
+and known gaps across iterations — multi-instance state, billing,
+PHOTO_REPORTS / AI_ASSISTANT, JWT key rotation, etc. There is a skill
+at `.claude/skills/open-questions/SKILL.md` whose description says "use
+at the start of every new iteration"; Claude should self-trigger it via
+the Skill tool whenever the user kicks off a new step / feature, before
+writing any code. It reads the file, classifies every `OPEN` item against
+the upcoming work (in scope / adjacent / out of scope), and offers to
+promote, close, or add items. Update statuses inline, don't rewrite the
+file. When an item is closed, leave it in the file with `RESOLVED` +
+a one-line note so the history is preserved.
+
 ## Conventions
 
 - **Language**: all code, comments, log messages, SQL, YAML, and

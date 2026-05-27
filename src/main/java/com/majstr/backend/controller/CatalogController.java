@@ -2,9 +2,13 @@ package com.majstr.backend.controller;
 
 import com.majstr.backend.dto.CatalogItemRequest;
 import com.majstr.backend.dto.CatalogItemResponse;
+import com.majstr.backend.dto.CatalogResetResponse;
 import com.majstr.backend.entity.ItemType;
+import com.majstr.backend.exception.ResourceNotFoundException;
+import com.majstr.backend.repository.UserRepository;
 import com.majstr.backend.security.UserPrincipal;
 import com.majstr.backend.service.CatalogService;
+import com.majstr.backend.service.CatalogTemplateService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -34,6 +38,8 @@ import java.util.UUID;
 public class CatalogController {
 
     private final CatalogService catalogService;
+    private final CatalogTemplateService catalogTemplateService;
+    private final UserRepository userRepository;
 
     @Operation(summary = "Create a catalog item")
     @PostMapping
@@ -63,5 +69,15 @@ public class CatalogController {
                                        @AuthenticationPrincipal UserPrincipal principal) {
         catalogService.delete(id, principal.id());
         return ResponseEntity.noContent().build();
+    }
+
+    @Operation(summary = "Add starter templates for the user's trade. " +
+            "Idempotent: items already present (by name + type + unit) are skipped.")
+    @PostMapping("/reset-from-template")
+    public CatalogResetResponse resetFromTemplate(@AuthenticationPrincipal UserPrincipal principal) {
+        var user = userRepository.findById(principal.id())
+                .orElseThrow(() -> new ResourceNotFoundException("User not found: " + principal.id()));
+        int added = catalogTemplateService.resetForUser(user);
+        return new CatalogResetResponse(added);
     }
 }

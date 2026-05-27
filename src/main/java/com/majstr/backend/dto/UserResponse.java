@@ -1,5 +1,7 @@
 package com.majstr.backend.dto;
 
+import com.majstr.backend.entity.Plan;
+import com.majstr.backend.entity.Role;
 import com.majstr.backend.entity.Trade;
 import com.majstr.backend.entity.User;
 
@@ -14,6 +16,8 @@ public record UserResponse(
         String phone,
         String companyName,
         String logoUrl,
+        Plan plan,
+        Role role,
         Instant createdAt
 ) {
     public static UserResponse from(User user) {
@@ -25,6 +29,8 @@ public record UserResponse(
                 user.getPhone(),
                 user.getCompanyName(),
                 logoUrlFromKey(user.getLogoUrl()),
+                user.getPlan(),
+                user.getRole(),
                 user.getCreatedAt()
         );
     }
