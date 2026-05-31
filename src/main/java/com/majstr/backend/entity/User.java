@@ -1,10 +1,13 @@
 package com.majstr.backend.entity;
 
+import jakarta.persistence.CollectionTable;
 import jakarta.persistence.Column;
+import jakarta.persistence.ElementCollection;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
 import jakarta.persistence.Id;
+import jakarta.persistence.JoinColumn;
 import jakarta.persistence.PrePersist;
 import jakarta.persistence.PreUpdate;
 import jakarta.persistence.Table;
@@ -15,8 +18,11 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
 import lombok.ToString;
+import org.hibernate.annotations.BatchSize;
 
 import java.time.Instant;
+import java.util.LinkedHashSet;
+import java.util.Set;
 import java.util.UUID;
 
 @Entity
@@ -27,7 +33,7 @@ import java.util.UUID;
 @NoArgsConstructor
 @AllArgsConstructor
 @EqualsAndHashCode(of = "id")
-@ToString(exclude = "passwordHash")
+@ToString(exclude = {"passwordHash", "trades"})
 public class User {
 
     @Id
@@ -43,9 +49,21 @@ public class User {
     @Column(name = "full_name", nullable = false, length = 255)
     private String fullName;
 
-    @Enumerated(EnumType.STRING)
+    /**
+     * Trades the contractor works in — at least one. Modeled as an
+     * {@link ElementCollection} (a value set owned by the user) rather than
+     * a separate entity: trades have no identity or attributes of their own
+     * and nothing references them. LAZY + {@link BatchSize} keeps it cheap;
+     * callers that serialize trades outside a transaction must load them in
+     * a session (see {@code /auth/me} and the admin user list).
+     */
+    @ElementCollection(fetch = jakarta.persistence.FetchType.LAZY)
+    @CollectionTable(name = "user_trades", joinColumns = @JoinColumn(name = "user_id"))
     @Column(name = "trade", nullable = false, length = 50)
-    private Trade trade;
+    @Enumerated(EnumType.STRING)
+    @BatchSize(size = 100)
+    @Builder.Default
+    private Set<Trade> trades = new LinkedHashSet<>();
 
     @Column(name = "phone", nullable = false, length = 50)
     private String phone;

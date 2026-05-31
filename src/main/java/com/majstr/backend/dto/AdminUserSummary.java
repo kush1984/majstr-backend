@@ -6,18 +6,21 @@ import com.majstr.backend.entity.Trade;
 import com.majstr.backend.entity.User;
 
 import java.time.Instant;
+import java.util.LinkedHashSet;
+import java.util.Set;
 import java.util.UUID;
 
 /**
  * Lightweight read-model for /api/admin/users. Excludes passwordHash
- * (never leaks) and lazy associations.
+ * (never leaks). {@code trades} is a lazy collection, so callers must
+ * build this inside a transaction (the listing endpoint is read-only TX).
  */
 public record AdminUserSummary(
         UUID id,
         String email,
         String fullName,
         String companyName,
-        Trade trade,
+        Set<Trade> trades,
         Plan plan,
         Role role,
         Instant createdAt,
@@ -29,7 +32,7 @@ public record AdminUserSummary(
                 user.getEmail(),
                 user.getFullName(),
                 user.getCompanyName(),
-                user.getTrade(),
+                new LinkedHashSet<>(user.getTrades()),
                 user.getPlan(),
                 user.getRole(),
                 user.getCreatedAt(),

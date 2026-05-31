@@ -6,13 +6,15 @@ import com.majstr.backend.entity.Trade;
 import com.majstr.backend.entity.User;
 
 import java.time.Instant;
+import java.util.LinkedHashSet;
+import java.util.Set;
 import java.util.UUID;
 
 public record UserResponse(
         UUID id,
         String email,
         String fullName,
-        Trade trade,
+        Set<Trade> trades,
         String phone,
         String companyName,
         String logoUrl,
@@ -25,7 +27,7 @@ public record UserResponse(
                 user.getId(),
                 user.getEmail(),
                 user.getFullName(),
-                user.getTrade(),
+                new LinkedHashSet<>(user.getTrades()),
                 user.getPhone(),
                 user.getCompanyName(),
                 logoUrlFromKey(user.getLogoUrl()),

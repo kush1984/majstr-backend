@@ -48,11 +48,17 @@ public class CatalogController {
         return ResponseEntity.status(HttpStatus.CREATED).body(catalogService.create(req, principal.id()));
     }
 
-    @Operation(summary = "List my catalog items, optionally filtered by type")
+    @Operation(summary = "List my catalog items (sorted by category, then name), optionally filtered by type")
     @GetMapping
     public List<CatalogItemResponse> list(@RequestParam(required = false) ItemType type,
                                           @AuthenticationPrincipal UserPrincipal principal) {
         return catalogService.listForOwner(principal.id(), type);
+    }
+
+    @Operation(summary = "List my distinct catalog categories for the picker/autocomplete")
+    @GetMapping("/categories")
+    public List<String> categories(@AuthenticationPrincipal UserPrincipal principal) {
+        return catalogService.categories(principal.id());
     }
 
     @Operation(summary = "Update a catalog item")

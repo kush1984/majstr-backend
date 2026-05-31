@@ -16,7 +16,9 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.math.BigDecimal;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -35,11 +37,11 @@ class CatalogTemplateServiceTest {
     void seedForUser_copiesEveryTemplateForTradeIntoUserLibrary() {
         User electrician = User.builder()
                 .id(UUID.randomUUID())
-                .trade(Trade.ELECTRICAL)
+                .trades(new LinkedHashSet<>(Set.of(Trade.ELECTRICAL)))
                 .build();
-        given(templateRepository.findByTrade(Trade.ELECTRICAL)).willReturn(List.of(
-                tpl("Розетка", ItemType.WORK, Unit.PIECE, "180.00"),
-                tpl("Кабель", ItemType.MATERIAL, Unit.M, "38.50")
+        given(templateRepository.findByTradeIn(electrician.getTrades())).willReturn(List.of(
+                tpl("Розетки та вимикачі", "Розетка", ItemType.WORK, Unit.PIECE, "180.00"),
+                tpl("Кабельні роботи", "Кабель", ItemType.MATERIAL, Unit.M, "38.50")
         ));
         given(catalogRepository.findByOwnerIdOrderByNameAsc(electrician.getId())).willReturn(List.of());
 
@@ -51,14 +53,47 @@ class CatalogTemplateServiceTest {
         assertThat(captor.getValue())
                 .extracting(CatalogItem::getName)
                 .containsExactlyInAnyOrder("Розетка", "Кабель");
+        // Category is carried over from the template.
+        assertThat(captor.getValue())
+                .filteredOn(i -> i.getName().equals("Розетка"))
+                .extracting(CatalogItem::getCategory)
+                .containsExactly("Розетки та вимикачі");
+    }
+
+    @Test
+    void seedForUser_mergesAllTradesAndDropsCrossTradeDuplicates() {
+        User generalist = User.builder()
+                .id(UUID.randomUUID())
+                .trades(new LinkedHashSet<>(Set.of(Trade.GENERAL, Trade.ELECTRICAL)))
+                .build();
+        // The merged set contains "Демонтаж" twice (a position shared by two
+        // of the user's trades). It must be created only once.
+        given(templateRepository.findByTradeIn(generalist.getTrades())).willReturn(List.of(
+                tpl("Демонтаж", "Демонтаж стіни", ItemType.WORK, Unit.M2, "280.00"),
+                tpl("Розетки та вимикачі", "Розетка", ItemType.WORK, Unit.PIECE, "180.00"),
+                tpl("Демонтаж", "Демонтаж стіни", ItemType.WORK, Unit.M2, "280.00")
+        ));
+        given(catalogRepository.findByOwnerIdOrderByNameAsc(generalist.getId())).willReturn(List.of());
+
+        int added = catalogTemplateService.seedForUser(generalist);
+
+        assertThat(added).isEqualTo(2);
+        ArgumentCaptor<List<CatalogItem>> captor = ArgumentCaptor.forClass(List.class);
+        verify(catalogRepository).saveAll(captor.capture());
+        assertThat(captor.getValue())
+                .extracting(CatalogItem::getName)
+                .containsExactlyInAnyOrder("Демонтаж стіни", "Розетка");
     }
 
     @Test
     void resetForUser_skipsItemsThatAlreadyExistByNameTypeUnit() {
-        User user = User.builder().id(UUID.randomUUID()).trade(Trade.TILING).build();
-        given(templateRepository.findByTrade(Trade.TILING)).willReturn(List.of(
-                tpl("Клей для плитки", ItemType.MATERIAL, Unit.PIECE, "280.00"),
-                tpl("Хрестики 2мм", ItemType.MATERIAL, Unit.SET, "25.00")
+        User user = User.builder()
+                .id(UUID.randomUUID())
+                .trades(new LinkedHashSet<>(Set.of(Trade.TILING)))
+                .build();
+        given(templateRepository.findByTradeIn(user.getTrades())).willReturn(List.of(
+                tpl("Укладка", "Клей для плитки", ItemType.MATERIAL, Unit.PIECE, "280.00"),
+                tpl("Укладка", "Хрестики 2мм", ItemType.MATERIAL, Unit.SET, "25.00")
         ));
         // User already has the first template (same name/type/unit) — but
         // crucially with a different price, which we MUST NOT overwrite.
@@ -82,8 +117,11 @@ class CatalogTemplateServiceTest {
 
     @Test
     void seedForUser_zeroTemplatesMeansZeroSaves() {
-        User user = User.builder().id(UUID.randomUUID()).trade(Trade.OTHER).build();
-        given(templateRepository.findByTrade(Trade.OTHER)).willReturn(List.of());
+        User user = User.builder()
+                .id(UUID.randomUUID())
+                .trades(new LinkedHashSet<>(Set.of(Trade.OTHER)))
+                .build();
+        given(templateRepository.findByTradeIn(user.getTrades())).willReturn(List.of());
 
         int added = catalogTemplateService.seedForUser(user);
 
@@ -91,9 +129,10 @@ class CatalogTemplateServiceTest {
         verify(catalogRepository, org.mockito.Mockito.never()).saveAll(anyList());
     }
 
-    private CatalogTemplate tpl(String name, ItemType type, Unit unit, String price) {
+    private CatalogTemplate tpl(String category, String name, ItemType type, Unit unit, String price) {
         return CatalogTemplate.builder()
                 .id(UUID.randomUUID())
+                .category(category)
                 .name(name)
                 .type(type)
                 .unit(unit)

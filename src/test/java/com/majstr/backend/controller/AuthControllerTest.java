@@ -21,8 +21,10 @@ import tools.jackson.databind.ObjectMapper;
 import tools.jackson.databind.json.JsonMapper;
 
 import java.time.Instant;
+import java.util.Set;
 import java.util.UUID;
 
+import static org.hamcrest.Matchers.hasItem;
 import static org.hamcrest.Matchers.is;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.BDDMockito.given;
@@ -64,7 +66,7 @@ class AuthControllerTest {
                 "john@example.com",
                 "Sup3r-Secret!",
                 "John Smith",
-                Trade.ELECTRICAL,
+                Set.of(Trade.ELECTRICAL),
                 "+15551234567",
                 "Smith Electrical LLC");
 
@@ -79,7 +81,7 @@ class AuthControllerTest {
                 .andExpect(jsonPath("$.refreshToken", is("refresh-token")))
                 .andExpect(jsonPath("$.tokenType", is("Bearer")))
                 .andExpect(jsonPath("$.user.email", is("john@example.com")))
-                .andExpect(jsonPath("$.user.trade", is("ELECTRICAL")));
+                .andExpect(jsonPath("$.user.trades", hasItem("ELECTRICAL")));
     }
 
     @Test
@@ -88,7 +90,7 @@ class AuthControllerTest {
                 "not-an-email",
                 "Sup3r-Secret!",
                 "John Smith",
-                Trade.GENERAL,
+                Set.of(Trade.GENERAL),
                 "+15551234567",
                 "Company");
 
@@ -127,7 +129,7 @@ class AuthControllerTest {
                 UUID.randomUUID(),
                 email,
                 "John Smith",
-                Trade.ELECTRICAL,
+                Set.of(Trade.ELECTRICAL),
                 "+15551234567",
                 "Smith Electrical LLC",
                 null,

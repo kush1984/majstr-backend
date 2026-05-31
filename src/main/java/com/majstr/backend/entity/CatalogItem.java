@@ -42,6 +42,10 @@ public class CatalogItem {
     @Column(name = "name", nullable = false, length = 255)
     private String name;
 
+    /** Free-text grouping the contractor controls; null = "Без категорії". */
+    @Column(name = "category", length = 100)
+    private String category;
+
     @Enumerated(EnumType.STRING)
     @Column(name = "type", nullable = false, length = 20)
     private ItemType type;

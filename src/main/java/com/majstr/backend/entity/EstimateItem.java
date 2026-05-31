@@ -45,6 +45,10 @@ public class EstimateItem {
     @Column(name = "name", nullable = false, length = 255)
     private String name;
 
+    /** Copied from the catalog item on add; lets the estimate group too. Null = "Без категорії". */
+    @Column(name = "category", length = 100)
+    private String category;
+
     @Enumerated(EnumType.STRING)
     @Column(name = "unit", nullable = false, length = 20)
     private Unit unit;

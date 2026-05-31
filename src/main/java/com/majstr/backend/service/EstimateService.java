@@ -118,6 +118,7 @@ public class EstimateService {
                 .estimate(estimate)
                 .type(req.type())
                 .name(req.name().trim())
+                .category(CatalogService.normalizeCategory(req.category()))
                 .unit(req.unit())
                 .quantity(req.quantity())
                 .unitPrice(req.unitPrice())
@@ -133,10 +134,12 @@ public class EstimateService {
                                                    UUID ownerId) {
         Estimate estimate = loadOwned(estimateId, ownerId);
         CatalogItem source = catalogService.loadOwned(catalogItemId, ownerId);
+        // Copy the category from the catalog item so the estimate can group too.
         EstimateItem item = EstimateItem.builder()
                 .estimate(estimate)
                 .type(source.getType())
                 .name(source.getName())
+                .category(source.getCategory())
                 .unit(source.getUnit())
                 .quantity(req.quantity())
                 .unitPrice(source.getDefaultPrice())
@@ -154,6 +157,7 @@ public class EstimateService {
         EstimateItem item = loadItemInEstimate(estimateId, itemId);
         item.setType(req.type());
         item.setName(req.name().trim());
+        item.setCategory(CatalogService.normalizeCategory(req.category()));
         item.setUnit(req.unit());
         item.setQuantity(req.quantity());
         item.setUnitPrice(req.unitPrice());

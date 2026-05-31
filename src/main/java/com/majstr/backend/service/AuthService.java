@@ -14,6 +14,8 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.LinkedHashSet;
+
 @Service
 @RequiredArgsConstructor
 public class AuthService {
@@ -34,13 +36,13 @@ public class AuthService {
                 .email(email)
                 .passwordHash(passwordEncoder.encode(req.password()))
                 .fullName(req.fullName().trim())
-                .trade(req.trade())
+                .trades(new LinkedHashSet<>(req.trades()))
                 .phone(req.phone().trim())
                 .companyName(req.companyName().trim())
                 .build();
         user = userRepository.save(user);
-        // Copy starter catalog templates for the user's trade so they
-        // never see an empty library on first login.
+        // Copy starter catalog templates for every chosen trade (merged,
+        // de-duplicated) so they never see an empty library on first login.
         catalogTemplateService.seedForUser(user);
         return issueTokens(user);
     }

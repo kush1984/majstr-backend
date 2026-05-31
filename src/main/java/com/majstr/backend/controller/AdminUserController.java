@@ -38,6 +38,7 @@ public class AdminUserController {
 
     @Operation(summary = "Search users with pagination; filter by plan or free-text search")
     @GetMapping
+    @Transactional(readOnly = true) // map lazy trades within a session (open-in-view is off)
     public PageResponse<AdminUserSummary> list(
             @RequestParam(required = false) Plan plan,
             @RequestParam(required = false) String search,

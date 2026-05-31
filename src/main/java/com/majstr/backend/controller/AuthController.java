@@ -17,6 +17,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.core.userdetails.UsernameNotFoundException;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -53,6 +54,7 @@ public class AuthController {
 
     @Operation(summary = "Get the currently authenticated contractor", security = @SecurityRequirement(name = "bearer-jwt"))
     @GetMapping("/me")
+    @Transactional(readOnly = true) // load the lazy trades set within a session (open-in-view is off)
     public ResponseEntity<UserResponse> me(@AuthenticationPrincipal UserPrincipal principal) {
         if (principal == null) {
             throw new UsernameNotFoundException("Not authenticated");

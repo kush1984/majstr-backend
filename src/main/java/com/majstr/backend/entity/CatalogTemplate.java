@@ -40,6 +40,10 @@ public class CatalogTemplate {
     @Column(name = "trade", nullable = false, length = 50)
     private Trade trade;
 
+    /** Suggested grouping copied into the user's CatalogItem; null = "Без категорії". */
+    @Column(name = "category", length = 100)
+    private String category;
+
     @Column(name = "name", nullable = false, length = 255)
     private String name;
 

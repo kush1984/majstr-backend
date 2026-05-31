@@ -31,6 +31,7 @@ import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -163,7 +164,7 @@ class PublicEstimateServiceTest {
                 .companyName("Іван-Електрик ФОП")
                 .fullName("Іван Майстренко")
                 .phone("+380501112233")
-                .trade(Trade.ELECTRICAL)
+                .trades(Set.of(Trade.ELECTRICAL))
                 .passwordHash("x")
                 .build();
         Client client = Client.builder()

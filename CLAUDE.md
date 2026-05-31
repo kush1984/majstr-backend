@@ -136,10 +136,12 @@ Status mapping:
 
 `hibernate.ddl-auto: validate`. Never put schema changes in entity
 annotations expecting Hibernate to apply them. Add a new
-`V<N>__<desc>.sql` under `src/main/resources/db/migration/`. The
-`users.trade` column has a `CHECK` constraint enumerating the allowed
-values — if you add a `Trade` enum constant, write a migration to extend
-the CHECK.
+`V<N>__<desc>.sql` under `src/main/resources/db/migration/`. Trades live
+in the `user_trades` collection table (one row per `(user_id, trade)`,
+mapped via `User.trades` `@ElementCollection`); it has a `CHECK`
+constraint enumerating the allowed values — if you add a `Trade` enum
+constant, write a migration to extend that CHECK. (The old single-valued
+`users.trade` column was dropped in V16.)
 
 ### Entities vs. records
 

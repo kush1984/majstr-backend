@@ -29,7 +29,9 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.util.LinkedHashSet;
 import java.util.Optional;
+import java.util.Set;
 
 /**
  * Seeds a small set of ready-to-use accounts on application startup —
@@ -62,9 +64,10 @@ public class DevDataSeeder implements ApplicationRunner {
     @Override
     @Transactional
     public void run(ApplicationArguments args) {
-        Optional<User> test  = seedUser("test@majstr.dev",  "Test1234!",  "Тест Користувач",      Trade.ELECTRICAL, Plan.FREE, Role.USER);
-        seedUser("pro@majstr.dev",   "Pro1234!",   "Pro Підрядник",        Trade.PLUMBING,   Plan.PRO,  Role.USER);
-        seedUser("admin@majstr.dev", "Admin1234!", "Адміністратор Majstr", Trade.GENERAL,    Plan.TEAM, Role.ADMIN);
+        Optional<User> test  = seedUser("test@majstr.dev",  "Test1234!",  "Тест Користувач",      Set.of(Trade.ELECTRICAL),                Plan.FREE, Role.USER);
+        seedUser("pro@majstr.dev",   "Pro1234!",   "Pro Підрядник",        Set.of(Trade.PLUMBING),                  Plan.PRO,  Role.USER);
+        // Admin is a generalist with two trades — exercises the merged starter catalog.
+        seedUser("admin@majstr.dev", "Admin1234!", "Адміністратор Majstr", Set.of(Trade.GENERAL, Trade.ELECTRICAL), Plan.TEAM, Role.ADMIN);
 
         // Demo content only for a freshly created basic user — restart of
         // an existing DB will not duplicate it. Delete the test user (or
@@ -72,7 +75,7 @@ public class DevDataSeeder implements ApplicationRunner {
         test.ifPresent(this::seedDemoContentFor);
     }
 
-    private Optional<User> seedUser(String email, String password, String fullName, Trade trade, Plan plan, Role role) {
+    private Optional<User> seedUser(String email, String password, String fullName, Set<Trade> trades, Plan plan, Role role) {
         if (userRepository.existsByEmailIgnoreCase(email)) {
             return Optional.empty();
         }
@@ -80,7 +83,7 @@ public class DevDataSeeder implements ApplicationRunner {
                 .email(email)
                 .passwordHash(passwordEncoder.encode(password))
                 .fullName(fullName)
-                .trade(trade)
+                .trades(new LinkedHashSet<>(trades))
                 .phone(DEV_PHONE)
                 .companyName(fullName + " ФОП")
                 .plan(plan)
@@ -88,8 +91,8 @@ public class DevDataSeeder implements ApplicationRunner {
                 .build();
         user = userRepository.save(user);
         int templateCount = catalogTemplateService.seedForUser(user);
-        log.info("Dev seed: created {} (plan={}, role={}, trade={}) with {} catalog items — password '{}'",
-                email, plan, role, trade, templateCount, password);
+        log.info("Dev seed: created {} (plan={}, role={}, trades={}) with {} catalog items — password '{}'",
+                email, plan, role, trades, templateCount, password);
         return Optional.of(user);
     }
 

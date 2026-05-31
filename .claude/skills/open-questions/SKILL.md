@@ -1,6 +1,6 @@
 ---
 name: open-questions
-description: Use at the start of every new iteration, step, or coding chunk before writing any production code. Read docs/open-questions.md, summarize every OPEN and IN_PROGRESS item, and classify each one against the work about to begin (in scope / adjacent / out of scope). Also use when the user signals a new chunk ("next step", "let's start", "продовжуємо", "наступна ітерація", "новий крок", a fresh feature prompt). Skip when the work is a tiny bug fix that touches one file.
+description: Use at the start of every new iteration, step, or coding chunk before writing any production code. Read docs/open-questions.md, summarize every OPEN and IN_PROGRESS item, and classify each one against the work about to begin (in scope / adjacent / out of scope). Also use when the user signals a new chunk ("next step", "let's start", "продовжуємо", "наступна ітерація", "новий крок", a fresh feature prompt). Also serves as the reminder that every step keeps its own docs/iteration-*.md updated. Skip when the work is a tiny bug fix that touches one file.
 ---
 
 # Open-questions review
@@ -55,3 +55,18 @@ the open-questions log so nothing important is silently skipped.
 - **Be concise.** This routine is a lightweight checklist, not a
   re-planning session. If the answer for every item is "out of scope",
   the whole pass should fit in a short message.
+
+## Per-step docs (do not skip)
+
+Every iteration/step keeps its own file under `docs/iteration-<N>.md` (or
+`docs/iteration-fix-a.md` for lettered backend fixes), structured like the
+existing ones: status, commit, migrations, goal, the work broken down by
+chunk, a "not changed / confirmed" note, and gotchas. Keeping it current is
+part of finishing the step, not an afterthought.
+
+- **At the start** (this review): note which iteration doc the upcoming work
+  lands in; create the file early if useful.
+- **When the step's code is done**: update that iteration doc to match what
+  actually shipped, tick the matching boxes in `SPEC.md` (section F), and flip
+  any open-questions items the work resolved. A step isn't done until its doc
+  reflects reality.

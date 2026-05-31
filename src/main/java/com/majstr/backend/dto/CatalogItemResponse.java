@@ -11,6 +11,7 @@ import java.util.UUID;
 public record CatalogItemResponse(
         UUID id,
         String name,
+        String category,
         ItemType type,
         Unit unit,
         BigDecimal defaultPrice,
@@ -20,6 +21,7 @@ public record CatalogItemResponse(
         return new CatalogItemResponse(
                 item.getId(),
                 item.getName(),
+                item.getCategory(),
                 item.getType(),
                 item.getUnit(),
                 item.getDefaultPrice(),

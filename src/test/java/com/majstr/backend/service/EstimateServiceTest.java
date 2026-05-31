@@ -112,13 +112,15 @@ class EstimateServiceTest {
         });
 
         EstimateItemRequest req = new EstimateItemRequest(
-                ItemType.WORK, "Plastering", Unit.M2,
+                ItemType.WORK, "Plastering", "  Walls  ", Unit.M2,
                 new BigDecimal("25.000"), new BigDecimal("180.00"), 1);
 
         var resp = estimateService.addItem(estimateId, req, ownerId);
 
         assertThat(resp.lineTotal()).isEqualByComparingTo("4500.00");
         assertThat(resp.type()).isEqualTo(ItemType.WORK);
+        // Category is normalized (trimmed) on write.
+        assertThat(resp.category()).isEqualTo("Walls");
     }
 
     @Test
@@ -127,7 +129,7 @@ class EstimateServiceTest {
         given(estimateRepository.findById(estimateId)).willReturn(Optional.of(estimate));
 
         EstimateItemRequest req = new EstimateItemRequest(
-                ItemType.WORK, "X", Unit.PIECE,
+                ItemType.WORK, "X", null, Unit.PIECE,
                 new BigDecimal("1.000"), new BigDecimal("1.00"), 0);
 
         assertThatThrownBy(() -> estimateService.addItem(estimateId, req, ownerId))

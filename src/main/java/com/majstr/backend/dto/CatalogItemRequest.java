@@ -12,6 +12,7 @@ import java.math.BigDecimal;
 
 public record CatalogItemRequest(
         @NotBlank @Size(max = 255) String name,
+        @Size(max = 100) String category,
         @NotNull ItemType type,
         @NotNull Unit unit,
         @NotNull @DecimalMin(value = "0.01", message = "defaultPrice must be greater than 0")

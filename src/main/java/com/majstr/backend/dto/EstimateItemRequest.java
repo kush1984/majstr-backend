@@ -14,6 +14,7 @@ import java.math.BigDecimal;
 public record EstimateItemRequest(
         @NotNull ItemType type,
         @NotBlank @Size(max = 255) String name,
+        @Size(max = 100) String category,
         @NotNull Unit unit,
         @NotNull @DecimalMin(value = "0.001", message = "quantity must be greater than 0")
         @Digits(integer = 12, fraction = 3) BigDecimal quantity,
