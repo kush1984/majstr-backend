@@ -56,6 +56,10 @@ public class Project {
     @Column(name = "status", nullable = false, length = 50)
     private ProjectStatus status;
 
+    /** Set when status enters COMPLETED, cleared when it leaves. Drives the "completed this month" metric. */
+    @Column(name = "completed_at")
+    private Instant completedAt;
+
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
 
