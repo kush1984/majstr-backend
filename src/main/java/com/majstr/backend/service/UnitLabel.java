@@ -12,12 +12,13 @@ import java.util.Map;
 public final class UnitLabel {
 
     private static final Map<Unit, String> UA = Map.of(
-            Unit.M2,    "м²",
-            Unit.M,     "м",
-            Unit.PIECE, "шт",
-            Unit.KG,    "кг",
-            Unit.HOUR,  "год",
-            Unit.SET,   "компл"
+            Unit.M2,           "м²",
+            Unit.M,            "м",
+            Unit.LINEAR_METER, "м.п.",
+            Unit.PIECE,        "шт",
+            Unit.KG,           "кг",
+            Unit.HOUR,         "год",
+            Unit.SET,          "компл"
     );
 
     private UnitLabel() {}

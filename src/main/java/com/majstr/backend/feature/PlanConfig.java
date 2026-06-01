@@ -24,9 +24,17 @@ public final class PlanConfig {
     static {
         MATRIX = new EnumMap<>(Plan.class);
 
+        // FREE gets the full value-demonstrating workflow within its project
+        // cap — portal, online signing and photo reports — so a contractor can
+        // actually show a client the product. Only BRANDED_PDF (logo on the PDF)
+        // and AI_ASSISTANT stay paid; the sole FREE restriction is MAX_PROJECTS.
         MATRIX.put(Plan.FREE, new Definition(
                 Map.of(Limit.MAX_PROJECTS, 2),
-                EnumSet.noneOf(Feature.class)
+                EnumSet.of(
+                        Feature.CLIENT_PORTAL,
+                        Feature.ONLINE_SIGNATURE,
+                        Feature.PHOTO_REPORTS
+                )
         ));
 
         MATRIX.put(Plan.PRO, new Definition(

@@ -4,6 +4,7 @@ import com.majstr.backend.config.PortalProperties;
 import com.majstr.backend.dto.ShareLinkResponse;
 import com.majstr.backend.entity.Estimate;
 import com.majstr.backend.entity.EstimateShareLink;
+import com.majstr.backend.entity.EstimateStatus;
 import com.majstr.backend.exception.ResourceNotFoundException;
 import com.majstr.backend.feature.Feature;
 import com.majstr.backend.feature.FeatureGuard;
@@ -35,6 +36,12 @@ public class ShareLinkService {
     public ShareLinkResponse create(UUID estimateId, UUID ownerId) {
         Estimate estimate = estimateService.loadOwned(estimateId, ownerId);
         featureGuard.requireFeature(estimate.getProject().getOwner(), Feature.CLIENT_PORTAL);
+        // Sharing with a client means the estimate is no longer a draft. Flip
+        // DRAFT -> SENT so it counts towards "pending signature" and shows the
+        // right badge. Leave SIGNED / REJECTED untouched.
+        if (estimate.getStatus() == EstimateStatus.DRAFT) {
+            estimate.setStatus(EstimateStatus.SENT);
+        }
         EstimateShareLink link = EstimateShareLink.builder()
                 .estimate(estimate)
                 .token(generateToken())

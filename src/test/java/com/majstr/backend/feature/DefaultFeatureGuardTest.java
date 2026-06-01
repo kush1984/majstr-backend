@@ -15,14 +15,23 @@ class DefaultFeatureGuardTest {
     private final DefaultFeatureGuard guard = new DefaultFeatureGuard();
 
     @Test
-    void freeUserCannotUseClientPortal() {
+    void freeUserCanUsePortalSignatureAndPhotos() {
         User user = userOnPlan(Plan.FREE);
-        assertThatThrownBy(() -> guard.requireFeature(user, Feature.CLIENT_PORTAL))
+        assertThatCode(() -> guard.requireFeature(user, Feature.CLIENT_PORTAL))
+                .doesNotThrowAnyException();
+        assertThat(guard.isEnabled(user, Feature.ONLINE_SIGNATURE)).isTrue();
+        assertThat(guard.isEnabled(user, Feature.PHOTO_REPORTS)).isTrue();
+    }
+
+    @Test
+    void freeUserCannotUseBrandedPdf() {
+        User user = userOnPlan(Plan.FREE);
+        assertThat(guard.isEnabled(user, Feature.BRANDED_PDF)).isFalse();
+        assertThatThrownBy(() -> guard.requireFeature(user, Feature.BRANDED_PDF))
                 .isInstanceOf(FeatureNotAvailableException.class)
-                .hasMessageContaining("CLIENT_PORTAL")
+                .hasMessageContaining("BRANDED_PDF")
                 .hasMessageContaining("FREE")
                 .hasMessageContaining("PRO");
-        assertThat(guard.isEnabled(user, Feature.CLIENT_PORTAL)).isFalse();
     }
 
     @Test
@@ -43,6 +52,11 @@ class DefaultFeatureGuardTest {
     @Test
     void minimumPlanForBrandedPdfIsPro() {
         assertThat(PlanConfig.minimumPlanFor(Feature.BRANDED_PDF)).isEqualTo(Plan.PRO);
+    }
+
+    @Test
+    void minimumPlanForClientPortalIsFree() {
+        assertThat(PlanConfig.minimumPlanFor(Feature.CLIENT_PORTAL)).isEqualTo(Plan.FREE);
     }
 
     @Test
