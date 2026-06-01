@@ -1,8 +1,10 @@
 # Fix B — Dashboard metrics + project card summary
 
-- **Status:** ✅ Code complete — `./gradlew test` + app restart (V17) pending
-  a local run (Gradle wasn't reachable from the agent's sandbox)
-- **Commit:** _(uncommitted at time of writing)_
+- **Status:** ✅ Done — committed `30c3351`; V17 applied and verified
+  end-to-end against the running dev DB (19 assertions: dashboard metrics,
+  card totals, `completed_at` stamp/clear). Unit `./gradlew test` was not run
+  by the agent (Gradle wasn't reachable from its sandbox).
+- **Commit:** `30c3351`
 - **Migrations:** `V17__add_completed_at_to_projects`
 - **Goal:** give the PWA dashboard and project cards the counts/sums they
   need, all computed on the backend (BigDecimal, HALF_UP) with aggregate
@@ -83,7 +85,11 @@ identical to `EstimateService`, so the card matches the estimate screen.
   when absent, foreign project → 403.
 - `ProjectControllerTest` updated for the widened `ProjectResponse`.
 - Aggregate SQL correctness itself isn't unit-tested (needs Testcontainers —
-  tracked open question); verify against the dev DB after restart.
+  tracked open question); **verified live instead** — a 19-assertion HTTP e2e
+  against the running app confirmed the metrics, the card totals (e.g. a
+  1501.00 estimate computed by the DISTINCT ON + SUM(ROUND(...)) query), and
+  the `completed_at` stamp-on-enter / clear-on-leave behaviour. The run also
+  incidentally re-confirmed the FREE 2-project limit still fires (untouched).
 
 ## Known simplification
 

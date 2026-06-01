@@ -1,8 +1,11 @@
 # Fix A — Catalog categories + multi-valued trades
 
-- **Status:** ✅ Code complete — build/tests + migration data-check pending a
-  local `./gradlew test` and app restart (see *Verification* below)
-- **Commit:** _(uncommitted at time of writing)_
+- **Status:** ✅ Done — committed `d0f7046`; migrations applied and verified
+  against the dev DB (every existing user's trade preserved in `user_trades`,
+  `users.trade` dropped) and end-to-end (two-trade registration → merged
+  36-item catalog across six categories). Unit `./gradlew test` was not run by
+  the agent (Gradle wasn't reachable from its sandbox).
+- **Commit:** `d0f7046`
 - **Migrations:** `V14__add_category_to_catalog_and_estimate_items`,
   `V15__add_category_to_catalog_templates_and_reseed`,
   `V16__create_user_trades_and_migrate`

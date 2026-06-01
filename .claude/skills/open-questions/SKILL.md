@@ -67,6 +67,19 @@ part of finishing the step, not an afterthought.
 - **At the start** (this review): note which iteration doc the upcoming work
   lands in; create the file early if useful.
 - **When the step's code is done**: update that iteration doc to match what
-  actually shipped, tick the matching boxes in `SPEC.md` (section F), and flip
-  any open-questions items the work resolved. A step isn't done until its doc
-  reflects reality.
+  actually shipped, tick the matching boxes in `C:\Work\SPEC.md` (section F),
+  and flip any open-questions items the work resolved. A step isn't done until
+  its doc reflects reality.
+
+## Shared project docs in C:\Work (read every iteration)
+
+Two cross-repo docs live one directory up in `C:\Work` — shared by both
+`majstr-backend` and `majstr-pwa`, not inside this repo:
+
+- **`C:\Work\SPEC.md`** — product spec + roadmap (steps, chunks, statuses).
+- **`C:\Work\PROMPTS.md`** — running log of the task prompts / definitions.
+
+Read both at the start of an iteration for context, and update the relevant
+parts when work lands so they reflect reality (tick SPEC chunks, mark
+statuses, note a prompt as done). Surgical edits only — the user owns these
+files' overall shape; don't restructure or rewrite them.
