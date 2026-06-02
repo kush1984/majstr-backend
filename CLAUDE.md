@@ -79,6 +79,20 @@ client **only once** on issue. The DB stores only its SHA-256 hash
 token is re-hashed and looked up by hash. `revoked = true` is set on the
 old row before issuing the new one. Don't change this to store raw tokens.
 
+### Email verification is soft
+
+`register` issues an `EmailVerificationToken` (24h) and emails it via
+`EmailService` → `ResendEmailService` (Resend HTTP API). The send is
+`@Async` and **fail-soft** — a mail error is logged, never breaks
+registration. Existing users were set verified in V19, so the gate can't
+lock anyone out retroactively. Login and general use are **not** gated;
+only `POST /api/estimates/{id}/share` requires `emailVerified` (else 403
+`code: EMAIL_NOT_VERIFIED`). `POST /api/auth/verify-email` is public;
+`POST /api/auth/resend-verification` is authenticated and rate-limited
+(1/60s/user). Resend env vars: `RESEND_API_KEY` (blank in dev → email is
+logged & skipped), `EMAIL_FROM`, `APP_URL` (verify-link base). Production
+needs a Resend-verified sending domain in `EMAIL_FROM`.
+
 ### Login rate limit relies on a custom request wrapper
 
 `LoginRateLimitFilter` needs to read the JSON body to extract `email` for
@@ -113,12 +127,14 @@ All errors flow through `GlobalExceptionHandler` and use
 [ErrorResponse](src/main/java/com/majstr/backend/dto/ErrorResponse.java):
 
 ```
-{ timestamp, status, error, message, path, retryAfterSeconds? }
+{ timestamp, status, error, message, path, retryAfterSeconds?, code? }
 ```
 
-`retryAfterSeconds` is set only by `ErrorResponse.rateLimited(...)` from
-the rate-limit filter. Null fields are stripped globally via
-`spring.jackson.default-property-inclusion: non_null`.
+`retryAfterSeconds` is set only by `ErrorResponse.rateLimited(...)` (the
+login filter and the resend-verification 429). `code` is an optional
+machine-readable code (currently only `EMAIL_NOT_VERIFIED` on the share
+gate) so clients can branch without parsing the message. Null fields are
+stripped globally via `spring.jackson.default-property-inclusion: non_null`.
 
 Status mapping:
 - 400 — `MethodArgumentNotValidException`, `ConstraintViolationException`,

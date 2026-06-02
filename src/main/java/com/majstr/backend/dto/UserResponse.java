@@ -20,6 +20,7 @@ public record UserResponse(
         String logoUrl,
         Plan plan,
         Role role,
+        boolean emailVerified,
         Instant createdAt
 ) {
     public static UserResponse from(User user) {
@@ -33,6 +34,7 @@ public record UserResponse(
                 logoUrlFromKey(user.getLogoUrl()),
                 user.getPlan(),
                 user.getRole(),
+                user.isEmailVerified(),
                 user.getCreatedAt()
         );
     }

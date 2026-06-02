@@ -8,7 +8,8 @@ import org.springframework.validation.annotation.Validated;
 @ConfigurationProperties(prefix = "app.rate-limit")
 public record RateLimitProperties(
         Login login,
-        Portal portal
+        Portal portal,
+        Verification verification
 ) {
     public record Login(
             @Positive int maxAttempts,
@@ -18,5 +19,10 @@ public record RateLimitProperties(
     public record Portal(
             @Positive int maxAttempts,
             @Positive int windowMinutes
+    ) {}
+
+    /** Cooldown between verification-email resends, per user. */
+    public record Verification(
+            @Positive int cooldownSeconds
     ) {}
 }

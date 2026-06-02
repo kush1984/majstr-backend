@@ -87,6 +87,11 @@ public class User {
     @Column(name = "last_active_at")
     private Instant lastActiveAt;
 
+    /** Soft email verification — new users start false; only "send to client" actions require it. */
+    @Column(name = "email_verified", nullable = false)
+    @Builder.Default
+    private boolean emailVerified = false;
+
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
 

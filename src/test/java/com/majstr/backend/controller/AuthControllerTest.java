@@ -8,6 +8,8 @@ import com.majstr.backend.entity.Trade;
 import com.majstr.backend.exception.GlobalExceptionHandler;
 import com.majstr.backend.repository.UserRepository;
 import com.majstr.backend.service.AuthService;
+import com.majstr.backend.service.EmailVerificationService;
+import com.majstr.backend.service.VerificationEmailRateLimiter;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -45,6 +47,12 @@ class AuthControllerTest {
 
     @Mock
     private UserRepository userRepository;
+
+    @Mock
+    private EmailVerificationService emailVerificationService;
+
+    @Mock
+    private VerificationEmailRateLimiter verificationEmailRateLimiter;
 
     @InjectMocks
     private AuthController controller;
@@ -135,6 +143,7 @@ class AuthControllerTest {
                 null,
                 com.majstr.backend.entity.Plan.FREE,
                 com.majstr.backend.entity.Role.USER,
+                true,
                 Instant.now());
         return AuthResponse.of("access-jwt", "refresh-token", 900L, user);
     }

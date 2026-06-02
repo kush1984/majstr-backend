@@ -52,11 +52,19 @@ app:
     portal:
       max-attempts: 30
       window-minutes: 1
+    verification:
+      cooldown-seconds: 60
   storage:
     local:
       directory: ${STORAGE_DIR:./data/uploads}
   portal:
     public-base-url: ${PORTAL_BASE_URL:http://localhost:8080}
+  email:
+    # Resend API key — env only, blank in local dev (then email is logged & skipped).
+    resend-api-key: ${RESEND_API_KEY:}
+    from-address: ${EMAIL_FROM:Majstr <onboarding@resend.dev>}
+    # Base URL of the PWA — the verify link points here: {app-url}/verify-email?token=...
+    app-url: ${APP_URL:http://localhost:5173}
 
 springdoc:
   swagger-ui:

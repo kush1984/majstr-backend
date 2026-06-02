@@ -5,9 +5,13 @@ import com.majstr.backend.dto.LoginRequest;
 import com.majstr.backend.dto.RefreshTokenRequest;
 import com.majstr.backend.dto.RegisterRequest;
 import com.majstr.backend.dto.UserResponse;
+import com.majstr.backend.dto.VerifyEmailRequest;
+import com.majstr.backend.exception.TooManyRequestsException;
 import com.majstr.backend.repository.UserRepository;
 import com.majstr.backend.security.UserPrincipal;
 import com.majstr.backend.service.AuthService;
+import com.majstr.backend.service.EmailVerificationService;
+import com.majstr.backend.service.VerificationEmailRateLimiter;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -32,6 +36,8 @@ public class AuthController {
 
     private final AuthService authService;
     private final UserRepository userRepository;
+    private final EmailVerificationService emailVerificationService;
+    private final VerificationEmailRateLimiter verificationEmailRateLimiter;
 
     @Operation(summary = "Register a new contractor")
     @PostMapping("/register")
@@ -50,6 +56,29 @@ public class AuthController {
     @PostMapping("/refresh")
     public ResponseEntity<AuthResponse> refresh(@Valid @RequestBody RefreshTokenRequest request) {
         return ResponseEntity.ok(authService.refresh(request.refreshToken()));
+    }
+
+    @Operation(summary = "Verify email using the token from the verification link (public)")
+    @PostMapping("/verify-email")
+    public ResponseEntity<Void> verifyEmail(@Valid @RequestBody VerifyEmailRequest request) {
+        emailVerificationService.verify(request.token());
+        return ResponseEntity.ok().build();
+    }
+
+    @Operation(summary = "Resend the verification email to the current user (rate-limited)",
+            security = @SecurityRequirement(name = "bearer-jwt"))
+    @PostMapping("/resend-verification")
+    public ResponseEntity<Void> resendVerification(@AuthenticationPrincipal UserPrincipal principal) {
+        if (principal == null) {
+            throw new UsernameNotFoundException("Not authenticated");
+        }
+        VerificationEmailRateLimiter.ConsumeResult probe = verificationEmailRateLimiter.tryConsume(principal.id());
+        if (!probe.allowed()) {
+            throw new TooManyRequestsException(
+                    "Зачекайте перед повторним надсиланням листа.", probe.retryAfterSeconds());
+        }
+        emailVerificationService.resendFor(principal.id());
+        return ResponseEntity.ok().build();
     }
 
     @Operation(summary = "Get the currently authenticated contractor", security = @SecurityRequirement(name = "bearer-jwt"))

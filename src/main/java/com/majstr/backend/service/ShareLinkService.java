@@ -5,6 +5,8 @@ import com.majstr.backend.dto.ShareLinkResponse;
 import com.majstr.backend.entity.Estimate;
 import com.majstr.backend.entity.EstimateShareLink;
 import com.majstr.backend.entity.EstimateStatus;
+import com.majstr.backend.entity.User;
+import com.majstr.backend.exception.EmailNotVerifiedException;
 import com.majstr.backend.exception.ResourceNotFoundException;
 import com.majstr.backend.feature.Feature;
 import com.majstr.backend.feature.FeatureGuard;
@@ -35,7 +37,12 @@ public class ShareLinkService {
     @Transactional
     public ShareLinkResponse create(UUID estimateId, UUID ownerId) {
         Estimate estimate = estimateService.loadOwned(estimateId, ownerId);
-        featureGuard.requireFeature(estimate.getProject().getOwner(), Feature.CLIENT_PORTAL);
+        User owner = estimate.getProject().getOwner();
+        featureGuard.requireFeature(owner, Feature.CLIENT_PORTAL);
+        // Soft email gate: sending to a client requires a verified email.
+        if (!owner.isEmailVerified()) {
+            throw new EmailNotVerifiedException("Підтвердіть email щоб надсилати кошториси клієнтам");
+        }
         // Sharing with a client means the estimate is no longer a draft. Flip
         // DRAFT -> SENT so it counts towards "pending signature" and shows the
         // right badge. Leave SIGNED / REJECTED untouched.

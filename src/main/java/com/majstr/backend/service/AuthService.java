@@ -25,6 +25,7 @@ public class AuthService {
     private final JwtService jwtService;
     private final RefreshTokenService refreshTokenService;
     private final CatalogTemplateService catalogTemplateService;
+    private final EmailVerificationService emailVerificationService;
 
     @Transactional
     public AuthResponse register(RegisterRequest req) {
@@ -44,6 +45,9 @@ public class AuthService {
         // Copy starter catalog templates for every chosen trade (merged,
         // de-duplicated) so they never see an empty library on first login.
         catalogTemplateService.seedForUser(user);
+        // Issue a verification token and email it (async, fail-soft — a mail
+        // problem must not break registration; the user can resend later).
+        emailVerificationService.issueAndSend(user);
         return issueTokens(user);
     }
 

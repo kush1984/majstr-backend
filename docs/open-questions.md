@@ -34,7 +34,7 @@ one-line summary — keep the item in the file as a record.
 - **Status:** OPEN
 - **Since:** step 1
 - **Context:** `RefreshTokenRepository.deleteExpired` exists but nothing calls it. Table grows monotonically with revoked + expired rows.
-- **Notes / options:** `@Scheduled` job, daily at quiet hour. Or piggy-back on user login.
+- **Notes / options:** `@Scheduled` job, daily at quiet hour. Or piggy-back on user login. (Fix D added `email_verification_tokens`, which accumulates the same way — sweep both in one job.)
 
 ### File storage migration to S3/R2
 - **Status:** OPEN
@@ -60,6 +60,12 @@ one-line summary — keep the item in the file as a record.
 - **Context:** `DashboardService` (and the admin `MetricsService`) compute "this month"/"today" as a calendar boundary in UTC. For a Kyiv-based contractor (UTC+2/+3) the dashboard's "completed this month" can differ from their local month for the first/last couple of hours of a month.
 - **Notes / options:** Pick a single app timezone (e.g. `Europe/Kyiv`) for all reporting boundaries, or make it per-user once users span timezones. Low impact while single-region; revisit before launch.
 
+### Production email delivery (Resend key + verified domain)
+- **Status:** OPEN
+- **Since:** Fix D (2026-06-02)
+- **Context:** Email verification ships, but real sending needs `RESEND_API_KEY` (env) and — to email anyone other than the Resend account owner — a Resend-verified sending domain in `EMAIL_FROM`. In dev the key is blank, so emails are logged & skipped: the feature works end-to-end but no mail actually goes out.
+- **Notes / options:** Sign up at Resend, add `RESEND_API_KEY`; for arbitrary recipients verify a domain (DNS records) and set `EMAIL_FROM=Majstr <noreply@domain>`. Until then only the account owner's own address receives mail (Resend sandbox via `onboarding@resend.dev`). Revisit before public launch and when wiring password reset + portal notifications (same transport).
+
 ---
 
 ## Security
@@ -80,12 +86,14 @@ one-line summary — keep the item in the file as a record.
 - **Status:** OPEN
 - **Since:** step 1
 - **Context:** No reset endpoint — lock yourself out, lose the account.
-- **Notes / options:** Needs an email service first (see below).
+- **Notes / options:** Needs an email service first (see below). Email transport now exists (`EmailService` / Resend, Fix D) — unblocked; just add the reset endpoint + token + email template.
 
 ### Email verification on register
-- **Status:** OPEN
+- **Status:** RESOLVED
 - **Since:** step 1
 - **Context:** Anyone can register with any email; no proof of ownership. Fine for closed beta, blocks real billing later (people use throwaway emails).
+- **Notes / options:** Soft model (register works immediately; banner + only share-link creation gated behind a verified email) via Resend.
+- **Resolution:** Fix D — `User.emailVerified` + `EmailVerificationToken`, Resend `EmailService`, verify/resend endpoints, soft 403 `EMAIL_NOT_VERIFIED` gate on share; existing users migrated verified (V19). Verified live end-to-end (12 checks). PWA banner/page is a separate frontend task.
 
 ### Multi-factor auth / OAuth providers
 - **Status:** DEFERRED
@@ -124,7 +132,7 @@ one-line summary — keep the item in the file as a record.
 - **Status:** OPEN
 - **Since:** step 3
 - **Context:** Client signs an estimate or asks a question via portal — contractor learns about it only by refreshing the API.
-- **Notes / options:** Need an email transport (Postmark, Resend, SES). Once it exists, wire it into `PublicEstimateService.sign` and `askQuestion`.
+- **Notes / options:** Need an email transport (Postmark, Resend, SES). Once it exists, wire it into `PublicEstimateService.sign` and `askQuestion`. Transport now exists (`EmailService` / Resend, Fix D) — unblocked; just add the notification calls + templates.
 
 ---
 
