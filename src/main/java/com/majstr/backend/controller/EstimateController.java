@@ -9,7 +9,9 @@ import com.majstr.backend.dto.EstimateSummary;
 import com.majstr.backend.dto.EstimateUpdateRequest;
 import com.lowagie.text.DocumentException;
 import com.majstr.backend.dto.ShareLinkResponse;
+import com.majstr.backend.exception.TooManyRequestsException;
 import com.majstr.backend.security.UserPrincipal;
+import com.majstr.backend.service.EstimateEmailRateLimiter;
 import com.majstr.backend.service.EstimateService;
 import com.majstr.backend.service.ShareLinkService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -43,6 +45,7 @@ public class EstimateController {
 
     private final EstimateService estimateService;
     private final ShareLinkService shareLinkService;
+    private final EstimateEmailRateLimiter estimateEmailRateLimiter;
 
     // ---- estimates under a project ----------------------------------------
 
@@ -108,6 +111,18 @@ public class EstimateController {
                                                              @AuthenticationPrincipal UserPrincipal principal) {
         return ResponseEntity.status(HttpStatus.CREATED)
                 .body(shareLinkService.create(id, principal.id()));
+    }
+
+    @Operation(summary = "Email the share link to the estimate's client (creates a link if none yet; rate-limited)")
+    @PostMapping("/api/estimates/{id}/share/send-email")
+    public ResponseEntity<ShareLinkResponse> sendShareEmail(@PathVariable UUID id,
+                                                            @AuthenticationPrincipal UserPrincipal principal) {
+        EstimateEmailRateLimiter.ConsumeResult probe = estimateEmailRateLimiter.tryConsume(principal.id());
+        if (!probe.allowed()) {
+            throw new TooManyRequestsException(
+                    "Забагато листів за годину. Спробуйте трохи пізніше.", probe.retryAfterSeconds());
+        }
+        return ResponseEntity.ok(shareLinkService.sendByEmail(id, principal.id()));
     }
 
     @Operation(summary = "Revoke a share link so the public URL stops working")

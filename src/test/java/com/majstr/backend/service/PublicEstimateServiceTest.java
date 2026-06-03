@@ -121,8 +121,24 @@ class PublicEstimateServiceTest {
         assertThat(estimate.getSignerName()).isEqualTo("Олена Іваненко");
         assertThat(estimate.getSignerPhone()).isEqualTo("+380671234567");
         assertThat(estimate.getSignerIp()).isEqualTo("203.0.113.42");
+        // Signing activates the project so it counts in "active projects".
+        assertThat(estimate.getProject().getStatus()).isEqualTo(ProjectStatus.IN_PROGRESS);
         assertThat(view.signature()).isNotNull();
         assertThat(view.signature().signerName()).isEqualTo("Олена Іваненко");
+    }
+
+    @Test
+    void sign_doesNotOverrideAlreadyCompletedProject() {
+        Estimate estimate = sampleEstimate();
+        estimate.getProject().setStatus(ProjectStatus.COMPLETED);
+        given(shareLinkRepository.findByToken(token)).willReturn(Optional.of(usableLink(estimate)));
+        given(itemRepository.findByEstimateIdOrderBySortOrderAscIdAsc(estimate.getId()))
+                .willReturn(List.of());
+
+        publicService.sign(token, new SignRequest("Олена", "+380671234567"), "203.0.113.42");
+
+        assertThat(estimate.getStatus()).isEqualTo(EstimateStatus.SIGNED);
+        assertThat(estimate.getProject().getStatus()).isEqualTo(ProjectStatus.COMPLETED);
     }
 
     @Test

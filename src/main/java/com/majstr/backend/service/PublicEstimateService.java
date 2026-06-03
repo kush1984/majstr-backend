@@ -14,6 +14,7 @@ import com.majstr.backend.entity.EstimateShareLink;
 import com.majstr.backend.entity.EstimateStatus;
 import com.majstr.backend.entity.ItemType;
 import com.majstr.backend.entity.Project;
+import com.majstr.backend.entity.ProjectStatus;
 import com.majstr.backend.entity.User;
 import com.majstr.backend.exception.ResourceNotFoundException;
 import com.majstr.backend.feature.Feature;
@@ -66,6 +67,13 @@ public class PublicEstimateService {
         estimate.setSignerName(req.clientName().trim());
         estimate.setSignerPhone(req.clientPhone().trim());
         estimate.setSignerIp(clientIp);
+        // A signed estimate means work begins — activate the project so it
+        // counts in the "active projects" metric. Don't override a project
+        // that's already in progress or completed.
+        Project project = estimate.getProject();
+        if (project.getStatus() != ProjectStatus.IN_PROGRESS && project.getStatus() != ProjectStatus.COMPLETED) {
+            project.setStatus(ProjectStatus.IN_PROGRESS);
+        }
         List<EstimateItem> items = itemRepository.findByEstimateIdOrderBySortOrderAscIdAsc(estimate.getId());
         return buildView(estimate, items);
     }

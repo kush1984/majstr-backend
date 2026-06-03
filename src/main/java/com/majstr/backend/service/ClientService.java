@@ -30,6 +30,7 @@ public class ClientService {
                 .fullName(req.fullName().trim())
                 .phone(req.phone().trim())
                 .address(normalize(req.address()))
+                .email(normalize(req.email()))
                 .build();
         return ClientResponse.from(clientRepository.save(client));
     }
@@ -52,6 +53,7 @@ public class ClientService {
         client.setFullName(req.fullName().trim());
         client.setPhone(req.phone().trim());
         client.setAddress(normalize(req.address()));
+        client.setEmail(normalize(req.email()));
         return ClientResponse.from(client);
     }
 

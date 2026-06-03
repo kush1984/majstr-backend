@@ -131,10 +131,12 @@ All errors flow through `GlobalExceptionHandler` and use
 ```
 
 `retryAfterSeconds` is set only by `ErrorResponse.rateLimited(...)` (the
-login filter and the resend-verification 429). `code` is an optional
-machine-readable code (currently only `EMAIL_NOT_VERIFIED` on the share
-gate) so clients can branch without parsing the message. Null fields are
-stripped globally via `spring.jackson.default-property-inclusion: non_null`.
+login filter, the resend-verification 429 and the estimate-email 429).
+`code` is an optional machine-readable code (`EMAIL_NOT_VERIFIED` on the
+share gate; `CLIENT_EMAIL_MISSING` when emailing an estimate to a client
+who has no address) so clients can branch without parsing the message.
+Null fields are stripped globally via
+`spring.jackson.default-property-inclusion: non_null`.
 
 Status mapping:
 - 400 — `MethodArgumentNotValidException`, `ConstraintViolationException`,

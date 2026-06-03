@@ -105,6 +105,13 @@ public class GlobalExceptionHandler {
         return build(HttpStatus.BAD_REQUEST, ex.getMessage(), req);
     }
 
+    @ExceptionHandler(ClientEmailMissingException.class)
+    public ResponseEntity<ErrorResponse> handleClientEmailMissing(ClientEmailMissingException ex, HttpServletRequest req) {
+        ErrorResponse body = ErrorResponse.coded(HttpStatus.BAD_REQUEST.value(),
+                HttpStatus.BAD_REQUEST.getReasonPhrase(), ex.getMessage(), req.getRequestURI(), "CLIENT_EMAIL_MISSING");
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(body);
+    }
+
     @ExceptionHandler(TooManyRequestsException.class)
     public ResponseEntity<ErrorResponse> handleTooManyRequests(TooManyRequestsException ex, HttpServletRequest req) {
         ErrorResponse body = ErrorResponse.rateLimited(ex.getMessage(), req.getRequestURI(), ex.getRetryAfterSeconds());

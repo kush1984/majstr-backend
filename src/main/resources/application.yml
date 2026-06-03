@@ -54,6 +54,8 @@ app:
       window-minutes: 1
     verification:
       cooldown-seconds: 60
+    estimate-email:
+      max-per-hour: 20
   storage:
     local:
       directory: ${STORAGE_DIR:./data/uploads}

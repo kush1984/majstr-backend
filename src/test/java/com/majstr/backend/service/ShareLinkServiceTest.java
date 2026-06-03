@@ -1,12 +1,15 @@
 package com.majstr.backend.service;
 
 import com.majstr.backend.config.PortalProperties;
+import com.majstr.backend.email.EmailService;
+import com.majstr.backend.entity.Client;
 import com.majstr.backend.entity.Estimate;
 import com.majstr.backend.entity.EstimateShareLink;
 import com.majstr.backend.entity.EstimateStatus;
 import com.majstr.backend.entity.Plan;
 import com.majstr.backend.entity.Project;
 import com.majstr.backend.entity.User;
+import com.majstr.backend.exception.ClientEmailMissingException;
 import com.majstr.backend.exception.EmailNotVerifiedException;
 import com.majstr.backend.feature.FeatureGuard;
 import com.majstr.backend.repository.EstimateShareLinkRepository;
@@ -16,12 +19,17 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import java.util.Optional;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 
 @ExtendWith(MockitoExtension.class)
 class ShareLinkServiceTest {
@@ -30,6 +38,7 @@ class ShareLinkServiceTest {
     @Mock EstimateService estimateService;
     @Mock FeatureGuard featureGuard;
     @Mock PortalProperties portalProperties;
+    @Mock EmailService emailService;
     @InjectMocks ShareLinkService shareLinkService;
 
     private final UUID estimateId = UUID.randomUUID();
@@ -40,6 +49,16 @@ class ShareLinkServiceTest {
         Project project = Project.builder().id(UUID.randomUUID()).owner(owner).build();
         return Estimate.builder().id(estimateId).project(project).status(status).build();
     }
+
+    private Estimate estimateWithClient(String clientEmail) {
+        User owner = User.builder().id(ownerId).plan(Plan.FREE).emailVerified(true)
+                .companyName("ФОП Іван").fullName("Іван").build();
+        Client client = Client.builder().id(UUID.randomUUID()).fullName("Олена").email(clientEmail).build();
+        Project project = Project.builder().id(UUID.randomUUID()).owner(owner).client(client).name("Квартира").build();
+        return Estimate.builder().id(estimateId).project(project).status(EstimateStatus.DRAFT).build();
+    }
+
+    // ---- create -----------------------------------------------------------
 
     @Test
     void create_flipsDraftToSent() {
@@ -72,7 +91,35 @@ class ShareLinkServiceTest {
 
         assertThatThrownBy(() -> shareLinkService.create(estimateId, ownerId))
                 .isInstanceOf(EmailNotVerifiedException.class);
-        // Status must not change and no link is created when blocked.
         assertThat(estimate.getStatus()).isEqualTo(EstimateStatus.DRAFT);
+    }
+
+    // ---- sendByEmail ------------------------------------------------------
+
+    @Test
+    void sendByEmail_sendsLinkToClientAndFlipsToSent() {
+        Estimate estimate = estimateWithClient("olena@example.com");
+        given(estimateService.loadOwned(estimateId, ownerId)).willReturn(estimate);
+        given(repository.findFirstByEstimateIdAndRevokedFalseOrderByCreatedAtDesc(estimateId))
+                .willReturn(Optional.empty());
+        given(repository.save(any(EstimateShareLink.class))).willAnswer(inv -> inv.getArgument(0));
+        given(portalProperties.publicBaseUrl()).willReturn("https://app.test");
+
+        shareLinkService.sendByEmail(estimateId, ownerId);
+
+        assertThat(estimate.getStatus()).isEqualTo(EstimateStatus.SENT);
+        verify(emailService).sendEstimateShareEmail(
+                eq("olena@example.com"), eq("Олена"), eq("ФОП Іван"), eq("Квартира"), anyString());
+    }
+
+    @Test
+    void sendByEmail_clientWithoutEmail_throwsAndSendsNothing() {
+        Estimate estimate = estimateWithClient(null);
+        given(estimateService.loadOwned(estimateId, ownerId)).willReturn(estimate);
+
+        assertThatThrownBy(() -> shareLinkService.sendByEmail(estimateId, ownerId))
+                .isInstanceOf(ClientEmailMissingException.class);
+        assertThat(estimate.getStatus()).isEqualTo(EstimateStatus.DRAFT);
+        verifyNoInteractions(emailService);
     }
 }

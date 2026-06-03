@@ -10,6 +10,7 @@ public record ClientResponse(
         String fullName,
         String phone,
         String address,
+        String email,
         Instant createdAt
 ) {
     public static ClientResponse from(Client client) {
@@ -18,6 +19,7 @@ public record ClientResponse(
                 client.getFullName(),
                 client.getPhone(),
                 client.getAddress(),
+                client.getEmail(),
                 client.getCreatedAt()
         );
     }

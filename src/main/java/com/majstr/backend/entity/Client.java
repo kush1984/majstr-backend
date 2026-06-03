@@ -45,6 +45,10 @@ public class Client {
     @Column(name = "address", length = 512)
     private String address;
 
+    /** Optional — used to email the estimate portal link to the client. */
+    @Column(name = "email", length = 255)
+    private String email;
+
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
 

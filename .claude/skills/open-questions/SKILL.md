@@ -83,3 +83,11 @@ Read both at the start of an iteration for context, and update the relevant
 parts when work lands so they reflect reality (tick SPEC chunks, mark
 statuses, note a prompt as done). Surgical edits only — the user owns these
 files' overall shape; don't restructure or rewrite them.
+
+## Subagents are pre-authorized
+
+The user has standing approval for spawning subagents (the Agent tool) for
+extra analysis or parallel/fan-out exploration when it genuinely helps — no
+need to ask each time. Use judgement: handle focused work inline with your own
+tools; reach for a subagent when a task sweeps many files/locations or benefits
+from an isolated context. Relay only what matters from the agent's result.

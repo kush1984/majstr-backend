@@ -9,7 +9,8 @@ import org.springframework.validation.annotation.Validated;
 public record RateLimitProperties(
         Login login,
         Portal portal,
-        Verification verification
+        Verification verification,
+        EstimateEmail estimateEmail
 ) {
     public record Login(
             @Positive int maxAttempts,
@@ -24,5 +25,10 @@ public record RateLimitProperties(
     /** Cooldown between verification-email resends, per user. */
     public record Verification(
             @Positive int cooldownSeconds
+    ) {}
+
+    /** Cap on estimate-share emails per account per hour. */
+    public record EstimateEmail(
+            @Positive int maxPerHour
     ) {}
 }

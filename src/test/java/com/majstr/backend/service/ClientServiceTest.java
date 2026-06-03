@@ -13,6 +13,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.util.UUID;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.BDDMockito.given;
@@ -40,9 +41,21 @@ class ClientServiceTest {
         assertThatCode(() -> {
             for (int i = 0; i < 50; i++) {
                 clientService.create(
-                        new ClientRequest("Client #" + i, "+38050" + i, null),
+                        new ClientRequest("Client #" + i, "+38050" + i, null, null),
                         ownerId);
             }
         }).doesNotThrowAnyException();
+    }
+
+    @Test
+    void create_storesOptionalEmail() {
+        UUID ownerId = UUID.randomUUID();
+        given(userRepository.getReferenceById(ownerId)).willReturn(User.builder().id(ownerId).build());
+        given(clientRepository.save(any(Client.class))).willAnswer(inv -> inv.getArgument(0));
+
+        var resp = clientService.create(
+                new ClientRequest("Олена", "+380671234567", "Київ", "olena@example.com"), ownerId);
+
+        assertThat(resp.email()).isEqualTo("olena@example.com");
     }
 }

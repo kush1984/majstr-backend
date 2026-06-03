@@ -14,4 +14,7 @@ public interface EstimateShareLinkRepository extends JpaRepository<EstimateShare
     Optional<EstimateShareLink> findByToken(String token);
 
     List<EstimateShareLink> findByEstimateIdOrderByCreatedAtDesc(UUID estimateId);
+
+    /** Most recent non-revoked link for an estimate — reused by the email-share flow. */
+    Optional<EstimateShareLink> findFirstByEstimateIdAndRevokedFalseOrderByCreatedAtDesc(UUID estimateId);
 }
