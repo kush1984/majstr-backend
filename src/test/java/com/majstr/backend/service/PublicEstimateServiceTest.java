@@ -18,6 +18,7 @@ import com.majstr.backend.entity.Unit;
 import com.majstr.backend.entity.User;
 import com.majstr.backend.exception.ResourceNotFoundException;
 import com.majstr.backend.feature.FeatureGuard;
+import com.majstr.backend.push.PushService;
 import com.majstr.backend.repository.EstimateItemRepository;
 import com.majstr.backend.repository.EstimateQuestionRepository;
 import com.majstr.backend.repository.EstimateShareLinkRepository;
@@ -37,7 +38,10 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.contains;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.Mockito.verify;
 
 @ExtendWith(MockitoExtension.class)
 class PublicEstimateServiceTest {
@@ -47,6 +51,7 @@ class PublicEstimateServiceTest {
     @Mock private EstimateQuestionRepository questionRepository;
     @Mock private EstimateService estimateService;
     @Mock private FeatureGuard featureGuard;
+    @Mock private PushService pushService;
 
     @InjectMocks private PublicEstimateService publicService;
 
@@ -125,6 +130,12 @@ class PublicEstimateServiceTest {
         assertThat(estimate.getProject().getStatus()).isEqualTo(ProjectStatus.IN_PROGRESS);
         assertThat(view.signature()).isNotNull();
         assertThat(view.signature().signerName()).isEqualTo("Олена Іваненко");
+        // Contractor is pushed a real-time signing notification.
+        verify(pushService).sendToUser(
+                eq(estimate.getProject().getOwner()),
+                contains("підписав(ла) кошторис"),
+                eq("Квартира на Хрещатику"),
+                contains("/projects/"));
     }
 
     @Test
@@ -159,6 +170,12 @@ class PublicEstimateServiceTest {
 
         assertThat(resp.id()).isNotNull();
         assertThat(resp.createdAt()).isNotNull();
+        // Contractor is pushed a real-time question notification.
+        verify(pushService).sendToUser(
+                eq(estimate.getProject().getOwner()),
+                eq("Нове питання від клієнта"),
+                contains("перенести"),
+                contains("/projects/"));
     }
 
     // ---- fixtures ---------------------------------------------------------

@@ -19,6 +19,7 @@ import com.majstr.backend.entity.User;
 import com.majstr.backend.exception.ResourceNotFoundException;
 import com.majstr.backend.feature.Feature;
 import com.majstr.backend.feature.FeatureGuard;
+import com.majstr.backend.push.PushService;
 import com.majstr.backend.repository.EstimateItemRepository;
 import com.majstr.backend.repository.EstimateQuestionRepository;
 import com.majstr.backend.repository.EstimateShareLinkRepository;
@@ -30,6 +31,8 @@ import org.springframework.web.server.ResponseStatusException;
 import java.io.IOException;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.text.DecimalFormat;
+import java.text.DecimalFormatSymbols;
 import java.time.Instant;
 import java.util.List;
 
@@ -45,6 +48,7 @@ public class PublicEstimateService {
     private final EstimateQuestionRepository questionRepository;
     private final EstimateService estimateService;
     private final FeatureGuard featureGuard;
+    private final PushService pushService;
 
     @Transactional(readOnly = true)
     public PublicEstimateView view(String token) {
@@ -75,7 +79,13 @@ public class PublicEstimateService {
             project.setStatus(ProjectStatus.IN_PROGRESS);
         }
         List<EstimateItem> items = itemRepository.findByEstimateIdOrderBySortOrderAscIdAsc(estimate.getId());
-        return buildView(estimate, items);
+        PublicEstimateView view = buildView(estimate, items);
+        // Notify the contractor in real time (fail-soft — never breaks signing).
+        pushService.sendToUser(contractor,
+                req.clientName().trim() + " підписав(ла) кошторис на " + formatHryvnia(view.total()),
+                project.getName(),
+                "/projects/" + project.getId());
+        return view;
     }
 
     @Transactional
@@ -88,7 +98,14 @@ public class PublicEstimateService {
                 .message(req.message().trim())
                 .authorIp(clientIp)
                 .build();
-        return QuestionResponse.from(questionRepository.save(question));
+        QuestionResponse saved = QuestionResponse.from(questionRepository.save(question));
+        // Notify the contractor in real time (fail-soft — never breaks the question).
+        User contractor = estimate.getProject().getOwner();
+        pushService.sendToUser(contractor,
+                "Нове питання від клієнта",
+                question.getMessage(),
+                "/projects/" + estimate.getProject().getId());
+        return saved;
     }
 
     @Transactional(readOnly = true)
@@ -180,5 +197,13 @@ public class PublicEstimateService {
 
     private static String blankToNull(String s) {
         return (s == null || s.isBlank()) ? null : s.trim();
+    }
+
+    /** Formats an amount as "61 070 ₴" — space-grouped, no decimals. */
+    private static String formatHryvnia(BigDecimal amount) {
+        DecimalFormatSymbols symbols = new DecimalFormatSymbols();
+        symbols.setGroupingSeparator(' '); // non-breaking space
+        DecimalFormat df = new DecimalFormat("#,##0", symbols);
+        return df.format(amount.setScale(0, RoundingMode.HALF_UP)) + " ₴";
     }
 }

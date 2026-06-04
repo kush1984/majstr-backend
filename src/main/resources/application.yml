@@ -67,6 +67,14 @@ app:
     from-address: ${EMAIL_FROM:Majstr <onboarding@resend.dev>}
     # Base URL of the PWA — the verify link points here: {app-url}/verify-email?token=...
     app-url: ${APP_URL:http://localhost:5173}
+  push:
+    # Web Push (VAPID). Keys are env only and blank in local dev (then a push is
+    # logged & skipped). Generate a stable keypair once for production — rotating
+    # it invalidates every existing browser subscription. See README.
+    vapid:
+      public-key: ${VAPID_PUBLIC_KEY:}
+      private-key: ${VAPID_PRIVATE_KEY:}
+      subject: ${VAPID_SUBJECT:mailto:admin@majstr.app}
 
 springdoc:
   swagger-ui:

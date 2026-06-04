@@ -6,6 +6,7 @@ import com.majstr.backend.config.JwtProperties;
 import com.majstr.backend.config.PortalProperties;
 import com.majstr.backend.config.RateLimitProperties;
 import com.majstr.backend.config.StorageProperties;
+import com.majstr.backend.config.VapidProperties;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
@@ -19,7 +20,8 @@ import org.springframework.scheduling.annotation.EnableAsync;
         RateLimitProperties.class,
         StorageProperties.class,
         PortalProperties.class,
-        EmailProperties.class
+        EmailProperties.class,
+        VapidProperties.class
 })
 public class MajstrApplication {
 

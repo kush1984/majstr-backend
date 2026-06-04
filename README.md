@@ -112,6 +112,44 @@ Every error is returned in a single shape:
 
 `retryAfterSeconds` is included only on 429 responses.
 
+## Web Push (notifications)
+
+The contractor receives a real-time browser notification when a client
+**signs an estimate** or **leaves a question** in the public portal. This
+uses the Web Push standard (VAPID / RFC 8291).
+
+| Method | Path | Description | Auth |
+| --- | --- | --- | --- |
+| GET  | `/api/push/vapid-public-key` | Server VAPID public key (`null` if unconfigured) | public |
+| POST | `/api/push/subscribe` | Store/refresh this browser's subscription (upsert by endpoint) | Bearer JWT |
+| POST | `/api/push/unsubscribe` | Remove this browser's subscription | Bearer JWT |
+
+### VAPID keys
+
+Push requires a VAPID keypair, supplied via environment (never hardcoded):
+
+```bash
+# generate once (Node tool — no install needed):
+npx web-push generate-vapid-keys
+```
+
+Copy the output into `.env`:
+
+```
+VAPID_PUBLIC_KEY=BPx...        # base64url public key
+VAPID_PRIVATE_KEY=k3F...       # base64url private key
+VAPID_SUBJECT=mailto:admin@majstr.app
+```
+
+Leave them **blank in local dev** — the server then logs and skips each
+push instead of sending. Generate the keypair **once** for production and
+keep it stable: rotating it invalidates every existing browser
+subscription, forcing all clients to re-subscribe.
+
+> **iOS note:** Safari only delivers web push to a PWA **added to the Home
+> Screen** (installed / standalone) on iOS 16.4+. A plain Safari tab gets
+> nothing — the frontend should detect this and prompt the user to install.
+
 ## Package layout
 
 ```

@@ -45,6 +45,22 @@ dependencies {
 
     implementation("com.bucket4j:bucket4j_jdk17-core:8.14.0")
 
+    // Web Push (VAPID / RFC 8291). MIT, github.com/web-push-libs/webpush-java.
+    implementation("nl.martijndwars:web-push:5.1.2")
+    // web-push declares Apache HttpClient and jose4j as `runtime` scope, but
+    // PushService.send() returns org.apache.http.HttpResponse and declares
+    // `throws org.jose4j.lang.JoseException` — both compile-time types where we
+    // call it. Promote them onto the compile classpath; versions match what
+    // web-push pulls transitively at runtime.
+    implementation("org.apache.httpcomponents:httpcore:4.4.16")
+    implementation("org.bitbucket.b_c:jose4j:0.7.9")
+    // web-push 5.1.2 ships BouncyCastle 1.71 (2022); pin to a newer build that
+    // is tested on current JDKs so the security provider registers cleanly on
+    // Java 25. The provider classes used (EC key handling) are stable across
+    // these versions, so this override is safe.
+    implementation("org.bouncycastle:bcprov-jdk18on:1.78.1")
+    implementation("org.bouncycastle:bcpkix-jdk18on:1.78.1")
+
     implementation("org.springdoc:springdoc-openapi-starter-webmvc-ui:2.8.6")
 
     // PDF generation. OpenPDF is LGPL fork of iText 4, actively maintained.

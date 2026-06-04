@@ -93,6 +93,30 @@ only `POST /api/estimates/{id}/share` requires `emailVerified` (else 403
 logged & skipped), `EMAIL_FROM`, `APP_URL` (verify-link base). Production
 needs a Resend-verified sending domain in `EMAIL_FROM`.
 
+### Web push is fail-soft and env-gated
+
+`PushService.sendToUser` (in `push/`) notifies the contractor via Web Push
+(VAPID / RFC 8291, `nl.martijndwars:web-push`) when a client **signs an
+estimate** or **leaves a question** — wired into `PublicEstimateService.sign`
+/ `askQuestion`. Same env-gated, `@Async`, fail-soft pattern as email: when
+`VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` are blank (dev) it logs & skips; a
+push failure never breaks the portal action. Subscriptions live in
+`push_subscriptions` (one row per browser `endpoint`, UNIQUE → `subscribe`
+upserts). On HTTP 404/410 from the push service the dead subscription is
+deleted. The click-through `url` is a **relative** path (`/projects/{id}`) so
+the PWA service worker resolves it against its own origin. `GET
+/api/push/vapid-public-key` is public (in `PUBLIC_PATHS`); subscribe/
+unsubscribe require auth. BouncyCastle is registered once in a `PushService`
+static block. **Note:** web-push adds transitive deps (BouncyCastle pinned to
+1.78.1, Apache HttpClient, jose4j) — `send()` returns
+`org.apache.http.HttpResponse`. Two non-obvious gotchas already burned us:
+(1) httpcore + jose4j are `runtime`-scope in web-push's POM but their types
+(`HttpResponse`, `JoseException`) appear at *compile* time where we call
+`send()` — both are pinned as explicit `implementation` deps in
+`build.gradle.kts`. (2) `PushService.send(Notification)` defaults to the legacy
+`aesgcm` encoding, which **current FCM rejects with HTTP 403** — `deliver()`
+must pass `Encoding.AES128GCM` explicitly (the modern `vapid t=,k=` header).
+
 ### Login rate limit relies on a custom request wrapper
 
 `LoginRateLimitFilter` needs to read the JSON body to extract `email` for
