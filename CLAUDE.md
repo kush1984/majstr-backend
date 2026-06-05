@@ -68,16 +68,34 @@ in any response (`UserResponse` excludes it; `User#toString` excludes it).
    controller delegates to `AuthService.login`.
 3. `POST /api/auth/refresh` — `RefreshTokenService.rotate` revokes the old
    refresh token and issues a new pair (rotation pattern).
-4. `GET /api/auth/me` — `JwtAuthenticationFilter` parses the Bearer token,
+4. `POST /api/auth/logout` — public (takes the refresh token in the body),
+   `RefreshTokenService.revoke` marks that token revoked. Idempotent: an
+   unknown/blank token is a silent no-op so logout always succeeds even with
+   an expired access token. The PWA must call this, not just clear storage.
+5. `GET /api/auth/me` — `JwtAuthenticationFilter` parses the Bearer token,
    loads the user, sets `SecurityContextHolder` with `UserPrincipal`.
 
-### Refresh tokens are hashed at rest
+### Refresh tokens are hashed at rest, rotated, and swept
 
 Raw refresh token = 48 random bytes, base64url-encoded, returned to the
 client **only once** on issue. The DB stores only its SHA-256 hash
 (`refresh_tokens.token_hash`, UNIQUE). On `/refresh`, the incoming raw
 token is re-hashed and looked up by hash. `revoked = true` is set on the
 old row before issuing the new one. Don't change this to store raw tokens.
+
+**Rotation has a client consequence:** because the old token is revoked the
+instant it's used, several requests that 401 at once must **not** each call
+`/refresh` with the same token — only the first would succeed, the rest hit a
+revoked token and 401 → spurious logout. The PWA interceptor must single-flight
+`/refresh` (one in-flight promise, queue the rest). The backend is correct;
+this race is a frontend concern.
+
+Session length is `app.jwt.refresh-token-expiration-days` (env
+`REFRESH_TOKEN_TTL_DAYS`, default **30** — long is fine because tokens rotate).
+`TokenCleanupService` (`@Scheduled`, daily 3am, cron
+`app.cleanup.tokens-cron`) sweeps expired-or-revoked refresh tokens and expired
+email-verification tokens so neither table grows unbounded (`@EnableScheduling`
+on the app; single-node — needs ShedLock if scaled out).
 
 ### Email verification is soft
 
@@ -282,6 +300,15 @@ a one-line note so the history is preserved.
   Don't add abstractions for hypothetical future needs.
 - **No backwards-compat shims** for code that hasn't shipped — this is a
   greenfield project; just change it.
+- **Tests + green build before push (hard gate)**: every fix/change updates
+  or adds tests, and the build must be green **before any push** — keep
+  `master` green. **Claude cannot run Gradle in its sandbox** (the loopback
+  socket it needs is blocked — `./gradlew` fails with "Unable to establish
+  loopback connection", even with the sandbox disabled). So the gate is:
+  Claude writes the tests, the **user runs `./gradlew build` locally and
+  confirms green**, and only then does Claude push. If it's red, the user
+  pastes the output and Claude fixes to green first. Never push on an
+  unverified build.
 
 ## Not implemented yet
 
@@ -290,8 +317,6 @@ These are intentional gaps to be aware of (don't claim they exist):
 - No `actuator` starter — `/actuator/health` is permitted in
   `SecurityConfig` for future use but the dependency isn't on the
   classpath yet.
-- No scheduled cleanup of expired refresh tokens (the
-  `RefreshTokenRepository.deleteExpired` query exists; nothing calls it).
 - No `User` profile / logo upload endpoints — only the column is in V1.
 - No integration tests (only the MockMvc slice).
 - No multi-instance rate-limit store (in-memory `ConcurrentHashMap`).

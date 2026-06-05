@@ -71,7 +71,7 @@ class ProjectControllerTest {
         UUID projectId = UUID.randomUUID();
         ProjectResponse stubbed = new ProjectResponse(
                 projectId, "Apartment 5", "Khreshchatyk 1", ProjectStatus.DRAFT,
-                "Bathroom + kitchen", null, null, null, null, null, Instant.now(), Instant.now());
+                "Bathroom + kitchen", null, null, null, null, 0L, null, Instant.now(), Instant.now());
         given(projectService.create(any(ProjectRequest.class), eq(userId))).willReturn(stubbed);
 
         ProjectRequest req = new ProjectRequest("Apartment 5", "Khreshchatyk 1", "Bathroom + kitchen", null);
@@ -89,7 +89,7 @@ class ProjectControllerTest {
     void list_returnsArrayOfProjects() throws Exception {
         UUID id = UUID.randomUUID();
         ProjectResponse stubbed = new ProjectResponse(
-                id, "P1", "Addr", ProjectStatus.IN_PROGRESS, null, null, null, null, null, null, Instant.now(), Instant.now());
+                id, "P1", "Addr", ProjectStatus.IN_PROGRESS, null, null, null, null, null, 0L, null, Instant.now(), Instant.now());
         given(projectService.listForOwner(userId, null)).willReturn(List.of(stubbed));
 
         mockMvc.perform(get("/api/projects"))

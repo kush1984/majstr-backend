@@ -41,7 +41,9 @@ app:
     # HS256 requires >= 32 bytes (256 bits). Set via env in all environments.
     secret: ${JWT_SECRET}
     access-token-expiration-minutes: 15
-    refresh-token-expiration-days: 7
+    # Session length for the contractor (a daily work tool). Safe to keep long
+    # because refresh tokens rotate on every use. Override with REFRESH_TOKEN_TTL_DAYS.
+    refresh-token-expiration-days: ${REFRESH_TOKEN_TTL_DAYS:30}
     issuer: majstr-backend
   cors:
     allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:3000,http://localhost:5173}

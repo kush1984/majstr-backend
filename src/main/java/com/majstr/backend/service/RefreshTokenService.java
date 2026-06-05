@@ -43,6 +43,22 @@ public class RefreshTokenService {
         return raw;
     }
 
+    /**
+     * Invalidates a single refresh token (logout). Idempotent and silent: an
+     * unknown or already-revoked token is a no-op, so logout always succeeds and
+     * never reveals whether a token existed.
+     */
+    @Transactional
+    public void revoke(String rawToken) {
+        if (rawToken == null || rawToken.isBlank()) {
+            return;
+        }
+        repository.findByTokenHash(hash(rawToken)).ifPresent(token -> {
+            token.setRevoked(true);
+            repository.save(token);
+        });
+    }
+
     @Transactional
     public RotationResult rotate(String rawToken) {
         String hash = hash(rawToken);

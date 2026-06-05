@@ -68,6 +68,12 @@ public class AuthService {
         return AuthResponse.of(access, rotated.newRefreshToken(), jwtService.accessTtlSeconds(), UserResponse.from(rotated.user()));
     }
 
+    @Transactional
+    public void logout(String refreshToken) {
+        // Invalidate the refresh token server-side so it can't outlive the session.
+        refreshTokenService.revoke(refreshToken);
+    }
+
     private AuthResponse issueTokens(User user) {
         String access = jwtService.generateAccessToken(user.getId(), user.getEmail());
         String refresh = refreshTokenService.issue(user);

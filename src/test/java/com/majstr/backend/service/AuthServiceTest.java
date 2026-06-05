@@ -50,4 +50,11 @@ class AuthServiceTest {
         verify(catalogTemplateService).seedForUser(any(User.class));
         verify(emailVerificationService).issueAndSend(any(User.class));
     }
+
+    @Test
+    void logout_revokesTheRefreshToken() {
+        authService.logout("some-refresh-token");
+
+        verify(refreshTokenService).revoke("some-refresh-token");
+    }
 }

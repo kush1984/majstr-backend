@@ -30,6 +30,7 @@ public class SecurityConfig {
             "/api/auth/register",
             "/api/auth/login",
             "/api/auth/refresh",
+            "/api/auth/logout",
             "/api/auth/verify-email",
             "/api/push/vapid-public-key",
             "/api/public/**",

@@ -58,6 +58,13 @@ public class AuthController {
         return ResponseEntity.ok(authService.refresh(request.refreshToken()));
     }
 
+    @Operation(summary = "Log out — revoke the given refresh token server-side")
+    @PostMapping("/logout")
+    public ResponseEntity<Void> logout(@Valid @RequestBody RefreshTokenRequest request) {
+        authService.logout(request.refreshToken());
+        return ResponseEntity.noContent().build();
+    }
+
     @Operation(summary = "Verify email using the token from the verification link (public)")
     @PostMapping("/verify-email")
     public ResponseEntity<Void> verifyEmail(@Valid @RequestBody VerifyEmailRequest request) {
