@@ -11,12 +11,15 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import java.util.Optional;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.BDDMockito.given;
+import org.springframework.security.access.AccessDeniedException;
 
 /**
  * Smoke-level guarantee that {@link ClientService#create} no longer
@@ -57,5 +60,47 @@ class ClientServiceTest {
                 new ClientRequest("Олена", "+380671234567", "Київ", "olena@example.com"), ownerId);
 
         assertThat(resp.email()).isEqualTo("olena@example.com");
+    }
+
+    @Test
+    void update_savesAllFields() {
+        UUID id = UUID.randomUUID();
+        UUID ownerId = UUID.randomUUID();
+        Client existing = Client.builder()
+                .id(id)
+                .owner(User.builder().id(ownerId).build())
+                .fullName("Старе Ім'я").phone("+380000000000")
+                .build();
+        given(clientRepository.findById(id)).willReturn(Optional.of(existing));
+
+        var resp = clientService.update(id,
+                new ClientRequest("Нове Ім'я", "+380671112233", "Київ, вул. Хрещатик 1", "new@example.com"),
+                ownerId);
+
+        assertThat(existing.getFullName()).isEqualTo("Нове Ім'я");
+        assertThat(existing.getPhone()).isEqualTo("+380671112233");
+        assertThat(existing.getAddress()).isEqualTo("Київ, вул. Хрещатик 1");
+        assertThat(existing.getEmail()).isEqualTo("new@example.com");
+        assertThat(resp.fullName()).isEqualTo("Нове Ім'я");
+        assertThat(resp.email()).isEqualTo("new@example.com");
+    }
+
+    @Test
+    void update_foreignClient_throwsAccessDenied() {
+        UUID id = UUID.randomUUID();
+        UUID ownerId = UUID.randomUUID();
+        UUID stranger = UUID.randomUUID();
+        Client existing = Client.builder()
+                .id(id)
+                .owner(User.builder().id(ownerId).build())
+                .fullName("X").phone("+1")
+                .build();
+        given(clientRepository.findById(id)).willReturn(Optional.of(existing));
+
+        assertThatThrownBy(() -> clientService.update(id,
+                new ClientRequest("Hacker", "+2", null, null), stranger))
+                .isInstanceOf(AccessDeniedException.class);
+        // Original data untouched.
+        assertThat(existing.getFullName()).isEqualTo("X");
     }
 }

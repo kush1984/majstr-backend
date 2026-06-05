@@ -6,6 +6,7 @@ import com.majstr.backend.entity.EstimateStatus;
 import com.majstr.backend.entity.Project;
 import com.majstr.backend.entity.ProjectStatus;
 import com.majstr.backend.entity.User;
+import com.majstr.backend.repository.EstimateQuestionRepository;
 import com.majstr.backend.repository.EstimateRepository;
 import com.majstr.backend.repository.ProjectRepository;
 import com.majstr.backend.repository.UserRepository;
@@ -32,6 +33,7 @@ class ProjectServiceTest {
 
     @Mock ProjectRepository projectRepository;
     @Mock EstimateRepository estimateRepository;
+    @Mock EstimateQuestionRepository questionRepository;
     @Mock UserRepository userRepository;
     @Mock ClientService clientService;
     @Mock com.majstr.backend.feature.LimitService limitService;
@@ -125,6 +127,33 @@ class ProjectServiceTest {
 
         assertThat(r.latestEstimateTotal()).isNull();
         assertThat(r.estimateStatus()).isNull();
+    }
+
+    @Test
+    void list_includesUnreadQuestionCounts() {
+        Project p = owned(ProjectStatus.IN_PROGRESS, null);
+        given(projectRepository.findByOwnerIdOrderByCreatedAtDesc(ownerId)).willReturn(List.of(p));
+        given(estimateRepository.findLatestEstimateSummaries(anyCollection())).willReturn(List.of());
+        given(questionRepository.countUnreadByProjectIds(anyCollection())).willReturn(List.<Object[]>of(
+                new Object[]{projectId, 3L}
+        ));
+
+        List<ProjectResponse> list = projectService.listForOwner(ownerId, null);
+
+        assertThat(list).hasSize(1);
+        assertThat(list.get(0).unreadQuestions()).isEqualTo(3L);
+    }
+
+    @Test
+    void list_noUnreadQuestions_defaultsToZero() {
+        Project p = owned(ProjectStatus.IN_PROGRESS, null);
+        given(projectRepository.findByOwnerIdOrderByCreatedAtDesc(ownerId)).willReturn(List.of(p));
+        given(estimateRepository.findLatestEstimateSummaries(anyCollection())).willReturn(List.of());
+        given(questionRepository.countUnreadByProjectIds(anyCollection())).willReturn(List.of());
+
+        List<ProjectResponse> list = projectService.listForOwner(ownerId, null);
+
+        assertThat(list.get(0).unreadQuestions()).isZero();
     }
 
     @Test

@@ -9,6 +9,8 @@ import java.math.BigDecimal;
 public record DashboardMetricsResponse(
         long activeProjects,
         long pendingEstimates,
+        // Total unread client questions across all the contractor's projects.
+        long unreadQuestions,
         CompletedThisMonth completedThisMonth
 ) {
     public record CompletedThisMonth(long count, BigDecimal totalAmount) {}

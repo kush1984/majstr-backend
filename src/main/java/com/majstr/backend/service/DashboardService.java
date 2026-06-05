@@ -3,6 +3,7 @@ package com.majstr.backend.service;
 import com.majstr.backend.dto.DashboardMetricsResponse;
 import com.majstr.backend.entity.EstimateStatus;
 import com.majstr.backend.entity.ProjectStatus;
+import com.majstr.backend.repository.EstimateQuestionRepository;
 import com.majstr.backend.repository.EstimateRepository;
 import com.majstr.backend.repository.ProjectRepository;
 import lombok.RequiredArgsConstructor;
@@ -30,6 +31,7 @@ public class DashboardService {
 
     private final ProjectRepository projectRepository;
     private final EstimateRepository estimateRepository;
+    private final EstimateQuestionRepository questionRepository;
 
     @Transactional(readOnly = true)
     public DashboardMetricsResponse metrics(UUID ownerId) {
@@ -44,9 +46,12 @@ public class DashboardService {
         completedAmount = (completedAmount == null ? BigDecimal.ZERO : completedAmount)
                 .setScale(2, RoundingMode.HALF_UP);
 
+        long unreadQuestions = questionRepository.countByEstimateProjectOwnerIdAndReadFalse(ownerId);
+
         return new DashboardMetricsResponse(
                 activeProjects,
                 pendingEstimates,
+                unreadQuestions,
                 new DashboardMetricsResponse.CompletedThisMonth(completedCount, completedAmount));
     }
 

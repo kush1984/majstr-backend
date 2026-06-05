@@ -3,6 +3,7 @@ package com.majstr.backend.service;
 import com.majstr.backend.dto.DashboardMetricsResponse;
 import com.majstr.backend.entity.EstimateStatus;
 import com.majstr.backend.entity.ProjectStatus;
+import com.majstr.backend.repository.EstimateQuestionRepository;
 import com.majstr.backend.repository.EstimateRepository;
 import com.majstr.backend.repository.ProjectRepository;
 import org.junit.jupiter.api.Test;
@@ -30,6 +31,7 @@ class DashboardServiceTest {
 
     @Mock ProjectRepository projectRepository;
     @Mock EstimateRepository estimateRepository;
+    @Mock EstimateQuestionRepository questionRepository;
     @InjectMocks DashboardService dashboardService;
 
     private final UUID ownerId = UUID.randomUUID();
@@ -42,11 +44,13 @@ class DashboardServiceTest {
                 eq(ownerId), eq(ProjectStatus.COMPLETED), any(Instant.class))).willReturn(2L);
         given(estimateRepository.sumLatestEstimateTotalForCompletedSince(eq(ownerId), any(Instant.class)))
                 .willReturn(new BigDecimal("12345.5"));
+        given(questionRepository.countByEstimateProjectOwnerIdAndReadFalse(ownerId)).willReturn(4L);
 
         DashboardMetricsResponse r = dashboardService.metrics(ownerId);
 
         assertThat(r.activeProjects()).isEqualTo(3);
         assertThat(r.pendingEstimates()).isEqualTo(5);
+        assertThat(r.unreadQuestions()).isEqualTo(4);
         assertThat(r.completedThisMonth().count()).isEqualTo(2);
         assertThat(r.completedThisMonth().totalAmount()).isEqualByComparingTo("12345.50");
     }

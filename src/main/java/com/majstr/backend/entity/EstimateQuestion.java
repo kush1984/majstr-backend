@@ -48,6 +48,10 @@ public class EstimateQuestion {
     @Column(name = "author_ip", length = 64)
     private String authorIp;
 
+    /** Whether the contractor has seen this question. New questions start unread. */
+    @Column(name = "is_read", nullable = false)
+    private boolean read;
+
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
 

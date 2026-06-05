@@ -10,6 +10,7 @@ import com.majstr.backend.entity.User;
 import com.majstr.backend.exception.ResourceNotFoundException;
 import com.majstr.backend.feature.Limit;
 import com.majstr.backend.feature.LimitService;
+import com.majstr.backend.repository.EstimateQuestionRepository;
 import com.majstr.backend.repository.EstimateRepository;
 import com.majstr.backend.repository.ProjectRepository;
 import com.majstr.backend.repository.UserRepository;
@@ -33,6 +34,7 @@ public class ProjectService {
 
     private final ProjectRepository projectRepository;
     private final EstimateRepository estimateRepository;
+    private final EstimateQuestionRepository questionRepository;
     private final UserRepository userRepository;
     private final ClientService clientService;
     private final LimitService limitService;
@@ -62,10 +64,14 @@ public class ProjectService {
         if (projects.isEmpty()) {
             return List.of();
         }
-        // One aggregate query for every project's latest-estimate summary — no N+1.
-        Map<UUID, EstimateSummary> summaries =
-                loadLatestEstimateSummaries(projects.stream().map(Project::getId).toList());
-        return projects.stream().map(p -> toResponse(p, summaries.get(p.getId()))).toList();
+        // One aggregate query each for the latest-estimate summary and the unread
+        // question count across the whole list — no N+1.
+        List<UUID> projectIds = projects.stream().map(Project::getId).toList();
+        Map<UUID, EstimateSummary> summaries = loadLatestEstimateSummaries(projectIds);
+        Map<UUID, Long> unread = loadUnreadCounts(projectIds);
+        return projects.stream()
+                .map(p -> toResponse(p, summaries.get(p.getId()), unread.getOrDefault(p.getId(), 0L)))
+                .toList();
     }
 
     @Transactional(readOnly = true)
@@ -120,13 +126,26 @@ public class ProjectService {
     }
 
     private ProjectResponse withSummary(Project project) {
-        return toResponse(project, loadLatestEstimateSummaries(List.of(project.getId())).get(project.getId()));
+        EstimateSummary summary = loadLatestEstimateSummaries(List.of(project.getId())).get(project.getId());
+        long unread = questionRepository.countByEstimateProjectIdAndReadFalse(project.getId());
+        return toResponse(project, summary, unread);
     }
 
-    private static ProjectResponse toResponse(Project project, EstimateSummary summary) {
+    private static ProjectResponse toResponse(Project project, EstimateSummary summary, long unreadQuestions) {
         return summary == null
-                ? ProjectResponse.from(project)
-                : ProjectResponse.from(project, summary.total(), summary.status());
+                ? ProjectResponse.from(project, null, null, unreadQuestions)
+                : ProjectResponse.from(project, summary.total(), summary.status(), unreadQuestions);
+    }
+
+    private Map<UUID, Long> loadUnreadCounts(Collection<UUID> projectIds) {
+        if (projectIds.isEmpty()) {
+            return Map.of();
+        }
+        Map<UUID, Long> result = new HashMap<>();
+        for (Object[] row : questionRepository.countUnreadByProjectIds(projectIds)) {
+            result.put((UUID) row[0], (Long) row[1]);
+        }
+        return result;
     }
 
     private Map<UUID, EstimateSummary> loadLatestEstimateSummaries(Collection<UUID> projectIds) {

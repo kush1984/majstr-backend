@@ -21,16 +21,19 @@ public record ProjectResponse(
         // when the project has no estimate yet.
         BigDecimal latestEstimateTotal,
         EstimateStatus estimateStatus,
+        // Unread client questions on this project — drives the card's 💬 indicator.
+        long unreadQuestions,
         Instant completedAt,
         Instant createdAt,
         Instant updatedAt
 ) {
     /** Use when the latest-estimate summary isn't loaded (e.g. a freshly created project). */
     public static ProjectResponse from(Project project) {
-        return from(project, null, null);
+        return from(project, null, null, 0L);
     }
 
-    public static ProjectResponse from(Project project, BigDecimal latestEstimateTotal, EstimateStatus estimateStatus) {
+    public static ProjectResponse from(Project project, BigDecimal latestEstimateTotal,
+                                       EstimateStatus estimateStatus, long unreadQuestions) {
         Client client = project.getClient();
         return new ProjectResponse(
                 project.getId(),
@@ -42,6 +45,7 @@ public record ProjectResponse(
                 client == null ? null : client.getFullName(),
                 latestEstimateTotal,
                 estimateStatus,
+                unreadQuestions,
                 project.getCompletedAt(),
                 project.getCreatedAt(),
                 project.getUpdatedAt()

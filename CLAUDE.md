@@ -117,6 +117,21 @@ static block. **Note:** web-push adds transitive deps (BouncyCastle pinned to
 `aesgcm` encoding, which **current FCM rejects with HTTP 403** — `deliver()`
 must pass `Encoding.AES128GCM` explicitly (the modern `vapid t=,k=` header).
 
+### Client questions are a read-only inbox
+
+Clients leave questions on the public portal (`PublicEstimateService.askQuestion`);
+the contractor reads them and marks them read, then follows up out-of-band — there
+is no in-app reply thread. `EstimateQuestion.read` (column `is_read`, V22, default
+false) tracks acknowledgement. The contractor side lives in `QuestionService` +
+`ProjectQuestionController` (`/api/projects/{id}/questions`, `PATCH .../{qid}/read`),
+scoped through `ProjectService.loadOwned`. `GET /api/projects` carries an
+`unreadQuestions` count per card, computed with **one grouped query**
+(`countUnreadByProjectIds`) folded into the list — same no-N+1 pattern as the
+latest-estimate summary, backed by a partial index on unread rows. **Naming
+gotcha:** the entity field is `read` (not `isRead`) so the JPQL path `q.read` and
+derived queries `...AndReadFalse` share one property name; the `QuestionView`
+record component is `isRead`, which is the JSON key the PWA sees.
+
 ### Login rate limit relies on a custom request wrapper
 
 `LoginRateLimitFilter` needs to read the JSON body to extract `email` for
