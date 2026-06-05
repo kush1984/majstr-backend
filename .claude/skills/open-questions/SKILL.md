@@ -55,6 +55,10 @@ the open-questions log so nothing important is silently skipped.
 - **Be concise.** This routine is a lightweight checklist, not a
   re-planning session. If the answer for every item is "out of scope",
   the whole pass should fit in a short message.
+- **Tests** — after each fix or change, consider to update the tests or add new ones.
+  If the user says "next step" or similar, it's a good time to check if any existing `OPEN` item
+  is now `IN_PROGRESS` and should be covered by a test, or if a new test should be added for a
+  newly promoted item. Always run tests before pushing, we need to keep the green build.
 
 ## Per-step docs (do not skip)
 
