@@ -111,6 +111,16 @@ only `POST /api/estimates/{id}/share` requires `emailVerified` (else 403
 logged & skipped), `EMAIL_FROM`, `APP_URL` (verify-link base). Production
 needs a Resend-verified sending domain in `EMAIL_FROM`.
 
+`PUT /api/profile` (`ProfileService.updateProfile`) edits `fullName`, `phone`,
+`companyName`, `trades` and — **conditionally** — `email`. Email is editable
+**only while `emailVerified == false`** (fix a registration typo): the change
+re-checks uniqueness (409 if taken), keeps the account unverified, and
+`EmailVerificationService.replaceForNewEmail` drops the user's old tokens
+(`deleteByUserId`) and sends a fresh verification to the new address. A
+**verified** email is locked — a different value is silently ignored and the
+rest of the profile still saves. Replacing `trades` never touches the
+contractor's catalog (it's independent once seeded at register).
+
 ### Web push is fail-soft and env-gated
 
 `PushService.sendToUser` (in `push/`) notifies the contractor via Web Push
@@ -317,7 +327,6 @@ These are intentional gaps to be aware of (don't claim they exist):
 - No `actuator` starter — `/actuator/health` is permitted in
   `SecurityConfig` for future use but the dependency isn't on the
   classpath yet.
-- No `User` profile / logo upload endpoints — only the column is in V1.
 - No integration tests (only the MockMvc slice).
 - No multi-instance rate-limit store (in-memory `ConcurrentHashMap`).
 - No estimates / projects / client-communication domain — that's the

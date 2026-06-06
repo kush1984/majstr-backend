@@ -1,5 +1,6 @@
 package com.majstr.backend.controller;
 
+import com.majstr.backend.dto.ProfileUpdateRequest;
 import com.majstr.backend.dto.UserResponse;
 import com.majstr.backend.repository.UserRepository;
 import com.majstr.backend.security.UserPrincipal;
@@ -7,11 +8,14 @@ import com.majstr.backend.service.ProfileService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -28,6 +32,13 @@ public class ProfileController {
 
     private final ProfileService profileService;
     private final UserRepository userRepository;
+
+    @Operation(summary = "Update the contractor's profile (email editable only while unverified)")
+    @PutMapping
+    public UserResponse update(@Valid @RequestBody ProfileUpdateRequest req,
+                               @AuthenticationPrincipal UserPrincipal principal) {
+        return profileService.updateProfile(principal.id(), req);
+    }
 
     @Operation(summary = "Upload contractor logo (PNG or JPEG, max 2MB)")
     @PostMapping(value = "/logo", consumes = "multipart/form-data")

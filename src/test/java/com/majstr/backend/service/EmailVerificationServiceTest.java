@@ -46,6 +46,18 @@ class EmailVerificationServiceTest {
     }
 
     @Test
+    void replaceForNewEmail_dropsOldTokensAndSendsFresh() {
+        User user = User.builder().id(UUID.randomUUID()).email("new@b.com").fullName("Іван").build();
+
+        service.replaceForNewEmail(user);
+
+        verify(tokenRepository).deleteByUserId(user.getId());
+        ArgumentCaptor<EmailVerificationToken> cap = ArgumentCaptor.forClass(EmailVerificationToken.class);
+        verify(tokenRepository).save(cap.capture());
+        verify(emailService).sendVerificationEmail(eq(user), eq(cap.getValue().getToken()));
+    }
+
+    @Test
     void verify_validToken_marksUserVerified() {
         User user = User.builder().id(UUID.randomUUID()).emailVerified(false).build();
         EmailVerificationToken token = EmailVerificationToken.builder()

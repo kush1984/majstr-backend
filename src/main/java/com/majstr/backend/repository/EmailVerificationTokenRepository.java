@@ -20,4 +20,9 @@ public interface EmailVerificationTokenRepository extends JpaRepository<EmailVer
     @Modifying
     @Query("delete from EmailVerificationToken t where t.expiresAt < :cutoff")
     int deleteExpired(@Param("cutoff") Instant cutoff);
+
+    /** Drop every pending token for a user — used when an unverified email is changed. */
+    @Modifying
+    @Query("delete from EmailVerificationToken t where t.user.id = :userId")
+    int deleteByUserId(@Param("userId") UUID userId);
 }

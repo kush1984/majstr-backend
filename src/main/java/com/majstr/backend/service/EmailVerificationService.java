@@ -44,6 +44,16 @@ public class EmailVerificationService {
         emailService.sendVerificationEmail(user, token.getToken());
     }
 
+    /**
+     * Email change while still unverified: drop any pending tokens for the user
+     * and send a fresh verification to the (already updated) new address.
+     */
+    @Transactional
+    public void replaceForNewEmail(User user) {
+        tokenRepository.deleteByUserId(user.getId());
+        issueAndSend(user);
+    }
+
     /** Resend for the current user; no-op if already verified. Caller enforces the rate limit. */
     @Transactional
     public void resendFor(UUID userId) {
