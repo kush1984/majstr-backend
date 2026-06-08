@@ -33,6 +33,9 @@ dependencies {
     implementation("org.springframework.boot:spring-boot-starter-security")
     implementation("org.springframework.boot:spring-boot-starter-data-jpa")
     implementation("org.springframework.boot:spring-boot-starter-validation")
+    // Actuator — exposes /actuator/health (DB indicator + liveness/readiness probes)
+    // for external monitoring. Exposure is locked down to `health` in application.yml.
+    implementation("org.springframework.boot:spring-boot-starter-actuator")
 
     // Spring Boot 4 split Flyway auto-config into its own module; no starter pulls it.
     implementation("org.springframework.boot:spring-boot-flyway")
@@ -60,6 +63,11 @@ dependencies {
     // these versions, so this override is safe.
     implementation("org.bouncycastle:bcprov-jdk18on:1.78.1")
     implementation("org.bouncycastle:bcpkix-jdk18on:1.78.1")
+
+    // Error monitoring. Core SDK only (no Spring Boot starter) — initialized
+    // manually in SentryInitializer so it stays env-gated (blank SENTRY_DSN →
+    // disabled, like Resend/VAPID) and avoids Spring Boot 4 auto-config surprises.
+    implementation("io.sentry:sentry:8.43.1")
 
     implementation("org.springdoc:springdoc-openapi-starter-webmvc-ui:2.8.6")
 

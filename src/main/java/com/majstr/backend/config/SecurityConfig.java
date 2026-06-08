@@ -39,7 +39,8 @@ public class SecurityConfig {
             "/v3/api-docs/**",
             "/swagger-ui.html",
             "/swagger-ui/**",
-            "/actuator/health"
+            "/actuator/health",
+            "/actuator/health/**"
     };
 
     /** The admin HTML lives in /static/admin/; the JS inside performs its own

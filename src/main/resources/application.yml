@@ -32,6 +32,29 @@ spring:
 server:
   port: 8080
 
+management:
+  endpoints:
+    web:
+      exposure:
+        # Only health is reachable — no env/beans/mappings leak.
+        include: health
+  endpoint:
+    health:
+      # Never expose component details (DB url, validation queries) to anonymous
+      # callers. The aggregate status still reflects every indicator, so a DB
+      # outage flips the top-level status to DOWN without leaking internals.
+      show-details: never
+      probes:
+        enabled: true
+      group:
+        # Readiness fails when the DB is unreachable so an orchestrator stops
+        # routing traffic to a pod that can't serve requests.
+        readiness:
+          include: readinessState,db
+  health:
+    db:
+      enabled: true
+
 spring.servlet.multipart:
   max-file-size: 2MB
   max-request-size: 4MB
@@ -77,6 +100,14 @@ app:
       public-key: ${VAPID_PUBLIC_KEY:}
       private-key: ${VAPID_PRIVATE_KEY:}
       subject: ${VAPID_SUBJECT:mailto:admin@majstr.app}
+  sentry:
+    # Error monitoring. DSN is env only and blank in local dev (then Sentry is
+    # disabled — nothing is sent, no noise). PII is never sent (send-default-pii
+    # stays off); only an opaque user id and the endpoint are attached.
+    dsn: ${SENTRY_DSN:}
+    environment: ${SENTRY_ENVIRONMENT:${SPRING_PROFILES_ACTIVE:dev}}
+    # Fraction of transactions sampled for performance tracing. 0 = errors only.
+    traces-sample-rate: ${SENTRY_TRACES_SAMPLE_RATE:0.0}
 
 springdoc:
   swagger-ui:

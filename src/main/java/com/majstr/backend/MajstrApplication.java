@@ -5,6 +5,7 @@ import com.majstr.backend.config.EmailProperties;
 import com.majstr.backend.config.JwtProperties;
 import com.majstr.backend.config.PortalProperties;
 import com.majstr.backend.config.RateLimitProperties;
+import com.majstr.backend.config.SentryProperties;
 import com.majstr.backend.config.StorageProperties;
 import com.majstr.backend.config.VapidProperties;
 import org.springframework.boot.SpringApplication;
@@ -23,7 +24,8 @@ import org.springframework.scheduling.annotation.EnableScheduling;
         StorageProperties.class,
         PortalProperties.class,
         EmailProperties.class,
-        VapidProperties.class
+        VapidProperties.class,
+        SentryProperties.class
 })
 public class MajstrApplication {
 

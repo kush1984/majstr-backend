@@ -2,7 +2,9 @@ package com.majstr.backend.exception;
 
 import com.majstr.backend.dto.ErrorResponse;
 import com.majstr.backend.feature.FeatureNotAvailableException;
+import com.majstr.backend.security.UserPrincipal;
 import com.majstr.backend.storage.UnsupportedMediaTypeException;
+import io.sentry.Sentry;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.ConstraintViolationException;
 import lombok.extern.slf4j.Slf4j;
@@ -11,7 +13,9 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.authentication.BadCredentialsException;
+import org.springframework.security.core.Authentication;
 import org.springframework.security.core.AuthenticationException;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.core.userdetails.UsernameNotFoundException;
 import org.springframework.validation.FieldError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
@@ -123,7 +127,27 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ErrorResponse> handleAny(Exception ex, HttpServletRequest req) {
         log.error("Unhandled exception at {} {}", req.getMethod(), req.getRequestURI(), ex);
+        reportToSentry(ex, req);
+        // Generic message only — the stack trace stays in the server log, never in the body.
         return build(HttpStatus.INTERNAL_SERVER_ERROR, "Internal server error", req);
+    }
+
+    /**
+     * Reports a 5xx/unhandled exception to Sentry with the endpoint and an opaque
+     * user id for triage. No PII (email, request body, headers, tokens) is attached.
+     * A no-op when Sentry has no DSN (local dev), so it is always safe to call.
+     */
+    private void reportToSentry(Exception ex, HttpServletRequest req) {
+        Sentry.withScope(scope -> {
+            scope.setTag("endpoint", req.getMethod() + " " + req.getRequestURI());
+            Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+            if (auth != null && auth.getPrincipal() instanceof UserPrincipal principal) {
+                io.sentry.protocol.User user = new io.sentry.protocol.User();
+                user.setId(principal.id().toString());
+                scope.setUser(user);
+            }
+            Sentry.captureException(ex);
+        });
     }
 
     private String formatFieldError(FieldError err) {
