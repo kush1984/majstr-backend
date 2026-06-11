@@ -13,6 +13,8 @@ version = "0.0.1-SNAPSHOT"
 description = "Majstr backend — SaaS for Ukrainian contractors"
 
 java {
+    // Pinned to JDK 25. The foojay resolver in settings.gradle.kts lets Gradle
+    // auto-download this toolchain when the environment lacks it (e.g. Railway).
     toolchain {
         languageVersion = JavaLanguageVersion.of(25)
     }
