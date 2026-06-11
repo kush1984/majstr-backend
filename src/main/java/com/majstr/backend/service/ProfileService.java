@@ -84,7 +84,7 @@ public class ProfileService {
         // the file ended up with a duplicated 16-byte header on disk.
         byte[] content = file.getBytes();
         if (content.length < 4) {
-            throw new UnsupportedMediaTypeException("Empty or truncated upload");
+            throw new UnsupportedMediaTypeException("error.upload.empty");
         }
         byte[] header = Arrays.copyOf(content, Math.min(HEADER_PEEK_BYTES, content.length));
         ImageKind kind = ImageContentTypeDetector.detect(header);

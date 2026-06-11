@@ -74,6 +74,9 @@ app:
     login:
       max-attempts: 5
       window-minutes: 15
+    register:
+      max-attempts: 5
+      window-minutes: 60
     portal:
       max-attempts: 30
       window-minutes: 1

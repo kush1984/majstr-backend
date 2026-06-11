@@ -3,6 +3,7 @@ package com.majstr.backend.config;
 import com.majstr.backend.security.JwtAuthenticationFilter;
 import com.majstr.backend.security.LoginRateLimitFilter;
 import com.majstr.backend.security.PublicPortalRateLimitFilter;
+import com.majstr.backend.security.RegisterRateLimitFilter;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -49,6 +50,7 @@ public class SecurityConfig {
 
     private final JwtAuthenticationFilter jwtAuthenticationFilter;
     private final LoginRateLimitFilter loginRateLimitFilter;
+    private final RegisterRateLimitFilter registerRateLimitFilter;
     private final PublicPortalRateLimitFilter publicPortalRateLimitFilter;
     private final CorsProperties corsProperties;
 
@@ -75,6 +77,7 @@ public class SecurityConfig {
                         .requestMatchers(ADMIN_PATHS).hasRole("ADMIN")
                         .anyRequest().authenticated())
                 .addFilterBefore(loginRateLimitFilter, UsernamePasswordAuthenticationFilter.class)
+                .addFilterBefore(registerRateLimitFilter, UsernamePasswordAuthenticationFilter.class)
                 .addFilterBefore(publicPortalRateLimitFilter, UsernamePasswordAuthenticationFilter.class)
                 .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
         return http.build();

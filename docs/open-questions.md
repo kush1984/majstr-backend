@@ -67,6 +67,25 @@ one-line summary — keep the item in the file as a record.
 - **Context:** Email verification ships, but real sending needs `RESEND_API_KEY` (env) and — to email anyone other than the Resend account owner — a Resend-verified sending domain in `EMAIL_FROM`. In dev the key is blank, so emails are logged & skipped: the feature works end-to-end but no mail actually goes out.
 - **Notes / options:** Sign up at Resend, add `RESEND_API_KEY`; for arbitrary recipients verify a domain (DNS records) and set `EMAIL_FROM=Majstr <noreply@domain>`. Until then only the account owner's own address receives mail (Resend sandbox via `onboarding@resend.dev`). Revisit before public launch and when wiring password reset + portal notifications (same transport). **Fix E sends estimate links to client emails (arbitrary third parties) — so a verified domain is a hard requirement for that feature to work at all in production.**
 
+### I/O inside @Transactional
+- **Status:** OPEN
+- **Since:** Fix I code review (2026-06-10)
+- **Context:** Logo upload (storage write) and PDF generation run inside
+  `@Transactional` methods, holding a DB connection from the Hikari pool (max 10)
+  for the duration of the I/O. Fine at current traffic; a slow disk or big PDF
+  under load could starve the pool.
+- **Notes / options:** Move file I/O outside the transaction boundary (do the DB
+  work first, then write the file), or make PDF rendering non-transactional —
+  it only reads already-loaded data.
+
+### MetricsService full table scans
+- **Status:** OPEN
+- **Since:** Fix I code review (2026-06-10)
+- **Context:** Admin metrics call `userRepository.findAll()` (twice for churn).
+  Fine for hundreds of users, not thousands.
+- **Notes / options:** Replace with aggregate queries (`COUNT ... GROUP BY`)
+  when the user table grows; admin-only endpoint so urgency is low.
+
 ### Unread-question count performance on the project list
 - **Status:** RESOLVED
 - **Since:** Fix F (2026-06-04)
@@ -76,6 +95,26 @@ one-line summary — keep the item in the file as a record.
 ---
 
 ## Security
+
+### Localization scope: messages done, content documents still uk-only
+- **Status:** OPEN
+- **Since:** Localization iteration (2026-06-10)
+- **Context:** All end-user *messages* (ErrorResponse bodies, filter 429s, push
+  titles) now resolve through `MessageSource` (uk base + en bundle, served by
+  `Accept-Language`). Three things stay hard-coded Ukrainian by design, as
+  product-language *content* rather than messages: the generated estimate
+  **PDF** (`EstimatePdfService` labels + "грн"), the **email HTML**
+  (`ResendEmailService` templates), and the **vanilla portal page chrome**
+  (`static/portal/index.html` button/section labels — only its error states
+  were localized). Also: **jakarta-validation field errors** ("must be a
+  well-formed email address") are still English — the PWA validates
+  client-side with its own uk texts, so they rarely surface, but a direct API
+  caller or the portal would see English.
+- **Notes / options:** Revisit only if a second client-facing language is
+  actually needed (e.g. EU market). Then: thread a locale through
+  `EstimatePdfService`/`ResendEmailService`, externalize the portal strings,
+  and add `{jakarta.validation.constraints.*.message}` keys to the bundle.
+  Until there's a non-Ukrainian client, this is intentional, not a gap.
 
 ### JWT secret rotation strategy
 - **Status:** OPEN
@@ -88,6 +127,45 @@ one-line summary — keep the item in the file as a record.
 - **Since:** step 3
 - **Context:** `EstimateShareLink.token` stores the raw token so the contractor can re-copy the URL later. DB compromise reveals all live share URLs.
 - **Notes / options:** Hash like refresh tokens; lose the "show URL again" feature, gain breach safety. Decide once we have real users.
+
+### Refresh-token reuse detection (session-family revocation)
+- **Status:** OPEN
+- **Since:** Fix I code review (2026-06-10)
+- **Context:** Rotation revokes the old token on use, but presenting an
+  *already-revoked* token (the classic stolen-token signal) just returns 401 —
+  it doesn't revoke the user's other sessions. `revokeAllForUser` exists and is
+  unused.
+- **Notes / options:** On a revoked-token presentation, call `revokeAllForUser`
+  (treat it as theft evidence). Cheap to add; needs care not to punish the
+  PWA's legitimate single-flight races. Revisit before public launch.
+
+### Multiple active share links per estimate
+- **Status:** OPEN
+- **Since:** Fix I code review (2026-06-10)
+- **Context:** Every `POST /api/estimates/{id}/share` mints a new token; old
+  ones stay valid until expiry. More live URLs than the contractor likely
+  realizes.
+- **Notes / options:** Either reuse the existing usable link (idempotent
+  share), or revoke older links on re-share. Decide together with the
+  raw-vs-hashed share-token question above.
+
+### Public file serving needs auth once non-public assets exist
+- **Status:** OPEN
+- **Since:** Fix I code review (2026-06-10)
+- **Context:** `/api/files/**` is fully public. Today it only serves contractor
+  logos, which are public by design (anonymous portal + PDF). The moment
+  photo reports or other private uploads land, public serving becomes a leak.
+- **Notes / options:** Signed URLs (time-limited) or authenticated streaming
+  for non-logo assets; ties into the S3/R2 migration item.
+
+### Email enumeration on register
+- **Status:** OPEN
+- **Since:** Fix I code review (2026-06-10)
+- **Context:** Register returns 409 "email already registered" — confirms an
+  account exists. Login is enumeration-safe; register inherently isn't unless
+  the flow goes async ("check your inbox" for both outcomes).
+- **Notes / options:** Async-confirmation register is a UX cost; the register
+  rate limit (Fix I) already curbs bulk probing. Likely accept as-is for v1.
 
 ### Password reset flow
 - **Status:** OPEN

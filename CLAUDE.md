@@ -1,9 +1,10 @@
 # Majstr Backend — Claude guide
 
-SaaS backend for Ukrainian contractors. Current scope: authentication +
-project foundation. See [README.md](README.md) for end-user setup and the
-public REST contract; this file is for Claude / contributors working *in*
-the codebase.
+SaaS backend for Ukrainian contractors. Current scope: auth, projects,
+clients, catalog, estimates (PDF + public client portal with online signing),
+subscriptions/admin, email verification, web push, monitoring. See
+[README.md](README.md) for end-user setup and the public REST contract; this
+file is for Claude / contributors working *in* the codebase.
 
 ## Stack (pinned)
 
@@ -175,6 +176,24 @@ respects the first entry of `X-Forwarded-For` if present. Buckets live in
 a `ConcurrentHashMap` — fine for single-instance dev/prod but a known
 limitation for multi-node deployments (would need a shared store).
 
+`RegisterRateLimitFilter` does the same for `POST /api/auth/register`, but
+keyed by **IP only** (no account exists yet) and without the body wrapper
+(nothing to parse). Config: `app.rate-limit.register` (5/hour default).
+
+### Signed estimates are immutable (state machine)
+
+Once a client signs via the portal (`status == SIGNED`), the estimate is
+locked: `EstimateService.update`/`addItem`/`addItemFromCatalog`/`updateItem`/
+`deleteItem` all throw `EstimateSignedException` → **409 `ESTIMATE_SIGNED`**.
+The signature certifies exact items and totals — to revise the deal, create a
+new estimate. Setting `SIGNED` manually through `PUT /api/estimates/{id}` is
+also rejected (400) — a signature only comes from the portal, so signer
+metadata is real. **Deleting** a signed estimate stays allowed (removes the
+record, doesn't corrupt it; the whole project cascades on delete anyway).
+`Estimate` carries a JPA `@Version` column (V23) so two concurrent portal
+sign requests can't both win — the loser gets 409 via the
+`OptimisticLockingFailureException` handler.
+
 ### Spring Security 7 wiring
 
 `SecurityConfig.filterChain` uses the lambda DSL only (Spring 7 removed
@@ -187,6 +206,43 @@ everything else requires authentication.
 
 CORS is configured via `CorsConfigurationSource` bean fed by
 `CorsProperties.allowedOrigins` (comma-separated env var).
+
+### Localization of user-facing messages
+
+Every message an end user can see (ErrorResponse bodies, the filters' 429
+bodies, push notification titles) resolves through a `MessageSource`
+(`LocalizationConfig`, explicit beans — don't rely on Boot auto-config).
+**Bundle layout is deliberate:** `messages.properties` (the base file) is
+**Ukrainian** — the product language — so every unknown `Accept-Language`
+falls back to Ukrainian, never to English internals; `messages_en.properties`
+is served only on an explicit `Accept-Language: en`
+(`fallbackToSystemLocale=false` keeps the JVM locale out of it).
+
+Conventions:
+- **Exception messages stay English** (log detail). The advice maps the
+  exception *type* to a bundle key, or — for exceptions thrown with a
+  context-specific text (`EmailNotVerifiedException`,
+  `ClientEmailMissingException`, `InvalidVerificationTokenException`,
+  `UnsupportedMediaTypeException`, `TooManyRequestsException`,
+  `InvalidEstimateStatusException`) — the **throw site passes the bundle key
+  as the exception message** and the advice resolves it (`msg(ex.getMessage())`,
+  falling back to the raw text for unknown keys, so a stray literal can't 500).
+- Filters run before the `DispatcherServlet` sets the locale context — they
+  use `LocalizationConfig.requestLocale(request)` (header → locale, no header
+  → Ukrainian; never the JVM default).
+- Push titles always use `LocalizationConfig.UKRAINIAN` (the contractor's
+  request context is the *client's*, not theirs).
+- Values used **with arguments** go through `MessageFormat` — double the
+  apostrophes (`об''єктів`); values without arguments don't.
+- Plural forms: `GlobalExceptionHandler.projectsPluralKey` picks
+  `plural.projects.one/few/many` with Ukrainian mod-10/mod-100 rules.
+- **Not localized (deliberate):** jakarta-validation field errors (the PWA
+  validates client-side with its own uk texts; see open-questions), Swagger
+  descriptions, log lines, email HTML (already Ukrainian, lives in
+  `ResendEmailService` as templates, not bundle messages).
+- The standalone-MockMvc tests pin the locale with an explicit
+  `Accept-Language` header — without it the default resolver falls back to
+  the JVM locale and assertions go nondeterministic.
 
 ### Error response shape
 
@@ -201,21 +257,24 @@ All errors flow through `GlobalExceptionHandler` and use
 login filter, the resend-verification 429 and the estimate-email 429).
 `code` is an optional machine-readable code (`EMAIL_NOT_VERIFIED` on the
 share gate; `CLIENT_EMAIL_MISSING` when emailing an estimate to a client
-who has no address) so clients can branch without parsing the message.
+who has no address; `ESTIMATE_SIGNED` when mutating a signed estimate) so
+clients can branch without parsing the message.
 Null fields are stripped globally via
 `spring.jackson.default-property-inclusion: non_null`.
 
 Status mapping:
 - 400 — `MethodArgumentNotValidException`, `ConstraintViolationException`,
-  `HttpMessageNotReadableException`
+  `HttpMessageNotReadableException`, `InvalidEstimateStatusException`
 - 401 — `BadCredentialsException`, `UsernameNotFoundException`,
   `InvalidTokenException`, any other `AuthenticationException`
 - 403 — `AccessDeniedException`
-- 409 — `EmailAlreadyExistsException`
-- 429 — emitted directly by `LoginRateLimitFilter` (does **not** go through
-  the advice — it bypasses Spring MVC because the filter writes the
-  response itself)
-- 500 — fallback, with a logged stack trace
+- 409 — `EmailAlreadyExistsException`, `EstimateSignedException`
+  (`ESTIMATE_SIGNED`), `OptimisticLockingFailureException` (concurrent edit)
+- 429 — emitted directly by `LoginRateLimitFilter` / `RegisterRateLimitFilter`
+  (does **not** go through the advice — the filters write the response
+  themselves, bypassing Spring MVC)
+- 500 — fallback, with a logged stack trace; also reported to Sentry
+  (env-gated on `SENTRY_DSN`, endpoint tag + opaque user id, no PII)
 
 ### Schema is owned by Flyway
 
@@ -324,10 +383,9 @@ a one-line note so the history is preserved.
 
 These are intentional gaps to be aware of (don't claim they exist):
 
-- No `actuator` starter — `/actuator/health` is permitted in
-  `SecurityConfig` for future use but the dependency isn't on the
-  classpath yet.
-- No integration tests (only the MockMvc slice).
+- No integration tests (only Mockito unit tests + standalone MockMvc).
 - No multi-instance rate-limit store (in-memory `ConcurrentHashMap`).
-- No estimates / projects / client-communication domain — that's the
-  next iteration.
+- No billing / payments — plan changes are admin-manual.
+- No password reset flow.
+- See [docs/open-questions.md](docs/open-questions.md) for the full list of
+  deferred decisions.

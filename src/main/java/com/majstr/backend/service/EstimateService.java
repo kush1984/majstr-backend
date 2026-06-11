@@ -12,7 +12,10 @@ import com.majstr.backend.entity.CatalogItem;
 import com.majstr.backend.entity.Estimate;
 import com.majstr.backend.entity.EstimateItem;
 import com.majstr.backend.entity.ItemType;
+import com.majstr.backend.entity.EstimateStatus;
 import com.majstr.backend.entity.Project;
+import com.majstr.backend.exception.EstimateSignedException;
+import com.majstr.backend.exception.InvalidEstimateStatusException;
 import com.majstr.backend.exception.ResourceNotFoundException;
 import com.majstr.backend.repository.EstimateItemRepository;
 import com.majstr.backend.repository.EstimateRepository;
@@ -73,6 +76,11 @@ public class EstimateService {
     @Transactional
     public EstimateResponse update(UUID estimateId, EstimateUpdateRequest req, UUID ownerId) {
         Estimate estimate = loadOwned(estimateId, ownerId);
+        requireNotSigned(estimate);
+        if (req.status() == EstimateStatus.SIGNED) {
+            // Message is a bundle key, resolved by GlobalExceptionHandler.
+            throw new InvalidEstimateStatusException("error.estimate.manual-sign");
+        }
         estimate.setStatus(req.status());
         estimate.setValidUntil(req.validUntil());
         estimate.setNotes(normalize(req.notes()));
@@ -114,6 +122,7 @@ public class EstimateService {
     @Transactional
     public EstimateItemResponse addItem(UUID estimateId, EstimateItemRequest req, UUID ownerId) {
         Estimate estimate = loadOwned(estimateId, ownerId);
+        requireNotSigned(estimate);
         EstimateItem item = EstimateItem.builder()
                 .estimate(estimate)
                 .type(req.type())
@@ -133,6 +142,7 @@ public class EstimateService {
                                                    EstimateItemFromCatalogRequest req,
                                                    UUID ownerId) {
         Estimate estimate = loadOwned(estimateId, ownerId);
+        requireNotSigned(estimate);
         CatalogItem source = catalogService.loadOwned(catalogItemId, ownerId);
         // Copy the category from the catalog item so the estimate can group too.
         EstimateItem item = EstimateItem.builder()
@@ -153,7 +163,7 @@ public class EstimateService {
                                            UUID itemId,
                                            EstimateItemRequest req,
                                            UUID ownerId) {
-        loadOwned(estimateId, ownerId);
+        requireNotSigned(loadOwned(estimateId, ownerId));
         EstimateItem item = loadItemInEstimate(estimateId, itemId);
         item.setType(req.type());
         item.setName(req.name().trim());
@@ -169,12 +179,25 @@ public class EstimateService {
 
     @Transactional
     public void deleteItem(UUID estimateId, UUID itemId, UUID ownerId) {
-        loadOwned(estimateId, ownerId);
+        requireNotSigned(loadOwned(estimateId, ownerId));
         EstimateItem item = loadItemInEstimate(estimateId, itemId);
         itemRepository.delete(item);
     }
 
     // ---- helpers -----------------------------------------------------------
+
+    /**
+     * A signed estimate is immutable: the signature certifies an exact set of
+     * items and totals, so any edit would silently invalidate what the client
+     * agreed to. Deleting the whole estimate stays allowed — that removes the
+     * record instead of corrupting it. To revise the deal, create a new estimate.
+     */
+    private static Estimate requireNotSigned(Estimate estimate) {
+        if (estimate.getStatus() == EstimateStatus.SIGNED) {
+            throw new EstimateSignedException();
+        }
+        return estimate;
+    }
 
     Estimate loadOwned(UUID estimateId, UUID ownerId) {
         Estimate estimate = estimateRepository.findById(estimateId)

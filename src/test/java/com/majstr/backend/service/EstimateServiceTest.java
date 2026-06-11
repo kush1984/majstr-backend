@@ -3,7 +3,10 @@ package com.majstr.backend.service;
 import com.majstr.backend.dto.EstimateCreateRequest;
 import com.majstr.backend.dto.EstimateItemRequest;
 import com.majstr.backend.dto.EstimateResponse;
+import com.majstr.backend.dto.EstimateUpdateRequest;
 import com.majstr.backend.entity.Estimate;
+import com.majstr.backend.exception.EstimateSignedException;
+import com.majstr.backend.exception.InvalidEstimateStatusException;
 import com.majstr.backend.entity.EstimateItem;
 import com.majstr.backend.entity.EstimateStatus;
 import com.majstr.backend.entity.ItemType;
@@ -136,7 +139,84 @@ class EstimateServiceTest {
                 .isInstanceOf(AccessDeniedException.class);
     }
 
+    // ---- signed estimates are immutable ------------------------------------
+
+    @Test
+    void update_rejectsWhenEstimateIsSigned() {
+        Estimate signed = signedEstimate();
+        given(estimateRepository.findById(estimateId)).willReturn(Optional.of(signed));
+
+        assertThatThrownBy(() -> estimateService.update(
+                estimateId, new EstimateUpdateRequest(EstimateStatus.DRAFT, null, null), ownerId))
+                .isInstanceOf(EstimateSignedException.class);
+        assertThat(signed.getStatus()).isEqualTo(EstimateStatus.SIGNED);
+    }
+
+    @Test
+    void update_rejectsManualTransitionToSigned() {
+        Estimate draft = ownedEstimate(ownerId);
+        given(estimateRepository.findById(estimateId)).willReturn(Optional.of(draft));
+
+        assertThatThrownBy(() -> estimateService.update(
+                estimateId, new EstimateUpdateRequest(EstimateStatus.SIGNED, null, null), ownerId))
+                .isInstanceOf(InvalidEstimateStatusException.class);
+        assertThat(draft.getStatus()).isEqualTo(EstimateStatus.DRAFT);
+    }
+
+    @Test
+    void update_allowsTransitionsBetweenUnsignedStatuses() {
+        Estimate sent = ownedEstimate(ownerId);
+        sent.setStatus(EstimateStatus.SENT);
+        given(estimateRepository.findById(estimateId)).willReturn(Optional.of(sent));
+        given(itemRepository.findByEstimateIdOrderBySortOrderAscIdAsc(estimateId)).willReturn(List.of());
+
+        EstimateResponse resp = estimateService.update(
+                estimateId, new EstimateUpdateRequest(EstimateStatus.REJECTED, null, null), ownerId);
+
+        assertThat(resp.status()).isEqualTo(EstimateStatus.REJECTED);
+    }
+
+    @Test
+    void addItem_rejectsWhenEstimateIsSigned() {
+        given(estimateRepository.findById(estimateId)).willReturn(Optional.of(signedEstimate()));
+
+        EstimateItemRequest req = new EstimateItemRequest(
+                ItemType.WORK, "X", null, Unit.PIECE,
+                new BigDecimal("1.000"), new BigDecimal("1.00"), 0);
+
+        assertThatThrownBy(() -> estimateService.addItem(estimateId, req, ownerId))
+                .isInstanceOf(EstimateSignedException.class);
+    }
+
+    @Test
+    void updateItem_rejectsWhenEstimateIsSigned() {
+        given(estimateRepository.findById(estimateId)).willReturn(Optional.of(signedEstimate()));
+
+        EstimateItemRequest req = new EstimateItemRequest(
+                ItemType.WORK, "X", null, Unit.PIECE,
+                new BigDecimal("1.000"), new BigDecimal("1.00"), 0);
+
+        assertThatThrownBy(() -> estimateService.updateItem(estimateId, UUID.randomUUID(), req, ownerId))
+                .isInstanceOf(EstimateSignedException.class);
+    }
+
+    @Test
+    void deleteItem_rejectsWhenEstimateIsSigned() {
+        given(estimateRepository.findById(estimateId)).willReturn(Optional.of(signedEstimate()));
+
+        assertThatThrownBy(() -> estimateService.deleteItem(estimateId, UUID.randomUUID(), ownerId))
+                .isInstanceOf(EstimateSignedException.class);
+    }
+
     // ---- fixtures ---------------------------------------------------------
+
+    private Estimate signedEstimate() {
+        Estimate estimate = ownedEstimate(ownerId);
+        estimate.setStatus(EstimateStatus.SIGNED);
+        estimate.setSignedAt(Instant.now());
+        estimate.setSignerName("Олена Іваненко");
+        return estimate;
+    }
 
     private Project ownedProject(UUID userId) {
         User owner = User.builder().id(userId).build();

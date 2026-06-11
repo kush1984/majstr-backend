@@ -25,8 +25,8 @@ public class EmailVerificationService {
     private static final Duration TTL = Duration.ofHours(24);
     private static final SecureRandom RNG = new SecureRandom();
     private static final Base64.Encoder ENCODER = Base64.getUrlEncoder().withoutPadding();
-    private static final String INVALID_MSG =
-            "Посилання недійсне або прострочене. Запросіть новий лист.";
+    /** Bundle key — resolved to the user's language by GlobalExceptionHandler. */
+    private static final String INVALID_MSG = "error.verification.invalid";
 
     private final EmailVerificationTokenRepository tokenRepository;
     private final UserRepository userRepository;

@@ -15,7 +15,9 @@ import com.majstr.backend.entity.EstimateStatus;
 import com.majstr.backend.entity.ItemType;
 import com.majstr.backend.entity.Project;
 import com.majstr.backend.entity.ProjectStatus;
+import com.majstr.backend.config.LocalizationConfig;
 import com.majstr.backend.entity.User;
+import com.majstr.backend.exception.EstimateSignedException;
 import com.majstr.backend.exception.ResourceNotFoundException;
 import com.majstr.backend.feature.Feature;
 import com.majstr.backend.feature.FeatureGuard;
@@ -24,9 +26,9 @@ import com.majstr.backend.repository.EstimateItemRepository;
 import com.majstr.backend.repository.EstimateQuestionRepository;
 import com.majstr.backend.repository.EstimateShareLinkRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.context.MessageSource;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.web.server.ResponseStatusException;
 
 import java.io.IOException;
 import java.math.BigDecimal;
@@ -49,6 +51,7 @@ public class PublicEstimateService {
     private final EstimateService estimateService;
     private final FeatureGuard featureGuard;
     private final PushService pushService;
+    private final MessageSource messages;
 
     @Transactional(readOnly = true)
     public PublicEstimateView view(String token) {
@@ -63,8 +66,9 @@ public class PublicEstimateService {
         User contractor = estimate.getProject().getOwner();
         featureGuard.requireFeature(contractor, Feature.ONLINE_SIGNATURE);
         if (estimate.getStatus() == EstimateStatus.SIGNED) {
-            throw new ResponseStatusException(org.springframework.http.HttpStatus.CONFLICT,
-                    "Estimate is already signed");
+            // 409 + code ESTIMATE_SIGNED via the advice — same contract as the
+            // contractor-side guard, localized for the portal client.
+            throw new EstimateSignedException();
         }
         estimate.setStatus(EstimateStatus.SIGNED);
         estimate.setSignedAt(Instant.now());
@@ -81,10 +85,11 @@ public class PublicEstimateService {
         List<EstimateItem> items = itemRepository.findByEstimateIdOrderBySortOrderAscIdAsc(estimate.getId());
         PublicEstimateView view = buildView(estimate, items);
         // Notify the contractor in real time (fail-soft — never breaks signing).
-        pushService.sendToUser(contractor,
-                req.clientName().trim() + " підписав(ла) кошторис на " + formatHryvnia(view.total()),
-                project.getName(),
-                "/projects/" + project.getId());
+        // Contractor notifications always use the product language (uk base bundle).
+        String title = messages.getMessage("push.estimate-signed",
+                new Object[]{req.clientName().trim(), formatHryvnia(view.total())},
+                LocalizationConfig.UKRAINIAN);
+        pushService.sendToUser(contractor, title, project.getName(), "/projects/" + project.getId());
         return view;
     }
 
@@ -102,7 +107,7 @@ public class PublicEstimateService {
         // Notify the contractor in real time (fail-soft — never breaks the question).
         User contractor = estimate.getProject().getOwner();
         pushService.sendToUser(contractor,
-                "Нове питання від клієнта",
+                messages.getMessage("push.question.title", null, LocalizationConfig.UKRAINIAN),
                 question.getMessage(),
                 "/projects/" + estimate.getProject().getId());
         return saved;

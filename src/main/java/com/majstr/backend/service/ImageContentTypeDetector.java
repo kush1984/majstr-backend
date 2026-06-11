@@ -24,12 +24,13 @@ public final class ImageContentTypeDetector {
     private ImageContentTypeDetector() {}
 
     public static ImageKind detect(byte[] header) {
+        // Exception messages are bundle keys, resolved by GlobalExceptionHandler.
         if (header == null || header.length < 4) {
-            throw new UnsupportedMediaTypeException("Empty or truncated upload");
+            throw new UnsupportedMediaTypeException("error.upload.empty");
         }
         if (isPng(header)) return ImageKind.PNG;
         if (isJpeg(header)) return ImageKind.JPEG;
-        throw new UnsupportedMediaTypeException("Only PNG and JPEG images are accepted");
+        throw new UnsupportedMediaTypeException("error.upload.type");
     }
 
     private static boolean isPng(byte[] h) {

@@ -14,6 +14,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import java.util.Optional;
 import java.util.UUID;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.BDDMockito.given;
@@ -32,11 +33,14 @@ class LimitServiceTest {
         givenUserOnPlan(Plan.FREE);
         given(projectRepository.countByOwnerId(userId)).willReturn(2L);
 
+        // The user-facing text is built from the message bundle in the advice
+        // (covered by GlobalExceptionHandlerTest); here we assert the carried facts.
         assertThatThrownBy(() -> limitService.requireWithinLimit(userId, Limit.MAX_PROJECTS))
-                .isInstanceOf(LimitExceededException.class)
-                .hasMessageContaining("2 об'єкти")
-                .hasMessageContaining("безкоштовному")
-                .hasMessageContaining("PRO");
+                .isInstanceOfSatisfying(LimitExceededException.class, ex -> {
+                    assertThat(ex.getMaxAllowed()).isEqualTo(2);
+                    assertThat(ex.getCurrentPlan()).isEqualTo(Plan.FREE);
+                    assertThat(ex.getLimit()).isEqualTo(Limit.MAX_PROJECTS);
+                });
     }
 
     @Test

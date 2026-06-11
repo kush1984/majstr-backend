@@ -1,5 +1,6 @@
 package com.majstr.backend.security;
 
+import com.majstr.backend.config.LocalizationConfig;
 import com.majstr.backend.dto.ErrorResponse;
 import com.majstr.backend.dto.LoginRequest;
 import com.majstr.backend.service.LoginRateLimiter;
@@ -9,6 +10,7 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.context.MessageSource;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
@@ -29,6 +31,7 @@ public class LoginRateLimitFilter extends OncePerRequestFilter {
 
     private final LoginRateLimiter rateLimiter;
     private final ObjectMapper objectMapper;
+    private final MessageSource messages;
 
     @Override
     protected boolean shouldNotFilter(HttpServletRequest request) {
@@ -46,7 +49,7 @@ public class LoginRateLimitFilter extends OncePerRequestFilter {
 
         LoginRateLimiter.ConsumeResult result = rateLimiter.tryConsume(key);
         if (!result.allowed()) {
-            writeRateLimitResponse(response, request.getRequestURI(), result.retryAfterSeconds());
+            writeRateLimitResponse(request, response, result.retryAfterSeconds());
             return;
         }
         chain.doFilter(cached, response);
@@ -74,9 +77,11 @@ public class LoginRateLimitFilter extends OncePerRequestFilter {
         return request.getRemoteAddr();
     }
 
-    private void writeRateLimitResponse(HttpServletResponse response, String path, long retryAfterSeconds) throws IOException {
-        ErrorResponse body = ErrorResponse.rateLimited(
-                "Too many login attempts. Try again later.", path, retryAfterSeconds);
+    private void writeRateLimitResponse(HttpServletRequest request, HttpServletResponse response,
+                                        long retryAfterSeconds) throws IOException {
+        String message = messages.getMessage("error.rate.login", null,
+                LocalizationConfig.requestLocale(request));
+        ErrorResponse body = ErrorResponse.rateLimited(message, request.getRequestURI(), retryAfterSeconds);
         response.setStatus(HttpStatus.TOO_MANY_REQUESTS.value());
         response.setContentType(MediaType.APPLICATION_JSON_VALUE);
         response.setCharacterEncoding(StandardCharsets.UTF_8.name());

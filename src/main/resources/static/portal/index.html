@@ -225,7 +225,7 @@
     const dateFormat = new Intl.DateTimeFormat('uk-UA', { dateStyle: 'medium' });
 
     const UNIT_LABEL = {
-        M2: 'м²', M: 'м', PIECE: 'шт', KG: 'кг', HOUR: 'год', SET: 'компл'
+        M2: 'м²', M: 'м', LINEAR_METER: 'м.п.', PIECE: 'шт', KG: 'кг', HOUR: 'год', SET: 'компл'
     };
 
     function money(value) {
@@ -331,20 +331,60 @@
         b.addEventListener('click', () => closeDialog(b.getAttribute('data-close')));
     });
 
+    // Backend ErrorResponse bodies carry localized, user-friendly messages —
+    // show them when present, fall back to a generic text otherwise.
+    async function apiMessage(resp) {
+        try {
+            const data = await resp.json();
+            return data && data.message ? data.message : null;
+        } catch (e) {
+            return null;
+        }
+    }
+
+    // A failure on this page lands on the CONTRACTOR's reputation — never show
+    // a blank screen or a raw error. Retryable failures get a retry button;
+    // a dead link tells the client to ask the contractor for a fresh one.
+    function showError(message, canRetry) {
+        root.innerHTML = `
+            <div class="card">
+                <div class="error">${escapeHtml(message)}</div>
+                ${canRetry ? '<div class="actions" style="justify-content:center"><button id="btnRetry" class="primary">Спробувати ще раз</button></div>' : ''}
+            </div>
+        `;
+        if (canRetry) {
+            document.getElementById('btnRetry').addEventListener('click', () => {
+                root.innerHTML = '<p>Завантаження…</p>';
+                load();
+            });
+        }
+    }
+
     document.getElementById('signSubmit').addEventListener('click', async () => {
         const clientName = document.getElementById('signName').value.trim();
         const clientPhone = document.getElementById('signPhone').value.trim();
         if (!clientName || !clientPhone) return;
-        const resp = await fetch(apiBase + '/sign', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ clientName, clientPhone })
-        });
+        let resp;
+        try {
+            resp = await fetch(apiBase + '/sign', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ clientName, clientPhone })
+            });
+        } catch (e) {
+            alert('Немає з\'єднання. Перевірте інтернет і спробуйте ще раз.');
+            return;
+        }
         if (resp.ok) {
             closeDialog('signDialog');
             load();
+        } else if (resp.status === 409) {
+            // Already signed (e.g. opened in two tabs) — reload to show the signature.
+            closeDialog('signDialog');
+            alert(await apiMessage(resp) || 'Кошторис уже підписано.');
+            load();
         } else {
-            alert('Не вдалося підписати. Спробуйте пізніше.');
+            alert(await apiMessage(resp) || 'Не вдалося підписати. Спробуйте пізніше.');
         }
     });
 
@@ -356,30 +396,41 @@
             authorPhone: document.getElementById('qPhone').value.trim() || null,
             message
         };
-        const resp = await fetch(apiBase + '/question', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(body)
-        });
+        let resp;
+        try {
+            resp = await fetch(apiBase + '/question', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(body)
+            });
+        } catch (e) {
+            // The typed message stays in the dialog — nothing is lost.
+            alert('Немає з\'єднання. Перевірте інтернет і спробуйте ще раз.');
+            return;
+        }
         if (resp.ok) {
             closeDialog('questionDialog');
             document.getElementById('qMessage').value = '';
             alert('Дякуємо! Підрядник побачить ваше повідомлення.');
         } else {
-            alert('Не вдалося надіслати. Спробуйте пізніше.');
+            alert(await apiMessage(resp) || 'Не вдалося надіслати. Спробуйте пізніше.');
         }
     });
 
     async function load() {
         try {
             const resp = await fetch(apiBase);
+            if (resp.status === 404) {
+                showError('Посилання недійсне або прострочене. Зверніться до вашого майстра за новим посиланням.', false);
+                return;
+            }
             if (!resp.ok) {
-                root.innerHTML = '<div class="error">Кошторис не знайдено або посилання прострочене</div>';
+                showError('Не вдалося завантажити кошторис. Спробуйте ще раз за хвилину.', true);
                 return;
             }
             render(await resp.json());
         } catch (e) {
-            root.innerHTML = '<div class="error">Помилка завантаження</div>';
+            showError('Не вдалося завантажити кошторис. Перевірте інтернет-з\'єднання і спробуйте ще раз.', true);
         }
     }
 

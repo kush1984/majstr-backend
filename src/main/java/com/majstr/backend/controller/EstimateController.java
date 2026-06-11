@@ -119,8 +119,7 @@ public class EstimateController {
                                                             @AuthenticationPrincipal UserPrincipal principal) {
         EstimateEmailRateLimiter.ConsumeResult probe = estimateEmailRateLimiter.tryConsume(principal.id());
         if (!probe.allowed()) {
-            throw new TooManyRequestsException(
-                    "Забагато листів за годину. Спробуйте трохи пізніше.", probe.retryAfterSeconds());
+            throw new TooManyRequestsException("error.rate.estimate-email", probe.retryAfterSeconds());
         }
         return ResponseEntity.ok(shareLinkService.sendByEmail(id, principal.id()));
     }

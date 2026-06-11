@@ -11,6 +11,7 @@ import jakarta.persistence.ManyToOne;
 import jakarta.persistence.PrePersist;
 import jakarta.persistence.PreUpdate;
 import jakarta.persistence.Table;
+import jakarta.persistence.Version;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.EqualsAndHashCode;
@@ -61,6 +62,12 @@ public class Estimate {
 
     @Column(name = "signer_ip", length = 64)
     private String signerIp;
+
+    // Optimistic lock: two concurrent updates (e.g. parallel portal sign
+    // requests) can't both win — the second commit fails with a 409.
+    @Version
+    @Column(name = "version", nullable = false)
+    private long version;
 
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;

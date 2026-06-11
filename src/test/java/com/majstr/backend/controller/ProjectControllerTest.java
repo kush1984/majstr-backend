@@ -13,6 +13,8 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.context.MessageSource;
+import org.springframework.context.support.ResourceBundleMessageSource;
 import org.springframework.http.MediaType;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
@@ -54,7 +56,7 @@ class ProjectControllerTest {
     void setUp() {
         objectMapper = JsonMapper.builder().build();
         mockMvc = MockMvcBuilders.standaloneSetup(controller)
-                .setControllerAdvice(new GlobalExceptionHandler())
+                .setControllerAdvice(new GlobalExceptionHandler(testMessageSource()))
                 .setCustomArgumentResolvers(new AuthenticationPrincipalArgumentResolver())
                 .build();
         SecurityContextHolder.getContext().setAuthentication(
@@ -64,6 +66,14 @@ class ProjectControllerTest {
     @AfterEach
     void tearDown() {
         SecurityContextHolder.clearContext();
+    }
+
+    private static MessageSource testMessageSource() {
+        ResourceBundleMessageSource source = new ResourceBundleMessageSource();
+        source.setBasename("messages");
+        source.setDefaultEncoding("UTF-8");
+        source.setFallbackToSystemLocale(false);
+        return source;
     }
 
     @Test
@@ -104,9 +114,20 @@ class ProjectControllerTest {
         willThrow(new AccessDeniedException("Project does not belong to the current user"))
                 .given(projectService).get(id, userId);
 
-        mockMvc.perform(get("/api/projects/{id}", id))
+        // Pin the locale — the message is now resolved from the bundle (uk base).
+        mockMvc.perform(get("/api/projects/{id}", id).header("Accept-Language", "uk"))
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.status", is(403)))
+                .andExpect(jsonPath("$.message", is("Доступ заборонено")));
+    }
+
+    @Test
+    void accessDeniedMessageFollowsAcceptLanguage() throws Exception {
+        UUID id = UUID.randomUUID();
+        willThrow(new AccessDeniedException("nope")).given(projectService).get(id, userId);
+
+        mockMvc.perform(get("/api/projects/{id}", id).header("Accept-Language", "en"))
+                .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.message", is("Access denied")));
     }
 }

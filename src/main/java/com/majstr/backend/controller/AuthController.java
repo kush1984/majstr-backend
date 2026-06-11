@@ -81,8 +81,7 @@ public class AuthController {
         }
         VerificationEmailRateLimiter.ConsumeResult probe = verificationEmailRateLimiter.tryConsume(principal.id());
         if (!probe.allowed()) {
-            throw new TooManyRequestsException(
-                    "Зачекайте перед повторним надсиланням листа.", probe.retryAfterSeconds());
+            throw new TooManyRequestsException("error.rate.verification-resend", probe.retryAfterSeconds());
         }
         emailVerificationService.resendFor(principal.id());
         return ResponseEntity.ok().build();

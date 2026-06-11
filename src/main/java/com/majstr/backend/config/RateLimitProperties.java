@@ -8,11 +8,18 @@ import org.springframework.validation.annotation.Validated;
 @ConfigurationProperties(prefix = "app.rate-limit")
 public record RateLimitProperties(
         Login login,
+        Register register,
         Portal portal,
         Verification verification,
         EstimateEmail estimateEmail
 ) {
     public record Login(
+            @Positive int maxAttempts,
+            @Positive int windowMinutes
+    ) {}
+
+    /** Cap on account registrations per client IP — curbs mass signups and verification-email spam. */
+    public record Register(
             @Positive int maxAttempts,
             @Positive int windowMinutes
     ) {}

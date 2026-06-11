@@ -27,7 +27,8 @@ class ImageContentTypeDetectorTest {
         byte[] exe = {0x4D, 0x5A, (byte) 0x90, 0x00, 0x03}; // PE header "MZ"
         assertThatThrownBy(() -> ImageContentTypeDetector.detect(exe))
                 .isInstanceOf(UnsupportedMediaTypeException.class)
-                .hasMessageContaining("PNG and JPEG");
+                // The exception message is a bundle key, localized by the advice.
+                .hasMessage("error.upload.type");
     }
 
     @Test

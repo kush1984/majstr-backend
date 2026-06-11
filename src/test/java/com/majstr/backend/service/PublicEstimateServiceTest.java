@@ -16,17 +16,19 @@ import com.majstr.backend.entity.ProjectStatus;
 import com.majstr.backend.entity.Trade;
 import com.majstr.backend.entity.Unit;
 import com.majstr.backend.entity.User;
+import com.majstr.backend.exception.EstimateSignedException;
 import com.majstr.backend.exception.ResourceNotFoundException;
 import com.majstr.backend.feature.FeatureGuard;
 import com.majstr.backend.push.PushService;
 import com.majstr.backend.repository.EstimateItemRepository;
 import com.majstr.backend.repository.EstimateQuestionRepository;
 import com.majstr.backend.repository.EstimateShareLinkRepository;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.context.support.ResourceBundleMessageSource;
 
 import java.math.BigDecimal;
 import java.time.Instant;
@@ -53,9 +55,20 @@ class PublicEstimateServiceTest {
     @Mock private FeatureGuard featureGuard;
     @Mock private PushService pushService;
 
-    @InjectMocks private PublicEstimateService publicService;
+    private PublicEstimateService publicService;
 
     private final String token = "valid-token-xyz-1234567890";
+
+    @BeforeEach
+    void setUp() {
+        // Real bundle (not a mock) so push texts come out as the contractor sees them.
+        ResourceBundleMessageSource messages = new ResourceBundleMessageSource();
+        messages.setBasename("messages");
+        messages.setDefaultEncoding("UTF-8");
+        messages.setFallbackToSystemLocale(false);
+        publicService = new PublicEstimateService(shareLinkRepository, itemRepository,
+                questionRepository, estimateService, featureGuard, pushService, messages);
+    }
 
     @Test
     void view_returnsSanitizedSnapshotForValidToken() {
@@ -136,6 +149,20 @@ class PublicEstimateServiceTest {
                 contains("підписав(ла) кошторис"),
                 eq("Квартира на Хрещатику"),
                 contains("/projects/"));
+    }
+
+    @Test
+    void sign_rejectsAlreadySignedEstimateWith409Semantics() {
+        Estimate estimate = sampleEstimate();
+        estimate.setStatus(EstimateStatus.SIGNED);
+        estimate.setSignedAt(Instant.now());
+        given(shareLinkRepository.findByToken(token)).willReturn(Optional.of(usableLink(estimate)));
+
+        assertThatThrownBy(() -> publicService.sign(
+                token, new SignRequest("Друга Особа", "+380670000000"), "203.0.113.43"))
+                .isInstanceOf(EstimateSignedException.class);
+        // The original signature is untouched.
+        assertThat(estimate.getSignerName()).isNull();
     }
 
     @Test

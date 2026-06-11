@@ -5,9 +5,10 @@ import lombok.Getter;
 
 /**
  * Thrown by {@link FeatureGuard#requireFeature} when the user's plan does
- * not grant the requested feature. {@code GlobalExceptionHandler} maps it
- * to 403 with a user-facing Ukrainian message that suggests the cheapest
- * upgrade.
+ * not grant the requested feature. {@code GlobalExceptionHandler} maps it to
+ * 403 and builds the user-facing message from the {@code messages} bundle
+ * ({@code error.feature.unavailable}) using the carried fields; the exception
+ * message itself is English log detail only.
  */
 @Getter
 public class FeatureNotAvailableException extends RuntimeException {
@@ -17,16 +18,10 @@ public class FeatureNotAvailableException extends RuntimeException {
     private final Plan requiredPlan;
 
     public FeatureNotAvailableException(Feature feature, Plan currentPlan) {
-        super(buildMessage(feature, currentPlan));
+        super("Feature " + feature.name() + " not available on plan " + currentPlan.name()
+                + " (requires " + PlanConfig.minimumPlanFor(feature).name() + ")");
         this.feature = feature;
         this.currentPlan = currentPlan;
         this.requiredPlan = PlanConfig.minimumPlanFor(feature);
-    }
-
-    private static String buildMessage(Feature feature, Plan currentPlan) {
-        Plan required = PlanConfig.minimumPlanFor(feature);
-        return "Функція " + feature.name()
-                + " недоступна на плані " + currentPlan.name()
-                + ". Доступно у плані " + required.name() + " або вищому.";
     }
 }

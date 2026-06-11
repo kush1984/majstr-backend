@@ -59,7 +59,7 @@ public class ShareLinkService {
 
         Client client = estimate.getProject().getClient();
         if (client == null || client.getEmail() == null || client.getEmail().isBlank()) {
-            throw new ClientEmailMissingException("У клієнта не вказано email");
+            throw new ClientEmailMissingException("error.client-email-missing");
         }
         flipToSentIfDraft(estimate);
 
@@ -96,7 +96,7 @@ public class ShareLinkService {
         User owner = estimate.getProject().getOwner();
         featureGuard.requireFeature(owner, Feature.CLIENT_PORTAL);
         if (!owner.isEmailVerified()) {
-            throw new EmailNotVerifiedException("Підтвердіть email щоб надсилати кошториси клієнтам");
+            throw new EmailNotVerifiedException("error.email-not-verified");
         }
     }
 

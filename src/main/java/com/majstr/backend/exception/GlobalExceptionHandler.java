@@ -7,7 +7,11 @@ import com.majstr.backend.storage.UnsupportedMediaTypeException;
 import io.sentry.Sentry;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.ConstraintViolationException;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.context.MessageSource;
+import org.springframework.context.i18n.LocaleContextHolder;
+import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
@@ -25,16 +29,28 @@ import org.springframework.web.multipart.MaxUploadSizeExceededException;
 
 import java.util.stream.Collectors;
 
+/**
+ * Maps exceptions to the shared {@link ErrorResponse} shape. Every message
+ * that can reach an end user is resolved through the {@code messages} bundle
+ * (Ukrainian base, see {@code LocalizationConfig}); exception messages
+ * themselves stay English for logs. Some exceptions carry a bundle <i>key</i>
+ * as their message ({@code msg(ex.getMessage())} call sites) — the resolver
+ * falls back to the raw text when the key is unknown, so a stray literal can
+ * never break a response.
+ */
 @Slf4j
 @RestControllerAdvice
+@RequiredArgsConstructor
 public class GlobalExceptionHandler {
+
+    private final MessageSource messages;
 
     @ExceptionHandler(MethodArgumentNotValidException.class)
     public ResponseEntity<ErrorResponse> handleValidation(MethodArgumentNotValidException ex, HttpServletRequest req) {
         String message = ex.getBindingResult().getFieldErrors().stream()
                 .map(this::formatFieldError)
                 .collect(Collectors.joining("; "));
-        return build(HttpStatus.BAD_REQUEST, message.isBlank() ? "Validation failed" : message, req);
+        return build(HttpStatus.BAD_REQUEST, message.isBlank() ? msg("error.validation-failed") : message, req);
     }
 
     @ExceptionHandler(ConstraintViolationException.class)
@@ -44,81 +60,105 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(HttpMessageNotReadableException.class)
     public ResponseEntity<ErrorResponse> handleUnreadable(HttpMessageNotReadableException ex, HttpServletRequest req) {
-        return build(HttpStatus.BAD_REQUEST, "Malformed JSON request", req);
+        return build(HttpStatus.BAD_REQUEST, msg("error.malformed-json"), req);
     }
 
     @ExceptionHandler({BadCredentialsException.class, UsernameNotFoundException.class})
     public ResponseEntity<ErrorResponse> handleBadCredentials(Exception ex, HttpServletRequest req) {
-        return build(HttpStatus.UNAUTHORIZED, "Invalid email or password", req);
+        return build(HttpStatus.UNAUTHORIZED, msg("error.bad-credentials"), req);
     }
 
     @ExceptionHandler(InvalidTokenException.class)
     public ResponseEntity<ErrorResponse> handleInvalidToken(InvalidTokenException ex, HttpServletRequest req) {
-        return build(HttpStatus.UNAUTHORIZED, ex.getMessage(), req);
+        log.debug("Invalid token: {}", ex.getMessage());
+        return build(HttpStatus.UNAUTHORIZED, msg("error.session-invalid"), req);
     }
 
     @ExceptionHandler(AuthenticationException.class)
     public ResponseEntity<ErrorResponse> handleAuth(AuthenticationException ex, HttpServletRequest req) {
-        return build(HttpStatus.UNAUTHORIZED, "Authentication failed", req);
+        return build(HttpStatus.UNAUTHORIZED, msg("error.auth-failed"), req);
     }
 
     @ExceptionHandler(AccessDeniedException.class)
     public ResponseEntity<ErrorResponse> handleAccessDenied(AccessDeniedException ex, HttpServletRequest req) {
-        return build(HttpStatus.FORBIDDEN, "Access denied", req);
+        return build(HttpStatus.FORBIDDEN, msg("error.access-denied"), req);
     }
 
     @ExceptionHandler(EmailAlreadyExistsException.class)
     public ResponseEntity<ErrorResponse> handleDupEmail(EmailAlreadyExistsException ex, HttpServletRequest req) {
-        return build(HttpStatus.CONFLICT, ex.getMessage(), req);
+        return build(HttpStatus.CONFLICT, msg("error.email-taken"), req);
     }
 
     @ExceptionHandler(ResourceNotFoundException.class)
     public ResponseEntity<ErrorResponse> handleNotFound(ResourceNotFoundException ex, HttpServletRequest req) {
-        return build(HttpStatus.NOT_FOUND, ex.getMessage(), req);
+        log.debug("Not found: {}", ex.getMessage());
+        return build(HttpStatus.NOT_FOUND, msg("error.not-found"), req);
     }
 
     @ExceptionHandler(UnsupportedMediaTypeException.class)
     public ResponseEntity<ErrorResponse> handleUnsupportedMedia(UnsupportedMediaTypeException ex, HttpServletRequest req) {
-        return build(HttpStatus.UNSUPPORTED_MEDIA_TYPE, ex.getMessage(), req);
+        // The throw sites pass a bundle key as the exception message.
+        return build(HttpStatus.UNSUPPORTED_MEDIA_TYPE, msg(ex.getMessage()), req);
     }
 
     @ExceptionHandler(MaxUploadSizeExceededException.class)
     public ResponseEntity<ErrorResponse> handleTooLarge(MaxUploadSizeExceededException ex, HttpServletRequest req) {
-        return build(HttpStatus.PAYLOAD_TOO_LARGE, "Uploaded file is too large", req);
+        return build(HttpStatus.PAYLOAD_TOO_LARGE, msg("error.upload.too-large"), req);
     }
 
     @ExceptionHandler(FeatureNotAvailableException.class)
     public ResponseEntity<ErrorResponse> handleFeatureGate(FeatureNotAvailableException ex, HttpServletRequest req) {
-        return build(HttpStatus.FORBIDDEN, ex.getMessage(), req);
+        String message = msg("error.feature.unavailable",
+                ex.getFeature().name(), ex.getCurrentPlan().name(), ex.getRequiredPlan().name());
+        return build(HttpStatus.FORBIDDEN, message, req);
     }
 
     @ExceptionHandler(LimitExceededException.class)
     public ResponseEntity<ErrorResponse> handleLimitExceeded(LimitExceededException ex, HttpServletRequest req) {
-        return build(HttpStatus.FORBIDDEN, ex.getMessage(), req);
+        String message = msg("error.limit.projects",
+                ex.getMaxAllowed(), msg(projectsPluralKey(ex.getMaxAllowed())));
+        return build(HttpStatus.FORBIDDEN, message, req);
     }
 
     @ExceptionHandler(EmailNotVerifiedException.class)
     public ResponseEntity<ErrorResponse> handleEmailNotVerified(EmailNotVerifiedException ex, HttpServletRequest req) {
         ErrorResponse body = ErrorResponse.coded(HttpStatus.FORBIDDEN.value(),
-                HttpStatus.FORBIDDEN.getReasonPhrase(), ex.getMessage(), req.getRequestURI(), "EMAIL_NOT_VERIFIED");
+                HttpStatus.FORBIDDEN.getReasonPhrase(), msg(ex.getMessage()), req.getRequestURI(), "EMAIL_NOT_VERIFIED");
         return ResponseEntity.status(HttpStatus.FORBIDDEN).body(body);
     }
 
     @ExceptionHandler(InvalidVerificationTokenException.class)
     public ResponseEntity<ErrorResponse> handleInvalidVerificationToken(InvalidVerificationTokenException ex, HttpServletRequest req) {
-        return build(HttpStatus.BAD_REQUEST, ex.getMessage(), req);
+        return build(HttpStatus.BAD_REQUEST, msg(ex.getMessage()), req);
     }
 
     @ExceptionHandler(ClientEmailMissingException.class)
     public ResponseEntity<ErrorResponse> handleClientEmailMissing(ClientEmailMissingException ex, HttpServletRequest req) {
         ErrorResponse body = ErrorResponse.coded(HttpStatus.BAD_REQUEST.value(),
-                HttpStatus.BAD_REQUEST.getReasonPhrase(), ex.getMessage(), req.getRequestURI(), "CLIENT_EMAIL_MISSING");
+                HttpStatus.BAD_REQUEST.getReasonPhrase(), msg(ex.getMessage()), req.getRequestURI(), "CLIENT_EMAIL_MISSING");
         return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(body);
+    }
+
+    @ExceptionHandler(EstimateSignedException.class)
+    public ResponseEntity<ErrorResponse> handleEstimateSigned(EstimateSignedException ex, HttpServletRequest req) {
+        ErrorResponse body = ErrorResponse.coded(HttpStatus.CONFLICT.value(),
+                HttpStatus.CONFLICT.getReasonPhrase(), msg("error.estimate.signed"), req.getRequestURI(), "ESTIMATE_SIGNED");
+        return ResponseEntity.status(HttpStatus.CONFLICT).body(body);
+    }
+
+    @ExceptionHandler(InvalidEstimateStatusException.class)
+    public ResponseEntity<ErrorResponse> handleInvalidEstimateStatus(InvalidEstimateStatusException ex, HttpServletRequest req) {
+        return build(HttpStatus.BAD_REQUEST, msg(ex.getMessage()), req);
+    }
+
+    @ExceptionHandler(OptimisticLockingFailureException.class)
+    public ResponseEntity<ErrorResponse> handleOptimisticLock(OptimisticLockingFailureException ex, HttpServletRequest req) {
+        return build(HttpStatus.CONFLICT, msg("error.conflict.concurrent"), req);
     }
 
     @ExceptionHandler(TooManyRequestsException.class)
     public ResponseEntity<ErrorResponse> handleTooManyRequests(TooManyRequestsException ex, HttpServletRequest req) {
-        ErrorResponse body = ErrorResponse.rateLimited(ex.getMessage(), req.getRequestURI(), ex.getRetryAfterSeconds());
+        ErrorResponse body = ErrorResponse.rateLimited(msg(ex.getMessage()), req.getRequestURI(), ex.getRetryAfterSeconds());
         return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS)
                 .header("Retry-After", String.valueOf(ex.getRetryAfterSeconds()))
                 .body(body);
@@ -129,7 +169,7 @@ public class GlobalExceptionHandler {
         log.error("Unhandled exception at {} {}", req.getMethod(), req.getRequestURI(), ex);
         reportToSentry(ex, req);
         // Generic message only — the stack trace stays in the server log, never in the body.
-        return build(HttpStatus.INTERNAL_SERVER_ERROR, "Internal server error", req);
+        return build(HttpStatus.INTERNAL_SERVER_ERROR, msg("error.internal"), req);
     }
 
     /**
@@ -148,6 +188,20 @@ public class GlobalExceptionHandler {
             }
             Sentry.captureException(ex);
         });
+    }
+
+    /** Resolves a bundle key for the request locale; unknown keys pass through as-is. */
+    private String msg(String code, Object... args) {
+        return messages.getMessage(code, args.length == 0 ? null : args, code, LocaleContextHolder.getLocale());
+    }
+
+    /** Ukrainian-style plural bucket: 1/21/31 → one, 2-4/22-24 → few, the rest → many. */
+    private static String projectsPluralKey(int n) {
+        int mod10 = Math.abs(n) % 10;
+        int mod100 = Math.abs(n) % 100;
+        if (mod10 == 1 && mod100 != 11) return "plural.projects.one";
+        if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) return "plural.projects.few";
+        return "plural.projects.many";
     }
 
     private String formatFieldError(FieldError err) {

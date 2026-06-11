@@ -1,8 +1,12 @@
 # Majstr Backend
 
 SaaS backend for Ukrainian contractors: estimate tracking and client
-communication. This iteration covers authentication and the project
-foundation only.
+communication. Current scope: JWT auth with email verification, projects /
+clients / personal catalog, estimates with PDF export and a public client
+portal (share link, online signing, questions), plans & admin metrics, web
+push notifications, health/monitoring. The full REST surface is documented
+in Swagger (`/swagger-ui.html`); the tables below cover only the auth and
+push basics.
 
 ## Stack
 
@@ -75,13 +79,14 @@ curl -X POST http://localhost:8080/api/auth/register \
     "email":"john@example.com",
     "password":"S3cret-pass!",
     "fullName":"John Smith",
-    "trade":"ELECTRICAL",
+    "trades":["ELECTRICAL"],
     "phone":"+15551234567",
     "companyName":"Smith Electrical LLC"
   }'
 ```
 
-Response: `accessToken` (15 min) + `refreshToken` (7 days) + `user`.
+Response: `accessToken` (15 min) + `refreshToken` (rotating, 30 days by
+default — `REFRESH_TOKEN_TTL_DAYS`) + `user`.
 
 ### Example: authenticated request
 
@@ -93,8 +98,17 @@ curl http://localhost:8080/api/auth/me \
 ## Rate limiting
 
 `POST /api/auth/login` is capped at **5 attempts per 15 minutes** keyed by
-`email + IP`. When exceeded the server returns HTTP 429 with a structured
-error body and a `Retry-After` header (seconds until the bucket refills).
+`email + IP`; `POST /api/auth/register` at **5 per hour** keyed by IP.
+When exceeded the server returns HTTP 429 with a structured error body and
+a `Retry-After` header (seconds until the bucket refills).
+
+## Health check
+
+`GET /actuator/health` is public and reports the aggregate status
+(`UP`/`DOWN`, database included) without internal details. Probe endpoints
+for orchestrators: `/actuator/health/liveness` and
+`/actuator/health/readiness` (readiness turns `DOWN` when the DB is
+unreachable).
 
 ## Error format
 
