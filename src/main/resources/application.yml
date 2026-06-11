@@ -120,6 +120,11 @@ app:
     environment: ${SENTRY_ENVIRONMENT:${SPRING_PROFILES_ACTIVE:dev}}
     # Fraction of transactions sampled for performance tracing. 0 = errors only.
     traces-sample-rate: ${SENTRY_TRACES_SAMPLE_RATE:0.0}
+  admin:
+    # First-admin auto-seed. Both blank in dev → no-op. Set via env on a fresh
+    # prod DB to create the initial ADMIN; ignored once any ADMIN exists.
+    email: ${ADMIN_EMAIL:}
+    password: ${ADMIN_PASSWORD:}
 
 springdoc:
   swagger-ui:

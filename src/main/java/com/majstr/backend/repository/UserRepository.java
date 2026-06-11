@@ -1,6 +1,7 @@
 package com.majstr.backend.repository;
 
 import com.majstr.backend.entity.Plan;
+import com.majstr.backend.entity.Role;
 import com.majstr.backend.entity.User;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -21,6 +22,9 @@ public interface UserRepository extends JpaRepository<User, UUID> {
     Optional<User> findByEmailIgnoreCase(String email);
 
     boolean existsByEmailIgnoreCase(String email);
+
+    /** Used by the first-admin auto-seed to stay idempotent. */
+    boolean existsByRole(Role role);
 
     // ---- admin metrics ----------------------------------------------------
 

@@ -1,5 +1,6 @@
 package com.majstr.backend;
 
+import com.majstr.backend.config.AdminSeedProperties;
 import com.majstr.backend.config.CorsProperties;
 import com.majstr.backend.config.EmailProperties;
 import com.majstr.backend.config.JwtProperties;
@@ -25,7 +26,8 @@ import org.springframework.scheduling.annotation.EnableScheduling;
         PortalProperties.class,
         EmailProperties.class,
         VapidProperties.class,
-        SentryProperties.class
+        SentryProperties.class,
+        AdminSeedProperties.class
 })
 public class MajstrApplication {
 
