@@ -1,4 +1,4 @@
-do # syntax=docker/dockerfile:1
+# syntax=docker/dockerfile:1
 #
 # Explicit multi-stage build so the deploy controls both compile and run —
 # Railway's Nixpacks mis-guessed the jar path ("*/build/libs/*jar" not found)
