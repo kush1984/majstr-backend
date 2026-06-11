@@ -8,8 +8,9 @@ file is for Claude / contributors working *in* the codebase.
 
 ## Stack (pinned)
 
-- **Spring Boot 4.0.6** (Spring Framework 7, Jakarta EE 11) on **Java 25**
-- **Gradle Kotlin DSL** — toolchain pinned to JDK 25 in `build.gradle.kts`
+- **Spring Boot 4.0.6** (Spring Framework 7, Jakarta EE 11) on **Java 21 (LTS)**
+- **Gradle Kotlin DSL** — toolchain pinned to JDK 21 in `build.gradle.kts`
+  (foojay resolver in `settings.gradle.kts` as a download fallback)
 - **PostgreSQL 17** via `docker-compose.yml`, schema owned by **Flyway**
 - **Spring Security 7**, stateless, JWT via **jjwt 0.12.x** (HS256)
 - **Bucket4j 8.x** (`bucket4j_jdk17-core`) — login rate limiting
@@ -17,7 +18,10 @@ file is for Claude / contributors working *in* the codebase.
 - **Lombok**, **springdoc-openapi 2.8.x**, **JUnit 5 + MockMvc**
 
 Don't bump these without a clear reason — the combo is chosen for Spring
-Boot 4 / Spring 7 / Jakarta EE 11 / Java 25 compatibility.
+Boot 4 / Spring 7 / Jakarta EE 11 / Java 21 compatibility. (Java 21 over 25:
+Spring Boot 4's baseline is Java 17 and the code uses no 22-25-only feature,
+so 21 LTS builds on the ubiquitous stable images — Java 25 had no reliable
+build image on Railway.)
 
 ## Common commands
 
@@ -333,7 +337,7 @@ possible future optimization, not needed now.
   `com.fasterxml.jackson.*` classes may still be on the classpath
   (transitively via `jjwt-jackson`) — they're for jjwt's internal use,
   don't pull them into application code.
-- **Lombok + Java 25**: works via the Spring Boot–managed Lombok version.
+- **Lombok + Java 21**: works via the Spring Boot–managed Lombok version.
   If you bump Java further, verify Lombok supports it.
 - **JWT secret length**: HS256 requires ≥ 32 bytes (256 bits). Validated
   by `JwtProperties` (`@Size(min = 32)`). Generate with

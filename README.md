@@ -10,7 +10,7 @@ push basics.
 
 ## Stack
 
-- Spring Boot **4.0.6** (Spring Framework 7) on Java **25** (LTS)
+- Spring Boot **4.0.6** (Spring Framework 7) on Java **21** (LTS)
 - Gradle (Kotlin DSL)
 - PostgreSQL **17** via Docker
 - Spring Data JPA / Hibernate + Flyway
@@ -51,8 +51,8 @@ then:
 ```
 
 > If you don't have `./gradlew` yet, generate it once with
-> `gradle wrapper --gradle-version 8.14` — you'll need a system Gradle
-> 8.10+ for Java 25 toolchain support.
+> `gradle wrapper --gradle-version 9.3` — you'll need a system Gradle
+> 8.5+ for Java 21 toolchain support.
 
 The server listens on `http://localhost:8080`. Flyway runs `V1` and `V2`
 automatically on startup.

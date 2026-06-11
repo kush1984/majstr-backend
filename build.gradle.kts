@@ -13,10 +13,8 @@ version = "0.0.1-SNAPSHOT"
 description = "Majstr backend — SaaS for Ukrainian contractors"
 
 java {
-    // Pinned to JDK 25. The foojay resolver in settings.gradle.kts lets Gradle
-    // auto-download this toolchain when the environment lacks it (e.g. Railway).
     toolchain {
-        languageVersion = JavaLanguageVersion.of(25)
+        languageVersion = JavaLanguageVersion.of(21)
     }
 }
 
@@ -61,7 +59,7 @@ dependencies {
     implementation("org.bitbucket.b_c:jose4j:0.7.9")
     // web-push 5.1.2 ships BouncyCastle 1.71 (2022); pin to a newer build that
     // is tested on current JDKs so the security provider registers cleanly on
-    // Java 25. The provider classes used (EC key handling) are stable across
+    // Java 21+. The provider classes used (EC key handling) are stable across
     // these versions, so this override is safe.
     implementation("org.bouncycastle:bcprov-jdk18on:1.78.1")
     implementation("org.bouncycastle:bcpkix-jdk18on:1.78.1")
