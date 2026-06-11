@@ -1,4 +1,14 @@
+# Production profile (SPRING_PROFILES_ACTIVE=prod). Loaded ON TOP of
+# application.yml, overriding only what production must harden. The base file
+# and application-dev.yml are untouched — dev keeps Swagger + localhost CORS.
 spring:
+  # No dev defaults in prod: every connection value must come from the
+  # environment, so a missing var fails fast at startup instead of silently
+  # falling back to the local Postgres / default password from application.yml.
+  datasource:
+    url: ${DB_URL}
+    username: ${DB_USERNAME}
+    password: ${DB_PASSWORD}
   jpa:
     show-sql: false
   web:
@@ -6,6 +16,36 @@ spring:
       include-message: never
       include-stacktrace: never
       include-binding-errors: never
+
+server:
+  # Behind a trusted reverse proxy (Railway): honor X-Forwarded-* so the request
+  # carries the real client IP/scheme. Spring's ForwardedHeaderFilter applies the
+  # forwarded client IP to getRemoteAddr() and strips the header — the rate-limit
+  # filters then key off the genuine client IP, not a spoofable header. Only safe
+  # because the app is reachable only through the proxy; dev stays on the default
+  # (NONE), so its manual X-Forwarded-For parsing is unaffected.
+  forward-headers-strategy: framework
+
+app:
+  cors:
+    # Production allows only the real front-end origin(s) from APP_CORS_ORIGINS
+    # (comma-separated, e.g. https://majstr.pro). No default — no localhost, no
+    # "*" — so a missing value fails fast rather than opening CORS up.
+    allowed-origins: ${APP_CORS_ORIGINS}
+  portal:
+    # Public portal/share links must point at the real host, never localhost.
+    public-base-url: ${PORTAL_BASE_URL}
+  email:
+    # Verify-email links must point at the real PWA host, never localhost.
+    app-url: ${APP_URL}
+
+springdoc:
+  # API docs are a description of the whole attack surface — off in prod.
+  # swagger-ui and /v3/api-docs then return 404.
+  api-docs:
+    enabled: false
+  swagger-ui:
+    enabled: false
 
 logging:
   level:
