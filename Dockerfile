@@ -22,7 +22,9 @@ RUN chmod +x ./gradlew && ./gradlew dependencies --no-daemon || true
 # build/libs ends up with exactly one *.jar (majstr-backend-0.0.1-SNAPSHOT.jar)
 # — the glob in the runtime stage resolves to a single file, unambiguously.
 COPY . .
-RUN ./gradlew clean bootJar -x check -x test --no-daemon
+# Re-apply the exec bit: the COPY above overwrites gradlew with the context
+# copy, which loses +x when the repo was checked out on Windows.
+RUN chmod +x ./gradlew && ./gradlew clean bootJar -x check -x test --no-daemon
 
 # ---- Runtime stage: slim JRE 21, non-root ----
 FROM eclipse-temurin:21-jre AS runtime
