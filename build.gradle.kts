@@ -69,6 +69,13 @@ dependencies {
     // disabled, like Resend/VAPID) and avoids Spring Boot 4 auto-config surprises.
     implementation("io.sentry:sentry:8.43.1")
 
+    // Object storage (Cloudflare R2 / any S3-compatible) — used when
+    // app.storage.kind=s3. AWS SDK v2, sync client over the lightweight
+    // URLConnection HTTP client (no Netty). BOM pins the module versions.
+    implementation(platform("software.amazon.awssdk:bom:2.46.8"))
+    implementation("software.amazon.awssdk:s3")
+    implementation("software.amazon.awssdk:url-connection-client")
+
     implementation("org.springdoc:springdoc-openapi-starter-webmvc-ui:2.8.6")
 
     // PDF generation. OpenPDF is LGPL fork of iText 4, actively maintained.

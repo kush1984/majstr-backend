@@ -38,10 +38,11 @@ one-line summary — keep the item in the file as a record.
 - **Resolution:** Fix G (refresh-token audit) — `TokenCleanupService.purgeDeadTokens` runs daily (`@Scheduled`, cron `${app.cleanup.tokens-cron:0 0 3 * * *}`, `@EnableScheduling` on the app). It sweeps refresh tokens that are expired **or** revoked (`deleteExpiredOrRevoked` — rotation leaves a revoked row per use) and expired `email_verification_tokens` in the same pass. Single-node; would need ShedLock on multiple instances (noted in code + the multi-instance open question).
 
 ### File storage migration to S3/R2
-- **Status:** OPEN
+- **Status:** RESOLVED
 - **Since:** step 3
 - **Context:** `LocalStorageService` is the only `StorageService` impl. Production cloud deploys want object storage.
 - **Notes / options:** Add `S3StorageService` behind `app.storage.kind` property. The interface should not change; if it does, refactor before adding the second impl.
+- **Resolution:** S3/R2 iteration (docs/iteration-storage-r2.md) — `S3StorageService` (AWS SDK v2, sync client over `UrlConnectionHttpClient`) added alongside local. `StorageConfig` builds exactly one bean from `app.storage.kind` (`local`|`s3`, default local); neither impl is `@Service`-scanned. **`StorageService` interface unchanged** — no refactor needed. Keys are identical across backends (`logos/uuid.ext`), reads still stream through `FileController` so R2 needs no public-read. Creds via env (`R2_ENDPOINT`/`R2_ACCESS_KEY_ID`/`R2_SECRET_ACCESS_KEY`/`R2_BUCKET`). Tests: `S3StorageServiceTest` (mock client: store/open/contentType/delete), `StorageConfigTest` (switch picks the right impl).
 
 ### Audit log for sensitive actions
 - **Status:** OPEN
@@ -76,7 +77,10 @@ one-line summary — keep the item in the file as a record.
   under load could starve the pool.
 - **Notes / options:** Move file I/O outside the transaction boundary (do the DB
   work first, then write the file), or make PDF rendering non-transactional —
-  it only reads already-loaded data.
+  it only reads already-loaded data. **More pressing after the R2 work:** with
+  `STORAGE_KIND=s3` the logo upload's `storage.store()` is a *network* round-trip
+  to R2 held inside `ProfileService`'s `@Transactional`, tying up a Hikari
+  connection for the upload's duration.
 
 ### MetricsService full table scans
 - **Status:** OPEN

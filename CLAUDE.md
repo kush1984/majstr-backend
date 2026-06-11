@@ -287,6 +287,25 @@ constraint enumerating the allowed values — if you add a `Trade` enum
 constant, write a migration to extend that CHECK. (The old single-valued
 `users.trade` column was dropped in V16.)
 
+### File storage is pluggable (local / S3-R2)
+
+`StorageService` (`storage/`) abstracts file persistence with an opaque object
+key (`logos/uuid.png`). Two impls: `LocalStorageService` (filesystem, dev
+default; content type parked in a `.meta` sidecar) and `S3StorageService` (any
+S3-compatible store, built for **Cloudflare R2**; content type is native object
+metadata). **Neither is `@Service`-scanned** — `StorageConfig` builds exactly
+one bean from `app.storage.kind` (`local` | `s3`, env `STORAGE_KIND`, default
+`local`), so the two never collide. The interface is unchanged from when local
+was the only impl. AWS SDK v2, sync `S3Client` over `UrlConnectionHttpClient`
+(no Netty); `forcePathStyle(true)` + region `auto` for R2; creds via env
+(`R2_ENDPOINT`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_BUCKET`).
+
+**Reads always go through the backend** — `FileController` (`/api/files/**`)
+streams via `storage.open(key)`, and the PDF reads the logo the same way. So the
+bucket needs **no public-read policy**; keys are identical across backends, so a
+stored `logoUrl` survives a local→R2 switch. A direct-public / CDN read path is a
+possible future optimization, not needed now.
+
 ### Entities vs. records
 
 - **Entities** (`User`, `RefreshToken`) — mutable JPA, Lombok

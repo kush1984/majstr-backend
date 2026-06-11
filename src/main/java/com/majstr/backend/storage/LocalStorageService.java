@@ -4,7 +4,6 @@ import com.majstr.backend.config.StorageProperties;
 import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.stereotype.Service;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -20,9 +19,12 @@ import java.util.UUID;
  * both the prefix bucket ({@code logos/}, {@code pdfs/}, …) and the
  * UUID-named file. Content type is parked in a sidecar {@code .meta}
  * file because the filesystem doesn't carry MIME natively.
+ *
+ * <p>Instantiated by {@link com.majstr.backend.config.StorageConfig} when
+ * {@code app.storage.kind=local} (the default) — not component-scanned, so the
+ * S3 impl can replace it without two beans colliding.</p>
  */
 @Slf4j
-@Service
 @RequiredArgsConstructor
 public class LocalStorageService implements StorageService {
 

@@ -85,8 +85,17 @@ app:
     estimate-email:
       max-per-hour: 20
   storage:
+    # local = filesystem (dev default); s3 = any S3-compatible store (Cloudflare R2).
+    kind: ${STORAGE_KIND:local}
     local:
       directory: ${STORAGE_DIR:./data/uploads}
+    s3:
+      # Only read when kind=s3. Credentials are env only, blank in dev.
+      endpoint: ${R2_ENDPOINT:}
+      access-key-id: ${R2_ACCESS_KEY_ID:}
+      secret-access-key: ${R2_SECRET_ACCESS_KEY:}
+      bucket: ${R2_BUCKET:}
+      region: ${R2_REGION:auto}
   portal:
     public-base-url: ${PORTAL_BASE_URL:http://localhost:8080}
   email:
