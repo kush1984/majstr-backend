@@ -30,7 +30,9 @@ spring:
       include-stacktrace: never
 
 server:
-  port: 8080
+  # Railway (and most PaaS) inject the listen port via $PORT — bind it so the
+  # platform's health/router reaches the app. Falls back to 8080 locally.
+  port: ${PORT:8080}
 
 management:
   endpoints:

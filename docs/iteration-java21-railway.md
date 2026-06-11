@@ -33,11 +33,26 @@ heavier to maintain and unnecessary.)
   wrapper hint), `SPEC.md` (stack, IDE SDK, build/deploy note + Railway
   `NIXPACKS_JDK_VERSION=21`).
 
-## Railway
+## Railway — follow-up: explicit Dockerfile
 
-Set `NIXPACKS_JDK_VERSION=21` so Nixpacks installs JDK 21; the Gradle toolchain
-(`of(21)`) then matches it and uses it directly — foojay never fires. No
-Dockerfile required.
+The Java-21 toolchain fixed the *build*, but Nixpacks then mis-guessed the
+*run* command — it looked for the jar at `*/build/libs/*jar`, didn't find it,
+and passed garbage to `java` (which printed its help). Rather than fight
+Nixpacks' guessing, a multi-stage **`Dockerfile`** was added at the repo root;
+Railway uses it automatically instead of Nixpacks, giving full control of
+build + run:
+
+- build: `eclipse-temurin:21-jdk` → `./gradlew clean bootJar -x check -x test`
+  (executable Spring Boot jar; `clean`+`bootJar` ⇒ exactly one
+  `majstr-backend-0.0.1-SNAPSHOT.jar`, no `-plain` jar).
+- runtime: `eclipse-temurin:21-jre`, non-root → `COPY --from=build
+  /app/build/libs/*.jar app.jar` (glob safe — single artifact) →
+  `java -jar /app/app.jar`.
+- **PORT:** `server.port=${PORT:8080}` so Spring binds Railway's injected
+  `$PORT` (8080 locally). `.dockerignore` keeps the context lean.
+
+The foojay fallback and `NIXPACKS_JDK_VERSION` are now moot for Railway (the
+Dockerfile owns the toolchain) but stay harmless for local/other CI.
 
 ## Verify
 

@@ -1,0 +1,16 @@
+# Keep the build context small and never ship local artifacts/secrets into the image.
+build/
+.gradle/
+.git/
+.gitignore
+node_modules/
+# Local-storage uploads and env/secrets must never enter the image.
+data/
+.env
+.env.*
+!.env.example
+# Editor/OS noise
+.idea/
+*.iml
+.vscode/
+*.log
