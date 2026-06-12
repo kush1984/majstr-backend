@@ -56,14 +56,16 @@ jobs:
     steps:
       # ---- 1. Install a PostgreSQL 18 client -----------------------------
       # The prod server is PostgreSQL 18 (Railway) and pg_dump must be >= the
-      # server. The runner ships the v16 client meta-package, which owns
-      # /usr/bin/pg_dump. Installing `postgresql-client-18` alongside it would
-      # leave 16 as the default (pg_dump --version → 16.x → "server version
-      # mismatch"). Instead, install the *meta-package pinned to 18*
-      # (`postgresql-client=18.*`) from the official PGDG repo: apt upgrades the
-      # already-installed `postgresql-client` meta in place, swaps its
-      # dependency from the 16 client to the 18 client (removing 16), so
-      # /usr/bin/pg_dump becomes 18.
+      # server. The runner preinstalls the v16 client, which owns
+      # /usr/bin/pg_dump; installing v18 beside it does NOT change which binary
+      # wins, so `pg_dump --version` stays 16 → "server version mismatch".
+      #
+      # `postgresql-client` is a VIRTUAL package (provided by the versioned
+      # postgresql-client-NN), so it has no installable version of its own —
+      # `postgresql-client=18.*` errors "Version '18.*' ... not found". Install
+      # the real versioned package `postgresql-client-18`, then prepend its
+      # binary dir to PATH (via $GITHUB_PATH) so the v18 pg_dump wins in the
+      # following steps.
       - name: Install postgresql-client 18
         run: |
           set -euo pipefail
@@ -73,11 +75,12 @@ jobs:
           echo "deb [signed-by=/usr/share/keyrings/pgdg.gpg] https://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" \
             | sudo tee /etc/apt/sources.list.d/pgdg.list > /dev/null
           sudo apt-get update
-          # Key change: pin the meta-package to 18.* (not postgresql-client-18),
-          # so the runner's default 16 client is REPLACED, not merely joined.
-          sudo apt-get install -y postgresql-client=18.*
-          # Verify: must print 18.x or the dump would fail against the server.
-          pg_dump --version
+          sudo apt-get install -y postgresql-client-18
+          # Make the v18 client take precedence over the preinstalled v16 in
+          # later steps (GITHUB_PATH applies to subsequent steps, not this one).
+          echo "/usr/lib/postgresql/18/bin" >> "$GITHUB_PATH"
+          # Verify NOW via the explicit v18 path — must print 18.x.
+          /usr/lib/postgresql/18/bin/pg_dump --version
 
       # ---- 2. Dump + gzip, dated filename --------------------------------
       # Plain SQL dump piped straight into gzip → majstr-db-<date>.sql.gz.
