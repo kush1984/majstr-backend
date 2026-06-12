@@ -12,9 +12,15 @@
 
 - **`.github/workflows/db-backup.yml`** — scheduled (`cron: "0 3 * * *"`, 03:00
   UTC) + `workflow_dispatch`. Single job:
-  1. Install **postgresql-client-18** from the PGDG apt repo (prod is
-     PostgreSQL 18 on Railway; `pg_dump` must be ≥ server, and ubuntu-latest
-     ships an older client).
+  1. Install the **PostgreSQL 18 client** from the PGDG apt repo (prod is
+     PostgreSQL 18 on Railway; `pg_dump` must be ≥ server). **Gotcha:** the
+     runner preinstalls the v16 client meta-package which owns
+     `/usr/bin/pg_dump`; `apt-get install postgresql-client-18` installs 18
+     *alongside* it and pg_dump stays 16 ("server version mismatch"). Fix:
+     install the meta pinned to 18 — `postgresql-client=18.*` — which replaces
+     the 16 client in place, so `pg_dump --version` → 18.x. Runner pinned to
+     `ubuntu-22.04` (jammy) so the PGDG codename matches the OS and isn't
+     subject to ubuntu-latest drift.
   2. `pg_dump "$BACKUP_DB_URL" --no-owner --no-privileges | gzip -9` →
      `majstr-db-YYYY-MM-DD-HHMMSS.sql.gz`. `set -euo pipefail` + `test -s`
      guarantee a failed/empty dump fails the job instead of uploading garbage.
