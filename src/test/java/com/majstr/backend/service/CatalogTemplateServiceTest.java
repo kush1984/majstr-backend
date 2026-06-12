@@ -129,6 +129,30 @@ class CatalogTemplateServiceTest {
         verify(catalogRepository, org.mockito.Mockito.never()).saveAll(anyList());
     }
 
+    @Test
+    void resetForUser_stampsCurrentUserAsOwnerOnEveryCreatedItem() {
+        // Tenant isolation: a reset writes into THIS master's catalog only —
+        // every created CatalogItem carries his owner id, never a shared or
+        // foreign owner. This is the ownership half of the reset contract.
+        User owner = User.builder()
+                .id(UUID.randomUUID())
+                .trades(new LinkedHashSet<>(Set.of(Trade.ELECTRICAL)))
+                .build();
+        given(templateRepository.findByTradeIn(owner.getTrades())).willReturn(List.of(
+                tpl("Розетки та вимикачі", "Розетка", ItemType.WORK, Unit.PIECE, "180.00"),
+                tpl("Кабельні роботи", "Кабель", ItemType.MATERIAL, Unit.M, "38.50")
+        ));
+        given(catalogRepository.findByOwnerIdOrderByNameAsc(owner.getId())).willReturn(List.of());
+
+        catalogTemplateService.resetForUser(owner);
+
+        ArgumentCaptor<List<CatalogItem>> captor = ArgumentCaptor.forClass(List.class);
+        verify(catalogRepository).saveAll(captor.capture());
+        assertThat(captor.getValue())
+                .isNotEmpty()
+                .allSatisfy(item -> assertThat(item.getOwner().getId()).isEqualTo(owner.getId()));
+    }
+
     private CatalogTemplate tpl(String category, String name, ItemType type, Unit unit, String price) {
         return CatalogTemplate.builder()
                 .id(UUID.randomUUID())

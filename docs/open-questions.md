@@ -107,6 +107,30 @@ one-line summary — keep the item in the file as a record.
 
 ## Security
 
+### PWA query cache not partitioned by user (cross-account data bleed)
+- **Status:** RESOLVED (2026-06-12) — `useLogin.onSuccess` now `qc.clear()`s the
+  React Query cache before priming the new user (mirrors `useLogout`), so a login
+  starts empty and no prior account's data can bleed across an account switch.
+  Test `useLogin.test.tsx`; full PWA suite green. Per-user-scoped query keys
+  remain optional future hardening, not required.
+- **Since:** Fix J isolation audit (2026-06-12)
+- **Context:** Reported as "master B sees master A's catalog." **The backend is
+  correctly tenant-isolated** — `CatalogItem.owner` is a non-null FK, every read
+  is owner-scoped (`findByOwnerId*`, `loadOwned` → `AccessDenied`), reset stamps
+  the current owner, `CatalogTemplate` (shared) is separate from `CatalogItem`
+  (per-user), and the JWT principal is always the authenticated user. A request
+  with B's token returns B's data. The leak is the PWA's React Query cache:
+  query keys (`['catalog','list',type]`, and likewise dashboard/projects/
+  clients) are **not scoped to the user**, and `useLogin` does not `qc.clear()`
+  (only `useLogout` does). Switching accounts without an explicit logout shows
+  the previous user's warm cache (staleTime 30s) until a refetch.
+- **Notes / options:** PWA fix — `useLogin.onSuccess` should `qc.clear()` before
+  priming `ME_QUERY_KEY` (mirror `useLogout`), and/or include the authenticated
+  user id in per-user query keys. Backend side: regression tests now lock the
+  ownership guarantee (`CatalogServiceTest`, `CatalogTemplateServiceTest`).
+  A future cookie/httpOnly auth migration wouldn't change this — it's a
+  client-cache-partitioning concern.
+
 ### Localization scope: messages done, content documents still uk-only
 - **Status:** OPEN
 - **Since:** Localization iteration (2026-06-10)
