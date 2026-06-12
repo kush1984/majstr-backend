@@ -45,7 +45,9 @@ public class ProfileController {
     public UserResponse uploadLogo(@RequestParam("file") MultipartFile file,
                                    @AuthenticationPrincipal UserPrincipal principal) throws IOException {
         profileService.uploadLogo(principal.id(), file);
-        return userRepository.findById(principal.id())
+        // Eager-fetch trades: UserResponse.from reads them and this reload runs
+        // outside a session (open-in-view off), so a plain findById would throw.
+        return userRepository.findWithTradesById(principal.id())
                 .map(UserResponse::from)
                 .orElseThrow();
     }

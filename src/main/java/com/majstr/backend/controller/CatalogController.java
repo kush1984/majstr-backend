@@ -81,7 +81,9 @@ public class CatalogController {
             "Idempotent: items already present (by name + type + unit) are skipped.")
     @PostMapping("/reset-from-template")
     public CatalogResetResponse resetFromTemplate(@AuthenticationPrincipal UserPrincipal principal) {
-        var user = userRepository.findById(principal.id())
+        // Eager-fetch trades: resetForUser reads user.getTrades(), and this
+        // detached entity would otherwise fail to lazy-init it (open-in-view off).
+        var user = userRepository.findWithTradesById(principal.id())
                 .orElseThrow(() -> new ResourceNotFoundException("User not found: " + principal.id()));
         int added = catalogTemplateService.resetForUser(user);
         return new CatalogResetResponse(added);

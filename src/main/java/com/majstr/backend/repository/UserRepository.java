@@ -5,6 +5,7 @@ import com.majstr.backend.entity.Role;
 import com.majstr.backend.entity.User;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
@@ -20,6 +21,17 @@ import java.util.UUID;
 public interface UserRepository extends JpaRepository<User, UUID> {
 
     Optional<User> findByEmailIgnoreCase(String email);
+
+    /**
+     * Loads a user with the lazy {@code trades} collection eager-fetched in the
+     * same query, so the returned entity is safe to read or map to a DTO after
+     * the session closes (open-in-view is off). Use this from any controller
+     * that loads the user and then touches {@code trades} — a plain
+     * {@code findById} leaves trades uninitialized and throws
+     * {@code LazyInitializationException} on access.
+     */
+    @EntityGraph(attributePaths = "trades")
+    Optional<User> findWithTradesById(UUID id);
 
     boolean existsByEmailIgnoreCase(String email);
 

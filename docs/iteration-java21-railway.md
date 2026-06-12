@@ -54,6 +54,19 @@ build + run:
 The foojay fallback and `NIXPACKS_JDK_VERSION` are now moot for Railway (the
 Dockerfile owns the toolchain) but stay harmless for local/other CI.
 
+### Gotchas hit while wiring the Dockerfile
+
+- **`gradlew` not executable (exit 126).** `gradlew` was committed `100644`
+  (a Windows checkout drops the +x bit), so `./gradlew` in the container failed
+  with `Permission denied`. Fixed two ways: marked it executable in git
+  (`git update-index --chmod=+x gradlew` → `100755`), **and** the Dockerfile
+  runs `chmod +x ./gradlew` again right before the build — the earlier chmod is
+  undone by `COPY . .`, which re-copies the non-executable file from the context.
+  Both together guarantee an executable wrapper on any builder.
+- **Stray `do` on line 1.** A transient edit prepended `do ` to the
+  `# syntax=...` directive → `unknown instruction: do` before `FROM`. The
+  parser directive must be the literal first line; corrected.
+
 ## Verify
 
 `./gradlew build` locally (host already has a JDK; Gradle picks a 21 toolchain —
