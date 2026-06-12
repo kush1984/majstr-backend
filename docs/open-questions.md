@@ -51,6 +51,20 @@ one-line summary — keep the item in the file as a record.
 - **Notes / options:** Deploy behind a trusted proxy and set `server.forward-headers-strategy` so the framework derives the client IP from the forwarded chain rather than a raw header.
 - **Resolution:** Prod-profile iteration (docs/iteration-prod-profile.md) — `application-prod.yml` sets `server.forward-headers-strategy=framework`. Spring's `ForwardedHeaderFilter` applies the forwarded client IP to `getRemoteAddr()` and **strips** the `X-Forwarded-*` headers, so the filters' manual header read returns null and they fall back to the corrected `getRemoteAddr()` — the genuine client IP. Safe because prod is reachable only through Railway's proxy; dev stays on the default (`NONE`), so its direct `X-Forwarded-For` parsing is unchanged. Still per-pod (see multi-instance item).
 
+### DB backup restore drill not yet performed
+- **Status:** OPEN
+- **Since:** DB-backup iteration (2026-06-12)
+- **Context:** Daily backups now run (`.github/workflows/db-backup.yml` →
+  Cloudflare R2, 30-day rotation) and a restore procedure is written
+  (`docs/db-restore.md`). But no actual restore has been executed — a backup
+  whose restore is untested can silently be unusable (wrong client version,
+  truncated dump, role/ownership snags, missing extension).
+- **Notes / options:** Once secrets are set and the first backup lands, download
+  it and restore into a throwaway DB per `docs/db-restore.md`; confirm Flyway
+  history + row counts + a `ddl-auto: validate` app startup. Repeat
+  periodically. Until this passes once, do not rely on backups for real users.
+  Railway Pro + PITR remains a recommended complementary tier (SPEC §H).
+
 ### Audit log for sensitive actions
 - **Status:** OPEN
 - **Since:** step 4

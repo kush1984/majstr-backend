@@ -1,0 +1,131 @@
+name: Daily DB backup to R2
+
+# Daily logical backup of the production PostgreSQL database into a
+# Cloudflare R2 bucket (S3-compatible), with 30-day rotation.
+#
+# Cost: GitHub-hosted runners + R2 only — no paid backup service.
+#
+# All credentials come from GitHub repository secrets (Settings → Secrets and
+# variables → Actions). Nothing sensitive is in this file:
+#   BACKUP_DB_URL        - full Postgres connection string of the prod DB
+#                          (postgresql://user:pass@host:port/dbname)
+#   BACKUP_R2_ENDPOINT   - R2 S3 API endpoint
+#                          (https://<accountid>.r2.cloudflarestorage.com)
+#   BACKUP_R2_ACCESS_KEY - R2 access key id
+#   BACKUP_R2_SECRET_KEY - R2 secret access key
+#   BACKUP_R2_BUCKET     - bucket name (majstr-backups)
+
+on:
+  schedule:
+    # 03:00 UTC every day. GitHub cron is always UTC.
+    - cron: "0 3 * * *"
+  # Manual trigger for the first test and on-demand backups.
+  workflow_dispatch:
+
+# Read-only token — this job never writes back to the repo.
+permissions:
+  contents: read
+
+# Never run two backups at once (a manual run during the nightly one, etc.).
+concurrency:
+  group: db-backup
+  cancel-in-progress: false
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    env:
+      # Object key prefix inside the bucket. Keeping daily backups under
+      # daily/ means the 30-day rotation below only ever scans/deletes daily
+      # copies — a future weekly/monthly retention tier under another prefix
+      # would be untouched.
+      R2_PREFIX: daily
+      # R2 is S3-compatible with no real region; the SDK still wants one.
+      AWS_DEFAULT_REGION: auto
+      # The AWS CLI v2 adds default request checksums that some R2 setups
+      # reject; only send them when the operation requires it. Keeps uploads
+      # robust across CLI versions.
+      AWS_REQUEST_CHECKSUM_CALCULATION: when_required
+      AWS_RESPONSE_CHECKSUM_VALIDATION: when_required
+
+    steps:
+      # ---- 1. Install a PostgreSQL 18 client -----------------------------
+      # The prod server is PostgreSQL 18 (Railway). pg_dump must be >= the
+      # server version, and ubuntu-latest ships an older client, so pull
+      # postgresql-client-18 from the official PGDG apt repository.
+      - name: Install postgresql-client 18
+        run: |
+          set -euo pipefail
+          sudo install -d /usr/share/keyrings
+          curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc \
+            | sudo gpg --dearmor -o /usr/share/keyrings/pgdg.gpg
+          echo "deb [signed-by=/usr/share/keyrings/pgdg.gpg] https://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" \
+            | sudo tee /etc/apt/sources.list.d/pgdg.list > /dev/null
+          sudo apt-get update
+          sudo apt-get install -y postgresql-client-18
+          pg_dump --version
+
+      # ---- 2. Dump + gzip, dated filename --------------------------------
+      # Plain SQL dump piped straight into gzip → majstr-db-<date>.sql.gz.
+      # --no-owner / --no-privileges make the dump portable: a restore into a
+      # fresh Railway DB (different role name) won't fail on ownership/grants.
+      # `pipefail` ensures a pg_dump failure fails the step (and the workflow)
+      # rather than uploading a truncated dump.
+      - name: Dump database
+        env:
+          BACKUP_DB_URL: ${{ secrets.BACKUP_DB_URL }}
+        run: |
+          set -euo pipefail
+          STAMP="$(date -u +'%Y-%m-%d-%H%M%S')"
+          FILE="majstr-db-${STAMP}.sql.gz"
+          pg_dump "$BACKUP_DB_URL" --no-owner --no-privileges | gzip -9 > "$FILE"
+          # Refuse to upload an empty/corrupt artifact.
+          test -s "$FILE"
+          echo "BACKUP_FILE=${FILE}" >> "$GITHUB_ENV"
+          echo "Created ${FILE} ($(du -h "$FILE" | cut -f1))"
+
+      # ---- 3. Upload to R2 (S3-compatible) -------------------------------
+      - name: Upload to R2
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.BACKUP_R2_ACCESS_KEY }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.BACKUP_R2_SECRET_KEY }}
+          BACKUP_R2_ENDPOINT: ${{ secrets.BACKUP_R2_ENDPOINT }}
+          BACKUP_R2_BUCKET: ${{ secrets.BACKUP_R2_BUCKET }}
+        run: |
+          set -euo pipefail
+          aws s3 cp "$BACKUP_FILE" \
+            "s3://${BACKUP_R2_BUCKET}/${R2_PREFIX}/${BACKUP_FILE}" \
+            --endpoint-url "$BACKUP_R2_ENDPOINT"
+          echo "Uploaded to s3://${BACKUP_R2_BUCKET}/${R2_PREFIX}/${BACKUP_FILE}"
+
+      # ---- 4. Rotation: delete backups older than 30 days ----------------
+      # Keep ~30 daily backups. List objects under the daily/ prefix whose
+      # LastModified is before the cutoff (ISO-8601 sorts lexicographically,
+      # so a string compare in JMESPath is correct) and delete each.
+      - name: Rotate old backups (30-day retention)
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.BACKUP_R2_ACCESS_KEY }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.BACKUP_R2_SECRET_KEY }}
+          BACKUP_R2_ENDPOINT: ${{ secrets.BACKUP_R2_ENDPOINT }}
+          BACKUP_R2_BUCKET: ${{ secrets.BACKUP_R2_BUCKET }}
+        run: |
+          set -euo pipefail
+          CUTOFF="$(date -u -d '30 days ago' +'%Y-%m-%dT%H:%M:%SZ')"
+          echo "Deleting backups older than ${CUTOFF}"
+          OLD_KEYS="$(aws s3api list-objects-v2 \
+            --bucket "$BACKUP_R2_BUCKET" \
+            --prefix "${R2_PREFIX}/" \
+            --endpoint-url "$BACKUP_R2_ENDPOINT" \
+            --query "Contents[?LastModified<'${CUTOFF}'].Key" \
+            --output text)"
+          if [ -z "$OLD_KEYS" ] || [ "$OLD_KEYS" = "None" ]; then
+            echo "Nothing to rotate."
+            exit 0
+          fi
+          for KEY in $OLD_KEYS; do
+            aws s3api delete-object \
+              --bucket "$BACKUP_R2_BUCKET" \
+              --key "$KEY" \
+              --endpoint-url "$BACKUP_R2_ENDPOINT"
+            echo "Deleted ${KEY}"
+          done
