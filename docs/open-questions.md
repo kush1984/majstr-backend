@@ -52,18 +52,23 @@ one-line summary — keep the item in the file as a record.
 - **Resolution:** Prod-profile iteration (docs/iteration-prod-profile.md) — `application-prod.yml` sets `server.forward-headers-strategy=framework`. Spring's `ForwardedHeaderFilter` applies the forwarded client IP to `getRemoteAddr()` and **strips** the `X-Forwarded-*` headers, so the filters' manual header read returns null and they fall back to the corrected `getRemoteAddr()` — the genuine client IP. Safe because prod is reachable only through Railway's proxy; dev stays on the default (`NONE`), so its direct `X-Forwarded-For` parsing is unchanged. Still per-pod (see multi-instance item).
 
 ### DB backup restore drill not yet performed
-- **Status:** OPEN
+- **Status:** RESOLVED (2026-06-12) — first real backup
+  (`majstr-db-2026-06-12-193550.sql.gz`) restored cleanly into a disposable
+  `postgres:18` container: gzip intact, dump made by `pg_dump 18.4` against
+  server 18.4, `psql -v ON_ERROR_STOP=1` exited 0, all 14 tables present, **all
+  24 Flyway migrations `success` (0 failed)**, and data restored (2 users, 36
+  catalog_items, 74 catalog_templates, projects/clients/estimates, 30
+  refresh_tokens). The `docs/db-restore.md` procedure works as written. Repeat
+  the drill periodically (especially after schema changes). Railway Pro + PITR
+  remains a recommended complementary tier (SPEC §H).
 - **Since:** DB-backup iteration (2026-06-12)
-- **Context:** Daily backups now run (`.github/workflows/db-backup.yml` →
-  Cloudflare R2, 30-day rotation) and a restore procedure is written
-  (`docs/db-restore.md`). But no actual restore has been executed — a backup
-  whose restore is untested can silently be unusable (wrong client version,
-  truncated dump, role/ownership snags, missing extension).
-- **Notes / options:** Once secrets are set and the first backup lands, download
-  it and restore into a throwaway DB per `docs/db-restore.md`; confirm Flyway
-  history + row counts + a `ddl-auto: validate` app startup. Repeat
-  periodically. Until this passes once, do not rely on backups for real users.
-  Railway Pro + PITR remains a recommended complementary tier (SPEC §H).
+- **Context:** Daily backups run (`.github/workflows/db-backup.yml` →
+  Cloudflare R2, 30-day rotation) with a restore procedure (`docs/db-restore.md`).
+  A backup whose restore is untested can silently be unusable (wrong client
+  version, truncated dump, role/ownership snags, missing extension) — so the
+  procedure had to be proven once against a real artifact.
+- **Note:** the PG 18 dump contains a `\restrict` directive, so restore needs a
+  **psql client ≥ 18** — an older psql chokes on it. Captured in `docs/db-restore.md`.
 
 ### Audit log for sensitive actions
 - **Status:** OPEN
@@ -305,8 +310,8 @@ one-line summary — keep the item in the file as a record.
 ### Integration tests with Testcontainers
 - **Status:** OPEN
 - **Since:** step 1
-- **Context:** All current tests are pure-Mockito unit tests. Nothing covers Flyway migrations actually running, real Hibernate mapping, or the security filter chain end-to-end. **Concrete miss:** Fix J — a `LazyInitializationException` on `User.trades` (open-in-view off, detached entity) shipped to prod because no test exercises a real Hibernate session/lazy-loading; the Mockito test could only pin the load-method choice, not the actual lazy behaviour.
-- **Notes / options:** Spring Boot 4 removed `@DataJpaTest` etc — see CLAUDE.md *Testing* section. Use `@SpringBootTest` + Testcontainers `PostgreSQLContainer`. A lazy-loading regression slice (load user, detach, map to DTO) would catch the Fix-J class of bug.
+- **Context:** All current tests are pure-Mockito unit tests. Nothing covers Flyway migrations actually running, real Hibernate mapping, or the security filter chain end-to-end. **Concrete miss:** Fix J — a `LazyInitializationException` on `User.trades` (open-in-view off, detached entity) shipped to prod because no test exercises a real Hibernate session/lazy-loading; the Mockito test could only pin the load-method choice, not the actual lazy behaviour. **Second concrete miss:** Fix K — admin user search 500'd in prod (`function lower(bytea) does not exist`) because no test executes the `@Query` SQL against a real Postgres; the unit test can only check the Java-side pattern building, not the generated `lower()/LIKE`.
+- **Notes / options:** Spring Boot 4 removed `@DataJpaTest` etc — see CLAUDE.md *Testing* section. Use `@SpringBootTest` + Testcontainers `PostgreSQLContainer`. A lazy-loading regression slice (load user, detach, map to DTO) would catch the Fix-J class of bug; a repository slice that runs `searchAdmin` against Postgres would catch the Fix-K class.
 
 ### Estimate versioning / history
 - **Status:** DEFERRED

@@ -14,6 +14,7 @@ import org.springframework.stereotype.Repository;
 
 import java.time.Instant;
 import java.util.List;
+import java.util.Locale;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -50,19 +51,48 @@ public interface UserRepository extends JpaRepository<User, UUID> {
     @Query("SELECT u FROM User u WHERE u.createdAt >= :since ORDER BY u.createdAt ASC")
     List<User> findRegisteredSince(@Param("since") Instant since);
 
+    /**
+     * Admin user search: optional plan filter + optional case-insensitive
+     * partial match on email / full name / company name. The LIKE pattern is
+     * built in Java (see {@link #likePattern}) and compared against
+     * {@code LOWER(column)} by {@link #searchAdminByPattern}.
+     */
+    default Page<User> searchAdmin(Plan plan, String search, Pageable pageable) {
+        return searchAdminByPattern(plan, likePattern(search), pageable);
+    }
+
+    /**
+     * The case-insensitive {@code %term%} LIKE pattern for {@link #searchAdmin},
+     * or {@code null} for a blank/absent search (so the search clause is skipped
+     * and all users — within the plan filter — are returned).
+     *
+     * <p>Lowercasing here, and comparing against {@code LOWER(column)}, keeps the
+     * bind parameter a plain text LIKE operand. The previous form,
+     * {@code LOWER(CONCAT('%', :search, '%'))}, buried the parameter inside
+     * CONCAT/LOWER where Postgres couldn't infer its type — it defaulted to
+     * {@code bytea}, and {@code lower(bytea)} doesn't exist, so admin search
+     * 500'd with "function lower(bytea) does not exist".</p>
+     */
+    static String likePattern(String search) {
+        if (search == null || search.isBlank()) {
+            return null;
+        }
+        return "%" + search.trim().toLowerCase(Locale.ROOT) + "%";
+    }
+
     @Query("""
             SELECT u FROM User u
             WHERE (:plan IS NULL OR u.plan = :plan)
               AND (
-                :search IS NULL
-                OR LOWER(u.email)       LIKE LOWER(CONCAT('%', :search, '%'))
-                OR LOWER(u.fullName)    LIKE LOWER(CONCAT('%', :search, '%'))
-                OR LOWER(u.companyName) LIKE LOWER(CONCAT('%', :search, '%'))
+                :pattern IS NULL
+                OR LOWER(u.email)       LIKE :pattern
+                OR LOWER(u.fullName)    LIKE :pattern
+                OR LOWER(u.companyName) LIKE :pattern
               )
             """)
-    Page<User> searchAdmin(@Param("plan") Plan plan,
-                           @Param("search") String search,
-                           Pageable pageable);
+    Page<User> searchAdminByPattern(@Param("plan") Plan plan,
+                                    @Param("pattern") String pattern,
+                                    Pageable pageable);
 
     @Modifying
     @Query("UPDATE User u SET u.lastActiveAt = :now WHERE u.id = :id")
