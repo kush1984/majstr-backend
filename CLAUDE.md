@@ -272,6 +272,9 @@ Status mapping:
 - 401 — `BadCredentialsException`, `UsernameNotFoundException`,
   `InvalidTokenException`, any other `AuthenticationException`
 - 403 — `AccessDeniedException`
+- 404 — `ResourceNotFoundException`; `NoResourceFoundException` (unknown
+  path / bot-scanner probes like `/admin/phpinfo.php`) — handled explicitly so
+  it's a quiet 404, **not** the 500 fallback, and is **not** reported to Sentry
 - 409 — `EmailAlreadyExistsException`, `EstimateSignedException`
   (`ESTIMATE_SIGNED`), `OptimisticLockingFailureException` (concurrent edit)
 - 429 — emitted directly by `LoginRateLimitFilter` / `RegisterRateLimitFilter`

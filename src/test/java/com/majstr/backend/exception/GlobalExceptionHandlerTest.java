@@ -7,10 +7,12 @@ import org.junit.jupiter.api.Test;
 import org.springframework.context.MessageSource;
 import org.springframework.context.support.ResourceBundleMessageSource;
 import org.springframework.dao.OptimisticLockingFailureException;
+import org.springframework.http.HttpMethod;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.servlet.resource.NoResourceFoundException;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.containsString;
@@ -51,6 +53,12 @@ class GlobalExceptionHandlerTest {
         @GetMapping("/limit")
         String limit() {
             throw new LimitExceededException(Limit.MAX_PROJECTS, 2, Plan.FREE);
+        }
+
+        @GetMapping("/scan")
+        String scan() throws NoResourceFoundException {
+            // What Spring throws for an unknown path like a scanner's /admin/phpinfo.php.
+            throw new NoResourceFoundException(HttpMethod.GET, "admin/phpinfo.php");
         }
     }
 
@@ -117,6 +125,16 @@ class GlobalExceptionHandlerTest {
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.status", is(409)))
                 .andExpect(jsonPath("$.message", containsString("Дані щойно змінилися")));
+    }
+
+    @Test
+    void unknownPath_returns404NotGeneric500_soScannerProbesDontHitSentry() throws Exception {
+        // /admin/phpinfo.php and friends must be a quiet 404, not the 500
+        // fallback (which would also report the bot probe to Sentry).
+        mockMvc.perform(get("/scan").header("Accept-Language", "uk"))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.status", is(404)))
+                .andExpect(jsonPath("$.message", is("Запис не знайдено")));
     }
 
     @Test

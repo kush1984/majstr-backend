@@ -26,6 +26,7 @@ import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.multipart.MaxUploadSizeExceededException;
+import org.springframework.web.servlet.resource.NoResourceFoundException;
 
 import java.util.stream.Collectors;
 
@@ -92,6 +93,15 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(ResourceNotFoundException.class)
     public ResponseEntity<ErrorResponse> handleNotFound(ResourceNotFoundException ex, HttpServletRequest req) {
         log.debug("Not found: {}", ex.getMessage());
+        return build(HttpStatus.NOT_FOUND, msg("error.not-found"), req);
+    }
+
+    @ExceptionHandler(NoResourceFoundException.class)
+    public ResponseEntity<ErrorResponse> handleNoResource(NoResourceFoundException ex, HttpServletRequest req) {
+        // Unknown path — almost always a bot/scanner probe (e.g. /admin/phpinfo.php).
+        // A plain 404, NOT the catch-all 500, and deliberately NOT reported to
+        // Sentry: it's internet background noise, not an application fault.
+        log.debug("No resource for {} {}", req.getMethod(), req.getRequestURI());
         return build(HttpStatus.NOT_FOUND, msg("error.not-found"), req);
     }
 
