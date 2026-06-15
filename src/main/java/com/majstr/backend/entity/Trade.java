@@ -4,6 +4,7 @@ public enum Trade {
     ELECTRICAL,
     PLUMBING,
     TILING,
+    BUILDER,
     GENERAL,
     OTHER
 }

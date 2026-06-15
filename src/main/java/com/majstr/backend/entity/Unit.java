@@ -7,5 +7,7 @@ public enum Unit {
     PIECE,
     KG,
     HOUR,
-    SET
+    SET,
+    M3,
+    T
 }

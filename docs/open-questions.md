@@ -299,6 +299,18 @@ one-line summary — keep the item in the file as a record.
 - **Context:** `Plan.TEAM` exists in the enum but unlocks the same per-user features as PRO plus `AI_ASSISTANT`. No notion of a workspace shared between several users.
 - **Notes / options:** Workspaces would need new entities (`Workspace`, `WorkspaceMember`) and ownership semantics on existing tables would shift from `owner_id (User)` to `workspace_id`. Big change; do not start until customers ask.
 
+### Material metrics per object (concrete / brick / rebar totals)
+- **Status:** OPEN
+- **Since:** Builder-trade iteration (2026-06-13)
+- **Context:** A builder wants to see "how much concrete / brick / rebar went into
+  an object". Idea only — needs the master to clarify the exact want before building.
+- **Notes / options:** Open questions to resolve with the master: per-**estimate**
+  or per-**object** (all its estimates)? **plan** (what's in the estimate) or
+  **actual** (what was really used)? does the system compute the need (tech cards)
+  or does the master enter it? Likely simplest first cut: sum MATERIAL items across
+  an object's estimates, grouped by name+unit (e.g. "Бетон — 14 м³") — the data
+  already exists, no new entry. But confirm the concrete want first.
+
 ### Email notifications
 - **Status:** RESOLVED
 - **Since:** step 3
