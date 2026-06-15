@@ -2,6 +2,7 @@ package com.majstr.backend.exception;
 
 import com.majstr.backend.dto.ErrorResponse;
 import com.majstr.backend.feature.FeatureNotAvailableException;
+import com.majstr.backend.feature.Limit;
 import com.majstr.backend.security.UserPrincipal;
 import com.majstr.backend.storage.UnsupportedMediaTypeException;
 import io.sentry.Sentry;
@@ -125,9 +126,14 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(LimitExceededException.class)
     public ResponseEntity<ErrorResponse> handleLimitExceeded(LimitExceededException ex, HttpServletRequest req) {
-        String message = msg("error.limit.projects",
-                ex.getMaxAllowed(), msg(projectsPluralKey(ex.getMaxAllowed())));
-        return build(HttpStatus.FORBIDDEN, message, req);
+        boolean estimates = ex.getLimit() == Limit.MAX_ESTIMATES_PER_PROJECT;
+        String messageKey = estimates ? "error.limit.estimates" : "error.limit.projects";
+        String pluralPrefix = estimates ? "plural.estimates" : "plural.projects";
+        String code = estimates ? "ESTIMATE_LIMIT_REACHED" : "PROJECT_LIMIT_REACHED";
+        String message = msg(messageKey, ex.getMaxAllowed(), msg(pluralKey(pluralPrefix, ex.getMaxAllowed())));
+        ErrorResponse body = ErrorResponse.coded(HttpStatus.FORBIDDEN.value(),
+                HttpStatus.FORBIDDEN.getReasonPhrase(), message, req.getRequestURI(), code);
+        return ResponseEntity.status(HttpStatus.FORBIDDEN).body(body);
     }
 
     @ExceptionHandler(EmailNotVerifiedException.class)
@@ -205,13 +211,14 @@ public class GlobalExceptionHandler {
         return messages.getMessage(code, args.length == 0 ? null : args, code, LocaleContextHolder.getLocale());
     }
 
-    /** Ukrainian-style plural bucket: 1/21/31 → one, 2-4/22-24 → few, the rest → many. */
-    private static String projectsPluralKey(int n) {
+    /** Ukrainian-style plural bucket for {@code <prefix>.one/few/many}:
+     *  1/21/31 → one, 2-4/22-24 → few, the rest → many. */
+    private static String pluralKey(String prefix, int n) {
         int mod10 = Math.abs(n) % 10;
         int mod100 = Math.abs(n) % 100;
-        if (mod10 == 1 && mod100 != 11) return "plural.projects.one";
-        if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) return "plural.projects.few";
-        return "plural.projects.many";
+        if (mod10 == 1 && mod100 != 11) return prefix + ".one";
+        if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) return prefix + ".few";
+        return prefix + ".many";
     }
 
     private String formatFieldError(FieldError err) {

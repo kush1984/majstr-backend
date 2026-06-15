@@ -10,9 +10,13 @@ import com.majstr.backend.exception.InvalidEstimateStatusException;
 import com.majstr.backend.entity.EstimateItem;
 import com.majstr.backend.entity.EstimateStatus;
 import com.majstr.backend.entity.ItemType;
+import com.majstr.backend.entity.Plan;
 import com.majstr.backend.entity.Project;
 import com.majstr.backend.entity.Unit;
 import com.majstr.backend.entity.User;
+import com.majstr.backend.exception.LimitExceededException;
+import com.majstr.backend.feature.Limit;
+import com.majstr.backend.feature.LimitService;
 import com.majstr.backend.repository.EstimateItemRepository;
 import com.majstr.backend.repository.EstimateRepository;
 import org.junit.jupiter.api.Test;
@@ -32,6 +36,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.BDDMockito.willThrow;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 
 @ExtendWith(MockitoExtension.class)
@@ -41,6 +47,7 @@ class EstimateServiceTest {
     @Mock private EstimateItemRepository itemRepository;
     @Mock private ProjectService projectService;
     @Mock private CatalogService catalogService;
+    @Mock private LimitService limitService;
 
     @InjectMocks private EstimateService estimateService;
 
@@ -72,6 +79,19 @@ class EstimateServiceTest {
         assertThat(response.materialsSubtotal()).isEqualByComparingTo("0.00");
         assertThat(response.total()).isEqualByComparingTo("0.00");
         verify(estimateRepository).save(any(Estimate.class));
+    }
+
+    @Test
+    void createForProject_blockedWhenEstimateLimitReached_doesNotSave() {
+        given(projectService.loadOwned(projectId, ownerId)).willReturn(ownedProject(ownerId));
+        willThrow(new LimitExceededException(Limit.MAX_ESTIMATES_PER_PROJECT, 3, Plan.FREE))
+                .given(limitService).requireCanAddEstimate(ownerId, projectId);
+
+        assertThatThrownBy(() -> estimateService.createForProject(
+                projectId, new EstimateCreateRequest(null, "x"), ownerId))
+                .isInstanceOf(LimitExceededException.class);
+
+        verify(estimateRepository, never()).save(any(Estimate.class));
     }
 
     @Test

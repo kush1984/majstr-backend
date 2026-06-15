@@ -116,6 +116,19 @@ one-line summary — keep the item in the file as a record.
 - **Notes / options:** Replace with aggregate queries (`COUNT ... GROUP BY`)
   when the user table grows; admin-only endpoint so urgency is low.
 
+### Catalog autocomplete ranking by usage frequency/recency
+- **Status:** OPEN
+- **Since:** Catalog-autocomplete iteration (2026-06-13)
+- **Context:** `GET /api/catalog/search` ranks suggestions exact-prefix-first,
+  then alphabetical. The prompt's ideal is "most-used / most-recent first", but
+  `CatalogItem` tracks no usage stats, so frequency/recency ordering isn't
+  possible yet.
+- **Notes / options:** Add `use_count` / `last_used_at` to `CatalogItem`, bumped
+  when an item is copied into an estimate (`addItemFromCatalog`); order search by
+  those before the alphabetical fallback. Cheap, but a schema change + write on
+  the hot add-item path — defer until the alphabetical/prefix ordering is shown
+  to be insufficient in real use.
+
 ### Unread-question count performance on the project list
 - **Status:** RESOLVED
 - **Since:** Fix F (2026-06-04)
@@ -249,6 +262,18 @@ one-line summary — keep the item in the file as a record.
 ---
 
 ## Business logic
+
+### Exact FREE limit numbers + monetization model
+- **Status:** OPEN
+- **Since:** FREE-limits iteration (2026-06-13)
+- **Context:** FREE is now capped at 2 projects + 3 estimates per project
+  (`PlanConfig`); PRO/TEAM unlimited. The numbers are a first guess to close the
+  unlimited-drafts abuse hole, not validated demand-side. Too tight frustrates
+  trial users; too loose leaks the paid value.
+- **Notes / options:** Validate with real contractors during the closed test;
+  the numbers live in one place (`PlanConfig`) so they're cheap to retune.
+  Revisit alongside billing/trial (a trial could lift the caps for N days
+  instead of a hard FREE wall). Tie-in: plan-downgrade-with-over-limit-data.
 
 ### Billing integration
 - **Status:** OPEN

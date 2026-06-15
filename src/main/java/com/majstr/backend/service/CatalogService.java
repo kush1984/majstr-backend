@@ -9,12 +9,14 @@ import com.majstr.backend.exception.ResourceNotFoundException;
 import com.majstr.backend.repository.CatalogItemRepository;
 import com.majstr.backend.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.Comparator;
 import java.util.List;
+import java.util.Locale;
 import java.util.UUID;
 
 @Service
@@ -60,6 +62,46 @@ public class CatalogService {
     @Transactional(readOnly = true)
     public List<String> categories(UUID ownerId) {
         return catalogRepository.findDistinctCategoriesByOwner(ownerId);
+    }
+
+    private static final int MAX_SEARCH_RESULTS = 20;
+
+    /**
+     * Autocomplete: case-insensitive partial-name search over the owner's own
+     * catalog, optionally filtered by type, capped at {@code limit} (1..20).
+     * A blank query returns an empty list (don't dump the whole catalog into a
+     * suggestion dropdown). Exact-prefix matches come first, then alphabetical.
+     */
+    @Transactional(readOnly = true)
+    public List<CatalogItemResponse> search(UUID ownerId, String query, ItemType type, int limit) {
+        String pattern = likePattern(query);
+        if (pattern == null) {
+            return List.of();
+        }
+        int safeLimit = Math.min(Math.max(limit, 1), MAX_SEARCH_RESULTS);
+        return catalogRepository
+                .searchByOwner(ownerId, type, pattern, prefixPattern(query), PageRequest.of(0, safeLimit))
+                .stream()
+                .map(CatalogItemResponse::from)
+                .toList();
+    }
+
+    /**
+     * Case-insensitive {@code %term%} LIKE pattern, or {@code null} for a blank
+     * query. Built in Java so the bind parameter is a plain text LIKE operand —
+     * never wrapped in {@code LOWER(CONCAT(...))}, which made PostgreSQL infer
+     * {@code bytea} and fail with "function lower(bytea) does not exist" (Fix K).
+     */
+    static String likePattern(String query) {
+        if (query == null || query.isBlank()) {
+            return null;
+        }
+        return "%" + query.trim().toLowerCase(Locale.ROOT) + "%";
+    }
+
+    /** {@code term%} pattern used to rank exact-prefix matches first. */
+    static String prefixPattern(String query) {
+        return query.trim().toLowerCase(Locale.ROOT) + "%";
     }
 
     @Transactional

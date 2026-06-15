@@ -61,6 +61,16 @@ public class CatalogController {
         return catalogService.categories(principal.id());
     }
 
+    @Operation(summary = "Autocomplete: search my catalog by partial name (case-insensitive, owner-scoped), " +
+            "optionally filtered by type. Returns up to `limit` (default 10, max 20) suggestions.")
+    @GetMapping("/search")
+    public List<CatalogItemResponse> search(@RequestParam("q") String q,
+                                            @RequestParam(required = false) ItemType type,
+                                            @RequestParam(required = false, defaultValue = "10") int limit,
+                                            @AuthenticationPrincipal UserPrincipal principal) {
+        return catalogService.search(principal.id(), q, type, limit);
+    }
+
     @Operation(summary = "Update a catalog item")
     @PutMapping("/{id}")
     public CatalogItemResponse update(@PathVariable UUID id,

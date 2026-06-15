@@ -55,10 +55,15 @@ class GlobalExceptionHandlerTest {
             throw new LimitExceededException(Limit.MAX_PROJECTS, 2, Plan.FREE);
         }
 
+        @GetMapping("/estimate-limit")
+        String estimateLimit() {
+            throw new LimitExceededException(Limit.MAX_ESTIMATES_PER_PROJECT, 3, Plan.FREE);
+        }
+
         @GetMapping("/scan")
         String scan() throws NoResourceFoundException {
             // What Spring throws for an unknown path like a scanner's /admin/phpinfo.php.
-            throw new NoResourceFoundException(HttpMethod.GET, "admin/phpinfo.php");
+            throw new NoResourceFoundException(HttpMethod.GET, "admin/phpinfo.php", "");
         }
     }
 
@@ -141,7 +146,18 @@ class GlobalExceptionHandlerTest {
     void limitExceeded_buildsLocalizedMessageWithUkrainianPlural() throws Exception {
         mockMvc.perform(get("/limit").header("Accept-Language", "uk"))
                 .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code", is("PROJECT_LIMIT_REACHED")))
                 .andExpect(jsonPath("$.message", containsString("2 об'єкти")))
+                .andExpect(jsonPath("$.message", containsString("PRO")));
+    }
+
+    @Test
+    void estimateLimitExceeded_returns403WithCodeAndUkrainianPlural() throws Exception {
+        mockMvc.perform(get("/estimate-limit").header("Accept-Language", "uk"))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.status", is(403)))
+                .andExpect(jsonPath("$.code", is("ESTIMATE_LIMIT_REACHED")))
+                .andExpect(jsonPath("$.message", containsString("3 кошториси")))
                 .andExpect(jsonPath("$.message", containsString("PRO")));
     }
 }

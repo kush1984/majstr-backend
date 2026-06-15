@@ -10,9 +10,11 @@ import com.majstr.backend.repository.CatalogItemRepository;
 import com.majstr.backend.repository.UserRepository;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.data.domain.Pageable;
 import org.springframework.security.access.AccessDeniedException;
 
 import java.math.BigDecimal;
@@ -23,9 +25,12 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 
 @ExtendWith(MockitoExtension.class)
 class CatalogServiceTest {
@@ -84,6 +89,50 @@ class CatalogServiceTest {
                 .willReturn(List.of("Електрика", "Плитка"));
 
         assertThat(catalogService.categories(ownerId)).containsExactly("Електрика", "Плитка");
+    }
+
+    // ---- autocomplete search -----------------------------------------------
+
+    @Test
+    void search_blankQuery_returnsEmptyWithoutHittingRepo() {
+        assertThat(catalogService.search(ownerId, "   ", null, 10)).isEmpty();
+        verifyNoInteractions(catalogRepository);
+    }
+
+    @Test
+    void search_buildsLoweredPatternAndPrefix_clampsLimit_andMapsResults() {
+        given(catalogRepository.searchByOwner(eq(ownerId), eq(ItemType.WORK),
+                eq("%плит%"), eq("плит%"), any(Pageable.class)))
+                .willReturn(List.of(item("Плитка", "Укладання плитки")));
+
+        List<CatalogItemResponse> res = catalogService.search(ownerId, "  Плит  ", ItemType.WORK, 999);
+
+        assertThat(res).extracting(CatalogItemResponse::name).containsExactly("Укладання плитки");
+        ArgumentCaptor<Pageable> page = ArgumentCaptor.forClass(Pageable.class);
+        verify(catalogRepository).searchByOwner(eq(ownerId), eq(ItemType.WORK),
+                eq("%плит%"), eq("плит%"), page.capture());
+        assertThat(page.getValue().getPageSize()).isEqualTo(20); // limit clamped from 999
+        assertThat(page.getValue().getPageNumber()).isZero();
+    }
+
+    @Test
+    void search_noTypeFilter_passesNullType() {
+        given(catalogRepository.searchByOwner(eq(ownerId), isNull(),
+                eq("%кабель%"), eq("кабель%"), any(Pageable.class)))
+                .willReturn(List.of());
+
+        catalogService.search(ownerId, "Кабель", null, 5);
+
+        verify(catalogRepository).searchByOwner(eq(ownerId), isNull(),
+                eq("%кабель%"), eq("кабель%"), any(Pageable.class));
+    }
+
+    @Test
+    void likePatternAndPrefixPattern_lowercaseTrimAndWrap() {
+        assertThat(CatalogService.likePattern(null)).isNull();
+        assertThat(CatalogService.likePattern("  ")).isNull();
+        assertThat(CatalogService.likePattern("  Плитка ")).isEqualTo("%плитка%");
+        assertThat(CatalogService.prefixPattern("  Плитка ")).isEqualTo("плитка%");
     }
 
     // ---- tenant isolation (ownership guard) --------------------------------

@@ -17,6 +17,7 @@ import com.majstr.backend.entity.Project;
 import com.majstr.backend.exception.EstimateSignedException;
 import com.majstr.backend.exception.InvalidEstimateStatusException;
 import com.majstr.backend.exception.ResourceNotFoundException;
+import com.majstr.backend.feature.LimitService;
 import com.majstr.backend.repository.EstimateItemRepository;
 import com.majstr.backend.repository.EstimateRepository;
 import lombok.RequiredArgsConstructor;
@@ -43,12 +44,15 @@ public class EstimateService {
     private final ProjectService projectService;
     private final CatalogService catalogService;
     private final EstimatePdfService pdfService;
+    private final LimitService limitService;
 
     // ---- estimates ---------------------------------------------------------
 
     @Transactional
     public EstimateResponse createForProject(UUID projectId, EstimateCreateRequest req, UUID ownerId) {
         Project project = projectService.loadOwned(projectId, ownerId);
+        // FREE caps estimates per project (closes the unlimited-drafts hole).
+        limitService.requireCanAddEstimate(ownerId, projectId);
         Estimate estimate = Estimate.builder()
                 .project(project)
                 .validUntil(req.validUntil())

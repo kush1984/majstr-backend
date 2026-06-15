@@ -1,8 +1,10 @@
 package com.majstr.backend.feature;
 
+import com.majstr.backend.dto.PlanLimitsResponse;
 import com.majstr.backend.entity.Plan;
 import com.majstr.backend.entity.User;
 import com.majstr.backend.exception.LimitExceededException;
+import com.majstr.backend.repository.EstimateRepository;
 import com.majstr.backend.repository.ProjectRepository;
 import com.majstr.backend.repository.UserRepository;
 import org.junit.jupiter.api.Test;
@@ -24,9 +26,11 @@ class LimitServiceTest {
 
     @Mock UserRepository userRepository;
     @Mock ProjectRepository projectRepository;
+    @Mock EstimateRepository estimateRepository;
     @InjectMocks LimitService limitService;
 
     private final UUID userId = UUID.randomUUID();
+    private final UUID projectId = UUID.randomUUID();
 
     @Test
     void requireWithinLimit_freePlanRejectsThirdProject() {
@@ -71,6 +75,62 @@ class LimitServiceTest {
 
         assertThatCode(() -> limitService.requireWithinLimit(userId, Limit.MAX_PROJECTS))
                 .doesNotThrowAnyException();
+    }
+
+    // ---- per-project estimate limit (FREE) ---------------------------------
+
+    @Test
+    void requireCanAddEstimate_freeRejectsFourthEstimateOnProject() {
+        givenUserOnPlan(Plan.FREE);
+        given(estimateRepository.countByProjectId(projectId)).willReturn(3L);
+
+        assertThatThrownBy(() -> limitService.requireCanAddEstimate(userId, projectId))
+                .isInstanceOfSatisfying(LimitExceededException.class, ex -> {
+                    assertThat(ex.getMaxAllowed()).isEqualTo(3);
+                    assertThat(ex.getLimit()).isEqualTo(Limit.MAX_ESTIMATES_PER_PROJECT);
+                    assertThat(ex.getCurrentPlan()).isEqualTo(Plan.FREE);
+                });
+    }
+
+    @Test
+    void requireCanAddEstimate_freeAllowsThirdEstimateOnProject() {
+        givenUserOnPlan(Plan.FREE);
+        given(estimateRepository.countByProjectId(projectId)).willReturn(2L);
+
+        assertThatCode(() -> limitService.requireCanAddEstimate(userId, projectId))
+                .doesNotThrowAnyException();
+    }
+
+    @Test
+    void requireCanAddEstimate_proIsUnlimited_neverCounts() {
+        givenUserOnPlan(Plan.PRO);
+        // unlimited → early return before the count query
+
+        assertThatCode(() -> limitService.requireCanAddEstimate(userId, projectId))
+                .doesNotThrowAnyException();
+    }
+
+    // ---- limits-for-UI -----------------------------------------------------
+
+    @Test
+    void limitsFor_freeReturnsBothCaps() {
+        givenUserOnPlan(Plan.FREE);
+
+        PlanLimitsResponse limits = limitService.limitsFor(userId);
+
+        assertThat(limits.plan()).isEqualTo(Plan.FREE);
+        assertThat(limits.maxProjects()).isEqualTo(2);
+        assertThat(limits.maxEstimatesPerProject()).isEqualTo(3);
+    }
+
+    @Test
+    void limitsFor_proReturnsNullsForUnlimited() {
+        givenUserOnPlan(Plan.PRO);
+
+        PlanLimitsResponse limits = limitService.limitsFor(userId);
+
+        assertThat(limits.maxProjects()).isNull();
+        assertThat(limits.maxEstimatesPerProject()).isNull();
     }
 
     private void givenUserOnPlan(Plan plan) {
