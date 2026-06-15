@@ -2,6 +2,7 @@ package com.majstr.backend.service;
 
 import com.majstr.backend.entity.CatalogItem;
 import com.majstr.backend.entity.CatalogTemplate;
+import com.majstr.backend.entity.Trade;
 import com.majstr.backend.entity.User;
 import com.majstr.backend.repository.CatalogItemRepository;
 import com.majstr.backend.repository.CatalogTemplateRepository;
@@ -41,6 +42,26 @@ public class CatalogTemplateService {
     @Transactional
     public int resetForUser(User user) {
         return copyMissing(user, templateRepository.findByTradeIn(user.getTrades()));
+    }
+
+    /**
+     * Merges the starter set of specific trades into the user's catalog — used
+     * when a trade is added to the profile. Only the user's OWN trades are
+     * honoured (never seed a set they don't have). This is a <b>merge</b>, not a
+     * reset: {@code copyMissing} adds only template items the user doesn't
+     * already have (by name+type+unit) and never overwrites or deletes their
+     * own items. The {@code user} must be loaded with trades eager-fetched
+     * (the caller uses {@code findWithTradesById}) so {@code getTrades()} is safe.
+     */
+    @Transactional
+    public int addTemplatesForTrades(User user, Set<Trade> requestedTrades) {
+        Set<Trade> trades = requestedTrades.stream()
+                .filter(user.getTrades()::contains)
+                .collect(Collectors.toCollection(HashSet::new));
+        if (trades.isEmpty()) {
+            return 0;
+        }
+        return copyMissing(user, templateRepository.findByTradeIn(trades));
     }
 
     private int copyMissing(User owner, List<CatalogTemplate> templates) {

@@ -1,5 +1,6 @@
 package com.majstr.backend.controller;
 
+import com.majstr.backend.dto.AddTemplatesRequest;
 import com.majstr.backend.dto.CatalogItemRequest;
 import com.majstr.backend.dto.CatalogItemResponse;
 import com.majstr.backend.dto.CatalogResetResponse;
@@ -96,6 +97,19 @@ public class CatalogController {
         var user = userRepository.findWithTradesById(principal.id())
                 .orElseThrow(() -> new ResourceNotFoundException("User not found: " + principal.id()));
         int added = catalogTemplateService.resetForUser(user);
+        return new CatalogResetResponse(added);
+    }
+
+    @Operation(summary = "Add the starter set for specific trades to my catalog — a MERGE: "
+            + "only missing items are added, existing items are never overwritten or duplicated. "
+            + "Use after adding a trade to the profile.")
+    @PostMapping("/add-from-template")
+    public CatalogResetResponse addFromTemplate(@Valid @RequestBody AddTemplatesRequest req,
+                                                @AuthenticationPrincipal UserPrincipal principal) {
+        // Eager-fetch trades (open-in-view off) — addTemplatesForTrades reads them.
+        var user = userRepository.findWithTradesById(principal.id())
+                .orElseThrow(() -> new ResourceNotFoundException("User not found: " + principal.id()));
+        int added = catalogTemplateService.addTemplatesForTrades(user, req.trades());
         return new CatalogResetResponse(added);
     }
 }

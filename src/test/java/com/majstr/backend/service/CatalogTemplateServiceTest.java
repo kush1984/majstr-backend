@@ -153,6 +153,49 @@ class CatalogTemplateServiceTest {
                 .allSatisfy(item -> assertThat(item.getOwner().getId()).isEqualTo(owner.getId()));
     }
 
+    @Test
+    void addTemplatesForTrades_mergesRequestedTradeWithoutDuplicatesOrOverwrite() {
+        // User has BUILDER among their trades and already owns one builder item.
+        User user = User.builder()
+                .id(UUID.randomUUID())
+                .trades(new LinkedHashSet<>(Set.of(Trade.ELECTRICAL, Trade.BUILDER)))
+                .build();
+        given(templateRepository.findByTradeIn(Set.of(Trade.BUILDER))).willReturn(List.of(
+                tpl("Бетонні роботи", "Заливка фундаменту", ItemType.WORK, Unit.M3, "900.00"),
+                tpl("Бетонні роботи", "Бетон товарний", ItemType.MATERIAL, Unit.M3, "3200.00")
+        ));
+        // Already owns "Заливка фундаменту" (with their own price) — must NOT dup.
+        CatalogItem existing = CatalogItem.builder()
+                .name("Заливка фундаменту")
+                .type(ItemType.WORK)
+                .unit(Unit.M3)
+                .defaultPrice(new BigDecimal("1000.00"))
+                .build();
+        given(catalogRepository.findByOwnerIdOrderByNameAsc(user.getId())).willReturn(List.of(existing));
+
+        int added = catalogTemplateService.addTemplatesForTrades(user, Set.of(Trade.BUILDER));
+
+        assertThat(added).isEqualTo(1);
+        ArgumentCaptor<List<CatalogItem>> captor = ArgumentCaptor.forClass(List.class);
+        verify(catalogRepository).saveAll(captor.capture());
+        assertThat(captor.getValue())
+                .extracting(CatalogItem::getName)
+                .containsExactly("Бетон товарний"); // existing one skipped
+    }
+
+    @Test
+    void addTemplatesForTrades_ignoresTradesTheUserDoesNotHave() {
+        User user = User.builder()
+                .id(UUID.randomUUID())
+                .trades(new LinkedHashSet<>(Set.of(Trade.ELECTRICAL)))
+                .build();
+
+        int added = catalogTemplateService.addTemplatesForTrades(user, Set.of(Trade.BUILDER));
+
+        assertThat(added).isZero();
+        verify(catalogRepository, org.mockito.Mockito.never()).saveAll(anyList());
+    }
+
     private CatalogTemplate tpl(String category, String name, ItemType type, Unit unit, String price) {
         return CatalogTemplate.builder()
                 .id(UUID.randomUUID())
