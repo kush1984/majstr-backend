@@ -338,11 +338,22 @@ one-line summary — keep the item in the file as a record.
 - **Context:** All current tests are pure-Mockito unit tests. Nothing covers Flyway migrations actually running, real Hibernate mapping, or the security filter chain end-to-end. **Concrete miss:** Fix J — a `LazyInitializationException` on `User.trades` (open-in-view off, detached entity) shipped to prod because no test exercises a real Hibernate session/lazy-loading; the Mockito test could only pin the load-method choice, not the actual lazy behaviour. **Second concrete miss:** Fix K — admin user search 500'd in prod (`function lower(bytea) does not exist`) because no test executes the `@Query` SQL against a real Postgres; the unit test can only check the Java-side pattern building, not the generated `lower()/LIKE`.
 - **Notes / options:** Spring Boot 4 removed `@DataJpaTest` etc — see CLAUDE.md *Testing* section. Use `@SpringBootTest` + Testcontainers `PostgreSQLContainer`. A lazy-loading regression slice (load user, detach, map to DTO) would catch the Fix-J class of bug; a repository slice that runs `searchAdmin` against Postgres would catch the Fix-K class.
 
+### "What changed" highlighting on re-sign
+- **Status:** OPEN
+- **Since:** Estimate-UX iteration (2026-06-13)
+- **Context:** Reopen (owner) → edit → client signs again. Today the client
+  re-approves the **actual current** estimate but isn't shown a diff of what
+  changed since the version they previously signed. Important for trust — it
+  guards against a contractor quietly altering items between signatures.
+- **Notes / options:** Snapshot the item set at each SIGN; on the portal re-sign,
+  show added/removed/changed lines vs the last signed snapshot. Depends on the
+  versioning item below. Until then the portal shows the current estimate in full.
+
 ### Estimate versioning / history
 - **Status:** DEFERRED
 - **Since:** step 2
-- **Context:** Edit a sent estimate — old version is gone. Clients may want to see what they originally signed if there's a dispute.
-- **Notes / options:** Snapshot on `SIGN`, immutable thereafter. Lower priority until a customer hits it.
+- **Context:** Edit a sent estimate — old version is gone. Clients may want to see what they originally signed if there's a dispute. **Reinforced by the Estimate-UX iteration:** reopen now intentionally clears the signature and returns to DRAFT, so the previously-signed item set is not retained anywhere — a dispute ("what did I originally sign?") has no record.
+- **Notes / options:** Snapshot on `SIGN`, immutable thereafter (a `signed_estimate_versions` table or JSON snapshot). Lower priority until a customer hits it; pairs with the "what changed" highlighting above.
 
 ### Soft delete
 - **Status:** DEFERRED

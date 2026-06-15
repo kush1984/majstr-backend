@@ -28,6 +28,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.io.IOException;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 
@@ -55,6 +56,7 @@ public class EstimateService {
         limitService.requireCanAddEstimate(ownerId, projectId);
         Estimate estimate = Estimate.builder()
                 .project(project)
+                .name(normalize(req.name()))
                 .validUntil(req.validUntil())
                 .notes(normalize(req.notes()))
                 .build();
@@ -86,16 +88,52 @@ public class EstimateService {
             throw new InvalidEstimateStatusException("error.estimate.manual-sign");
         }
         estimate.setStatus(req.status());
+        estimate.setName(normalize(req.name()));
         estimate.setValidUntil(req.validUntil());
         estimate.setNotes(normalize(req.notes()));
         List<EstimateItem> items = itemRepository.findByEstimateIdOrderBySortOrderAscIdAsc(estimateId);
         return toResponse(estimate, items);
     }
 
+    /**
+     * Deleting a SIGNED estimate is forbidden — it's legally significant (the
+     * client agreed to it and work is underway). To remove or change a signed
+     * estimate, {@link #reopen} it first (owner-only), which returns it to DRAFT.
+     * DRAFT/SENT delete freely.
+     */
     @Transactional
     public void delete(UUID estimateId, UUID ownerId) {
         Estimate estimate = loadOwned(estimateId, ownerId);
+        if (estimate.getStatus() == EstimateStatus.SIGNED) {
+            throw new EstimateSignedException();
+        }
         estimateRepository.delete(estimate);
+    }
+
+    /**
+     * Reopens a SIGNED estimate for edits — <b>owner only</b> (the public portal
+     * has no path to this). The signature is cleared and the status returns to
+     * DRAFT, so the contractor can revise items and the client must sign again
+     * (transparency: the client re-approves the actual current estimate). The
+     * reopen is stamped (reopenedAt/reopenedBy) for audit. The project's own
+     * status is left as-is — work already started, it just gets a corrected
+     * estimate. Only valid on a SIGNED estimate (else 400).
+     */
+    @Transactional
+    public EstimateResponse reopen(UUID estimateId, UUID ownerId) {
+        Estimate estimate = loadOwned(estimateId, ownerId);
+        if (estimate.getStatus() != EstimateStatus.SIGNED) {
+            throw new InvalidEstimateStatusException("error.estimate.not-signed-reopen");
+        }
+        estimate.setStatus(EstimateStatus.DRAFT);
+        estimate.setSignedAt(null);
+        estimate.setSignerName(null);
+        estimate.setSignerPhone(null);
+        estimate.setSignerIp(null);
+        estimate.setReopenedAt(Instant.now());
+        estimate.setReopenedBy(ownerId);
+        List<EstimateItem> items = itemRepository.findByEstimateIdOrderBySortOrderAscIdAsc(estimateId);
+        return toResponse(estimate, items);
     }
 
     @Transactional(readOnly = true)
@@ -242,6 +280,7 @@ public class EstimateService {
         return new EstimateResponse(
                 estimate.getId(),
                 estimate.getProject().getId(),
+                estimate.getName(),
                 estimate.getStatus(),
                 estimate.getValidUntil(),
                 estimate.getNotes(),

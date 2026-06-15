@@ -9,5 +9,6 @@ import java.time.LocalDate;
 public record EstimateUpdateRequest(
         @NotNull EstimateStatus status,
         LocalDate validUntil,
-        @Size(max = 4000) String notes
+        @Size(max = 4000) String notes,
+        @Size(max = 255) String name
 ) {}

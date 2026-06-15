@@ -14,6 +14,7 @@ import java.util.UUID;
 public record EstimateSummary(
         UUID id,
         UUID projectId,
+        String name,
         EstimateStatus status,
         LocalDate validUntil,
         Instant createdAt,
@@ -23,6 +24,7 @@ public record EstimateSummary(
         return new EstimateSummary(
                 estimate.getId(),
                 estimate.getProject().getId(),
+                estimate.getName(),
                 estimate.getStatus(),
                 estimate.getValidUntil(),
                 estimate.getCreatedAt(),

@@ -189,14 +189,22 @@ keyed by **IP only** (no account exists yet) and without the body wrapper
 Once a client signs via the portal (`status == SIGNED`), the estimate is
 locked: `EstimateService.update`/`addItem`/`addItemFromCatalog`/`updateItem`/
 `deleteItem` all throw `EstimateSignedException` → **409 `ESTIMATE_SIGNED`**.
-The signature certifies exact items and totals — to revise the deal, create a
-new estimate. Setting `SIGNED` manually through `PUT /api/estimates/{id}` is
-also rejected (400) — a signature only comes from the portal, so signer
-metadata is real. **Deleting** a signed estimate stays allowed (removes the
-record, doesn't corrupt it; the whole project cascades on delete anyway).
-`Estimate` carries a JPA `@Version` column (V23) so two concurrent portal
-sign requests can't both win — the loser gets 409 via the
-`OptimisticLockingFailureException` handler.
+The signature certifies exact items and totals. Setting `SIGNED` manually
+through `PUT /api/estimates/{id}` is also rejected (400) — a signature only
+comes from the portal, so signer metadata is real. **Deleting** a signed
+estimate is **forbidden** too (409 `ESTIMATE_SIGNED`) — it's legally
+significant and work is underway; DRAFT/SENT delete freely.
+
+To revise a signed deal, the **owner** `reopen`s it (`POST
+/api/estimates/{id}/reopen`, owner-only — the public portal has no path to it):
+status → DRAFT, signature fields cleared, `reopenedAt`/`reopenedBy` stamped for
+audit. The contractor then edits and the client **signs again** (transparency —
+they re-approve the actual current estimate; "what changed" highlighting is a
+future feature, see open-questions). The project's own status is left as-is on
+reopen (work already started). `Estimate` carries a JPA `@Version` column (V23)
+so two concurrent portal sign requests can't both win — the loser gets 409 via
+the `OptimisticLockingFailureException` handler. Estimates also have an optional
+`name` (V25) to tell variants apart (econom/premium), editable while not signed.
 
 ### Spring Security 7 wiring
 

@@ -11,6 +11,7 @@ import java.util.UUID;
 public record EstimateResponse(
         UUID id,
         UUID projectId,
+        String name,
         EstimateStatus status,
         LocalDate validUntil,
         String notes,

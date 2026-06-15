@@ -82,12 +82,20 @@ public class EstimateController {
         return estimateService.update(id, req, principal.id());
     }
 
-    @Operation(summary = "Delete an estimate (cascades to its items)")
+    @Operation(summary = "Delete an estimate (cascades to its items). Forbidden for SIGNED — reopen first.")
     @DeleteMapping("/api/estimates/{id}")
     public ResponseEntity<Void> delete(@PathVariable UUID id,
                                        @AuthenticationPrincipal UserPrincipal principal) {
         estimateService.delete(id, principal.id());
         return ResponseEntity.noContent().build();
+    }
+
+    @Operation(summary = "Reopen a SIGNED estimate for edits (owner only) — clears the signature, "
+            + "returns it to DRAFT; the client must sign again")
+    @PostMapping("/api/estimates/{id}/reopen")
+    public EstimateResponse reopen(@PathVariable UUID id,
+                                   @AuthenticationPrincipal UserPrincipal principal) {
+        return estimateService.reopen(id, principal.id());
     }
 
     @Operation(summary = "Download the estimate as a PDF")

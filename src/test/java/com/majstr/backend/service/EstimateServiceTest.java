@@ -70,7 +70,7 @@ class EstimateServiceTest {
         });
 
         EstimateResponse response = estimateService.createForProject(
-                projectId, new EstimateCreateRequest(null, "kickoff"), ownerId);
+                projectId, new EstimateCreateRequest(null, "kickoff", null), ownerId);
 
         assertThat(response.projectId()).isEqualTo(projectId);
         assertThat(response.status()).isEqualTo(EstimateStatus.DRAFT);
@@ -88,7 +88,7 @@ class EstimateServiceTest {
                 .given(limitService).requireCanAddEstimate(ownerId, projectId);
 
         assertThatThrownBy(() -> estimateService.createForProject(
-                projectId, new EstimateCreateRequest(null, "x"), ownerId))
+                projectId, new EstimateCreateRequest(null, "x", null), ownerId))
                 .isInstanceOf(LimitExceededException.class);
 
         verify(estimateRepository, never()).save(any(Estimate.class));
@@ -167,7 +167,7 @@ class EstimateServiceTest {
         given(estimateRepository.findById(estimateId)).willReturn(Optional.of(signed));
 
         assertThatThrownBy(() -> estimateService.update(
-                estimateId, new EstimateUpdateRequest(EstimateStatus.DRAFT, null, null), ownerId))
+                estimateId, new EstimateUpdateRequest(EstimateStatus.DRAFT, null, null, null), ownerId))
                 .isInstanceOf(EstimateSignedException.class);
         assertThat(signed.getStatus()).isEqualTo(EstimateStatus.SIGNED);
     }
@@ -178,7 +178,7 @@ class EstimateServiceTest {
         given(estimateRepository.findById(estimateId)).willReturn(Optional.of(draft));
 
         assertThatThrownBy(() -> estimateService.update(
-                estimateId, new EstimateUpdateRequest(EstimateStatus.SIGNED, null, null), ownerId))
+                estimateId, new EstimateUpdateRequest(EstimateStatus.SIGNED, null, null, null), ownerId))
                 .isInstanceOf(InvalidEstimateStatusException.class);
         assertThat(draft.getStatus()).isEqualTo(EstimateStatus.DRAFT);
     }
@@ -191,7 +191,7 @@ class EstimateServiceTest {
         given(itemRepository.findByEstimateIdOrderBySortOrderAscIdAsc(estimateId)).willReturn(List.of());
 
         EstimateResponse resp = estimateService.update(
-                estimateId, new EstimateUpdateRequest(EstimateStatus.REJECTED, null, null), ownerId);
+                estimateId, new EstimateUpdateRequest(EstimateStatus.REJECTED, null, null, null), ownerId);
 
         assertThat(resp.status()).isEqualTo(EstimateStatus.REJECTED);
     }
@@ -226,6 +226,87 @@ class EstimateServiceTest {
 
         assertThatThrownBy(() -> estimateService.deleteItem(estimateId, UUID.randomUUID(), ownerId))
                 .isInstanceOf(EstimateSignedException.class);
+    }
+
+    // ---- delete (signed is protected) --------------------------------------
+
+    @Test
+    void delete_removesDraftEstimate() {
+        Estimate draft = ownedEstimate(ownerId);
+        given(estimateRepository.findById(estimateId)).willReturn(Optional.of(draft));
+
+        estimateService.delete(estimateId, ownerId);
+
+        verify(estimateRepository).delete(draft);
+    }
+
+    @Test
+    void delete_rejectsSignedEstimate_doesNotDelete() {
+        given(estimateRepository.findById(estimateId)).willReturn(Optional.of(signedEstimate()));
+
+        assertThatThrownBy(() -> estimateService.delete(estimateId, ownerId))
+                .isInstanceOf(EstimateSignedException.class);
+
+        verify(estimateRepository, never()).delete(any(Estimate.class));
+    }
+
+    // ---- reopen (owner only, signed → draft) -------------------------------
+
+    @Test
+    void reopen_returnsSignedEstimateToDraftAndClearsSignatureWithAudit() {
+        Estimate signed = signedEstimate();
+        given(estimateRepository.findById(estimateId)).willReturn(Optional.of(signed));
+        given(itemRepository.findByEstimateIdOrderBySortOrderAscIdAsc(estimateId)).willReturn(List.of());
+
+        EstimateResponse resp = estimateService.reopen(estimateId, ownerId);
+
+        assertThat(resp.status()).isEqualTo(EstimateStatus.DRAFT);
+        assertThat(signed.getStatus()).isEqualTo(EstimateStatus.DRAFT);
+        assertThat(signed.getSignedAt()).isNull();
+        assertThat(signed.getSignerName()).isNull();
+        assertThat(signed.getSignerPhone()).isNull();
+        assertThat(signed.getReopenedBy()).isEqualTo(ownerId);
+        assertThat(signed.getReopenedAt()).isNotNull();
+    }
+
+    @Test
+    void reopen_rejectsWhenEstimateNotSigned() {
+        Estimate draft = ownedEstimate(ownerId); // DRAFT
+        given(estimateRepository.findById(estimateId)).willReturn(Optional.of(draft));
+
+        assertThatThrownBy(() -> estimateService.reopen(estimateId, ownerId))
+                .isInstanceOf(InvalidEstimateStatusException.class);
+        assertThat(draft.getStatus()).isEqualTo(EstimateStatus.DRAFT);
+    }
+
+    @Test
+    void reopen_rejectsWhenEstimateBelongsToAnotherUser() {
+        Estimate signed = ownedEstimate(otherUserId);
+        signed.setStatus(EstimateStatus.SIGNED);
+        given(estimateRepository.findById(estimateId)).willReturn(Optional.of(signed));
+
+        assertThatThrownBy(() -> estimateService.reopen(estimateId, ownerId))
+                .isInstanceOf(AccessDeniedException.class);
+    }
+
+    // ---- name --------------------------------------------------------------
+
+    @Test
+    void createForProject_storesTrimmedName() {
+        given(projectService.loadOwned(projectId, ownerId)).willReturn(ownedProject(ownerId));
+        given(estimateRepository.save(any(Estimate.class))).willAnswer(inv -> {
+            Estimate e = inv.getArgument(0);
+            e.setId(estimateId);
+            e.setStatus(EstimateStatus.DRAFT);
+            e.setCreatedAt(Instant.now());
+            e.setUpdatedAt(Instant.now());
+            return e;
+        });
+
+        EstimateResponse resp = estimateService.createForProject(
+                projectId, new EstimateCreateRequest(null, null, "  Преміум  "), ownerId);
+
+        assertThat(resp.name()).isEqualTo("Преміум");
     }
 
     // ---- fixtures ---------------------------------------------------------

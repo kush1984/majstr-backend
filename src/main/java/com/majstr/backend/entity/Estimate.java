@@ -41,6 +41,11 @@ public class Estimate {
     @JoinColumn(name = "project_id", nullable = false, updatable = false)
     private Project project;
 
+    /** Optional contractor label to tell variant estimates apart (econom /
+     *  premium); null → the client shows a default name. */
+    @Column(name = "name", length = 255)
+    private String name;
+
     @Enumerated(EnumType.STRING)
     @Column(name = "status", nullable = false, length = 50)
     private EstimateStatus status;
@@ -62,6 +67,14 @@ public class Estimate {
 
     @Column(name = "signer_ip", length = 64)
     private String signerIp;
+
+    // Reopen audit: when the owner re-opened a signed estimate for edits, and
+    // who (their user id). Cleared signature + back to DRAFT until re-signed.
+    @Column(name = "reopened_at")
+    private Instant reopenedAt;
+
+    @Column(name = "reopened_by")
+    private UUID reopenedBy;
 
     // Optimistic lock: two concurrent updates (e.g. parallel portal sign
     // requests) can't both win — the second commit fails with a 409.
