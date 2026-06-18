@@ -1,5 +1,6 @@
 package com.majstr.backend.controller;
 
+import com.majstr.backend.dto.AdminUserDetail;
 import com.majstr.backend.dto.AdminUserSummary;
 import com.majstr.backend.dto.PageResponse;
 import com.majstr.backend.dto.PlanUpdateRequest;
@@ -7,6 +8,7 @@ import com.majstr.backend.entity.Plan;
 import com.majstr.backend.entity.User;
 import com.majstr.backend.exception.ResourceNotFoundException;
 import com.majstr.backend.repository.UserRepository;
+import com.majstr.backend.service.AdminUserService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -24,6 +26,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.UUID;
+import java.util.function.Function;
 
 @RestController
 @RequestMapping("/api/admin/users")
@@ -35,10 +38,11 @@ public class AdminUserController {
     private static final int MAX_PAGE_SIZE = 100;
 
     private final UserRepository userRepository;
+    private final AdminUserService adminUserService;
 
-    @Operation(summary = "Search users with pagination; filter by plan or free-text search")
+    @Operation(summary = "Search users with pagination + per-user activity counts "
+            + "(email verified, clients, projects, estimates, signed)")
     @GetMapping
-    @Transactional(readOnly = true) // map lazy trades within a session (open-in-view is off)
     public PageResponse<AdminUserSummary> list(
             @RequestParam(required = false) Plan plan,
             @RequestParam(required = false) String search,
@@ -46,10 +50,13 @@ public class AdminUserController {
             @RequestParam(defaultValue = "20") int size) {
         int safeSize = Math.min(Math.max(size, 1), MAX_PAGE_SIZE);
         var pageable = PageRequest.of(Math.max(page, 0), safeSize, Sort.by(Sort.Direction.DESC, "createdAt"));
-        return PageResponse.of(
-                userRepository.searchAdmin(plan, blankToNull(search), pageable),
-                AdminUserSummary::from
-        );
+        return PageResponse.of(adminUserService.search(plan, blankToNull(search), pageable), Function.identity());
+    }
+
+    @Operation(summary = "Full activity detail / activation funnel for one master")
+    @GetMapping("/{id}")
+    public AdminUserDetail detail(@PathVariable UUID id) {
+        return adminUserService.detail(id);
     }
 
     @Operation(summary = "Change a user's plan (manual upgrade until billing lands)")

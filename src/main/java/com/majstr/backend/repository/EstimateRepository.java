@@ -24,6 +24,34 @@ public interface EstimateRepository extends JpaRepository<Estimate, UUID> {
 
     long countByProjectOwnerIdAndStatus(UUID ownerId, EstimateStatus status);
 
+    // ---- admin activity ---------------------------------------------------
+
+    /** Estimate count per owner for a set of users (admin list, no N+1). */
+    @Query("SELECT e.project.owner.id AS ownerId, COUNT(e) AS cnt FROM Estimate e "
+            + "WHERE e.project.owner.id IN :ownerIds GROUP BY e.project.owner.id")
+    List<OwnerCount> countByProjectOwnerIdIn(@Param("ownerIds") Collection<UUID> ownerIds);
+
+    /** Estimate count per owner filtered by status (e.g. SIGNED) for the admin list. */
+    @Query("SELECT e.project.owner.id AS ownerId, COUNT(e) AS cnt FROM Estimate e "
+            + "WHERE e.project.owner.id IN :ownerIds AND e.status = :status GROUP BY e.project.owner.id")
+    List<OwnerCount> countByProjectOwnerIdInAndStatus(@Param("ownerIds") Collection<UUID> ownerIds,
+                                                      @Param("status") EstimateStatus status);
+
+    /** Per-status estimate counts for one owner (admin user detail). Rows: [status, count]. */
+    @Query("SELECT e.status, COUNT(e) FROM Estimate e WHERE e.project.owner.id = :ownerId GROUP BY e.status")
+    List<Object[]> countByStatusForOwner(@Param("ownerId") UUID ownerId);
+
+    /** When the owner last created an estimate (admin user detail; null if none). */
+    @Query("SELECT MAX(e.createdAt) FROM Estimate e WHERE e.project.owner.id = :ownerId")
+    Instant findLastEstimateCreatedAt(@Param("ownerId") UUID ownerId);
+
+    /** Distinct masters with at least one estimate / one signed estimate (funnel). */
+    @Query("SELECT COUNT(DISTINCT e.project.owner.id) FROM Estimate e")
+    long countDistinctProjectOwners();
+
+    @Query("SELECT COUNT(DISTINCT e.project.owner.id) FROM Estimate e WHERE e.status = :status")
+    long countDistinctProjectOwnersByStatus(@Param("status") EstimateStatus status);
+
     /**
      * For each given project, the latest estimate (by createdAt) with its status
      * and total. The total sums each line rounded to kopiykas (HALF_UP, matching

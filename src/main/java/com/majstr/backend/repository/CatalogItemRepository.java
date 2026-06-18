@@ -18,6 +18,9 @@ public interface CatalogItemRepository extends JpaRepository<CatalogItem, UUID> 
 
     List<CatalogItem> findByOwnerIdAndTypeOrderByNameAsc(UUID ownerId, ItemType type);
 
+    /** Catalog size for one owner — admin user detail ("did they fill their catalog?"). */
+    long countByOwnerId(UUID ownerId);
+
     /** Distinct, non-empty categories for a contractor — feeds the category picker. */
     @Query("""
             SELECT DISTINCT c.category FROM CatalogItem c

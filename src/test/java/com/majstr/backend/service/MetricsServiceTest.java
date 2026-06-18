@@ -1,8 +1,14 @@
 package com.majstr.backend.service;
 
+import com.majstr.backend.dto.ActivationFunnelResponse;
 import com.majstr.backend.dto.MetricsOverviewResponse;
+import com.majstr.backend.entity.EstimateStatus;
 import com.majstr.backend.entity.Plan;
+import com.majstr.backend.entity.Role;
 import com.majstr.backend.entity.User;
+import com.majstr.backend.repository.EstimateRepository;
+import com.majstr.backend.repository.EstimateShareLinkRepository;
+import com.majstr.backend.repository.ProjectRepository;
 import com.majstr.backend.repository.UserRepository;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -23,6 +29,9 @@ import static org.mockito.BDDMockito.given;
 class MetricsServiceTest {
 
     @Mock UserRepository userRepository;
+    @Mock ProjectRepository projectRepository;
+    @Mock EstimateRepository estimateRepository;
+    @Mock EstimateShareLinkRepository shareLinkRepository;
     @InjectMocks MetricsService metricsService;
 
     @Test
@@ -84,6 +93,25 @@ class MetricsServiceTest {
         assertThat(overview.churn().activeLastMonth()).isEqualTo(1L);
         assertThat(overview.churn().stillActiveThisMonth()).isZero();
         assertThat(overview.churn().churned()).isEqualTo(1L);
+    }
+
+    @Test
+    void activationFunnel_countsEachStepAcrossMasters() {
+        given(userRepository.countByRole(Role.USER)).willReturn(5L);
+        given(userRepository.countByRoleAndEmailVerifiedTrue(Role.USER)).willReturn(4L);
+        given(projectRepository.countDistinctOwners()).willReturn(3L);
+        given(estimateRepository.countDistinctProjectOwners()).willReturn(2L);
+        given(shareLinkRepository.countDistinctOwners()).willReturn(1L);
+        given(estimateRepository.countDistinctProjectOwnersByStatus(EstimateStatus.SIGNED)).willReturn(1L);
+
+        ActivationFunnelResponse f = metricsService.activationFunnel();
+
+        assertThat(f.registered()).isEqualTo(5L);
+        assertThat(f.verifiedEmail()).isEqualTo(4L);
+        assertThat(f.withProject()).isEqualTo(3L);
+        assertThat(f.withEstimate()).isEqualTo(2L);
+        assertThat(f.shared()).isEqualTo(1L);
+        assertThat(f.withSigned()).isEqualTo(1L);
     }
 
     private UserRepository.PlanCount planCount(Plan plan, long total) {

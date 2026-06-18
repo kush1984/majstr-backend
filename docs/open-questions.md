@@ -94,6 +94,19 @@ one-line summary — keep the item in the file as a record.
 - **Context:** Email verification ships, but real sending needs `RESEND_API_KEY` (env) and — to email anyone other than the Resend account owner — a Resend-verified sending domain in `EMAIL_FROM`. In dev the key is blank, so emails are logged & skipped: the feature works end-to-end but no mail actually goes out.
 - **Notes / options:** Sign up at Resend, add `RESEND_API_KEY`; for arbitrary recipients verify a domain (DNS records) and set `EMAIL_FROM=Majstr <noreply@domain>`. Until then only the account owner's own address receives mail (Resend sandbox via `onboarding@resend.dev`). Revisit before public launch and when wiring password reset + portal notifications (same transport). **Fix E sends estimate links to client emails (arbitrary third parties) — so a verified domain is a hard requirement for that feature to work at all in production.**
 
+### PDF-download counter for the bypass metric
+- **Status:** OPEN
+- **Since:** Admin-activity iteration (2026-06-13)
+- **Context:** The admin flags potential "PDF bypass" (a master uses the product
+  but skips the portal) as **active + email-unverified** — exact today, because
+  an unverified master can't share. But there's no direct counter for "generated
+  / downloaded a PDF", so a *verified* master who only ever downloads PDFs (never
+  shares) isn't caught.
+- **Notes / options:** Add a lightweight counter — increment on
+  `GET /api/estimates/{id}/pdf` (a column on `users` or estimate, or an events
+  row). Then "has estimates + downloaded PDF + never shared" becomes a precise
+  bypass signal. Low priority; the current proxy covers the common case.
+
 ### I/O inside @Transactional
 - **Status:** OPEN
 - **Since:** Fix I code review (2026-06-10)

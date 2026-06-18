@@ -116,6 +116,13 @@
         </div>
     </section>
 
+    <h2>Воронка активації — де відвалюються майстри</h2>
+    <section class="card">
+        <div class="grid" id="funnel">
+            <div class="stat"><div class="label">Завантаження…</div></div>
+        </div>
+    </section>
+
     <h2>Зростання — реєстрації за день</h2>
     <section class="card">
         <canvas id="growthChart" height="110"></canvas>
@@ -137,12 +144,13 @@
             <thead>
                 <tr>
                     <th>Email</th>
+                    <th title="Email підтверджено">✓</th>
                     <th class="hide-mobile">Ім'я</th>
-                    <th class="hide-mobile">Компанія</th>
+                    <th title="Об'єкти">Об.</th>
+                    <th title="Кошториси (загалом)">Кошт.</th>
+                    <th title="Підписані кошториси">Підп.</th>
                     <th>План</th>
-                    <th>Роль</th>
                     <th class="hide-mobile">Реєстрація</th>
-                    <th class="hide-mobile">Активність</th>
                     <th>Дії</th>
                 </tr>
             </thead>
@@ -154,6 +162,16 @@
             <button id="nextPage">→</button>
         </div>
     </section>
+</div>
+
+<div id="detailOverlay" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.4); z-index:50;">
+    <div class="card" style="max-width:560px; margin:40px auto; max-height:88vh; overflow:auto;">
+        <div style="display:flex; justify-content:space-between; align-items:center; gap:12px;">
+            <h2 id="detailTitle" style="margin:0; text-transform:none; letter-spacing:0;">Користувач</h2>
+            <button id="detailClose">✕</button>
+        </div>
+        <div id="detailBody"></div>
+    </div>
 </div>
 
 <script>
@@ -230,6 +248,53 @@
         `;
     }
 
+    async function loadFunnel() {
+        const resp = await api('/admin/metrics/funnel');
+        if (!resp.ok) return;
+        const f = await resp.json();
+        const reg = f.registered || 0;
+        const pct = n => reg === 0 ? 0 : Math.round(n / reg * 100);
+        const step = (label, n) => `<div class="stat"><div class="label">${label}</div><div class="value">${n}</div><div class="sub">${pct(n)}% від реєстрацій</div></div>`;
+        document.getElementById('funnel').innerHTML =
+            step('Зареєструвались', reg) +
+            step('Підтвердили email', f.verifiedEmail) +
+            step("Створили об'єкт", f.withProject) +
+            step('Створили кошторис', f.withEstimate) +
+            step('Поділились з клієнтом', f.shared) +
+            step('Мають підписаний', f.withSigned);
+    }
+
+    async function loadUserDetail(id) {
+        document.getElementById('detailOverlay').style.display = 'block';
+        document.getElementById('detailBody').innerHTML = '<p>Завантаження…</p>';
+        const resp = await api('/admin/users/' + id);
+        if (!resp.ok) {
+            document.getElementById('detailBody').innerHTML = '<p class="error">Не вдалося завантажити деталі</p>';
+            return;
+        }
+        const d = await resp.json();
+        const yn = b => b ? '✅' : '❌';
+        const e = d.estimates;
+        const fmt = iso => iso ? dateFormat.format(new Date(iso)) : '—';
+        document.getElementById('detailTitle').textContent = d.email;
+        document.getElementById('detailBody').innerHTML = `
+            <p>Email: ${yn(d.emailVerified)} &nbsp; Трейди: ${(d.trades || []).join(', ') || '—'}</p>
+            <p>План: <span class="badge ${d.plan}">${d.plan}</span> &nbsp; Роль: <span class="badge ${d.role}">${d.role}</span></p>
+            <p class="muted">Реєстрація: ${fmt(d.createdAt)} &nbsp;·&nbsp; Остання активність: ${fmt(d.lastActiveAt)}</p>
+            <h2 style="text-transform:none; letter-spacing:0;">Воронка активації</h2>
+            <table>
+                <tr><td>Клієнтів</td><td>${d.clientsCount}</td></tr>
+                <tr><td>Об'єктів</td><td>${d.projectsCount}</td></tr>
+                <tr><td>Кошторисів</td><td>${e.total} <span class="muted">(чернетки ${e.draft} · надіслані ${e.sent} · підписані ${e.signed} · відхилені ${e.rejected})</span></td></tr>
+                <tr><td>Поділився хоч раз</td><td>${yn(d.hasShareLink)}</td></tr>
+                <tr><td>Має підписаний</td><td>${yn(d.hasSigned)}</td></tr>
+                <tr><td>Позицій у каталозі</td><td>${d.catalogItemsCount}</td></tr>
+                <tr><td>Завантажив лого</td><td>${yn(d.hasLogo)}</td></tr>
+                <tr><td>Останній кошторис</td><td>${fmt(d.lastEstimateCreatedAt)}</td></tr>
+            </table>
+        `;
+    }
+
     async function loadGrowth() {
         const resp = await api('/admin/metrics/growth?period=30d');
         if (!resp.ok) return;
@@ -266,22 +331,31 @@
         totalPages = Math.max(data.totalPages, 1);
         document.getElementById('pageInfo').textContent =
             `сторінка ${data.page + 1} / ${totalPages} (всього ${data.totalItems})`;
-        document.getElementById('usersBody').innerHTML = data.items.map(u => `
+        document.getElementById('usersBody').innerHTML = data.items.map(u => {
+            // Unverified masters can't share (the portal gate 403s them), so
+            // "active + unverified" == active without sharing → likely PDF-only use.
+            const bypass = u.estimatesCount > 0 && !u.emailVerified;
+            return `
             <tr>
-                <td>${escapeHtml(u.email)}</td>
+                <td><a href="#" class="user-link" data-user="${u.id}">${escapeHtml(u.email)}</a>${bypass ? ' <span title="Активний, але email не підтверджено — можливий обхід через PDF (не торкається порталу клієнта)">⚠️</span>' : ''}</td>
+                <td>${u.emailVerified ? '✅' : '❌'}</td>
                 <td class="hide-mobile">${escapeHtml(u.fullName)}</td>
-                <td class="hide-mobile">${escapeHtml(u.companyName)}</td>
+                <td>${u.projectsCount}</td>
+                <td>${u.estimatesCount}</td>
+                <td>${u.signedEstimatesCount}</td>
                 <td><span class="badge ${u.plan}">${u.plan}</span></td>
-                <td><span class="badge ${u.role}">${u.role}</span></td>
                 <td class="hide-mobile muted">${dateFormat.format(new Date(u.createdAt))}</td>
-                <td class="hide-mobile muted">${u.lastActiveAt ? dateFormat.format(new Date(u.lastActiveAt)) : '—'}</td>
                 <td>
                     <select data-user="${u.id}" class="plan-select">
                         ${['FREE','PRO','TEAM'].map(p => `<option value="${p}"${p === u.plan ? ' selected' : ''}>${p}</option>`).join('')}
                     </select>
                 </td>
-            </tr>
-        `).join('');
+            </tr>`;
+        }).join('');
+
+        document.querySelectorAll('.user-link').forEach(a => {
+            a.addEventListener('click', (ev) => { ev.preventDefault(); loadUserDetail(a.dataset.user); });
+        });
 
         document.querySelectorAll('.plan-select').forEach(sel => {
             sel.addEventListener('change', async (ev) => {
@@ -311,12 +385,19 @@
     async function loadAll() {
         try {
             await loadOverview();
+            await loadFunnel();
             await loadGrowth();
             await loadUsers();
         } catch (e) {
             console.error(e);
         }
     }
+
+    function closeDetail() { document.getElementById('detailOverlay').style.display = 'none'; }
+    document.getElementById('detailClose').addEventListener('click', closeDetail);
+    document.getElementById('detailOverlay').addEventListener('click', (ev) => {
+        if (ev.target.id === 'detailOverlay') closeDetail(); // click backdrop to close
+    });
 
     document.getElementById('reload').addEventListener('click', () => { page = 0; loadUsers(); });
     document.getElementById('search').addEventListener('keyup', e => { if (e.key === 'Enter') { page = 0; loadUsers(); }});

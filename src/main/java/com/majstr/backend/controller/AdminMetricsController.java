@@ -1,5 +1,6 @@
 package com.majstr.backend.controller;
 
+import com.majstr.backend.dto.ActivationFunnelResponse;
 import com.majstr.backend.dto.MetricsGrowthResponse;
 import com.majstr.backend.dto.MetricsOverviewResponse;
 import com.majstr.backend.service.MetricsService;
@@ -25,6 +26,12 @@ public class AdminMetricsController {
     @GetMapping("/overview")
     public MetricsOverviewResponse overview() {
         return metricsService.overview();
+    }
+
+    @Operation(summary = "Activation funnel across masters (registered → verified → project → estimate → shared → signed)")
+    @GetMapping("/funnel")
+    public ActivationFunnelResponse funnel() {
+        return metricsService.activationFunnel();
     }
 
     @Operation(summary = "Registrations per day over the given period")

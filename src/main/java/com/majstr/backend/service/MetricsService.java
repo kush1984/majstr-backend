@@ -1,9 +1,15 @@
 package com.majstr.backend.service;
 
+import com.majstr.backend.dto.ActivationFunnelResponse;
 import com.majstr.backend.dto.MetricsGrowthResponse;
 import com.majstr.backend.dto.MetricsOverviewResponse;
+import com.majstr.backend.entity.EstimateStatus;
 import com.majstr.backend.entity.Plan;
+import com.majstr.backend.entity.Role;
 import com.majstr.backend.entity.User;
+import com.majstr.backend.repository.EstimateRepository;
+import com.majstr.backend.repository.EstimateShareLinkRepository;
+import com.majstr.backend.repository.ProjectRepository;
 import com.majstr.backend.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -37,6 +43,9 @@ public class MetricsService {
     private static final int ACTIVE_WINDOW_DAYS = 30;
 
     private final UserRepository userRepository;
+    private final ProjectRepository projectRepository;
+    private final EstimateRepository estimateRepository;
+    private final EstimateShareLinkRepository shareLinkRepository;
 
     @Transactional(readOnly = true)
     public MetricsOverviewResponse overview() {
@@ -88,6 +97,24 @@ public class MetricsService {
                         stillActive,
                         churned
                 )
+        );
+    }
+
+    /**
+     * Activation funnel across masters (ROLE_USER): registered → verified email →
+     * created a project → created an estimate → shared with a client → got a
+     * signature. Each step is one aggregate COUNT (no per-user loop). The
+     * distinct-owner steps are naturally master-only (admins have no projects).
+     */
+    @Transactional(readOnly = true)
+    public ActivationFunnelResponse activationFunnel() {
+        return new ActivationFunnelResponse(
+                userRepository.countByRole(Role.USER),
+                userRepository.countByRoleAndEmailVerifiedTrue(Role.USER),
+                projectRepository.countDistinctOwners(),
+                estimateRepository.countDistinctProjectOwners(),
+                shareLinkRepository.countDistinctOwners(),
+                estimateRepository.countDistinctProjectOwnersByStatus(EstimateStatus.SIGNED)
         );
     }
 

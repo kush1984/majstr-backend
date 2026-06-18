@@ -39,6 +39,14 @@ public interface UserRepository extends JpaRepository<User, UUID> {
     /** Used by the first-admin auto-seed to stay idempotent. */
     boolean existsByRole(Role role);
 
+    // ---- admin activation funnel ------------------------------------------
+
+    /** Registered masters (excludes admins). */
+    long countByRole(Role role);
+
+    /** Masters who verified their email (funnel step). */
+    long countByRoleAndEmailVerifiedTrue(Role role);
+
     // ---- admin metrics ----------------------------------------------------
 
     long countByCreatedAtAfter(Instant since);
