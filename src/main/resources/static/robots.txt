@@ -1,0 +1,5 @@
+# api.majstr.pro serves the API, the token-bearing client portal (/portal/?t=...)
+# and the admin panel — none of it should ever be indexed. The portal pages also
+# carry their own <meta name="robots" content="noindex"> as a second layer.
+User-agent: *
+Disallow: /

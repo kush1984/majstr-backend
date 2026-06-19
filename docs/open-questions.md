@@ -70,6 +70,20 @@ one-line summary — keep the item in the file as a record.
 - **Note:** the PG 18 dump contains a `\restrict` directive, so restore needs a
   **psql client ≥ 18** — an older psql chokes on it. Captured in `docs/db-restore.md`.
 
+### Landing prerender / SSR for full SEO indexation
+- **Status:** OPEN
+- **Since:** SEO iteration (2026-06-13)
+- **Context:** The landing's `<head>` meta (title/description/og/canonical/JSON-LD)
+  are static, so Google gets the decisive signals without JS, and Google renders
+  JS so the page is indexable. But the landing **body text** is client-rendered,
+  which is less reliable for indexing. Prerendering was deferred — SEO is a weak
+  channel here (hygiene, not growth), and wiring SSG into the existing Vite +
+  `vite-plugin-pwa` + React-Router app restructures the router/entry (risky).
+- **Notes / options:** If body indexation becomes important: add prerender of just
+  the public `/` route (e.g. `vite-react-ssg`, or a build-time puppeteer prerender
+  of the landing) so the built HTML ships the full landing text; keep the private
+  routes client-only. Validate the PWA service worker + auth redirects still behave.
+
 ### Audit log for sensitive actions
 - **Status:** OPEN
 - **Since:** step 4

@@ -37,6 +37,7 @@ public class SecurityConfig {
             "/api/public/**",
             "/api/files/**",
             "/portal/**",
+            "/robots.txt",
             "/v3/api-docs/**",
             "/swagger-ui.html",
             "/swagger-ui/**",
