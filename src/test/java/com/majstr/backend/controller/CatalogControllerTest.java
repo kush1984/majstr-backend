@@ -34,6 +34,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -107,5 +108,39 @@ class CatalogControllerTest {
 
         mockMvc.perform(post("/api/catalog/reset-from-template").header("Accept-Language", "en"))
                 .andExpect(status().isNotFound());
+    }
+
+    @Test
+    void templateUpdates_loadsUserWithTradesAndReturnsAvailableCount() throws Exception {
+        User user = User.builder()
+                .id(userId)
+                .trades(new LinkedHashSet<>(Set.of(Trade.PAINTER)))
+                .build();
+        given(userRepository.findWithTradesById(userId)).willReturn(Optional.of(user));
+        given(catalogTemplateService.countNewFromCatalog(user)).willReturn(4);
+
+        mockMvc.perform(get("/api/catalog/template-updates"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.available", is(4)));
+
+        verify(userRepository).findWithTradesById(userId);
+        verify(userRepository, never()).findById(any());
+    }
+
+    @Test
+    void addNewFromTemplate_loadsUserWithTradesAndReturnsItemsAdded() throws Exception {
+        User user = User.builder()
+                .id(userId)
+                .trades(new LinkedHashSet<>(Set.of(Trade.PAINTER)))
+                .build();
+        given(userRepository.findWithTradesById(userId)).willReturn(Optional.of(user));
+        given(catalogTemplateService.addNewFromCatalog(user)).willReturn(3);
+
+        mockMvc.perform(post("/api/catalog/add-new-from-template"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.itemsAdded", is(3)));
+
+        verify(userRepository).findWithTradesById(userId);
+        verify(userRepository, never()).findById(any());
     }
 }

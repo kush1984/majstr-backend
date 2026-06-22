@@ -196,6 +196,85 @@ class CatalogTemplateServiceTest {
         verify(catalogRepository, org.mockito.Mockito.never()).saveAll(anyList());
     }
 
+    @Test
+    void addNewFromCatalog_pullsOnlyNewerTemplatesAndAdvancesSyncVersion() {
+        User user = User.builder()
+                .id(UUID.randomUUID())
+                .trades(new LinkedHashSet<>(Set.of(Trade.PAINTER)))
+                .lastSyncedCatalogVersion(1)
+                .build();
+        // Two v2 templates; the master already owns one of them (with their own
+        // price) — only the genuinely new one is added, the existing is skipped.
+        given(templateRepository.findByTradeInAndAddedInVersionGreaterThan(user.getTrades(), 1)).willReturn(List.of(
+                tpl("Фарбування", "Фарбування стелі", ItemType.WORK, Unit.M2, "0.00"),
+                tpl("Фарбування", "Ґрунтування стін", ItemType.WORK, Unit.M2, "0.00")
+        ));
+        CatalogItem existing = CatalogItem.builder()
+                .name("Фарбування стелі")
+                .type(ItemType.WORK)
+                .unit(Unit.M2)
+                .defaultPrice(new BigDecimal("120.00"))
+                .build();
+        given(catalogRepository.findByOwnerIdOrderByNameAsc(user.getId())).willReturn(List.of(existing));
+        given(templateRepository.currentVersion()).willReturn(2);
+
+        int added = catalogTemplateService.addNewFromCatalog(user);
+
+        assertThat(added).isEqualTo(1);
+        assertThat(user.getLastSyncedCatalogVersion()).isEqualTo(2); // advanced to current
+        ArgumentCaptor<List<CatalogItem>> captor = ArgumentCaptor.forClass(List.class);
+        verify(catalogRepository).saveAll(captor.capture());
+        assertThat(captor.getValue())
+                .extracting(CatalogItem::getName)
+                .containsExactly("Ґрунтування стін");
+    }
+
+    @Test
+    void addNewFromCatalog_advancesSyncVersionEvenWhenNothingNew() {
+        User user = User.builder()
+                .id(UUID.randomUUID())
+                .trades(new LinkedHashSet<>(Set.of(Trade.PAINTER)))
+                .lastSyncedCatalogVersion(1)
+                .build();
+        given(templateRepository.findByTradeInAndAddedInVersionGreaterThan(user.getTrades(), 1))
+                .willReturn(List.of());
+        given(templateRepository.currentVersion()).willReturn(3);
+
+        int added = catalogTemplateService.addNewFromCatalog(user);
+
+        assertThat(added).isZero();
+        // Sync still advances so the user isn't re-offered the same (empty) delta.
+        assertThat(user.getLastSyncedCatalogVersion()).isEqualTo(3);
+        verify(catalogRepository, org.mockito.Mockito.never()).saveAll(anyList());
+    }
+
+    @Test
+    void countNewFromCatalog_countsMissingNewerTemplatesWithoutWriting() {
+        User user = User.builder()
+                .id(UUID.randomUUID())
+                .trades(new LinkedHashSet<>(Set.of(Trade.DRYWALL)))
+                .lastSyncedCatalogVersion(1)
+                .build();
+        given(templateRepository.findByTradeInAndAddedInVersionGreaterThan(user.getTrades(), 1)).willReturn(List.of(
+                tpl("ГКЛ", "Монтаж перегородки", ItemType.WORK, Unit.M2, "0.00"),
+                tpl("ГКЛ", "Шпаклювання", ItemType.WORK, Unit.M2, "0.00")
+        ));
+        // Already owns one → preview should report 1, and write nothing.
+        CatalogItem existing = CatalogItem.builder()
+                .name("Шпаклювання")
+                .type(ItemType.WORK)
+                .unit(Unit.M2)
+                .defaultPrice(new BigDecimal("90.00"))
+                .build();
+        given(catalogRepository.findByOwnerIdOrderByNameAsc(user.getId())).willReturn(List.of(existing));
+
+        int available = catalogTemplateService.countNewFromCatalog(user);
+
+        assertThat(available).isEqualTo(1);
+        verify(catalogRepository, org.mockito.Mockito.never()).saveAll(anyList());
+        assertThat(user.getLastSyncedCatalogVersion()).isEqualTo(1); // preview never advances sync
+    }
+
     private CatalogTemplate tpl(String category, String name, ItemType type, Unit unit, String price) {
         return CatalogTemplate.builder()
                 .id(UUID.randomUUID())

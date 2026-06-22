@@ -36,12 +36,42 @@ public class CatalogTemplateService {
 
     @Transactional
     public int seedForUser(User user) {
-        return copyMissing(user, templateRepository.findByTradeIn(user.getTrades()));
+        int added = copyMissing(user, templateRepository.findByTradeIn(user.getTrades()));
+        user.setLastSyncedCatalogVersion(templateRepository.currentVersion());
+        return added;
     }
 
     @Transactional
     public int resetForUser(User user) {
-        return copyMissing(user, templateRepository.findByTradeIn(user.getTrades()));
+        int added = copyMissing(user, templateRepository.findByTradeIn(user.getTrades()));
+        user.setLastSyncedCatalogVersion(templateRepository.currentVersion());
+        return added;
+    }
+
+    /**
+     * "Add new from catalog" — pulls only templates added in a version NEWER than
+     * the user last synced, for the user's trades, that aren't already in their
+     * catalog. Never re-adds what they deleted/renamed in older versions (the
+     * version cutoff guarantees it), never overwrites prices. Advances the user's
+     * synced version to current even if nothing was added. The {@code user} must
+     * be loaded with trades eager-fetched.
+     */
+    @Transactional
+    public int addNewFromCatalog(User user) {
+        List<CatalogTemplate> newer = templateRepository.findByTradeInAndAddedInVersionGreaterThan(
+                user.getTrades(), user.getLastSyncedCatalogVersion());
+        int added = copyMissing(user, newer);
+        user.setLastSyncedCatalogVersion(templateRepository.currentVersion());
+        return added;
+    }
+
+    /** How many NEW catalog items the "Add new" button would add (for the preview
+     *  "Знайдено N нових позицій") — newer-version, trade-matched, not duplicates. */
+    @Transactional(readOnly = true)
+    public int countNewFromCatalog(User user) {
+        List<CatalogTemplate> newer = templateRepository.findByTradeInAndAddedInVersionGreaterThan(
+                user.getTrades(), user.getLastSyncedCatalogVersion());
+        return missingItems(user, newer).size();
     }
 
     /**
@@ -65,12 +95,24 @@ public class CatalogTemplateService {
     }
 
     private int copyMissing(User owner, List<CatalogTemplate> templates) {
-        if (templates.isEmpty()) {
+        List<CatalogItem> toCreate = missingItems(owner, templates);
+        if (toCreate.isEmpty()) {
             return 0;
         }
-        // Seed the seen-set with what the user already has, then let it grow
-        // as we go — this skips both existing items and cross-trade duplicates
-        // (a position shared by two of the user's trades is created once).
+        catalogRepository.saveAll(toCreate);
+        return toCreate.size();
+    }
+
+    /**
+     * The CatalogItems that would be created for {@code owner} from {@code templates}
+     * — every template not already in the catalog by name+type+unit, de-duplicated
+     * across trades too. Never overwrites existing items (the copy is read-only for
+     * the catalog). Pure (no writes), so it also backs the "how many new?" preview.
+     */
+    private List<CatalogItem> missingItems(User owner, List<CatalogTemplate> templates) {
+        if (templates.isEmpty()) {
+            return List.of();
+        }
         Set<String> seen = catalogRepository.findByOwnerIdOrderByNameAsc(owner.getId())
                 .stream()
                 .map(CatalogTemplateService::key)
@@ -89,8 +131,7 @@ public class CatalogTemplateService {
                         .build());
             }
         }
-        catalogRepository.saveAll(toCreate);
-        return toCreate.size();
+        return toCreate;
     }
 
     /** Composite dedup key — same name + type + unit are treated as duplicate. */

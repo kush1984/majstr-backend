@@ -55,8 +55,14 @@ public class CatalogTemplate {
     @Column(name = "unit", nullable = false, length = 20)
     private Unit unit;
 
+    /** 0 = the master sets their own price (the CSV had no market hint for this item). */
     @Column(name = "suggested_price", nullable = false, precision = 15, scale = 2)
     private BigDecimal suggestedPrice;
+
+    /** Catalog version this template first appeared in. Lets a master pull only
+     *  defaults newer than they last synced — see {@code CatalogTemplateService}. */
+    @Column(name = "added_in_version", nullable = false)
+    private int addedInVersion;
 
     @PrePersist
     void onCreate() {

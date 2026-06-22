@@ -92,6 +92,13 @@ public class User {
     @Builder.Default
     private boolean emailVerified = false;
 
+    /** Catalog-template version the user last pulled defaults from. "Add new from
+     *  catalog" only offers templates added in a newer version (never re-adds what
+     *  the master deleted/renamed). Set to the current version on register/reset. */
+    @Column(name = "last_synced_catalog_version", nullable = false)
+    @Builder.Default
+    private int lastSyncedCatalogVersion = 0;
+
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
 

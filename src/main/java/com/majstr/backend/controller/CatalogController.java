@@ -4,6 +4,7 @@ import com.majstr.backend.dto.AddTemplatesRequest;
 import com.majstr.backend.dto.CatalogItemRequest;
 import com.majstr.backend.dto.CatalogItemResponse;
 import com.majstr.backend.dto.CatalogResetResponse;
+import com.majstr.backend.dto.TemplateUpdatesResponse;
 import com.majstr.backend.entity.ItemType;
 import com.majstr.backend.exception.ResourceNotFoundException;
 import com.majstr.backend.repository.UserRepository;
@@ -110,6 +111,25 @@ public class CatalogController {
         var user = userRepository.findWithTradesById(principal.id())
                 .orElseThrow(() -> new ResourceNotFoundException("User not found: " + principal.id()));
         int added = catalogTemplateService.addTemplatesForTrades(user, req.trades());
+        return new CatalogResetResponse(added);
+    }
+
+    @Operation(summary = "How many NEW default-catalog items are available to add "
+            + "(newer than last synced, my trades, not duplicates) — for the 'Add new' preview")
+    @GetMapping("/template-updates")
+    public TemplateUpdatesResponse templateUpdates(@AuthenticationPrincipal UserPrincipal principal) {
+        var user = userRepository.findWithTradesById(principal.id())
+                .orElseThrow(() -> new ResourceNotFoundException("User not found: " + principal.id()));
+        return new TemplateUpdatesResponse(catalogTemplateService.countNewFromCatalog(user));
+    }
+
+    @Operation(summary = "Add NEW default-catalog items (newer than last synced, my trades) — a MERGE: "
+            + "never overwrites or duplicates existing items, never re-adds deleted/renamed ones")
+    @PostMapping("/add-new-from-template")
+    public CatalogResetResponse addNewFromTemplate(@AuthenticationPrincipal UserPrincipal principal) {
+        var user = userRepository.findWithTradesById(principal.id())
+                .orElseThrow(() -> new ResourceNotFoundException("User not found: " + principal.id()));
+        int added = catalogTemplateService.addNewFromCatalog(user);
         return new CatalogResetResponse(added);
     }
 }

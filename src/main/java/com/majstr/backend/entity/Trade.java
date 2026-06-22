@@ -5,6 +5,10 @@ public enum Trade {
     PLUMBING,
     TILING,
     BUILDER,
+    PAINTER,
+    DRYWALL,
+    FLOORING,
+    DEMOLITION,
     GENERAL,
     OTHER
 }

@@ -9,5 +9,7 @@ public enum Unit {
     HOUR,
     SET,
     M3,
-    T
+    T,
+    POINT,
+    PERCENT
 }

@@ -338,6 +338,38 @@ one-line summary — keep the item in the file as a record.
   an object's estimates, grouped by name+unit (e.g. "Бетон — 14 м³") — the data
   already exists, no new entry. But confirm the concrete want first.
 
+### Market-price updates for existing catalog items
+- **Status:** OPEN
+- **Since:** Default-catalog iteration (2026-06-22)
+- **Context:** The default-catalog versioning ("Add new from library") only ever
+  **adds new** items — it deliberately never touches the price or name of an item
+  the master already owns (their data is sacred). But the default catalog also
+  carries orientative market `suggested_price` hints, and Ukrainian prices drift
+  fast. A master might want to know "the reference price for X moved 1200→1500 —
+  update mine?" without us silently overwriting what they set.
+- **Notes / options:** This is **opt-in, per-item, with a clear diff** — never a
+  bulk overwrite. Possible shape: a future catalog version bumps a template's
+  `suggested_price`; the master sees a "prices changed for N of your items" review
+  list (old→new) and ticks which to accept. Needs a way to tell "master set this
+  price deliberately" from "still on the default" (e.g. a `priceFromTemplate` flag
+  or compare-to-template-at-sync). Ties into the bigger **material-price feed**
+  idea in SPEC G (pulling live prices from the master's supplier). Confirm the
+  want before building — many masters price by gut and won't want nagging.
+
+### Estimate templates (typical work sets per object type)
+- **Status:** OPEN
+- **Since:** Default-catalog iteration (2026-06-22) — flagged as "next stage"
+- **Context:** The catalog is a flat library of individual positions. The next
+  level up is a **template estimate**: a ready set of works/materials for a typical
+  job ("bathroom renovation 4 m²", "studio electrical rough-in") that the master
+  drops into a project and tweaks, instead of assembling line-by-line every time.
+- **Notes / options:** Distinct from `CatalogTemplate` (single positions) — this is
+  a *bundle* (ordered items + default quantities, possibly parametrised by area).
+  Open: global defaults vs master's own saved templates vs both? Parametrise by
+  m²/units or fixed? Likely a new `EstimateTemplate` + `EstimateTemplateItem`
+  (mirrors Estimate/EstimateItem) and a "create estimate from template" action.
+  Explicitly the **next stage** after this iteration — scope it on its own.
+
 ### Email notifications
 - **Status:** RESOLVED
 - **Since:** step 3
