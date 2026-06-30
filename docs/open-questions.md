@@ -355,9 +355,17 @@ one-line summary — keep the item in the file as a record.
   or compare-to-template-at-sync). Ties into the bigger **material-price feed**
   idea in SPEC G (pulling live prices from the master's supplier). Confirm the
   want before building — many masters price by gut and won't want nagging.
+- **Update (V31, 2026-06-28):** The *empty*-price gap in the **default** catalog
+  is now closed — V31 filled all 355 previously-zero `suggested_price` hints
+  (rabotniki.ua market rates, fuzzy-matched within trade, estimated by unit where
+  no direct match), so a fresh master now sees a real hint on every default
+  position. This is **only the default catalog**; the open part here is unchanged:
+  syncing a *moved* price into a master's **already-owned** `catalog_items`
+  (still never touched — their edits are sacred). See
+  [iteration-catalog-enrichment.md](iteration-catalog-enrichment.md).
 
 ### Estimate templates (typical work sets per object type)
-- **Status:** OPEN
+- **Status:** IN_PROGRESS
 - **Since:** Default-catalog iteration (2026-06-22) — flagged as "next stage"
 - **Context:** The catalog is a flat library of individual positions. The next
   level up is a **template estimate**: a ready set of works/materials for a typical
@@ -368,7 +376,58 @@ one-line summary — keep the item in the file as a record.
   Open: global defaults vs master's own saved templates vs both? Parametrise by
   m²/units or fixed? Likely a new `EstimateTemplate` + `EstimateTemplateItem`
   (mirrors Estimate/EstimateItem) and a "create estimate from template" action.
-  Explicitly the **next stage** after this iteration — scope it on its own.
+- **In progress:** Estimate-templates iteration (docs/iteration-estimate-templates.md).
+  Decided for v1: BOTH default (88 system templates, `is_default=true`, `owner=null`)
+  AND master-owned ("save current estimate as template"). Quantities stored **empty**
+  (the master fills per object). Prices **not** stored — substituted from the
+  master's own catalog by name match at apply-time (empty if no match). Single
+  `trade` per template (nullable = general). The two sub-decisions below are
+  carved out as their own open questions.
+- **Update (V31, 2026-06-28):** Defaults expanded 88→**102** templates: every
+  existing bundle grew to ~5 positions (was ~3.8), plus ~14 new bundles
+  (venetian plaster, premium boiler room, suspended ceiling, parquet sanding,
+  PVC-membrane roof, …). Master-owned templates are now editable position-by-
+  position (add/remove), not just renamable. See
+  [iteration-catalog-enrichment.md](iteration-catalog-enrichment.md).
+
+### Typical (pre-filled) quantities in default estimate templates
+- **Status:** OPEN
+- **Since:** Estimate-templates iteration (2026-06-22)
+- **Context:** Default templates ship with **empty** quantities — the master fills
+  them per object (every job has a different m²/count). But a "typical" quantity
+  (e.g. a standard 4 m² bathroom) could speed the common case, at the cost of
+  masters who'd forget to correct a wrong pre-fill and send a bad estimate.
+- **Notes / options:** Empty is the safe v1 (no wrong number ever leaves). If
+  masters ask for pre-fills: add an optional `default_quantity` to template items,
+  possibly parametrised by a per-template "area" input (quantity = area × factor).
+  Revisit after real use — empty-first avoids the silent-wrong-number risk.
+
+### Estimate templates spanning multiple trades
+- **Status:** OPEN
+- **Since:** Estimate-templates iteration (2026-06-22)
+- **Context:** v1 ties each template to a single `trade` (nullable = general) for
+  the relevance filter — matches the 88 defaults, each grouped under one trade. A
+  full-flat "квартира під ключ" template would legitimately span tiling + plumbing
+  + electrical + painting, which a single-trade field can't express.
+- **Notes / options:** Either a `Set<Trade>` on `EstimateTemplate` (filter shows it
+  if ANY trade matches the master) or a dedicated `GENERAL`/multi tag. Cheap to
+  migrate later (single → set). Defer until a real cross-trade default is authored;
+  single-trade covers every current default.
+
+### Bulk-assign trade to untagged ("Інше") catalog items
+- **Status:** OPEN
+- **Since:** Catalog-trade-filter iteration (2026-06-23)
+- **Context:** `catalog_items.trade` (V30) is backfilled best-effort by category —
+  only where a category maps to exactly one trade in `catalog_templates`. Shared
+  categories, renamed/manual items, and anything the V24-era backup didn't match
+  stay NULL → "Інше" in the filter. A master with many such items still scrolls past
+  "Інше". New items (copied from templates / created with a chosen trade) are always
+  tagged, so this only affects the existing tail.
+- **Notes / options:** Cheap manual fix already exists — edit the item and pick a
+  trade. If the tail is large in practice: a one-shot "assign trade to these N items"
+  bulk action (select untagged → set trade), or a smarter backfill (fuzzy category
+  match / per-item template-name match). Defer until a real master reports a painful
+  "Інше" pile; the per-item edit + always-tagged-new-items covers the common case.
 
 ### Email notifications
 - **Status:** RESOLVED

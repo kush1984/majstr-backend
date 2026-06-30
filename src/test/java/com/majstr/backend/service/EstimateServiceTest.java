@@ -1,9 +1,11 @@
 package com.majstr.backend.service;
 
+import com.majstr.backend.dto.AddCatalogItemsBatchRequest;
 import com.majstr.backend.dto.EstimateCreateRequest;
 import com.majstr.backend.dto.EstimateItemRequest;
 import com.majstr.backend.dto.EstimateResponse;
 import com.majstr.backend.dto.EstimateUpdateRequest;
+import com.majstr.backend.entity.CatalogItem;
 import com.majstr.backend.entity.Estimate;
 import com.majstr.backend.exception.EstimateSignedException;
 import com.majstr.backend.exception.InvalidEstimateStatusException;
@@ -21,6 +23,7 @@ import com.majstr.backend.repository.EstimateItemRepository;
 import com.majstr.backend.repository.EstimateRepository;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -35,6 +38,7 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.willThrow;
 import static org.mockito.Mockito.never;
@@ -309,7 +313,57 @@ class EstimateServiceTest {
         assertThat(resp.name()).isEqualTo("Преміум");
     }
 
+    // ---- batch add from catalog --------------------------------------------
+
+    @Test
+    void addItemsFromCatalogBatch_copiesEachCatalogItemInOneSaveAll() {
+        Estimate estimate = ownedEstimate(ownerId);
+        given(estimateRepository.findById(estimateId)).willReturn(Optional.of(estimate));
+        UUID c1 = UUID.randomUUID();
+        UUID c2 = UUID.randomUUID();
+        given(catalogService.loadOwned(c1, ownerId))
+                .willReturn(catalogItem("Розетка", ItemType.WORK, Unit.PIECE, "180.00", "Електрика"));
+        given(catalogService.loadOwned(c2, ownerId))
+                .willReturn(catalogItem("Кабель", ItemType.MATERIAL, Unit.M, "38.50", "Кабель"));
+        given(itemRepository.findByEstimateIdOrderBySortOrderAscIdAsc(estimateId)).willReturn(List.of());
+
+        estimateService.addItemsFromCatalogBatch(estimateId, List.of(
+                new AddCatalogItemsBatchRequest.Entry(c1, new BigDecimal("3"), 0),
+                new AddCatalogItemsBatchRequest.Entry(c2, new BigDecimal("10"), 1)), ownerId);
+
+        ArgumentCaptor<List<EstimateItem>> captor = ArgumentCaptor.forClass(List.class);
+        verify(itemRepository).saveAll(captor.capture());
+        List<EstimateItem> saved = captor.getValue();
+        assertThat(saved).extracting(EstimateItem::getName).containsExactly("Розетка", "Кабель");
+        // price/unit/type/category copied from each catalog item; quantity from the entry
+        assertThat(saved.get(0).getUnitPrice()).isEqualByComparingTo("180.00");
+        assertThat(saved.get(0).getQuantity()).isEqualByComparingTo("3");
+        assertThat(saved.get(0).getCategory()).isEqualTo("Електрика");
+        assertThat(saved.get(1).getUnit()).isEqualTo(Unit.M);
+    }
+
+    @Test
+    void addItemsFromCatalogBatch_rejectsSignedEstimate() {
+        given(estimateRepository.findById(estimateId)).willReturn(Optional.of(signedEstimate()));
+
+        assertThatThrownBy(() -> estimateService.addItemsFromCatalogBatch(estimateId, List.of(
+                new AddCatalogItemsBatchRequest.Entry(UUID.randomUUID(), new BigDecimal("1"), 0)), ownerId))
+                .isInstanceOf(EstimateSignedException.class);
+        verify(itemRepository, never()).saveAll(anyList());
+    }
+
     // ---- fixtures ---------------------------------------------------------
+
+    private CatalogItem catalogItem(String name, ItemType type, Unit unit, String price, String category) {
+        return CatalogItem.builder()
+                .id(UUID.randomUUID())
+                .name(name)
+                .category(category)
+                .type(type)
+                .unit(unit)
+                .defaultPrice(new BigDecimal(price))
+                .build();
+    }
 
     private Estimate signedEstimate() {
         Estimate estimate = ownedEstimate(ownerId);

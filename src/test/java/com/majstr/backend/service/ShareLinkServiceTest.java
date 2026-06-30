@@ -122,4 +122,17 @@ class ShareLinkServiceTest {
         assertThat(estimate.getStatus()).isEqualTo(EstimateStatus.DRAFT);
         verifyNoInteractions(emailService);
     }
+
+    @Test
+    void sendByEmail_noClientAtAll_throwsAndSendsNothing() {
+        // An object created without a client (the new optional-client flow) can't be
+        // emailed — same guard as a client with no email, but the null-client branch.
+        Estimate estimate = estimateWithStatus(EstimateStatus.DRAFT, true);
+        given(estimateService.loadOwned(estimateId, ownerId)).willReturn(estimate);
+
+        assertThatThrownBy(() -> shareLinkService.sendByEmail(estimateId, ownerId))
+                .isInstanceOf(ClientEmailMissingException.class);
+        assertThat(estimate.getStatus()).isEqualTo(EstimateStatus.DRAFT);
+        verifyNoInteractions(emailService);
+    }
 }

@@ -101,13 +101,25 @@ PWA:
 4. Item with empty price saves (CHECK relaxed).
 5. PDF renders a POINT/PERCENT/M3 unit with its Ukrainian label.
 
-## Migration drill (run before push — Docker was down this session)
+## Migration drill — now a committed script
 
-```
-restore daily_majstr-db-2026-06-12-193550.sql.gz (V24) → apply V25, V26, V27
-→ assert: 611 templates, max(added_in_version)=1, all existing users last_synced=0,
-  only allowed trades/units present, a 0-price catalog_item inserts OK.
-```
+`scripts/migrate-drill.sh [backup.sql.gz]` restores the prod backup into a
+throwaway `postgres:18`, applies every migration newer than the backup, and
+asserts the invariants (existing users stay at version **0** — the bug-#1 guard,
+no unknown trades/units, a 0-price `catalog_item` inserts under the relaxed
+CHECK). Exits non-zero on any failure. Verified passing on the V24 backup
+(611 templates, maxver=1, all users last_synced=0). This is the only real guard
+for the migration half until a Testcontainers slice lands (open-questions).
+
+## Follow-up tests (post-review)
+
+- **A (PWA, bug #2):** `ProfileEditModal.test.tsx` — drives the real save→
+  `['me']`-cache-change flow and asserts the "add starter set?" prompt survives.
+  Proven non-vacuous: removing the `seededRef` guard fails 2/3 of these.
+- **B (backend, bug #1 logic + contract):** `CatalogTemplateServiceTest` —
+  `seed`/`reset` stamp the user as synced to the current version; an existing
+  user at version 0 is offered the full v1 default set (preview count == add).
+- **C (migration, bug #1 data):** `scripts/migrate-drill.sh` (above).
 
 ## Follow-up fixes (post-review)
 

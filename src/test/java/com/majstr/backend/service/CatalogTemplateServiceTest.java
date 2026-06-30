@@ -197,6 +197,65 @@ class CatalogTemplateServiceTest {
     }
 
     @Test
+    void seedForUser_stampsTheUserAsSyncedToCurrentVersion() {
+        // New users (register) must be marked synced to the current version, so
+        // "Add new from catalog" shows them nothing until a future v2+ ships.
+        User user = User.builder()
+                .id(UUID.randomUUID())
+                .trades(new LinkedHashSet<>(Set.of(Trade.ELECTRICAL)))
+                .build();
+        given(templateRepository.findByTradeIn(user.getTrades())).willReturn(List.of(
+                tpl("Розетки та вимикачі", "Розетка", ItemType.WORK, Unit.PIECE, "180.00")
+        ));
+        given(catalogRepository.findByOwnerIdOrderByNameAsc(user.getId())).willReturn(List.of());
+        given(templateRepository.currentVersion()).willReturn(1);
+
+        catalogTemplateService.seedForUser(user);
+
+        assertThat(user.getLastSyncedCatalogVersion()).isEqualTo(1);
+    }
+
+    @Test
+    void resetForUser_stampsTheUserAsSyncedToCurrentVersion() {
+        User user = User.builder()
+                .id(UUID.randomUUID())
+                .trades(new LinkedHashSet<>(Set.of(Trade.TILING)))
+                .build();
+        given(templateRepository.findByTradeIn(user.getTrades())).willReturn(List.of());
+        given(templateRepository.currentVersion()).willReturn(2);
+
+        catalogTemplateService.resetForUser(user);
+
+        assertThat(user.getLastSyncedCatalogVersion()).isEqualTo(2);
+    }
+
+    @Test
+    void addNewFromCatalog_existingUserAtVersionZeroIsOfferedTheFullDefaultSet() {
+        // Regression for the bug where the migration set existing users to v1: a
+        // master who came from the OLD thin templates sits at version 0, so the
+        // by-trade v1 default set IS new to them — the button must offer all of it
+        // (minus what they already own), then advance them to current.
+        User existing = User.builder()
+                .id(UUID.randomUUID())
+                .trades(new LinkedHashSet<>(Set.of(Trade.ELECTRICAL)))
+                .lastSyncedCatalogVersion(0)
+                .build();
+        given(templateRepository.findByTradeInAndAddedInVersionGreaterThan(existing.getTrades(), 0)).willReturn(List.of(
+                tpl("Розетки", "Розетка", ItemType.WORK, Unit.PIECE, "0.00"),
+                tpl("Кабель", "Кабель ВВГ 3x2.5", ItemType.WORK, Unit.LINEAR_METER, "0.00")
+        ));
+        given(catalogRepository.findByOwnerIdOrderByNameAsc(existing.getId())).willReturn(List.of());
+        given(templateRepository.currentVersion()).willReturn(1);
+
+        int countPreview = catalogTemplateService.countNewFromCatalog(existing);
+        int added = catalogTemplateService.addNewFromCatalog(existing);
+
+        assertThat(countPreview).isEqualTo(2); // preview matches the real add
+        assertThat(added).isEqualTo(2);
+        assertThat(existing.getLastSyncedCatalogVersion()).isEqualTo(1);
+    }
+
+    @Test
     void addNewFromCatalog_pullsOnlyNewerTemplatesAndAdvancesSyncVersion() {
         User user = User.builder()
                 .id(UUID.randomUUID())
@@ -273,6 +332,34 @@ class CatalogTemplateServiceTest {
         assertThat(available).isEqualTo(1);
         verify(catalogRepository, org.mockito.Mockito.never()).saveAll(anyList());
         assertThat(user.getLastSyncedCatalogVersion()).isEqualTo(1); // preview never advances sync
+    }
+
+    @Test
+    void seedForUser_carriesTradeFromTemplateOntoCatalogItem() {
+        // The catalog filter relies on this: a copied item must remember its trade.
+        User user = User.builder()
+                .id(UUID.randomUUID())
+                .trades(new LinkedHashSet<>(Set.of(Trade.TILING)))
+                .build();
+        CatalogTemplate template = CatalogTemplate.builder()
+                .id(UUID.randomUUID())
+                .category("Укладка")
+                .name("Укладання плитки")
+                .type(ItemType.WORK)
+                .unit(Unit.M2)
+                .suggestedPrice(new BigDecimal("0.00"))
+                .trade(Trade.TILING)
+                .build();
+        given(templateRepository.findByTradeIn(user.getTrades())).willReturn(List.of(template));
+        given(catalogRepository.findByOwnerIdOrderByNameAsc(user.getId())).willReturn(List.of());
+
+        catalogTemplateService.seedForUser(user);
+
+        ArgumentCaptor<List<CatalogItem>> captor = ArgumentCaptor.forClass(List.class);
+        verify(catalogRepository).saveAll(captor.capture());
+        assertThat(captor.getValue())
+                .extracting(CatalogItem::getTrade)
+                .containsExactly(Trade.TILING);
     }
 
     private CatalogTemplate tpl(String category, String name, ItemType type, Unit unit, String price) {

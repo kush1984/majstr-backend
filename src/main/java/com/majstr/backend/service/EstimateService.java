@@ -1,5 +1,6 @@
 package com.majstr.backend.service;
 
+import com.majstr.backend.dto.AddCatalogItemsBatchRequest;
 import com.majstr.backend.dto.EstimateCreateRequest;
 import com.majstr.backend.dto.EstimateItemFromCatalogRequest;
 import com.majstr.backend.dto.EstimateItemRequest;
@@ -29,6 +30,7 @@ import java.io.IOException;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 
@@ -198,6 +200,36 @@ public class EstimateService {
                 .sortOrder(req.sortOrder() == null ? 0 : req.sortOrder())
                 .build();
         return EstimateItemResponse.from(itemRepository.save(item));
+    }
+
+    /**
+     * Add several catalog items at once (multi-select picker) — one transaction,
+     * same copy semantics as {@link #addItemFromCatalog} (price/unit/type/category
+     * from each catalog item). A signed estimate is rejected (409) just like the
+     * single add. Returns the full updated estimate so the client refreshes once.
+     */
+    @Transactional
+    public EstimateResponse addItemsFromCatalogBatch(UUID estimateId,
+                                                     List<AddCatalogItemsBatchRequest.Entry> entries,
+                                                     UUID ownerId) {
+        Estimate estimate = loadOwned(estimateId, ownerId);
+        requireNotSigned(estimate);
+        List<EstimateItem> toSave = new ArrayList<>();
+        for (AddCatalogItemsBatchRequest.Entry e : entries) {
+            CatalogItem source = catalogService.loadOwned(e.catalogItemId(), ownerId);
+            toSave.add(EstimateItem.builder()
+                    .estimate(estimate)
+                    .type(source.getType())
+                    .name(source.getName())
+                    .category(source.getCategory())
+                    .unit(source.getUnit())
+                    .quantity(e.quantity())
+                    .unitPrice(source.getDefaultPrice())
+                    .sortOrder(e.sortOrder() == null ? 0 : e.sortOrder())
+                    .build());
+        }
+        itemRepository.saveAll(toSave);
+        return toResponse(estimate, itemRepository.findByEstimateIdOrderBySortOrderAscIdAsc(estimateId));
     }
 
     @Transactional

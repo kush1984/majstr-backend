@@ -1,5 +1,6 @@
 package com.majstr.backend.controller;
 
+import com.majstr.backend.dto.AddCatalogItemsBatchRequest;
 import com.majstr.backend.dto.EstimateCreateRequest;
 import com.majstr.backend.dto.EstimateItemFromCatalogRequest;
 import com.majstr.backend.dto.EstimateItemRequest;
@@ -161,6 +162,17 @@ public class EstimateController {
             @AuthenticationPrincipal UserPrincipal principal) {
         return ResponseEntity.status(HttpStatus.CREATED)
                 .body(estimateService.addItemFromCatalog(estimateId, catalogItemId, req, principal.id()));
+    }
+
+    @Operation(summary = "Add several catalog items at once (multi-select picker) — one "
+            + "transaction. Rejected with 409 ESTIMATE_SIGNED on a signed estimate.")
+    @PostMapping("/api/estimates/{estimateId}/items/batch")
+    public ResponseEntity<EstimateResponse> addItemsFromCatalogBatch(
+            @PathVariable UUID estimateId,
+            @Valid @RequestBody AddCatalogItemsBatchRequest req,
+            @AuthenticationPrincipal UserPrincipal principal) {
+        return ResponseEntity.status(HttpStatus.CREATED)
+                .body(estimateService.addItemsFromCatalogBatch(estimateId, req.items(), principal.id()));
     }
 
     @Operation(summary = "Update a line item")

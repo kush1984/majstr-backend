@@ -1,6 +1,7 @@
 package com.majstr.backend.dto;
 
 import com.majstr.backend.entity.ItemType;
+import com.majstr.backend.entity.Trade;
 import com.majstr.backend.entity.Unit;
 import jakarta.validation.constraints.DecimalMin;
 import jakarta.validation.constraints.Digits;
@@ -13,6 +14,8 @@ import java.math.BigDecimal;
 public record CatalogItemRequest(
         @NotBlank @Size(max = 255) String name,
         @Size(max = 100) String category,
+        /** Optional — which trade this position belongs to (for the catalog filter). */
+        Trade trade,
         @NotNull ItemType type,
         @NotNull Unit unit,
         @NotNull @DecimalMin(value = "0.01", message = "defaultPrice must be greater than 0")

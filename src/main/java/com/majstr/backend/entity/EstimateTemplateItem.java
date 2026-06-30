@@ -17,41 +17,34 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
 
-import java.math.BigDecimal;
-import java.time.Instant;
 import java.util.UUID;
 
+/**
+ * One position inside an {@link EstimateTemplate} — a work/material name + unit,
+ * with no quantity and no price. On apply, each becomes a real {@link EstimateItem}
+ * whose quantity starts empty (filled per object) and whose price is looked up in
+ * the applying master's own catalog by name (empty if not found).
+ */
 @Entity
-@Table(name = "catalog_items")
+@Table(name = "estimate_template_items")
 @Getter
 @Setter
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
 @EqualsAndHashCode(of = "id")
-public class CatalogItem {
+public class EstimateTemplateItem {
 
     @Id
     @Column(name = "id", nullable = false, updatable = false)
     private UUID id;
 
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
-    @JoinColumn(name = "owner_id", nullable = false, updatable = false)
-    private User owner;
+    @JoinColumn(name = "template_id", nullable = false, updatable = false)
+    private EstimateTemplate template;
 
     @Column(name = "name", nullable = false, length = 255)
     private String name;
-
-    /** Free-text grouping the contractor controls; null = "Без категорії". */
-    @Column(name = "category", length = 100)
-    private String category;
-
-    /** Trade this position belongs to — copied from the template on every seed/
-     *  reset/merge path, optionally set on manual create. Null = "Інше" (shared/
-     *  manual category that couldn't be mapped). Drives the catalog trade filter. */
-    @Enumerated(EnumType.STRING)
-    @Column(name = "trade", length = 50)
-    private Trade trade;
 
     @Enumerated(EnumType.STRING)
     @Column(name = "type", nullable = false, length = 20)
@@ -61,19 +54,13 @@ public class CatalogItem {
     @Column(name = "unit", nullable = false, length = 20)
     private Unit unit;
 
-    @Column(name = "default_price", nullable = false, precision = 15, scale = 2)
-    private BigDecimal defaultPrice;
-
-    @Column(name = "created_at", nullable = false, updatable = false)
-    private Instant createdAt;
+    @Column(name = "sort_order", nullable = false)
+    private int sortOrder;
 
     @PrePersist
     void onCreate() {
         if (id == null) {
             id = UUID.randomUUID();
-        }
-        if (createdAt == null) {
-            createdAt = Instant.now();
         }
     }
 }

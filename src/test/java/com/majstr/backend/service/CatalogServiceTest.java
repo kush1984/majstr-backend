@@ -47,7 +47,7 @@ class CatalogServiceTest {
         given(catalogRepository.save(any(CatalogItem.class))).willAnswer(inv -> inv.getArgument(0));
 
         CatalogItemResponse resp = catalogService.create(
-                new CatalogItemRequest("Кабель ВВГнг", "  Електро   роботи  ",
+                new CatalogItemRequest("Кабель ВВГнг", "  Електро   роботи  ", null,
                         ItemType.MATERIAL, Unit.M, new BigDecimal("38.50")),
                 ownerId);
 
@@ -60,7 +60,7 @@ class CatalogServiceTest {
         given(catalogRepository.save(any(CatalogItem.class))).willAnswer(inv -> inv.getArgument(0));
 
         CatalogItemResponse resp = catalogService.create(
-                new CatalogItemRequest("Розетка", "   ",
+                new CatalogItemRequest("Розетка", "   ", null,
                         ItemType.WORK, Unit.PIECE, new BigDecimal("180.00")),
                 ownerId);
 
@@ -154,7 +154,7 @@ class CatalogServiceTest {
         given(catalogRepository.findById(itemId)).willReturn(Optional.of(foreign));
 
         assertThatThrownBy(() -> catalogService.update(itemId,
-                new CatalogItemRequest("Hijack", null, ItemType.WORK, Unit.PIECE, new BigDecimal("1.00")),
+                new CatalogItemRequest("Hijack", null, null, ItemType.WORK, Unit.PIECE, new BigDecimal("1.00")),
                 ownerId))
                 .isInstanceOf(AccessDeniedException.class);
 

@@ -40,6 +40,7 @@ public class CatalogService {
                 .owner(owner)
                 .name(req.name().trim())
                 .category(normalizeCategory(req.category()))
+                .trade(req.trade())
                 .type(req.type())
                 .unit(req.unit())
                 .defaultPrice(req.defaultPrice())
@@ -109,6 +110,7 @@ public class CatalogService {
         CatalogItem item = loadOwned(id, ownerId);
         item.setName(req.name().trim());
         item.setCategory(normalizeCategory(req.category()));
+        item.setTrade(req.trade());
         item.setType(req.type());
         item.setUnit(req.unit());
         item.setDefaultPrice(req.defaultPrice());
