@@ -21,7 +21,11 @@ public record UserResponse(
         Plan plan,
         Role role,
         boolean emailVerified,
-        Instant createdAt
+        Instant createdAt,
+        // Null until the master consents / acknowledges — drive the PWA's
+        // one-time privacy-consent and client-data prompts.
+        Instant consentedToPrivacyAt,
+        Instant acknowledgedClientDataAt
 ) {
     public static UserResponse from(User user) {
         return new UserResponse(
@@ -35,7 +39,9 @@ public record UserResponse(
                 user.getPlan(),
                 user.getRole(),
                 user.isEmailVerified(),
-                user.getCreatedAt()
+                user.getCreatedAt(),
+                user.getConsentedToPrivacyAt(),
+                user.getAcknowledgedClientDataAt()
         );
     }
 

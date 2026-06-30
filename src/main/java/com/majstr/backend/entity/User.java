@@ -99,6 +99,17 @@ public class User {
     @Builder.Default
     private int lastSyncedCatalogVersion = 0;
 
+    /** When the master agreed to the Privacy Policy — set at registration (consent
+     *  checkbox) or via the one-time login modal for users who registered before
+     *  the checkbox existed. NULL = not yet consented. */
+    @Column(name = "consented_to_privacy_at")
+    private Instant consentedToPrivacyAt;
+
+    /** When the master confirmed responsibility for entering client data (the
+     *  controller/operator distinction). NULL = acknowledgement not accepted yet. */
+    @Column(name = "acknowledged_client_data_at")
+    private Instant acknowledgedClientDataAt;
+
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
 

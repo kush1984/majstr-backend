@@ -58,4 +58,16 @@ public class ProfileController {
         profileService.deleteLogo(principal.id());
         return ResponseEntity.noContent().build();
     }
+
+    @Operation(summary = "Record privacy-policy consent (one-time, for users predating the checkbox)")
+    @PostMapping("/consent")
+    public UserResponse consent(@AuthenticationPrincipal UserPrincipal principal) {
+        return profileService.recordPrivacyConsent(principal.id());
+    }
+
+    @Operation(summary = "Acknowledge responsibility for entering client data (shown once)")
+    @PostMapping("/acknowledge-client-data")
+    public UserResponse acknowledgeClientData(@AuthenticationPrincipal UserPrincipal principal) {
+        return profileService.acknowledgeClientData(principal.id());
+    }
 }

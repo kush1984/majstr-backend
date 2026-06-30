@@ -34,7 +34,7 @@ class AuthServiceTest {
     @Test
     void register_seedsCatalogAndIssuesVerificationEmail() {
         RegisterRequest req = new RegisterRequest("New@User.com", "Sup3rPass!", "Іван",
-                Set.of(Trade.ELECTRICAL), "+380501112233", "FOP");
+                Set.of(Trade.ELECTRICAL), "+380501112233", "FOP", true);
         given(userRepository.existsByEmailIgnoreCase("new@user.com")).willReturn(false);
         given(passwordEncoder.encode("Sup3rPass!")).willReturn("hash");
         given(userRepository.save(any(User.class))).willAnswer(inv -> inv.getArgument(0));
@@ -47,6 +47,8 @@ class AuthServiceTest {
         assertThat(resp.accessToken()).isEqualTo("access");
         // New users start unverified and a verification email is issued.
         assertThat(resp.user().emailVerified()).isFalse();
+        // Privacy consent is stamped at registration.
+        assertThat(resp.user().consentedToPrivacyAt()).isNotNull();
         verify(catalogTemplateService).seedForUser(any(User.class));
         verify(emailVerificationService).issueAndSend(any(User.class));
     }

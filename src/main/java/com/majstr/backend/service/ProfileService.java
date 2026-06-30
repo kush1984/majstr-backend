@@ -18,6 +18,7 @@ import org.springframework.web.multipart.MultipartFile;
 
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
+import java.time.Instant;
 import java.util.Arrays;
 import java.util.LinkedHashSet;
 import java.util.UUID;
@@ -33,6 +34,33 @@ public class ProfileService {
     private final UserRepository userRepository;
     private final StorageService storage;
     private final EmailVerificationService emailVerificationService;
+
+    /** Stamp privacy-policy consent (one-time login modal for users who predate the
+     *  registration checkbox). Idempotent — a prior stamp is kept. */
+    @Transactional
+    public UserResponse recordPrivacyConsent(UUID userId) {
+        User user = loadUser(userId);
+        if (user.getConsentedToPrivacyAt() == null) {
+            user.setConsentedToPrivacyAt(Instant.now());
+        }
+        return UserResponse.from(user);
+    }
+
+    /** Stamp the client-data responsibility acknowledgement (controller/operator
+     *  distinction), shown once on first client data. Idempotent. */
+    @Transactional
+    public UserResponse acknowledgeClientData(UUID userId) {
+        User user = loadUser(userId);
+        if (user.getAcknowledgedClientDataAt() == null) {
+            user.setAcknowledgedClientDataAt(Instant.now());
+        }
+        return UserResponse.from(user);
+    }
+
+    private User loadUser(UUID userId) {
+        return userRepository.findById(userId)
+                .orElseThrow(() -> new ResourceNotFoundException("User not found: " + userId));
+    }
 
     @Transactional
     public UserResponse updateProfile(UUID userId, ProfileUpdateRequest req) {

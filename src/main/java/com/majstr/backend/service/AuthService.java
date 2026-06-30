@@ -14,6 +14,7 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Instant;
 import java.util.LinkedHashSet;
 
 @Service
@@ -40,6 +41,8 @@ public class AuthService {
                 .trades(new LinkedHashSet<>(req.trades()))
                 .phone(req.phone().trim())
                 .companyName(req.companyName().trim())
+                // Consent is required (@AssertTrue on the request) — stamp it.
+                .consentedToPrivacyAt(Instant.now())
                 .build();
         user = userRepository.save(user);
         // Copy starter catalog templates for every chosen trade (merged,

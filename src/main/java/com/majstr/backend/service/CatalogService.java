@@ -4,6 +4,7 @@ import com.majstr.backend.dto.CatalogItemRequest;
 import com.majstr.backend.dto.CatalogItemResponse;
 import com.majstr.backend.entity.CatalogItem;
 import com.majstr.backend.entity.ItemType;
+import com.majstr.backend.entity.Trade;
 import com.majstr.backend.entity.User;
 import com.majstr.backend.exception.ResourceNotFoundException;
 import com.majstr.backend.repository.CatalogItemRepository;
@@ -40,7 +41,8 @@ public class CatalogService {
                 .owner(owner)
                 .name(req.name().trim())
                 .category(normalizeCategory(req.category()))
-                .trade(req.trade())
+                // No specific trade → the single "Інше" catch-all (never null, V33).
+                .trade(req.trade() != null ? req.trade() : Trade.OTHER)
                 .type(req.type())
                 .unit(req.unit())
                 .defaultPrice(req.defaultPrice())
@@ -110,7 +112,7 @@ public class CatalogService {
         CatalogItem item = loadOwned(id, ownerId);
         item.setName(req.name().trim());
         item.setCategory(normalizeCategory(req.category()));
-        item.setTrade(req.trade());
+        item.setTrade(req.trade() != null ? req.trade() : Trade.OTHER);
         item.setType(req.type());
         item.setUnit(req.unit());
         item.setDefaultPrice(req.defaultPrice());

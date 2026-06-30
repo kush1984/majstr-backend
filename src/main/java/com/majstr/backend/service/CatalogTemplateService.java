@@ -125,7 +125,8 @@ public class CatalogTemplateService {
                         .owner(owner)
                         .name(t.getName())
                         .category(t.getCategory())
-                        .trade(t.getTrade()) // carry the trade so the catalog can filter by it
+                        // carry the trade so the catalog can filter by it; never null → OTHER
+                        .trade(t.getTrade() != null ? t.getTrade() : Trade.OTHER)
                         .type(t.getType())
                         .unit(t.getUnit())
                         .defaultPrice(t.getSuggestedPrice())

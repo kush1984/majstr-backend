@@ -281,6 +281,40 @@ one-line summary — keep the item in the file as a record.
 - **Notes / options:** Soft model (register works immediately; banner + only share-link creation gated behind a verified email) via Resend.
 - **Resolution:** Fix D — `User.emailVerified` + `EmailVerificationToken`, Resend `EmailService`, verify/resend endpoints, soft 403 `EMAIL_NOT_VERIFIED` gate on share; existing users migrated verified (V19). Verified live end-to-end (12 checks). PWA banner/page is a separate frontend task.
 
+### Privacy policy: lawyer review + law №8153 readiness
+- **Status:** OPEN
+- **Since:** Privacy-policy iteration (2026-06-30)
+- **Context:** The published `/privacy` policy + consent texts (ЗГОДА A registration,
+  ЗГОДА B client-data, portal note C) were written in-house, not vetted by a lawyer.
+  Ukraine's draft data-protection law №8153 will tighten consent requirements (explicit
+  checkbox — which we now have).
+- **Notes / options:** Have a lawyer review the policy and consent wording before it
+  carries real legal weight / before public launch. When №8153 takes effect, re-check
+  the consent mechanics against it. The structure (explicit checkbox + stamps
+  `consentedToPrivacyAt` / `acknowledgedClientDataAt`, controller/operator split) is
+  already aligned; this is wording/coverage validation.
+
+### English translation of the privacy policy texts
+- **Status:** OPEN
+- **Since:** Privacy-policy iteration (2026-06-30)
+- **Context:** The `/privacy` page body is inline Ukrainian (product-language content,
+  same pattern as the PDF/email/portal — see "Localization scope" above). The short
+  consent UI strings are localized (uk+en), but the **policy document itself** has no
+  English version.
+- **Notes / options:** Translate the policy body when a non-Ukrainian audience is real
+  (EU market). Ties into the broader "content documents still uk-only" item. Low
+  priority until there's a non-uk user.
+
+### Existing-user privacy consent (login modal)
+- **Status:** RESOLVED
+- **Since:** Privacy-policy iteration (2026-06-30)
+- **Context:** Users who registered before the consent checkbox have
+  `consented_to_privacy_at = NULL` (V32 is additive). Decided NOT to treat continued
+  use as consent.
+- **Resolution:** Privacy-policy iteration — `AppLayout` shows a one-time
+  non-dismissable `PrivacyConsentModal` when `me.consentedToPrivacyAt == null`; agreeing
+  calls `POST /api/profile/consent` and stamps it. New users are stamped at register.
+
 ### Multi-factor auth / OAuth providers
 - **Status:** DEFERRED
 - **Since:** step 1
@@ -414,15 +448,18 @@ one-line summary — keep the item in the file as a record.
   migrate later (single → set). Defer until a real cross-trade default is authored;
   single-trade covers every current default.
 
-### Bulk-assign trade to untagged ("Інше") catalog items
+### Bulk-assign trade to the "Інше" (OTHER) catalog pile
 - **Status:** OPEN
 - **Since:** Catalog-trade-filter iteration (2026-06-23)
 - **Context:** `catalog_items.trade` (V30) is backfilled best-effort by category —
   only where a category maps to exactly one trade in `catalog_templates`. Shared
-  categories, renamed/manual items, and anything the V24-era backup didn't match
-  stay NULL → "Інше" in the filter. A master with many such items still scrolls past
-  "Інше". New items (copied from templates / created with a chosen trade) are always
-  tagged, so this only affects the existing tail.
+  categories, renamed/manual items, and anything the V24-era backup didn't match land
+  in **OTHER** ("Інше"). A master with many such items still scrolls past "Інше". New
+  items (copied from templates / created with a chosen trade) are always tagged.
+- **Update (V33, 2026-06-30):** the old NULL-untagged bucket was collapsed into the
+  single OTHER catch-all (there were two "Інше" before — `Trade.OTHER` + null). So the
+  pile is now the OTHER trade, not null; the bulk-assign want is unchanged — let a
+  master move a batch of OTHER items to a real trade.
 - **Notes / options:** Cheap manual fix already exists — edit the item and pick a
   trade. If the tail is large in practice: a one-shot "assign trade to these N items"
   bulk action (select untagged → set trade), or a smarter backfill (fuzzy category

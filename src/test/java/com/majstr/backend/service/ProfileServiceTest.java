@@ -13,6 +13,7 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import java.time.Instant;
 import java.util.LinkedHashSet;
 import java.util.Optional;
 import java.util.Set;
@@ -104,5 +105,39 @@ class ProfileServiceTest {
         verify(emailVerificationService, never()).replaceForNewEmail(any());
         // Uniqueness is never even checked for a locked email.
         verify(userRepository, never()).existsByEmailIgnoreCase(any());
+    }
+
+    @Test
+    void recordPrivacyConsent_stampsWhenNull() {
+        User u = user(true, "ivan@example.com");
+        given(userRepository.findById(userId)).willReturn(Optional.of(u));
+
+        UserResponse resp = profileService.recordPrivacyConsent(userId);
+
+        assertThat(u.getConsentedToPrivacyAt()).isNotNull();
+        assertThat(resp.consentedToPrivacyAt()).isNotNull();
+    }
+
+    @Test
+    void recordPrivacyConsent_idempotentWhenAlreadySet() {
+        User u = user(true, "ivan@example.com");
+        Instant earlier = Instant.parse("2026-01-01T00:00:00Z");
+        u.setConsentedToPrivacyAt(earlier);
+        given(userRepository.findById(userId)).willReturn(Optional.of(u));
+
+        profileService.recordPrivacyConsent(userId);
+
+        assertThat(u.getConsentedToPrivacyAt()).isEqualTo(earlier); // not overwritten
+    }
+
+    @Test
+    void acknowledgeClientData_stampsWhenNull() {
+        User u = user(true, "ivan@example.com");
+        given(userRepository.findById(userId)).willReturn(Optional.of(u));
+
+        UserResponse resp = profileService.acknowledgeClientData(userId);
+
+        assertThat(u.getAcknowledgedClientDataAt()).isNotNull();
+        assertThat(resp.acknowledgedClientDataAt()).isNotNull();
     }
 }

@@ -86,7 +86,8 @@ class AuthControllerTest {
                 "John Smith",
                 Set.of(Trade.ELECTRICAL),
                 "+15551234567",
-                "Smith Electrical LLC");
+                "Smith Electrical LLC",
+                true);
 
         given(authService.register(any(RegisterRequest.class)))
                 .willReturn(sampleAuthResponse("john@example.com"));
@@ -110,11 +111,31 @@ class AuthControllerTest {
                 "John Smith",
                 Set.of(Trade.GENERAL),
                 "+15551234567",
-                "Company");
+                "Company",
+                true);
 
         mockMvc.perform(post("/api/auth/register")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(invalid)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.status", is(400)));
+    }
+
+    @Test
+    void register_rejectsWithoutConsent() throws Exception {
+        // Privacy consent is mandatory (@AssertTrue) — a false flag is a 400.
+        RegisterRequest noConsent = new RegisterRequest(
+                "john@example.com",
+                "Sup3r-Secret!",
+                "John Smith",
+                Set.of(Trade.GENERAL),
+                "+15551234567",
+                "Company",
+                false);
+
+        mockMvc.perform(post("/api/auth/register")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(noConsent)))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.status", is(400)));
     }
@@ -165,7 +186,9 @@ class AuthControllerTest {
                 com.majstr.backend.entity.Plan.FREE,
                 com.majstr.backend.entity.Role.USER,
                 true,
-                Instant.now());
+                Instant.now(),
+                Instant.now(),
+                null);
         return AuthResponse.of("access-jwt", "refresh-token", 900L, user);
     }
 }

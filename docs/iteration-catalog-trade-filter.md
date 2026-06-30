@@ -88,7 +88,30 @@ manually-added items left untagged). New seeded catalogs are fully tagged (the c
 path stamps trade), so a fresh account won't show it. Tagging those items (the item
 form's trade select) or the future bulk-assign removes the chip.
 
+## V33 — one "Інше", not two (user feedback)
+
+On prod the filter showed **two "Інше" chips**: `Trade.OTHER` (a real enum, label
+"Інше", from the 2 default OTHER templates / masters with the OTHER trade) **and** the
+`null`-untagged bucket (V30's best-effort backfill left ambiguous categories null), also
+labeled "Інше". Same duplication in the edit form's dropdown (empty option = null + an
+OTHER option). Two different things with one name.
+
+**Fix — collapse "no trade" into the single OTHER catch-all; eliminate null:**
+- **V33**: `UPDATE catalog_items SET trade='OTHER' WHERE trade IS NULL`, then
+  `ALTER COLUMN trade SET DEFAULT 'OTHER'` + `SET NOT NULL` — the DB enforces no null
+  can return. `CatalogItem.trade` is now `nullable=false` `@Builder.Default = OTHER`.
+  Write paths coalesce null→OTHER (`CatalogService.create/update`,
+  `CatalogTemplateService.missingItems`).
+- **PWA**: `TradeKey = Trade` (dropped `'NULL'`); `tradeMatches` maps a null trade to
+  OTHER; `TradeFilterChips` shows **one** "Інше" (OTHER) chip — when the master has the
+  OTHER trade OR some item is OTHER (`hasOther`), deduped; hidden when <2 chips. The
+  item form + `SaveToCatalogPrompt` drop the empty "Інше" option, always offer OTHER,
+  and default an unspecified trade to OTHER. `catalogItemSchema.trade` is a plain enum
+  (no `''`). Callers pass `hasOther` (`trade == null || trade === 'OTHER'`).
+- Tests: `TradeFilterChips.test` rewritten (one "Інше", null→OTHER); the manual→catalog
+  prompts now assert `trade: 'OTHER'`. PWA tsc + vitest (57) + build green; V33 drill green.
+
 ## Open question
 
-`docs/open-questions.md` — bulk-assign trade to NULL ("Інше") items by master feedback
-(shared/manual categories the backfill couldn't resolve).
+`docs/open-questions.md` — bulk-assign trade to the "Інше" (OTHER) pile by master
+feedback (categories the V30 backfill couldn't resolve, now OTHER instead of null).

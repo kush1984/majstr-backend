@@ -47,11 +47,13 @@ public class CatalogItem {
     private String category;
 
     /** Trade this position belongs to — copied from the template on every seed/
-     *  reset/merge path, optionally set on manual create. Null = "Інше" (shared/
-     *  manual category that couldn't be mapped). Drives the catalog trade filter. */
+     *  reset/merge path, optionally set on manual create. Never null: a position
+     *  with no specific trade is OTHER ("Інше"), the single catch-all (V33). Drives
+     *  the catalog trade filter. */
+    @Builder.Default
     @Enumerated(EnumType.STRING)
-    @Column(name = "trade", length = 50)
-    private Trade trade;
+    @Column(name = "trade", nullable = false, length = 50)
+    private Trade trade = Trade.OTHER;
 
     @Enumerated(EnumType.STRING)
     @Column(name = "type", nullable = false, length = 20)
