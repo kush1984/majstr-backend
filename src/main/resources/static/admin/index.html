@@ -27,14 +27,11 @@
             line-height: 1.45;
         }
         .container {
-            max-width: 1100px;
+            max-width: 1200px;
             margin: 0 auto;
             padding: 16px;
         }
-        h1 {
-            font-size: 1.4rem;
-            margin: 0 0 16px;
-        }
+        h1 { font-size: 1.4rem; margin: 0 0 16px; }
         h2 {
             font-size: 1rem;
             color: var(--muted);
@@ -42,6 +39,7 @@
             letter-spacing: 0.5px;
             margin: 24px 0 8px;
         }
+        h3 { font-size: 1rem; margin: 0 0 8px; }
         .card {
             background: var(--card);
             border: 1px solid var(--border);
@@ -71,15 +69,12 @@
         }
         button { cursor: pointer; }
         button.primary { background: var(--accent); color: var(--accent-text); border-color: var(--accent); }
-        .filters { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
-        .filters input { flex: 1; min-width: 180px; }
-        .pager { display: flex; justify-content: center; gap: 8px; margin-top: 12px; }
-        .badge {
-            display: inline-block;
-            padding: 2px 8px;
-            border-radius: 999px;
-            font-size: 0.75rem;
-        }
+        button.small { padding: 4px 8px; font-size: 0.85rem; }
+        button.danger { color: var(--danger); border-color: #f3c6c6; }
+        .filters { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; align-items: center; }
+        .filters input.grow { flex: 1; min-width: 180px; }
+        .pager { display: flex; justify-content: center; gap: 8px; margin-top: 12px; align-items: center; }
+        .badge { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 0.75rem; }
         .badge.FREE { background: #f3f4f6; color: var(--muted); }
         .badge.PRO  { background: #dbeafe; color: var(--accent); }
         .badge.TEAM { background: #fce7f3; color: #be185d; }
@@ -90,6 +85,30 @@
         #login input { width: 100%; }
         #login button { width: 100%; margin-top: 16px; }
         .error { color: var(--danger); margin-top: 8px; font-size: 0.9rem; }
+        .ok { color: var(--success); margin-top: 8px; font-size: 0.9rem; }
+
+        /* Left-nav layout */
+        .layout { display: flex; gap: 16px; align-items: flex-start; }
+        .sidebar { width: 210px; flex-shrink: 0; position: sticky; top: 16px; }
+        .sidebar .navlink {
+            display: block; width: 100%; text-align: left; margin-bottom: 6px;
+            border: 1px solid var(--border); border-radius: 10px; background: var(--card);
+        }
+        .sidebar .navlink.active { background: var(--accent); color: var(--accent-text); border-color: var(--accent); }
+        .sidebar .logout { color: var(--danger); border-color: #f3c6c6; margin-top: 12px; }
+        .main { flex: 1; min-width: 0; }
+        .formgrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 10px; margin: 12px 0; }
+        .formgrid label { display: flex; flex-direction: column; gap: 4px; font-size: 0.82rem; color: var(--muted); }
+        .formrow { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-bottom: 8px; }
+        .formrow input, .formrow select { flex: 1; min-width: 120px; }
+        .hint { color: var(--muted); font-size: 0.85rem; margin: 0 0 12px; }
+
+        @media (max-width: 720px) {
+            .layout { flex-direction: column; }
+            .sidebar { width: 100%; position: static; display: flex; gap: 8px; flex-wrap: wrap; }
+            .sidebar .navlink { width: auto; margin-bottom: 0; }
+            .sidebar .logout { margin-top: 0; }
+        }
         @media (max-width: 600px) {
             th.hide-mobile, td.hide-mobile { display: none; }
         }
@@ -108,69 +127,158 @@
 </div>
 
 <div id="app" class="container" style="display:none">
-    <h1>Адмін-панель</h1>
+    <div class="layout">
+        <aside class="sidebar">
+            <button class="navlink active" data-view="dashboard">📊 Дашборд</button>
+            <button class="navlink" data-view="catalog">📖 Каталог</button>
+            <button class="navlink" data-view="templates">🧩 Шаблони кошторисів</button>
+            <button class="navlink logout" id="logoutBtn">Вийти</button>
+        </aside>
 
-    <section class="card">
-        <div class="grid" id="overview">
-            <div class="stat"><div class="label">Завантаження…</div></div>
-        </div>
-    </section>
+        <main class="main">
 
-    <h2>Воронка активації — де відвалюються майстри</h2>
-    <section class="card">
-        <div class="grid" id="funnel">
-            <div class="stat"><div class="label">Завантаження…</div></div>
-        </div>
-    </section>
+            <!-- ===== DASHBOARD ===== -->
+            <section id="view-dashboard" class="view">
+                <h1>Адмін-панель</h1>
 
-    <h2>Інтерес до PRO (painted door)</h2>
-    <section class="card">
-        <div class="grid" id="upgradeStats">
-            <div class="stat"><div class="label">Завантаження…</div></div>
-        </div>
-        <p class="muted" id="upgradeByTrigger" style="margin-top:8px"></p>
-        <div id="upgradeLeads" style="margin-top:12px"></div>
-    </section>
+                <section class="card">
+                    <div class="grid" id="overview">
+                        <div class="stat"><div class="label">Завантаження…</div></div>
+                    </div>
+                </section>
 
-    <h2>Зростання — реєстрації за день</h2>
-    <section class="card">
-        <canvas id="growthChart" height="110"></canvas>
-    </section>
+                <h2>Воронка активації — де відвалюються майстри</h2>
+                <section class="card">
+                    <div class="grid" id="funnel">
+                        <div class="stat"><div class="label">Завантаження…</div></div>
+                    </div>
+                </section>
 
-    <h2>Користувачі</h2>
-    <section class="card">
-        <div class="filters">
-            <input id="search" placeholder="Пошук за email / ім'ям / компанією">
-            <select id="planFilter">
-                <option value="">Усі плани</option>
-                <option value="FREE">FREE</option>
-                <option value="PRO">PRO</option>
-                <option value="TEAM">TEAM</option>
-            </select>
-            <button id="reload">Оновити</button>
-        </div>
-        <table>
-            <thead>
-                <tr>
-                    <th>Email</th>
-                    <th title="Email підтверджено">✓</th>
-                    <th class="hide-mobile">Ім'я</th>
-                    <th title="Об'єкти">Об.</th>
-                    <th title="Кошториси (загалом)">Кошт.</th>
-                    <th title="Підписані кошториси">Підп.</th>
-                    <th>План</th>
-                    <th class="hide-mobile">Реєстрація</th>
-                    <th>Дії</th>
-                </tr>
-            </thead>
-            <tbody id="usersBody"></tbody>
-        </table>
-        <div class="pager">
-            <button id="prevPage">←</button>
-            <span id="pageInfo" style="align-self:center">сторінка 1 / 1</span>
-            <button id="nextPage">→</button>
-        </div>
-    </section>
+                <h2>Інтерес до PRO (painted door)</h2>
+                <section class="card">
+                    <div class="grid" id="upgradeStats">
+                        <div class="stat"><div class="label">Завантаження…</div></div>
+                    </div>
+                    <p class="muted" id="upgradeByTrigger" style="margin-top:8px"></p>
+                    <div id="upgradeLeads" style="margin-top:12px"></div>
+                </section>
+
+                <h2>Зростання — реєстрації за день</h2>
+                <section class="card">
+                    <canvas id="growthChart" height="110"></canvas>
+                </section>
+
+                <h2>Користувачі</h2>
+                <section class="card">
+                    <div class="filters">
+                        <input id="search" class="grow" placeholder="Пошук за email / ім'ям / компанією">
+                        <select id="planFilter">
+                            <option value="">Усі плани</option>
+                            <option value="FREE">FREE</option>
+                            <option value="PRO">PRO</option>
+                            <option value="TEAM">TEAM</option>
+                        </select>
+                        <button id="reload">Оновити</button>
+                    </div>
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Email</th>
+                                <th title="Email підтверджено">✓</th>
+                                <th class="hide-mobile">Ім'я</th>
+                                <th title="Об'єкти">Об.</th>
+                                <th title="Кошториси (загалом)">Кошт.</th>
+                                <th title="Підписані кошториси">Підп.</th>
+                                <th>План</th>
+                                <th class="hide-mobile">Реєстрація</th>
+                                <th>Дії</th>
+                            </tr>
+                        </thead>
+                        <tbody id="usersBody"></tbody>
+                    </table>
+                    <div class="pager">
+                        <button id="prevPage">←</button>
+                        <span id="pageInfo" style="align-self:center">сторінка 1 / 1</span>
+                        <button id="nextPage">→</button>
+                    </div>
+                </section>
+            </section>
+
+            <!-- ===== CATALOG (default catalog_templates) ===== -->
+            <section id="view-catalog" class="view" hidden>
+                <h1>Дефолтний каталог</h1>
+                <p class="hint">Нова позиція одразу зʼявляється у майстрів під «Додати з бібліотеки» (без рестарту).
+                    Редагування наявної діє лише для нових реєстрацій — хто вже скопіював, тримає свою копію.</p>
+
+                <section class="card">
+                    <div class="filters">
+                        <input id="cat-q" class="grow" placeholder="Пошук за назвою">
+                        <select id="cat-trade"></select>
+                        <select id="cat-type"></select>
+                        <button id="cat-reload">Оновити</button>
+                        <button id="cat-add" class="primary">+ Нова позиція</button>
+                    </div>
+
+                    <div id="cat-form" class="card" hidden style="background:var(--bg)">
+                        <h3 id="cat-form-title">Нова позиція</h3>
+                        <input type="hidden" id="cf-id">
+                        <div class="formgrid">
+                            <label>Назва<input id="cf-name"></label>
+                            <label>Трейд<select id="cf-trade"></select></label>
+                            <label>Категорія<input id="cf-category" placeholder="напр. Щит"></label>
+                            <label>Тип<select id="cf-type"></select></label>
+                            <label>Одиниця<select id="cf-unit"></select></label>
+                            <label>Ціна, ₴<input id="cf-price" type="number" step="0.01" min="0" value="0"></label>
+                        </div>
+                        <button id="cf-save" class="primary">Зберегти</button>
+                        <button id="cf-cancel">Скасувати</button>
+                        <div class="error" id="cf-error"></div>
+                    </div>
+
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Назва</th>
+                                <th class="hide-mobile">Трейд</th>
+                                <th class="hide-mobile">Категорія</th>
+                                <th>Тип</th>
+                                <th>Од.</th>
+                                <th>Ціна</th>
+                                <th></th>
+                            </tr>
+                        </thead>
+                        <tbody id="cat-body"></tbody>
+                    </table>
+                    <div class="pager">
+                        <button id="cat-prev">←</button>
+                        <span id="cat-page-info" style="align-self:center">—</span>
+                        <button id="cat-next">→</button>
+                    </div>
+                </section>
+            </section>
+
+            <!-- ===== ESTIMATE TEMPLATES (defaults) ===== -->
+            <section id="view-templates" class="view" hidden>
+                <h1>Дефолтні шаблони кошторисів</h1>
+                <p class="hint">Правки застосовуються наживо для всіх майстрів (шаблони не копіюються — застосовуються з БД щоразу).</p>
+
+                <div class="filters">
+                    <button id="tpl-new" class="primary">+ Новий шаблон</button>
+                    <button id="tpl-reload">Оновити</button>
+                </div>
+                <div style="display:flex; gap:16px; flex-wrap:wrap; align-items:flex-start;">
+                    <section class="card" style="flex:1; min-width:280px;">
+                        <table>
+                            <thead><tr><th>Назва</th><th>Трейд</th><th title="Позицій">Поз.</th></tr></thead>
+                            <tbody id="tpl-body"></tbody>
+                        </table>
+                    </section>
+                    <div id="tpl-detail" style="flex:1.2; min-width:300px;"></div>
+                </div>
+            </section>
+
+        </main>
+    </div>
 </div>
 
 <div id="detailOverlay" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.4); z-index:50;">
@@ -192,6 +300,25 @@
     const dayFormat = new Intl.DateTimeFormat('uk-UA', { day: '2-digit', month: '2-digit' });
     const numberFormat = new Intl.NumberFormat('uk-UA');
 
+    // ---- enum metadata (admin-internal labels; keep in sync with the DB enums) ----
+    const TRADES = [
+        ['ELECTRICAL', 'Електрика'], ['PLUMBING', 'Сантехніка'], ['TILING', 'Плитка'],
+        ['BUILDER', 'Будівельні'], ['PAINTER', 'Малярні'], ['DRYWALL', 'Гіпсокартон'],
+        ['FLOORING', 'Підлога'], ['DEMOLITION', 'Демонтаж'], ['GENERAL', 'Загальні'], ['OTHER', 'Інше']
+    ];
+    const TYPES = [['WORK', 'Робота'], ['MATERIAL', 'Матеріал']];
+    const UNITS = [
+        ['M2', 'м²'], ['M', 'м'], ['LINEAR_METER', 'м.п.'], ['PIECE', 'шт'], ['KG', 'кг'],
+        ['HOUR', 'год'], ['SET', 'компл'], ['M3', 'м³'], ['T', 'т'], ['POINT', 'точка'], ['PERCENT', '%']
+    ];
+    const labelOf = (arr, v) => (arr.find(x => x[0] === v) || [null, v ?? '—'])[1];
+    const tradeLabel = v => labelOf(TRADES, v);
+    const typeLabel = v => labelOf(TYPES, v);
+    const unitLabel = v => labelOf(UNITS, v);
+    const optionsHtml = (arr, sel, blank) =>
+        (blank != null ? `<option value=""${!sel ? ' selected' : ''}>${blank}</option>` : '')
+        + arr.map(([v, l]) => `<option value="${v}"${v === sel ? ' selected' : ''}>${l}</option>`).join('');
+
     let token = localStorage.getItem(STORAGE_KEY);
     let page = 0;
     let totalPages = 1;
@@ -204,6 +331,14 @@
         return fetch(API + path, init);
     }
 
+    function val(id) { return document.getElementById(id).value; }
+
+    function escapeHtml(s) {
+        return String(s ?? '').replace(/[&<>"']/g, c => ({
+            '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+        }[c]));
+    }
+
     function showLogin(message) {
         document.getElementById('app').style.display = 'none';
         document.getElementById('login').style.display = 'block';
@@ -213,6 +348,12 @@
     function showApp() {
         document.getElementById('login').style.display = 'none';
         document.getElementById('app').style.display = 'block';
+    }
+
+    function logout() {
+        localStorage.removeItem(STORAGE_KEY);
+        token = null;
+        showLogin('Сесія завершилась, увійдіть знову');
     }
 
     document.getElementById('loginSubmit').addEventListener('click', async () => {
@@ -238,6 +379,22 @@
         loadAll();
     });
 
+    document.getElementById('logoutBtn').addEventListener('click', logout);
+
+    // ================= view switching =================
+    let catalogLoaded = false, templatesLoaded = false;
+
+    function showView(name) {
+        document.querySelectorAll('.view').forEach(v => { v.hidden = v.id !== 'view-' + name; });
+        document.querySelectorAll('.navlink').forEach(a =>
+            a.classList.toggle('active', a.dataset.view === name));
+        if (name === 'catalog' && !catalogLoaded) { catalogLoaded = true; loadCatalog(); }
+        if (name === 'templates' && !templatesLoaded) { templatesLoaded = true; loadTemplates(); }
+    }
+    document.querySelectorAll('.navlink[data-view]').forEach(a =>
+        a.addEventListener('click', () => showView(a.dataset.view)));
+
+    // ================= DASHBOARD =================
     async function loadOverview() {
         const resp = await api('/admin/metrics/overview');
         if (resp.status === 401 || resp.status === 403) { logout(); return; }
@@ -337,10 +494,7 @@
         if (chart) chart.destroy();
         chart = new Chart(ctx, {
             type: 'bar',
-            data: {
-                labels: labels,
-                datasets: [{ label: 'Реєстрації', data: values, backgroundColor: '#1f6feb' }]
-            },
+            data: { labels: labels, datasets: [{ label: 'Реєстрації', data: values, backgroundColor: '#1f6feb' }] },
             options: {
                 responsive: true,
                 plugins: { legend: { display: false } },
@@ -364,8 +518,6 @@
         document.getElementById('pageInfo').textContent =
             `сторінка ${data.page + 1} / ${totalPages} (всього ${data.totalItems})`;
         document.getElementById('usersBody').innerHTML = data.items.map(u => {
-            // Unverified masters can't share (the portal gate 403s them), so
-            // "active + unverified" == active without sharing → likely PDF-only use.
             const bypass = u.estimatesCount > 0 && !u.emailVerified;
             return `
             <tr>
@@ -388,32 +540,239 @@
         document.querySelectorAll('.user-link').forEach(a => {
             a.addEventListener('click', (ev) => { ev.preventDefault(); loadUserDetail(a.dataset.user); });
         });
-
         document.querySelectorAll('.plan-select').forEach(sel => {
             sel.addEventListener('change', async (ev) => {
                 const id = ev.target.dataset.user;
                 const newPlan = ev.target.value;
-                const resp = await api(`/admin/users/${id}/plan`, {
-                    method: 'PATCH',
-                    body: JSON.stringify({ plan: newPlan })
-                });
+                const resp = await api(`/admin/users/${id}/plan`, { method: 'PATCH', body: JSON.stringify({ plan: newPlan }) });
                 if (!resp.ok) alert('Не вдалося оновити план');
             });
         });
     }
 
-    function escapeHtml(s) {
-        return String(s ?? '').replace(/[&<>"']/g, c => ({
-            '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
-        }[c]));
+    // ================= CATALOG editor =================
+    let catPage = 0, catTotalPages = 1;
+
+    function initCatalogSelects() {
+        document.getElementById('cat-trade').innerHTML = optionsHtml(TRADES, '', 'Усі трейди');
+        document.getElementById('cat-type').innerHTML = optionsHtml(TYPES, '', 'Усі типи');
+        document.getElementById('cf-trade').innerHTML = optionsHtml(TRADES, 'ELECTRICAL');
+        document.getElementById('cf-type').innerHTML = optionsHtml(TYPES, 'WORK');
+        document.getElementById('cf-unit').innerHTML = optionsHtml(UNITS, 'PIECE');
     }
 
-    function logout() {
-        localStorage.removeItem(STORAGE_KEY);
-        token = null;
-        showLogin('Сесія завершилась, увійдіть знову');
+    async function loadCatalog() {
+        const params = new URLSearchParams();
+        const trade = val('cat-trade'); if (trade) params.set('trade', trade);
+        const type = val('cat-type'); if (type) params.set('type', type);
+        const q = val('cat-q').trim(); if (q) params.set('q', q);
+        params.set('page', String(catPage));
+        params.set('size', '50');
+        const resp = await api('/admin/catalog-templates?' + params.toString());
+        if (resp.status === 401 || resp.status === 403) { logout(); return; }
+        if (!resp.ok) { document.getElementById('cat-body').innerHTML = '<tr><td colspan="7" class="error">Помилка завантаження</td></tr>'; return; }
+        const data = await resp.json();
+        catTotalPages = Math.max(data.totalPages, 1);
+        document.getElementById('cat-page-info').textContent =
+            `стор ${data.page + 1}/${catTotalPages} · всього ${data.totalItems} · версія каталогу ${data.currentVersion}`;
+        document.getElementById('cat-body').innerHTML = data.items.length === 0
+            ? '<tr><td colspan="7" class="muted">Нічого не знайдено</td></tr>'
+            : data.items.map(t => `
+                <tr>
+                    <td>${escapeHtml(t.name)}</td>
+                    <td class="hide-mobile">${tradeLabel(t.trade)}</td>
+                    <td class="hide-mobile">${escapeHtml(t.category || '—')}</td>
+                    <td>${typeLabel(t.type)}</td>
+                    <td>${unitLabel(t.unit)}</td>
+                    <td>${numberFormat.format(t.suggestedPrice)}</td>
+                    <td>
+                        <button class="small cat-edit" data-json='${escapeHtml(JSON.stringify(t))}'>✎</button>
+                        <button class="small danger cat-del" data-id="${t.id}" data-name="${escapeHtml(t.name)}">🗑</button>
+                    </td>
+                </tr>`).join('');
+        document.querySelectorAll('.cat-edit').forEach(b =>
+            b.addEventListener('click', () => openCatForm(JSON.parse(b.dataset.json))));
+        document.querySelectorAll('.cat-del').forEach(b =>
+            b.addEventListener('click', () => deleteCat(b.dataset.id, b.dataset.name)));
     }
 
+    function openCatForm(item) {
+        document.getElementById('cat-form').hidden = false;
+        document.getElementById('cf-error').textContent = '';
+        document.getElementById('cat-form-title').textContent = item ? 'Редагувати позицію' : 'Нова позиція';
+        document.getElementById('cf-id').value = item ? item.id : '';
+        document.getElementById('cf-name').value = item ? item.name : '';
+        document.getElementById('cf-category').value = item ? (item.category || '') : '';
+        document.getElementById('cf-trade').value = item ? item.trade : 'ELECTRICAL';
+        document.getElementById('cf-type').value = item ? item.type : 'WORK';
+        document.getElementById('cf-unit').value = item ? item.unit : 'PIECE';
+        document.getElementById('cf-price').value = item ? item.suggestedPrice : 0;
+    }
+
+    async function saveCatForm() {
+        const id = val('cf-id');
+        const name = val('cf-name').trim();
+        if (!name) { document.getElementById('cf-error').textContent = 'Назва обовʼязкова'; return; }
+        const body = {
+            name,
+            trade: val('cf-trade'),
+            category: val('cf-category').trim() || null,
+            type: val('cf-type'),
+            unit: val('cf-unit'),
+            suggestedPrice: val('cf-price') || '0'
+        };
+        const resp = await api('/admin/catalog-templates' + (id ? '/' + id : ''), {
+            method: id ? 'PUT' : 'POST',
+            body: JSON.stringify(body)
+        });
+        if (!resp.ok) { document.getElementById('cf-error').textContent = 'Не вдалося зберегти (' + resp.status + ')'; return; }
+        document.getElementById('cat-form').hidden = true;
+        loadCatalog();
+    }
+
+    async function deleteCat(id, name) {
+        if (!confirm(`Видалити позицію «${name}» з дефолтного каталогу?`)) return;
+        const resp = await api('/admin/catalog-templates/' + id, { method: 'DELETE' });
+        if (!resp.ok) { alert('Не вдалося видалити'); return; }
+        loadCatalog();
+    }
+
+    document.getElementById('cat-reload').addEventListener('click', () => { catPage = 0; loadCatalog(); });
+    document.getElementById('cat-add').addEventListener('click', () => openCatForm(null));
+    document.getElementById('cf-save').addEventListener('click', saveCatForm);
+    document.getElementById('cf-cancel').addEventListener('click', () => { document.getElementById('cat-form').hidden = true; });
+    document.getElementById('cat-trade').addEventListener('change', () => { catPage = 0; loadCatalog(); });
+    document.getElementById('cat-type').addEventListener('change', () => { catPage = 0; loadCatalog(); });
+    document.getElementById('cat-q').addEventListener('keyup', e => { if (e.key === 'Enter') { catPage = 0; loadCatalog(); } });
+    document.getElementById('cat-prev').addEventListener('click', () => { if (catPage > 0) { catPage--; loadCatalog(); } });
+    document.getElementById('cat-next').addEventListener('click', () => { if (catPage < catTotalPages - 1) { catPage++; loadCatalog(); } });
+
+    // ================= ESTIMATE TEMPLATES editor =================
+    async function loadTemplates() {
+        const resp = await api('/admin/estimate-templates');
+        if (resp.status === 401 || resp.status === 403) { logout(); return; }
+        if (!resp.ok) { document.getElementById('tpl-body').innerHTML = '<tr><td colspan="3" class="error">Помилка</td></tr>'; return; }
+        const list = await resp.json();
+        document.getElementById('tpl-body').innerHTML = list.length === 0
+            ? '<tr><td colspan="3" class="muted">Порожньо</td></tr>'
+            : list.map(t => `
+                <tr>
+                    <td><a href="#" class="tpl-link" data-id="${t.id}">${escapeHtml(t.name)}</a></td>
+                    <td class="muted">${t.trade ? tradeLabel(t.trade) : 'Загальний'}</td>
+                    <td>${t.itemCount}</td>
+                </tr>`).join('');
+        document.querySelectorAll('.tpl-link').forEach(a =>
+            a.addEventListener('click', ev => { ev.preventDefault(); openTemplateDetail(a.dataset.id); }));
+    }
+
+    async function openTemplateDetail(id) {
+        const resp = await api('/admin/estimate-templates/' + id);
+        if (!resp.ok) { document.getElementById('tpl-detail').innerHTML = '<div class="card error">Не вдалося завантажити</div>'; return; }
+        renderTemplateDetail(await resp.json());
+    }
+
+    function renderTemplateDetail(d) {
+        const itemRows = d.items.map(it => `
+            <tr data-item="${it.id}">
+                <td><input class="ti-name" value="${escapeHtml(it.name)}"></td>
+                <td><select class="ti-type">${optionsHtml(TYPES, it.type)}</select></td>
+                <td><select class="ti-unit">${optionsHtml(UNITS, it.unit)}</select></td>
+                <td>
+                    <button class="small ti-save" data-item="${it.id}">💾</button>
+                    <button class="small danger ti-del" data-item="${it.id}">🗑</button>
+                </td>
+            </tr>`).join('');
+        document.getElementById('tpl-detail').innerHTML = `
+            <div class="card">
+                <h3>Редагувати шаблон</h3>
+                <div class="formrow">
+                    <input id="td-name" value="${escapeHtml(d.name)}">
+                    <select id="td-trade">${optionsHtml(TRADES, d.trade, 'Загальний')}</select>
+                    <button id="td-save" class="primary small">Зберегти</button>
+                    <button id="td-del" class="danger small">Видалити шаблон</button>
+                </div>
+                <table>
+                    <thead><tr><th>Назва</th><th>Тип</th><th>Од.</th><th></th></tr></thead>
+                    <tbody>${itemRows || '<tr><td colspan="4" class="muted">Позицій немає</td></tr>'}</tbody>
+                </table>
+                <div class="formrow" style="margin-top:8px">
+                    <input id="ni-name" placeholder="Нова позиція">
+                    <select id="ni-type">${optionsHtml(TYPES, 'WORK')}</select>
+                    <select id="ni-unit">${optionsHtml(UNITS, 'M2')}</select>
+                    <button id="ni-add" class="primary small">+ Додати</button>
+                </div>
+                <div class="error" id="td-error"></div>
+            </div>`;
+
+        document.getElementById('td-save').addEventListener('click', () => saveTemplate(d.id));
+        document.getElementById('td-del').addEventListener('click', () => deleteTemplate(d.id, d.name));
+        document.getElementById('ni-add').addEventListener('click', () => addTemplateItem(d.id));
+        document.querySelectorAll('.ti-save').forEach(b =>
+            b.addEventListener('click', () => saveTemplateItem(d.id, b.dataset.item, b.closest('tr'))));
+        document.querySelectorAll('.ti-del').forEach(b =>
+            b.addEventListener('click', () => removeTemplateItem(d.id, b.dataset.item)));
+    }
+
+    async function saveTemplate(id) {
+        const body = { name: val('td-name').trim(), trade: val('td-trade') || null };
+        if (!body.name) { document.getElementById('td-error').textContent = 'Назва обовʼязкова'; return; }
+        const resp = await api('/admin/estimate-templates/' + id, { method: 'PUT', body: JSON.stringify(body) });
+        if (!resp.ok) { document.getElementById('td-error').textContent = 'Не вдалося зберегти'; return; }
+        await loadTemplates();
+        openTemplateDetail(id);
+    }
+
+    async function deleteTemplate(id, name) {
+        if (!confirm(`Видалити дефолтний шаблон «${name}»? Це вплине на всіх майстрів.`)) return;
+        const resp = await api('/admin/estimate-templates/' + id, { method: 'DELETE' });
+        if (!resp.ok) { alert('Не вдалося видалити'); return; }
+        document.getElementById('tpl-detail').innerHTML = '';
+        loadTemplates();
+    }
+
+    async function addTemplateItem(id) {
+        const name = val('ni-name').trim();
+        if (!name) { document.getElementById('td-error').textContent = 'Назва позиції обовʼязкова'; return; }
+        const body = { name, type: val('ni-type'), unit: val('ni-unit') };
+        const resp = await api(`/admin/estimate-templates/${id}/items`, { method: 'POST', body: JSON.stringify(body) });
+        if (!resp.ok) { document.getElementById('td-error').textContent = 'Не вдалося додати'; return; }
+        renderTemplateDetail(await resp.json());
+        loadTemplates(); // refresh counts
+    }
+
+    async function saveTemplateItem(id, itemId, tr) {
+        const body = {
+            name: tr.querySelector('.ti-name').value.trim(),
+            type: tr.querySelector('.ti-type').value,
+            unit: tr.querySelector('.ti-unit').value
+        };
+        if (!body.name) { document.getElementById('td-error').textContent = 'Назва позиції обовʼязкова'; return; }
+        const resp = await api(`/admin/estimate-templates/${id}/items/${itemId}`, { method: 'PUT', body: JSON.stringify(body) });
+        if (!resp.ok) { document.getElementById('td-error').textContent = 'Не вдалося зберегти позицію'; return; }
+        renderTemplateDetail(await resp.json());
+    }
+
+    async function removeTemplateItem(id, itemId) {
+        const resp = await api(`/admin/estimate-templates/${id}/items/${itemId}`, { method: 'DELETE' });
+        if (!resp.ok) { document.getElementById('td-error').textContent = 'Не вдалося видалити позицію'; return; }
+        renderTemplateDetail(await resp.json());
+        loadTemplates();
+    }
+
+    async function createTemplate() {
+        const name = prompt('Назва нового дефолтного шаблону:');
+        if (!name || !name.trim()) return;
+        const resp = await api('/admin/estimate-templates', { method: 'POST', body: JSON.stringify({ name: name.trim(), trade: null }) });
+        if (!resp.ok) { alert('Не вдалося створити'); return; }
+        const created = await resp.json();
+        await loadTemplates();
+        openTemplateDetail(created.id);
+    }
+
+    document.getElementById('tpl-new').addEventListener('click', createTemplate);
+    document.getElementById('tpl-reload').addEventListener('click', loadTemplates);
+
+    // ================= dashboard bootstrap + user detail overlay =================
     async function loadAll() {
         try {
             await loadOverview();
@@ -429,14 +788,16 @@
     function closeDetail() { document.getElementById('detailOverlay').style.display = 'none'; }
     document.getElementById('detailClose').addEventListener('click', closeDetail);
     document.getElementById('detailOverlay').addEventListener('click', (ev) => {
-        if (ev.target.id === 'detailOverlay') closeDetail(); // click backdrop to close
+        if (ev.target.id === 'detailOverlay') closeDetail();
     });
 
     document.getElementById('reload').addEventListener('click', () => { page = 0; loadUsers(); });
-    document.getElementById('search').addEventListener('keyup', e => { if (e.key === 'Enter') { page = 0; loadUsers(); }});
+    document.getElementById('search').addEventListener('keyup', e => { if (e.key === 'Enter') { page = 0; loadUsers(); } });
     document.getElementById('planFilter').addEventListener('change', () => { page = 0; loadUsers(); });
-    document.getElementById('prevPage').addEventListener('click', () => { if (page > 0) { page--; loadUsers(); }});
-    document.getElementById('nextPage').addEventListener('click', () => { if (page < totalPages - 1) { page++; loadUsers(); }});
+    document.getElementById('prevPage').addEventListener('click', () => { if (page > 0) { page--; loadUsers(); } });
+    document.getElementById('nextPage').addEventListener('click', () => { if (page < totalPages - 1) { page++; loadUsers(); } });
+
+    initCatalogSelects();
 
     if (token) {
         showApp();

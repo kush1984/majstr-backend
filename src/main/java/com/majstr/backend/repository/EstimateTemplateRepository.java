@@ -25,4 +25,11 @@ public interface EstimateTemplateRepository extends JpaRepository<EstimateTempla
 
     /** A master's own saved templates, newest first. */
     List<EstimateTemplate> findByOwnerIdOrderByCreatedAtDesc(UUID ownerId);
+
+    /** All system defaults — for the admin editor. Explicit JPQL (like
+     *  {@link #findDefaultsForTrades}) rather than a derived name, to avoid the
+     *  boolean {@code isDefault} property-parsing gotcha. Trade groups them; nulls
+     *  (general) sort last under Postgres' default NULLS LAST for ASC. */
+    @Query("SELECT t FROM EstimateTemplate t WHERE t.isDefault = true ORDER BY t.trade, t.name")
+    List<EstimateTemplate> findAllDefaults();
 }

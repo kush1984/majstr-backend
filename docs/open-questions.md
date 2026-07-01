@@ -89,6 +89,12 @@ one-line summary — keep the item in the file as a record.
 - **Since:** step 4
 - **Context:** Admin can change a user's plan via `/api/admin/users/{id}/plan` — nothing records who did it. Same for hypothetical future "suspend user", "delete user".
 - **Notes / options:** Separate `audit_events` table with `actor_id`, `action`, `target_id`, `payload`, `created_at`. Write via interceptor or explicit service calls.
+- **Update (admin catalog editor, 2026-07-01):** the new admin default-catalog /
+  default-estimate-template CRUD (`AdminCatalogTemplateService` /
+  `AdminEstimateTemplateService`) `log.info`s every mutation with the actor's email —
+  a lightweight paper trail, but still logs, not a queryable `audit_events` table.
+  The structured-audit want is unchanged; if it lands, fold these admin mutations
+  (and the plan change) into it.
 
 ### Admin metrics by trade after the multi-trade move
 - **Status:** OPEN
@@ -409,6 +415,14 @@ one-line summary — keep the item in the file as a record.
   syncing a *moved* price into a master's **already-owned** `catalog_items`
   (still never touched — their edits are sacred). See
   [iteration-catalog-enrichment.md](iteration-catalog-enrichment.md).
+- **Update (admin catalog editor, 2026-07-01):** an admin can now *edit* a default
+  catalog position's price/name from the panel (`AdminCatalogTemplateService.update`).
+  Confirmed with the user: this deliberately keeps the sacred-data model — an edit
+  reaches only NEW registrations; masters who already copied the item keep their
+  copy. A newly *created* default does reach everyone (stamped at the next version →
+  "Add new from library"). So the open part is now precisely: pushing an *edited*
+  price into masters who **already own** the item — still the opt-in "prices changed,
+  accept?" review, unbuilt. See [iteration-admin-catalog-editor.md](iteration-admin-catalog-editor.md).
 
 ### Estimate templates (typical work sets per object type)
 - **Status:** IN_PROGRESS
