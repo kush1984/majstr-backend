@@ -96,9 +96,21 @@ fi
 
 # 5. V31 enrichment: prices filled, new positions added, templates expanded.
 maxver2="$(scalar "SELECT COALESCE(MAX(added_in_version), 0) FROM catalog_templates;")"
-check "max(added_in_version) after V31" "$maxver2" "2"
+check "max(added_in_version) after V36" "$maxver2" "4"   # V31->2, V35 materials->3, V36 works->4
 new_v2="$(scalar "SELECT COUNT(*) FROM catalog_templates WHERE added_in_version = 2;")"
 check "new positions at version 2" "$new_v2" "62"
+
+# V35: default MATERIAL positions (was 0 — the catalog was 100% WORK).
+mat_count="$(scalar "SELECT COUNT(*) FROM catalog_templates WHERE type = 'MATERIAL';")"
+check "MATERIAL positions (V35)" "$mat_count" "295"
+mat_v3="$(scalar "SELECT COUNT(*) FROM catalog_templates WHERE added_in_version = 3;")"
+check "positions at version 3 (V35)" "$mat_v3" "295"
+
+# V36: extra WORK positions from the Ліга Майстрів price lists (genuine gaps only).
+work_v4="$(scalar "SELECT COUNT(*) FROM catalog_templates WHERE added_in_version = 4;")"
+check "new WORK positions at version 4 (V36)" "$work_v4" "15"
+work_v4_type="$(scalar "SELECT COUNT(*) FROM catalog_templates WHERE added_in_version = 4 AND type <> 'WORK';")"
+check "non-WORK rows at version 4 (V36)" "$work_v4_type" "0"
 # After the price fill almost everything is priced; a handful may stay 0 only if a
 # fill resolved to <= 0 (none do today) — assert no unpriced default remains.
 unpriced="$(scalar "SELECT COUNT(*) FROM catalog_templates WHERE suggested_price = 0;")"
