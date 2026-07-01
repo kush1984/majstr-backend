@@ -30,7 +30,8 @@ public record AdminUserDetail(
         boolean hasSigned,
         long catalogItemsCount,
         boolean hasLogo,
-        Instant lastEstimateCreatedAt
+        Instant lastEstimateCreatedAt,
+        UpgradeUserActivity upgrade
 ) {
     /** Estimate counts split by status, plus the total. */
     public record EstimateBreakdown(long total, long draft, long sent, long signed, long rejected) {}

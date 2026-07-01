@@ -2,6 +2,7 @@ package com.majstr.backend.service;
 
 import com.majstr.backend.dto.AdminUserDetail;
 import com.majstr.backend.dto.AdminUserSummary;
+import com.majstr.backend.dto.UpgradeUserActivity;
 import com.majstr.backend.entity.EstimateStatus;
 import com.majstr.backend.entity.Plan;
 import com.majstr.backend.entity.Role;
@@ -43,6 +44,7 @@ class AdminUserServiceTest {
     @Mock EstimateRepository estimateRepository;
     @Mock EstimateShareLinkRepository shareLinkRepository;
     @Mock CatalogItemRepository catalogRepository;
+    @Mock UpgradeEventService upgradeEventService;
     @InjectMocks AdminUserService adminUserService;
 
     @Test
@@ -93,6 +95,8 @@ class AdminUserServiceTest {
         given(shareLinkRepository.countByOwner(id)).willReturn(1L);
         given(catalogRepository.countByOwnerId(id)).willReturn(42L);
         given(estimateRepository.findLastEstimateCreatedAt(id)).willReturn(Instant.now());
+        given(upgradeEventService.userActivity(id))
+                .willReturn(new UpgradeUserActivity(2, Instant.now(), true, "треба PRO", Instant.now()));
 
         AdminUserDetail d = adminUserService.detail(id);
 

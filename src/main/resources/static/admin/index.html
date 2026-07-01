@@ -123,6 +123,15 @@
         </div>
     </section>
 
+    <h2>Інтерес до PRO (painted door)</h2>
+    <section class="card">
+        <div class="grid" id="upgradeStats">
+            <div class="stat"><div class="label">Завантаження…</div></div>
+        </div>
+        <p class="muted" id="upgradeByTrigger" style="margin-top:8px"></p>
+        <div id="upgradeLeads" style="margin-top:12px"></div>
+    </section>
+
     <h2>Зростання — реєстрації за день</h2>
     <section class="card">
         <canvas id="growthChart" height="110"></canvas>
@@ -264,6 +273,27 @@
             step('Мають підписаний', f.withSigned);
     }
 
+    async function loadUpgradeInterest() {
+        const resp = await api('/admin/metrics/upgrade-interest');
+        if (!resp.ok) return;
+        const u = await resp.json();
+        const stat = (label, n, sub) => `<div class="stat"><div class="label">${label}</div><div class="value">${n}</div>${sub ? `<div class="sub">${sub}</div>` : ''}</div>`;
+        document.getElementById('upgradeStats').innerHTML =
+            stat('Унікальних натиснули', u.uniqueClickers, 'ширина попиту') +
+            stat('Усього кліків', u.totalClicks, 'інтенсивність/фрустрація') +
+            stat('Подали заявку', u.interested, 'теплі ліди');
+        const byTrigger = (u.byTrigger || []).map(t => `${escapeHtml(t.trigger)}: ${t.count}`).join(' · ');
+        document.getElementById('upgradeByTrigger').textContent = byTrigger ? 'За тригером — ' + byTrigger : '';
+        const fmt = iso => iso ? dateFormat.format(new Date(iso)) : '—';
+        const leads = u.leads || [];
+        document.getElementById('upgradeLeads').innerHTML = leads.length === 0
+            ? '<p class="muted">Ще немає заявок.</p>'
+            : `<h2 style="text-transform:none; letter-spacing:0;">Теплі ліди — кому подзвонити</h2>
+               <table><thead><tr><th>Email</th><th class="hide-mobile">Ім'я</th><th>Що потрібно</th><th>Дата</th></tr></thead><tbody>`
+              + leads.map(l => `<tr><td>${escapeHtml(l.email)}</td><td class="hide-mobile">${escapeHtml(l.fullName)}</td><td>${l.reason ? escapeHtml(l.reason) : '<span class="muted">—</span>'}</td><td class="muted">${fmt(l.createdAt)}</td></tr>`).join('')
+              + `</tbody></table>`;
+    }
+
     async function loadUserDetail(id) {
         document.getElementById('detailOverlay').style.display = 'block';
         document.getElementById('detailBody').innerHTML = '<p>Завантаження…</p>';
@@ -291,6 +321,8 @@
                 <tr><td>Позицій у каталозі</td><td>${d.catalogItemsCount}</td></tr>
                 <tr><td>Завантажив лого</td><td>${yn(d.hasLogo)}</td></tr>
                 <tr><td>Останній кошторис</td><td>${fmt(d.lastEstimateCreatedAt)}</td></tr>
+                <tr><td>Кліків «Апгрейд»</td><td>${d.upgrade.clicks} <span class="muted">${d.upgrade.clicks > 0 ? '(останній ' + fmt(d.upgrade.lastClickAt) + ')' : ''}</span></td></tr>
+                <tr><td>Подав заявку на PRO</td><td>${yn(d.upgrade.interested)}${d.upgrade.interested && d.upgrade.interestReason ? ' <span class="muted">— ' + escapeHtml(d.upgrade.interestReason) + '</span>' : ''}</td></tr>
             </table>
         `;
     }
@@ -386,6 +418,7 @@
         try {
             await loadOverview();
             await loadFunnel();
+            await loadUpgradeInterest();
             await loadGrowth();
             await loadUsers();
         } catch (e) {

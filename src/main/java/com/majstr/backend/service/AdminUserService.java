@@ -41,6 +41,7 @@ public class AdminUserService {
     private final EstimateRepository estimateRepository;
     private final EstimateShareLinkRepository shareLinkRepository;
     private final CatalogItemRepository catalogRepository;
+    private final UpgradeEventService upgradeEventService;
 
     @Transactional(readOnly = true)
     public Page<AdminUserSummary> search(Plan plan, String search, Pageable pageable) {
@@ -99,7 +100,8 @@ public class AdminUserService {
                 signed > 0,
                 catalogRepository.countByOwnerId(userId),
                 hasLogo,
-                estimateRepository.findLastEstimateCreatedAt(userId)
+                estimateRepository.findLastEstimateCreatedAt(userId),
+                upgradeEventService.userActivity(userId)
         );
     }
 

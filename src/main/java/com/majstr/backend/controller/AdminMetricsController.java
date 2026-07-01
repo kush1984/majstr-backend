@@ -3,7 +3,9 @@ package com.majstr.backend.controller;
 import com.majstr.backend.dto.ActivationFunnelResponse;
 import com.majstr.backend.dto.MetricsGrowthResponse;
 import com.majstr.backend.dto.MetricsOverviewResponse;
+import com.majstr.backend.dto.UpgradeInterestResponse;
 import com.majstr.backend.service.MetricsService;
+import com.majstr.backend.service.UpgradeEventService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -21,11 +23,18 @@ import org.springframework.web.bind.annotation.RestController;
 public class AdminMetricsController {
 
     private final MetricsService metricsService;
+    private final UpgradeEventService upgradeEventService;
 
     @Operation(summary = "Aggregate snapshot for the admin dashboard")
     @GetMapping("/overview")
     public MetricsOverviewResponse overview() {
         return metricsService.overview();
+    }
+
+    @Operation(summary = "PRO upgrade intent: distinct clickers, total clicks, by-trigger, warm leads")
+    @GetMapping("/upgrade-interest")
+    public UpgradeInterestResponse upgradeInterest() {
+        return upgradeEventService.interestStats();
     }
 
     @Operation(summary = "Activation funnel across masters (registered → verified → project → estimate → shared → signed)")

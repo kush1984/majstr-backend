@@ -135,6 +135,18 @@ one-line summary — keep the item in the file as a record.
   to R2 held inside `ProfileService`'s `@Transactional`, tying up a Hikari
   connection for the upload's duration.
 
+### Correlate limit-hit → upgrade click (funnel tie-in)
+- **Status:** OPEN
+- **Since:** Upgrade-intent iteration (2026-06-30)
+- **Context:** The "Інтерес до PRO" block counts upgrade clicks by trigger, and the
+  activation funnel counts masters, but the two aren't joined into a single
+  "% of limit-hitters who then clicked upgrade" number. Deferred as ambiguous (which
+  limit, over what window). The privacy policy now names anonymized usage analytics
+  (the "technical data" section), keeping it consistent with this tracking.
+- **Notes / options:** If wanted, join `upgrade_event` (type=CLICK, trigger=
+  OBJECT_LIMIT/ESTIMATE_LIMIT, distinct user) against the over-limit cohort. Low
+  priority — the raw by-trigger breakdown already answers "which ceiling drives it".
+
 ### MetricsService full table scans
 - **Status:** OPEN
 - **Since:** Fix I code review (2026-06-10)
