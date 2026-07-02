@@ -323,6 +323,18 @@ one-line summary — keep the item in the file as a record.
   (EU market). Ties into the broader "content documents still uk-only" item. Low
   priority until there's a non-uk user.
 
+### Referral source in the privacy policy
+- **Status:** OPEN
+- **Since:** Referral-attribution iteration (2026-07-02)
+- **Context:** `users.referral_source` now stores an anonymized first-touch attribution
+  (DIRECT / a partner code). When the privacy policy is next revised/published, it should
+  mention that a registration source is recorded (anonymized, for partner accounting) —
+  same spirit as the existing "technical data / anonymized usage analytics" line added for
+  the upgrade tracking.
+- **Notes / options:** One sentence in the `/privacy` page (data collected → "джерело
+  реєстрації, знеособлено, для партнерського обліку"). Fold into the lawyer-review pass
+  (see "Privacy policy: lawyer review").
+
 ### Existing-user privacy consent (login modal)
 - **Status:** RESOLVED
 - **Since:** Privacy-policy iteration (2026-06-30)
@@ -369,6 +381,31 @@ one-line summary — keep the item in the file as a record.
   [iteration-billing-monobank.md](iteration-billing-monobank.md). **Still open:** tokenized
   **auto-renew** (phase 2), the PWA wiring (checkout button + return page), and an explicit
   `subscription_status` machine (ACTIVE/GRACE/EXPIRED, SPEC G1) — deferred with auto-renew.
+
+### Partner rev-share money math
+- **Status:** OPEN
+- **Since:** Referral-attribution iteration (2026-07-02)
+- **Context:** `referral_source` attribution ships (first-touch DIRECT/LIGA/…), and the
+  admin by-source report shows **counts** (registered / activated / PRO interest). The
+  **money** layer is deliberately out of code until billing rev-share is decided.
+- **Notes / options:** Once paid subscriptions are tracked (billing phase 1 shipped —
+  `payments` + `plan_expires_at`), add a report joining paid LIGA users → revenue → the
+  partner's share. **Format is a business decision, kept out of code:** recurring % per
+  month of paying referred users vs a one-off bounty per first payment; and time-bounded
+  (e.g. 12 months per user) vs lifetime. Write "приведений" (first-touch via link OR code)
+  into the partner agreement. Decide the % *after* the survey + PRO tracking show
+  conversion, not blind.
+
+### Promo-code bonus (trial / discount)
+- **Status:** OPEN
+- **Since:** Referral-attribution iteration (2026-07-02)
+- **Context:** A community promo code (e.g. LIGA) currently only **sets the referral
+  source** — it grants no benefit to the master. There's deliberately no bonus yet
+  because there are no tariffs/trial to discount.
+- **Notes / options:** When billing has tariffs/trial, a valid code could grant a longer
+  trial or a discount (place is already carved out — `partners` is data). That also makes
+  masters actually type the code, sharpening LIGA attribution. Revisit with the trial-period
+  item.
 
 ### Plan downgrade with over-limit data
 - **Status:** OPEN
