@@ -21,6 +21,7 @@ public record AdminUserDetail(
         Set<Trade> trades,
         Plan plan,
         Role role,
+        String referralSource,
         Instant createdAt,
         Instant lastActiveAt,
         long clientsCount,

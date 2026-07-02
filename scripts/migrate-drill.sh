@@ -127,6 +127,16 @@ check "users.plan_expires_at column (V37)" "$plan_exp_col" "1"
 payments_tbl="$(scalar "SELECT COUNT(*) FROM information_schema.tables WHERE table_name='payments';")"
 check "payments table (V37)" "$payments_tbl" "1"
 
+# V38: referral-source attribution — column + partner registry + LIGA seed + backfill.
+ref_col="$(scalar "SELECT COUNT(*) FROM information_schema.columns WHERE table_name='users' AND column_name='referral_source';")"
+check "users.referral_source column (V38)" "$ref_col" "1"
+partners_tbl="$(scalar "SELECT COUNT(*) FROM information_schema.tables WHERE table_name='partners';")"
+check "partners table (V38)" "$partners_tbl" "1"
+liga="$(scalar "SELECT COUNT(*) FROM partners WHERE code='LIGA' AND source='LIGA' AND active;")"
+check "LIGA partner seeded (V38)" "$liga" "1"
+no_src="$(scalar "SELECT COUNT(*) FROM users WHERE referral_source IS NULL OR referral_source = '';")"
+check "users without referral_source (V38 backfill)" "$no_src" "0"
+
 echo "=== summary (informational) ==="
 psql -P pager=off -c "SELECT trade, COUNT(*), COUNT(*) FILTER (WHERE suggested_price > 0) AS priced
                       FROM catalog_templates GROUP BY trade ORDER BY 2 DESC;"

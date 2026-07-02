@@ -14,6 +14,7 @@ import com.majstr.backend.repository.OwnerCount;
 import com.majstr.backend.repository.ProjectRepository;
 import com.majstr.backend.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
@@ -31,6 +32,7 @@ import java.util.UUID;
  * (folded in with one grouped query per entity over the page — no N+1) and the
  * full per-master detail funnel. ADMIN-only via the controller / security config.
  */
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class AdminUserService {
@@ -44,8 +46,8 @@ public class AdminUserService {
     private final UpgradeEventService upgradeEventService;
 
     @Transactional(readOnly = true)
-    public Page<AdminUserSummary> search(Plan plan, String search, Pageable pageable) {
-        Page<User> page = userRepository.searchAdmin(plan, search, pageable);
+    public Page<AdminUserSummary> search(Plan plan, String source, String search, Pageable pageable) {
+        Page<User> page = userRepository.searchAdmin(plan, source, search, pageable);
         List<UUID> ids = page.getContent().stream().map(User::getId).toList();
         if (ids.isEmpty()) {
             return page.map(AdminUserSummary::from);
@@ -91,6 +93,7 @@ public class AdminUserService {
                 new LinkedHashSet<>(user.getTrades()),
                 user.getPlan(),
                 user.getRole(),
+                user.getReferralSource(),
                 user.getCreatedAt(),
                 user.getLastActiveAt(),
                 clientRepository.countByOwnerId(userId),
@@ -103,6 +106,22 @@ public class AdminUserService {
                 estimateRepository.findLastEstimateCreatedAt(userId),
                 upgradeEventService.userActivity(userId)
         );
+    }
+
+    /**
+     * Manual admin override of a master's referral source (conflicts, or survey
+     * leads onboarded as LIGA). This is the ONLY way the source changes after
+     * registration — the automatic first-touch stamp is never overwritten by the
+     * app. Logged as a sensitive action.
+     */
+    @Transactional
+    public void updateReferralSource(UUID userId, String source, String actor) {
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new ResourceNotFoundException("User not found: " + userId));
+        String value = (source == null || source.isBlank()) ? "DIRECT" : source.trim().toUpperCase();
+        log.info("admin {} changed referral source of {} from {} to {}",
+                actor, user.getEmail(), user.getReferralSource(), value);
+        user.setReferralSource(value);
     }
 
     private static Map<UUID, Long> toMap(List<OwnerCount> rows) {

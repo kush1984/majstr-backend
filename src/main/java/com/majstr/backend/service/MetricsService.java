@@ -3,13 +3,17 @@ package com.majstr.backend.service;
 import com.majstr.backend.dto.ActivationFunnelResponse;
 import com.majstr.backend.dto.MetricsGrowthResponse;
 import com.majstr.backend.dto.MetricsOverviewResponse;
+import com.majstr.backend.dto.SourceBreakdownResponse;
+import com.majstr.backend.dto.SourceCount;
 import com.majstr.backend.entity.EstimateStatus;
 import com.majstr.backend.entity.Plan;
 import com.majstr.backend.entity.Role;
+import com.majstr.backend.entity.UpgradeEventType;
 import com.majstr.backend.entity.User;
 import com.majstr.backend.repository.EstimateRepository;
 import com.majstr.backend.repository.EstimateShareLinkRepository;
 import com.majstr.backend.repository.ProjectRepository;
+import com.majstr.backend.repository.UpgradeEventRepository;
 import com.majstr.backend.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -22,7 +26,9 @@ import java.time.LocalDate;
 import java.time.ZoneOffset;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.EnumMap;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
@@ -46,6 +52,7 @@ public class MetricsService {
     private final ProjectRepository projectRepository;
     private final EstimateRepository estimateRepository;
     private final EstimateShareLinkRepository shareLinkRepository;
+    private final UpgradeEventRepository upgradeEventRepository;
 
     @Transactional(readOnly = true)
     public MetricsOverviewResponse overview() {
@@ -116,6 +123,48 @@ public class MetricsService {
                 shareLinkRepository.countDistinctOwners(),
                 estimateRepository.countDistinctProjectOwnersByStatus(EstimateStatus.SIGNED)
         );
+    }
+
+    /**
+     * Admin "by referral source" report — counts only (no money; a rev-share
+     * money layer comes with billing). Four grouped queries (no N+1) folded into
+     * one row per source: registered, activated (has an object), and PRO clicks /
+     * interest. Sorted by registrations desc.
+     */
+    @Transactional(readOnly = true)
+    public SourceBreakdownResponse bySource() {
+        Map<String, Long> registered = toSourceMap(userRepository.countUsersBySource());
+        Map<String, Long> activated = toSourceMap(projectRepository.countActivatedOwnersBySource());
+        Map<String, Long> clicks = toSourceMap(
+                upgradeEventRepository.countDistinctUsersBySourceAndType(UpgradeEventType.CLICK));
+        Map<String, Long> interested = toSourceMap(
+                upgradeEventRepository.countDistinctUsersBySourceAndType(UpgradeEventType.INTEREST));
+
+        Set<String> sources = new HashSet<>();
+        sources.addAll(registered.keySet());
+        sources.addAll(activated.keySet());
+        sources.addAll(clicks.keySet());
+        sources.addAll(interested.keySet());
+
+        List<SourceBreakdownResponse.SourceStat> stats = sources.stream()
+                .map(s -> new SourceBreakdownResponse.SourceStat(
+                        s,
+                        registered.getOrDefault(s, 0L),
+                        activated.getOrDefault(s, 0L),
+                        clicks.getOrDefault(s, 0L),
+                        interested.getOrDefault(s, 0L)))
+                .sorted(Comparator.comparingLong(SourceBreakdownResponse.SourceStat::registered).reversed()
+                        .thenComparing(SourceBreakdownResponse.SourceStat::source))
+                .toList();
+        return new SourceBreakdownResponse(stats);
+    }
+
+    private static Map<String, Long> toSourceMap(List<SourceCount> rows) {
+        Map<String, Long> map = new HashMap<>();
+        for (SourceCount row : rows) {
+            map.put(row.getSource(), row.getCnt());
+        }
+        return map;
     }
 
     @Transactional(readOnly = true)

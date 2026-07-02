@@ -43,24 +43,36 @@ class UserRepositorySearchTest {
     @Test
     void searchAdmin_withText_delegatesWithLoweredPatternAndPlan() {
         UserRepository repo = mock(UserRepository.class);
-        when(repo.searchAdmin(any(), any(), any())).thenCallRealMethod();
-        when(repo.searchAdminByPattern(any(), any(), any())).thenReturn(Page.<com.majstr.backend.entity.User>empty());
+        when(repo.searchAdmin(any(), any(), any(), any())).thenCallRealMethod();
+        when(repo.searchAdminByPattern(any(), any(), any(), any())).thenReturn(Page.<com.majstr.backend.entity.User>empty());
 
-        repo.searchAdmin(Plan.PRO, "ACME", Pageable.unpaged());
+        repo.searchAdmin(Plan.PRO, null, "ACME", Pageable.unpaged());
 
-        // text + plan together: lowered "%acme%" pattern, plan passed through.
-        verify(repo).searchAdminByPattern(eq(Plan.PRO), eq("%acme%"), eq(Pageable.unpaged()));
+        // text + plan together: lowered "%acme%" pattern, plan passed through, no source filter.
+        verify(repo).searchAdminByPattern(eq(Plan.PRO), isNull(), eq("%acme%"), eq(Pageable.unpaged()));
     }
 
     @Test
     void searchAdmin_blankText_passesNullPattern_soAllUsersReturn() {
         UserRepository repo = mock(UserRepository.class);
-        when(repo.searchAdmin(any(), any(), any())).thenCallRealMethod();
-        when(repo.searchAdminByPattern(any(), any(), any())).thenReturn(Page.<com.majstr.backend.entity.User>empty());
+        when(repo.searchAdmin(any(), any(), any(), any())).thenCallRealMethod();
+        when(repo.searchAdminByPattern(any(), any(), any(), any())).thenReturn(Page.<com.majstr.backend.entity.User>empty());
 
-        repo.searchAdmin(null, "   ", Pageable.unpaged());
+        repo.searchAdmin(null, null, "   ", Pageable.unpaged());
 
-        // empty search → null pattern (no filter); no plan filter either.
-        verify(repo).searchAdminByPattern(isNull(), isNull(), eq(Pageable.unpaged()));
+        // empty search → null pattern (no filter); no plan/source filter either.
+        verify(repo).searchAdminByPattern(isNull(), isNull(), isNull(), eq(Pageable.unpaged()));
+    }
+
+    @Test
+    void searchAdmin_trimsAndUppercasesTheSourceFilter() {
+        UserRepository repo = mock(UserRepository.class);
+        when(repo.searchAdmin(any(), any(), any(), any())).thenCallRealMethod();
+        when(repo.searchAdminByPattern(any(), any(), any(), any())).thenReturn(Page.<com.majstr.backend.entity.User>empty());
+
+        repo.searchAdmin(null, " liga ", null, Pageable.unpaged());
+
+        // source is trimmed + uppercased to match the stored referral_source.
+        verify(repo).searchAdminByPattern(isNull(), eq("LIGA"), isNull(), eq(Pageable.unpaged()));
     }
 }

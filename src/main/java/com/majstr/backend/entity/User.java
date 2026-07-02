@@ -117,6 +117,14 @@ public class User {
     @Column(name = "plan_expires_at")
     private Instant planExpiresAt;
 
+    /** First-touch referral source for partner rev-share (DIRECT by default; a
+     *  partner code like LIGA when the master arrived via a ?ref= link or promo).
+     *  Set ONCE at registration, never auto-overwritten — only an admin can edit
+     *  it (conflicts / survey leads). Source of truth for future rev-share. */
+    @Column(name = "referral_source", nullable = false, length = 40)
+    @Builder.Default
+    private String referralSource = "DIRECT";
+
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
 

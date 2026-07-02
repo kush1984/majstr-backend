@@ -42,4 +42,14 @@ public interface ProjectRepository extends JpaRepository<Project, UUID> {
     /** How many distinct masters have created at least one project (funnel step). */
     @Query("SELECT COUNT(DISTINCT p.owner.id) FROM Project p")
     long countDistinctOwners();
+
+    /** "Activated" (has ≥1 object) masters grouped by referral source — admin
+     *  by-source report. One grouped query, no N+1. */
+    @Query("""
+            SELECT p.owner.referralSource AS source, COUNT(DISTINCT p.owner.id) AS cnt
+            FROM Project p
+            WHERE p.owner.role = com.majstr.backend.entity.Role.USER
+            GROUP BY p.owner.referralSource
+            """)
+    List<com.majstr.backend.dto.SourceCount> countActivatedOwnersBySource();
 }

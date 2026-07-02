@@ -3,6 +3,7 @@ package com.majstr.backend.controller;
 import com.majstr.backend.dto.ActivationFunnelResponse;
 import com.majstr.backend.dto.MetricsGrowthResponse;
 import com.majstr.backend.dto.MetricsOverviewResponse;
+import com.majstr.backend.dto.SourceBreakdownResponse;
 import com.majstr.backend.dto.UpgradeInterestResponse;
 import com.majstr.backend.service.MetricsService;
 import com.majstr.backend.service.UpgradeEventService;
@@ -41,6 +42,12 @@ public class AdminMetricsController {
     @GetMapping("/funnel")
     public ActivationFunnelResponse funnel() {
         return metricsService.activationFunnel();
+    }
+
+    @Operation(summary = "Registrations / activation / PRO interest grouped by referral source (partner rev-share)")
+    @GetMapping("/by-source")
+    public SourceBreakdownResponse bySource() {
+        return metricsService.bySource();
     }
 
     @Operation(summary = "Registrations per day over the given period")

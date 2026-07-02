@@ -29,14 +29,16 @@ class AuthServiceTest {
     @Mock RefreshTokenService refreshTokenService;
     @Mock CatalogTemplateService catalogTemplateService;
     @Mock EmailVerificationService emailVerificationService;
+    @Mock ReferralService referralService;
     @InjectMocks AuthService authService;
 
     @Test
     void register_seedsCatalogAndIssuesVerificationEmail() {
         RegisterRequest req = new RegisterRequest("New@User.com", "Sup3rPass!", "Іван",
-                Set.of(Trade.ELECTRICAL), "+380501112233", "FOP", true);
+                Set.of(Trade.ELECTRICAL), "+380501112233", "FOP", true, null, null);
         given(userRepository.existsByEmailIgnoreCase("new@user.com")).willReturn(false);
         given(passwordEncoder.encode("Sup3rPass!")).willReturn("hash");
+        given(referralService.resolveSource(null, null)).willReturn("DIRECT");
         given(userRepository.save(any(User.class))).willAnswer(inv -> inv.getArgument(0));
         given(jwtService.generateAccessToken(any(), any())).willReturn("access");
         given(jwtService.accessTtlSeconds()).willReturn(900L);

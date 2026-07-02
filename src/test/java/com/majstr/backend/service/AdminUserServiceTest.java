@@ -54,7 +54,7 @@ class AdminUserServiceTest {
         User ua = user(a, "a@x", Plan.FREE, true);
         User ub = user(b, "b@x", Plan.PRO, false);
         Pageable pageable = PageRequest.of(0, 20);
-        given(userRepository.searchAdmin(null, null, pageable))
+        given(userRepository.searchAdmin(null, null, null, pageable))
                 .willReturn(new PageImpl<>(List.of(ua, ub), pageable, 2));
         given(clientRepository.countByOwnerIdIn(List.of(a, b))).willReturn(List.of(oc(a, 3)));
         given(projectRepository.countByOwnerIdIn(List.of(a, b))).willReturn(List.of(oc(a, 2), oc(b, 1)));
@@ -62,7 +62,7 @@ class AdminUserServiceTest {
         given(estimateRepository.countByProjectOwnerIdInAndStatus(List.of(a, b), EstimateStatus.SIGNED))
                 .willReturn(List.of(oc(a, 1)));
 
-        Page<AdminUserSummary> page = adminUserService.search(null, null, pageable);
+        Page<AdminUserSummary> page = adminUserService.search(null, null, null, pageable);
 
         AdminUserSummary sa = page.getContent().get(0);
         assertThat(sa.id()).isEqualTo(a);

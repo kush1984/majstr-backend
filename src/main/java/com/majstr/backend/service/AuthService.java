@@ -27,6 +27,7 @@ public class AuthService {
     private final RefreshTokenService refreshTokenService;
     private final CatalogTemplateService catalogTemplateService;
     private final EmailVerificationService emailVerificationService;
+    private final ReferralService referralService;
 
     @Transactional
     public AuthResponse register(RegisterRequest req) {
@@ -43,6 +44,9 @@ public class AuthService {
                 .companyName(req.companyName().trim())
                 // Consent is required (@AssertTrue on the request) — stamp it.
                 .consentedToPrivacyAt(Instant.now())
+                // First-touch attribution (ref link wins, then promo code, else
+                // DIRECT). Stamped once here; only an admin can change it later.
+                .referralSource(referralService.resolveSource(req.ref(), req.promoCode()))
                 .build();
         user = userRepository.save(user);
         // Copy starter catalog templates for every chosen trade (merged,

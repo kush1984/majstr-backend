@@ -19,5 +19,10 @@ public record RegisterRequest(
         @NotBlank @Size(max = 255) String companyName,
         // Explicit privacy-policy consent. The PWA blocks submit without the
         // checkbox; this enforces it at the API too (defense in depth).
-        @AssertTrue(message = "consent to the privacy policy is required") boolean consent
+        @AssertTrue(message = "consent to the privacy policy is required") boolean consent,
+        // Optional first-touch attribution — the ?ref= link value (from PWA
+        // storage) and/or a typed community promo code. Both resolve to a partner
+        // source (ref wins); absent → DIRECT. Never breaks a plain registration.
+        @Size(max = 40) String ref,
+        @Size(max = 40) String promoCode
 ) {}

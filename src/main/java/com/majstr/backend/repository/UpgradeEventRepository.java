@@ -38,6 +38,17 @@ public interface UpgradeEventRepository extends JpaRepository<UpgradeEvent, UUID
             """)
     List<UpgradeLead> findInterestLeads();
 
+    /** Distinct users of a given event type grouped by their referral source —
+     *  the "PRO interest per source" columns of the admin by-source report. One
+     *  grouped query, no N+1. */
+    @Query("""
+            SELECT u.referralSource AS source, COUNT(DISTINCT e.userId) AS cnt
+            FROM UpgradeEvent e, com.majstr.backend.entity.User u
+            WHERE u.id = e.userId AND e.type = :type
+            GROUP BY u.referralSource
+            """)
+    List<com.majstr.backend.dto.SourceCount> countDistinctUsersBySourceAndType(UpgradeEventType type);
+
     // ---- per-user admin card --------------------------------------------------
     long countByUserIdAndType(UUID userId, UpgradeEventType type);
 

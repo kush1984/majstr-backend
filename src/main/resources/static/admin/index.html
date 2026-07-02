@@ -154,6 +154,11 @@
                     </div>
                 </section>
 
+                <h2>За джерелом (партнерська атрибуція)</h2>
+                <section class="card">
+                    <div id="bySource"><p class="muted">Завантаження…</p></div>
+                </section>
+
                 <h2>Інтерес до PRO (painted door)</h2>
                 <section class="card">
                     <div class="grid" id="upgradeStats">
@@ -178,6 +183,7 @@
                             <option value="PRO">PRO</option>
                             <option value="TEAM">TEAM</option>
                         </select>
+                        <input id="sourceFilter" placeholder="Джерело (напр. LIGA)" style="max-width:180px">
                         <button id="reload">Оновити</button>
                     </div>
                     <table>
@@ -190,6 +196,7 @@
                                 <th title="Кошториси (загалом)">Кошт.</th>
                                 <th title="Підписані кошториси">Підп.</th>
                                 <th>План</th>
+                                <th class="hide-mobile" title="Джерело реєстрації">Дж.</th>
                                 <th class="hide-mobile">Реєстрація</th>
                                 <th>Дії</th>
                             </tr>
@@ -430,6 +437,17 @@
             step('Мають підписаний', f.withSigned);
     }
 
+    async function loadBySource() {
+        const resp = await api('/admin/metrics/by-source');
+        if (!resp.ok) return;
+        const rows = (await resp.json()).sources || [];
+        if (rows.length === 0) { document.getElementById('bySource').innerHTML = '<p class="muted">Немає даних.</p>'; return; }
+        document.getElementById('bySource').innerHTML =
+            `<table><thead><tr><th>Джерело</th><th title="Зареєстровано">Реєстр.</th><th title="Створили об'єкт">Активні</th><th title="Натиснули «Апгрейд»">PRO-кліки</th><th title="Подали заявку на PRO">PRO-заявки</th></tr></thead><tbody>`
+            + rows.map(r => `<tr><td>${r.source && r.source !== 'DIRECT' ? '<b>' + escapeHtml(r.source) + '</b>' : escapeHtml(r.source)}</td><td>${r.registered}</td><td>${r.activated}</td><td>${r.proClicks}</td><td>${r.proInterested}</td></tr>`).join('')
+            + `</tbody></table><p class="muted" style="margin-top:8px">Лише кількості — грошовий рев-шер додамо, коли підключимо облік платних підписок.</p>`;
+    }
+
     async function loadUpgradeInterest() {
         const resp = await api('/admin/metrics/upgrade-interest');
         if (!resp.ok) return;
@@ -467,6 +485,11 @@
         document.getElementById('detailBody').innerHTML = `
             <p>Email: ${yn(d.emailVerified)} &nbsp; Трейди: ${(d.trades || []).join(', ') || '—'}</p>
             <p>План: <span class="badge ${d.plan}">${d.plan}</span> &nbsp; Роль: <span class="badge ${d.role}">${d.role}</span></p>
+            <p>Джерело:
+               <input id="src-input" value="${escapeHtml(d.referralSource || 'DIRECT')}" style="max-width:150px">
+               <button id="src-save" class="small" data-user="${id}">Зберегти</button>
+               <span class="muted" style="font-size:0.8rem">first-touch; ручна правка — для конфліктів/лідів опитування</span>
+            </p>
             <p class="muted">Реєстрація: ${fmt(d.createdAt)} &nbsp;·&nbsp; Остання активність: ${fmt(d.lastActiveAt)}</p>
             <h2 style="text-transform:none; letter-spacing:0;">Воронка активації</h2>
             <table>
@@ -482,6 +505,16 @@
                 <tr><td>Подав заявку на PRO</td><td>${yn(d.upgrade.interested)}${d.upgrade.interested && d.upgrade.interestReason ? ' <span class="muted">— ' + escapeHtml(d.upgrade.interestReason) + '</span>' : ''}</td></tr>
             </table>
         `;
+        document.getElementById('src-save').addEventListener('click', async (ev) => {
+            const uid = ev.target.dataset.user;
+            const source = document.getElementById('src-input').value.trim();
+            const resp = await api(`/admin/users/${uid}/referral-source`, {
+                method: 'PATCH', body: JSON.stringify({ source })
+            });
+            if (!resp.ok) { alert('Не вдалося оновити джерело'); return; }
+            loadUserDetail(uid); // re-render with the saved value
+            loadUsers();         // refresh the list column
+        });
     }
 
     async function loadGrowth() {
@@ -506,9 +539,11 @@
     async function loadUsers() {
         const search = document.getElementById('search').value.trim();
         const plan = document.getElementById('planFilter').value;
+        const source = document.getElementById('sourceFilter').value.trim();
         const params = new URLSearchParams();
         if (search) params.set('search', search);
         if (plan) params.set('plan', plan);
+        if (source) params.set('source', source);
         params.set('page', String(page));
         params.set('size', '20');
         const resp = await api('/admin/users?' + params.toString());
@@ -528,6 +563,7 @@
                 <td>${u.estimatesCount}</td>
                 <td>${u.signedEstimatesCount}</td>
                 <td><span class="badge ${u.plan}">${u.plan}</span></td>
+                <td class="hide-mobile">${u.referralSource && u.referralSource !== 'DIRECT' ? '<b>' + escapeHtml(u.referralSource) + '</b>' : '<span class="muted">' + escapeHtml(u.referralSource || 'DIRECT') + '</span>'}</td>
                 <td class="hide-mobile muted">${dateFormat.format(new Date(u.createdAt))}</td>
                 <td>
                     <select data-user="${u.id}" class="plan-select">
@@ -777,6 +813,7 @@
         try {
             await loadOverview();
             await loadFunnel();
+            await loadBySource();
             await loadUpgradeInterest();
             await loadGrowth();
             await loadUsers();
@@ -793,6 +830,7 @@
 
     document.getElementById('reload').addEventListener('click', () => { page = 0; loadUsers(); });
     document.getElementById('search').addEventListener('keyup', e => { if (e.key === 'Enter') { page = 0; loadUsers(); } });
+    document.getElementById('sourceFilter').addEventListener('keyup', e => { if (e.key === 'Enter') { page = 0; loadUsers(); } });
     document.getElementById('planFilter').addEventListener('change', () => { page = 0; loadUsers(); });
     document.getElementById('prevPage').addEventListener('click', () => { if (page > 0) { page--; loadUsers(); } });
     document.getElementById('nextPage').addEventListener('click', () => { if (page < totalPages - 1) { page++; loadUsers(); } });

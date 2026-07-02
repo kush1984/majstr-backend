@@ -65,8 +65,9 @@ public interface UserRepository extends JpaRepository<User, UUID> {
      * built in Java (see {@link #likePattern}) and compared against
      * {@code LOWER(column)} by {@link #searchAdminByPattern}.
      */
-    default Page<User> searchAdmin(Plan plan, String search, Pageable pageable) {
-        return searchAdminByPattern(plan, likePattern(search), pageable);
+    default Page<User> searchAdmin(Plan plan, String source, String search, Pageable pageable) {
+        String src = (source == null || source.isBlank()) ? null : source.trim().toUpperCase(Locale.ROOT);
+        return searchAdminByPattern(plan, src, likePattern(search), pageable);
     }
 
     /**
@@ -91,6 +92,7 @@ public interface UserRepository extends JpaRepository<User, UUID> {
     @Query("""
             SELECT u FROM User u
             WHERE (:plan IS NULL OR u.plan = :plan)
+              AND (:source IS NULL OR u.referralSource = :source)
               AND (
                 :pattern IS NULL
                 OR LOWER(u.email)       LIKE :pattern
@@ -99,6 +101,7 @@ public interface UserRepository extends JpaRepository<User, UUID> {
               )
             """)
     Page<User> searchAdminByPattern(@Param("plan") Plan plan,
+                                    @Param("source") String source,
                                     @Param("pattern") String pattern,
                                     Pageable pageable);
 
@@ -112,6 +115,16 @@ public interface UserRepository extends JpaRepository<User, UUID> {
      *  plans (no expiry) are never touched. */
     @Query("SELECT u FROM User u WHERE u.planExpiresAt IS NOT NULL AND u.planExpiresAt < :cutoff")
     List<User> findExpiredSubscriptions(@Param("cutoff") Instant cutoff);
+
+    /** Registrations grouped by referral source (masters only) — the admin
+     *  by-source report. One grouped query, no N+1. */
+    @Query("""
+            SELECT u.referralSource AS source, COUNT(u) AS cnt
+            FROM User u
+            WHERE u.role = com.majstr.backend.entity.Role.USER
+            GROUP BY u.referralSource
+            """)
+    List<com.majstr.backend.dto.SourceCount> countUsersBySource();
 
     /** Spring Data projection used by {@link #countGroupByPlan()}. */
     interface PlanCount {

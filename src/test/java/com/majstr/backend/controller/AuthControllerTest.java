@@ -87,7 +87,9 @@ class AuthControllerTest {
                 Set.of(Trade.ELECTRICAL),
                 "+15551234567",
                 "Smith Electrical LLC",
-                true);
+                true,
+                null,
+                null);
 
         given(authService.register(any(RegisterRequest.class)))
                 .willReturn(sampleAuthResponse("john@example.com"));
@@ -112,7 +114,9 @@ class AuthControllerTest {
                 Set.of(Trade.GENERAL),
                 "+15551234567",
                 "Company",
-                true);
+                true,
+                null,
+                null);
 
         mockMvc.perform(post("/api/auth/register")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -131,7 +135,9 @@ class AuthControllerTest {
                 Set.of(Trade.GENERAL),
                 "+15551234567",
                 "Company",
-                false);
+                false,
+                null,
+                null);
 
         mockMvc.perform(post("/api/auth/register")
                         .contentType(MediaType.APPLICATION_JSON)

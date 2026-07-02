@@ -4,10 +4,12 @@ import com.majstr.backend.dto.AdminUserDetail;
 import com.majstr.backend.dto.AdminUserSummary;
 import com.majstr.backend.dto.PageResponse;
 import com.majstr.backend.dto.PlanUpdateRequest;
+import com.majstr.backend.dto.ReferralSourceUpdateRequest;
 import com.majstr.backend.entity.Plan;
 import com.majstr.backend.entity.User;
 import com.majstr.backend.exception.ResourceNotFoundException;
 import com.majstr.backend.repository.UserRepository;
+import com.majstr.backend.security.UserPrincipal;
 import com.majstr.backend.service.AdminUserService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
@@ -16,6 +18,7 @@ import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
@@ -45,12 +48,15 @@ public class AdminUserController {
     @GetMapping
     public PageResponse<AdminUserSummary> list(
             @RequestParam(required = false) Plan plan,
+            @RequestParam(required = false) String source,
             @RequestParam(required = false) String search,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size) {
         int safeSize = Math.min(Math.max(size, 1), MAX_PAGE_SIZE);
         var pageable = PageRequest.of(Math.max(page, 0), safeSize, Sort.by(Sort.Direction.DESC, "createdAt"));
-        return PageResponse.of(adminUserService.search(plan, blankToNull(search), pageable), Function.identity());
+        return PageResponse.of(
+                adminUserService.search(plan, blankToNull(source), blankToNull(search), pageable),
+                Function.identity());
     }
 
     @Operation(summary = "Full activity detail / activation funnel for one master")
@@ -67,6 +73,15 @@ public class AdminUserController {
                 .orElseThrow(() -> new ResourceNotFoundException("User not found: " + id));
         user.setPlan(req.plan());
         return AdminUserSummary.from(user);
+    }
+
+    @Operation(summary = "Manually set a master's referral source (conflicts / survey leads)")
+    @PatchMapping("/{id}/referral-source")
+    public AdminUserDetail changeReferralSource(@PathVariable UUID id,
+                                                @Valid @RequestBody ReferralSourceUpdateRequest req,
+                                                @AuthenticationPrincipal UserPrincipal principal) {
+        adminUserService.updateReferralSource(id, req.source(), principal.email());
+        return adminUserService.detail(id);
     }
 
     private static String blankToNull(String s) {
