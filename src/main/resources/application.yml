@@ -133,6 +133,9 @@ app:
     # call), so the flow is testable without a merchant account.
     monobank-token: ${MONOBANK_TOKEN:}
     monobank-api-base: ${MONOBANK_API_BASE:https://api.monobank.ua}
+    # Dev-simulation (grant PRO with no token) is allowed in dev; prod forces this
+    # false (application-prod.yml) so a missing token can never hand out free PRO.
+    allow-dev-simulation: ${BILLING_ALLOW_DEV_SIM:true}
     # PRO price (UAH/month) and the granted period.
     pro-price: ${BILLING_PRO_PRICE:299}
     pro-days: ${BILLING_PRO_DAYS:30}

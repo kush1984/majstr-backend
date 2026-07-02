@@ -26,6 +26,7 @@ import java.util.Optional;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -45,9 +46,13 @@ class BillingServiceTest {
     private final ObjectMapper mapper = JsonMapper.builder().build();
 
     private BillingProperties props(String token) {
+        return props(token, true);
+    }
+
+    private BillingProperties props(String token, boolean allowDevSim) {
         return new BillingProperties(token, "https://api.monobank.ua",
                 new BigDecimal("299"), 30, 3,
-                "http://ret", "http://hook");
+                "http://ret", "http://hook", allowDevSim);
     }
 
     private BillingService service(BillingProperties props) {
@@ -75,6 +80,20 @@ class BillingServiceTest {
                 Instant.now().plus(30, ChronoUnit.DAYS), within60s());
         assertThat(saved.getValue().getStatus()).isEqualTo(PaymentStatus.SUCCESS);
         verify(userRepository).save(user);
+    }
+
+    @Test
+    void checkout_noToken_withSimulationDisabled_throwsAndGrantsNothing() {
+        // Prod footgun guard: no MONOBANK_TOKEN + dev-sim off must NOT grant free PRO.
+        UUID uid = UUID.randomUUID();
+        User user = freeUser(uid);
+        given(userRepository.findById(uid)).willReturn(Optional.of(user));
+        given(paymentRepository.save(any(Payment.class))).willAnswer(i -> i.getArgument(0));
+
+        assertThatThrownBy(() -> service(props("", false)).checkout(uid))
+                .isInstanceOf(IllegalStateException.class);
+        assertThat(user.getPlan()).isEqualTo(Plan.FREE);
+        verify(userRepository, never()).save(any());
     }
 
     @Test

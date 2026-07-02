@@ -38,6 +38,12 @@ app:
   email:
     # Verify-email links must point at the real PWA host, never localhost.
     app-url: ${APP_URL}
+  billing:
+    # NEVER dev-simulate a purchase in prod — a missing MONOBANK_TOKEN must make
+    # checkout fail loudly, not hand out free PRO to anyone who clicks. (return-url
+    # / webhook-url inherit the base ${BILLING_*} env refs — a missing one breaks
+    # billing but must NOT brick the whole app's boot, so no fail-fast here.)
+    allow-dev-simulation: false
 
 springdoc:
   # API docs are a description of the whole attack surface — off in prod.

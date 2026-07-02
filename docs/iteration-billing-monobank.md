@@ -32,6 +32,12 @@
 - **Amount check**: webhook amount must equal the invoice amount, else not granted.
 - Webhook always returns **200** (handling is idempotent + logged) so a forged request
   or our own transient error can't trigger a monobank retry storm.
+- **Prod free-PRO guard:** dev-simulation (grant PRO with no token) is gated on
+  `app.billing.allow-dev-simulation`, forced **false in `application-prod.yml`**. So on
+  prod a missing `MONOBANK_TOKEN` makes checkout fail loudly (500) instead of handing out
+  free PRO to anyone who clicks. (`BILLING_RETURN_URL`/`BILLING_WEBHOOK_URL` inherit the base
+  env refs — a missing one breaks billing but is deliberately **not** fail-fast, so a
+  feature-config slip can't brick the whole app's boot.)
 
 ## Backend (new unless noted)
 

@@ -67,6 +67,11 @@ public class BillingService {
                 .build());
 
         if (!props.isConfigured()) {
+            if (!props.allowDevSimulation()) {
+                // Prod safety: no token + simulation disabled must NOT grant free PRO.
+                throw new IllegalStateException(
+                        "Billing is not configured (MONOBANK_TOKEN missing) and dev-simulation is disabled");
+            }
             // Dev: no merchant token — simulate a paid invoice so the flow works end-to-end.
             payment.setStatus(PaymentStatus.SUCCESS);
             payment.setPaidAt(Instant.now());
