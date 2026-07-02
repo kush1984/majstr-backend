@@ -110,6 +110,13 @@ public class User {
     @Column(name = "acknowledged_client_data_at")
     private Instant acknowledgedClientDataAt;
 
+    /** When a billing-granted PRO subscription ends. NULL = FREE, or an
+     *  admin-granted plan with no expiry (admin owns that — never auto-downgraded).
+     *  A successful payment extends it; the daily expiry job downgrades to FREE
+     *  once it (+ grace) passes. */
+    @Column(name = "plan_expires_at")
+    private Instant planExpiresAt;
+
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
 

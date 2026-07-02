@@ -127,6 +127,21 @@ app:
     # prod DB to create the initial ADMIN; ignored once any ADMIN exists.
     email: ${ADMIN_EMAIL:}
     password: ${ADMIN_PASSWORD:}
+  billing:
+    # monobank acquiring. The merchant token is env only and blank in local dev —
+    # then checkout runs in DEV-SIMULATION mode (grants PRO immediately, no HTTP
+    # call), so the flow is testable without a merchant account.
+    monobank-token: ${MONOBANK_TOKEN:}
+    monobank-api-base: ${MONOBANK_API_BASE:https://api.monobank.ua}
+    # PRO price (UAH/month) and the granted period.
+    pro-price: ${BILLING_PRO_PRICE:299}
+    pro-days: ${BILLING_PRO_DAYS:30}
+    # Days after expiry before the daily job downgrades PRO → FREE (late-renew window).
+    grace-days: ${BILLING_GRACE_DAYS:3}
+    # Where monobank redirects the payer back (PWA) and where it POSTs the result
+    # (this backend — must be reachable from the internet: prod, or a tunnel in dev).
+    return-url: ${BILLING_RETURN_URL:http://localhost:5173/billing/return}
+    webhook-url: ${BILLING_WEBHOOK_URL:http://localhost:8080/api/billing/webhook}
 
 springdoc:
   swagger-ui:

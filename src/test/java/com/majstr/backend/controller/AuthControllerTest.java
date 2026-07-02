@@ -188,6 +188,7 @@ class AuthControllerTest {
                 true,
                 Instant.now(),
                 Instant.now(),
+                null,
                 null);
         return AuthResponse.of("access-jwt", "refresh-token", 900L, user);
     }

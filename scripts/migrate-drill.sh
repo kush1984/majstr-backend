@@ -121,6 +121,12 @@ check "default estimate templates" "$def_tpls" "102"
 empty_tpls="$(scalar "SELECT COUNT(*) FROM estimate_templates t WHERE t.is_default = TRUE AND NOT EXISTS (SELECT 1 FROM estimate_template_items i WHERE i.template_id = t.id);")"
 check "default templates with no items" "$empty_tpls" "0"
 
+# V37: billing schema — subscription expiry column + payments ledger applied cleanly.
+plan_exp_col="$(scalar "SELECT COUNT(*) FROM information_schema.columns WHERE table_name='users' AND column_name='plan_expires_at';")"
+check "users.plan_expires_at column (V37)" "$plan_exp_col" "1"
+payments_tbl="$(scalar "SELECT COUNT(*) FROM information_schema.tables WHERE table_name='payments';")"
+check "payments table (V37)" "$payments_tbl" "1"
+
 echo "=== summary (informational) ==="
 psql -P pager=off -c "SELECT trade, COUNT(*), COUNT(*) FILTER (WHERE suggested_price > 0) AS priced
                       FROM catalog_templates GROUP BY trade ORDER BY 2 DESC;"

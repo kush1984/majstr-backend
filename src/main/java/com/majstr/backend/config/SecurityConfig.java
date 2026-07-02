@@ -34,6 +34,9 @@ public class SecurityConfig {
             "/api/auth/logout",
             "/api/auth/verify-email",
             "/api/push/vapid-public-key",
+            // monobank calls this server-to-server; it verifies the X-Sign
+            // signature itself, so it can't require a user JWT.
+            "/api/billing/webhook",
             "/api/public/**",
             "/api/files/**",
             "/portal/**",

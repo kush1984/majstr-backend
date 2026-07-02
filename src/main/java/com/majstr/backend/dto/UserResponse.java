@@ -25,7 +25,10 @@ public record UserResponse(
         // Null until the master consents / acknowledges — drive the PWA's
         // one-time privacy-consent and client-data prompts.
         Instant consentedToPrivacyAt,
-        Instant acknowledgedClientDataAt
+        Instant acknowledgedClientDataAt,
+        // When a billing-granted PRO ends (null = FREE, or admin-granted with no
+        // expiry). Drives the PWA's "PRO активний до DD.MM" badge.
+        Instant planExpiresAt
 ) {
     public static UserResponse from(User user) {
         return new UserResponse(
@@ -41,7 +44,8 @@ public record UserResponse(
                 user.isEmailVerified(),
                 user.getCreatedAt(),
                 user.getConsentedToPrivacyAt(),
-                user.getAcknowledgedClientDataAt()
+                user.getAcknowledgedClientDataAt(),
+                user.getPlanExpiresAt()
         );
     }
 

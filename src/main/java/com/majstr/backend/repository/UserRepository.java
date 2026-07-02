@@ -106,6 +106,13 @@ public interface UserRepository extends JpaRepository<User, UUID> {
     @Query("UPDATE User u SET u.lastActiveAt = :now WHERE u.id = :id")
     int touchLastActive(@Param("id") UUID id, @Param("now") Instant now);
 
+    /** Billing-granted subscriptions whose expiry (+ grace, folded into the
+     *  cutoff by the caller) has passed — the daily job downgrades these to FREE.
+     *  Only rows with a non-null {@code planExpiresAt} qualify, so admin-granted
+     *  plans (no expiry) are never touched. */
+    @Query("SELECT u FROM User u WHERE u.planExpiresAt IS NOT NULL AND u.planExpiresAt < :cutoff")
+    List<User> findExpiredSubscriptions(@Param("cutoff") Instant cutoff);
+
     /** Spring Data projection used by {@link #countGroupByPlan()}. */
     interface PlanCount {
         Plan getPlan();

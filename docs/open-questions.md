@@ -355,10 +355,20 @@ one-line summary — keep the item in the file as a record.
   instead of a hard FREE wall). Tie-in: plan-downgrade-with-over-limit-data.
 
 ### Billing integration
-- **Status:** OPEN
+- **Status:** IN_PROGRESS
 - **Since:** step 4
 - **Context:** Plan change today is admin-only manual via `PATCH /api/admin/users/{id}/plan`. Real customers need self-serve checkout + recurring billing.
 - **Notes / options:** WayForPay or Fondy for UA market; Stripe if going international. Webhook-driven plan changes flowing through the same admin endpoint internally.
+- **In progress (billing iteration, 2026-07-02):** Provider chosen **monobank Acquiring**
+  after a fee/recurring comparison (1.3% vs WayForPay 2% vs LiqPay 2.75%; audience all
+  bank with mono; monobank has a full recurring API for phase 2). **Phase 1 shipped
+  (backend):** self-serve PRO checkout → monobank hosted page → signature-verified webhook
+  grants **PRO for 30 days** (`plan_expires_at`), renew by a fresh checkout; a daily job
+  soft-downgrades to FREE after a grace window. Admin-manual plan change still works and
+  sets no expiry. Stripe ruled out (no UA-merchant payouts). See
+  [iteration-billing-monobank.md](iteration-billing-monobank.md). **Still open:** tokenized
+  **auto-renew** (phase 2), the PWA wiring (checkout button + return page), and an explicit
+  `subscription_status` machine (ACTIVE/GRACE/EXPIRED, SPEC G1) — deferred with auto-renew.
 
 ### Plan downgrade with over-limit data
 - **Status:** OPEN
