@@ -21,6 +21,7 @@ import com.majstr.backend.repository.EstimateRepository;
 import com.majstr.backend.repository.EstimateTemplateItemRepository;
 import com.majstr.backend.repository.EstimateTemplateItemRepository.TemplateItemCount;
 import com.majstr.backend.repository.EstimateTemplateRepository;
+import com.majstr.backend.repository.ProjectRepository;
 import com.majstr.backend.feature.LimitService;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -54,6 +55,7 @@ class EstimateTemplateServiceTest {
     @Mock EstimateItemRepository estimateItemRepository;
     @Mock CatalogItemRepository catalogRepository;
     @Mock ProjectService projectService;
+    @Mock ProjectRepository projectRepository;
     @Mock LimitService limitService;
     @Mock EstimateService estimateService;
     @InjectMocks EstimateTemplateService service;

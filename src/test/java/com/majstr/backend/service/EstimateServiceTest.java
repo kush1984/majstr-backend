@@ -21,6 +21,7 @@ import com.majstr.backend.feature.Limit;
 import com.majstr.backend.feature.LimitService;
 import com.majstr.backend.repository.EstimateItemRepository;
 import com.majstr.backend.repository.EstimateRepository;
+import com.majstr.backend.repository.ProjectRepository;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
@@ -50,6 +51,7 @@ class EstimateServiceTest {
     @Mock private EstimateRepository estimateRepository;
     @Mock private EstimateItemRepository itemRepository;
     @Mock private ProjectService projectService;
+    @Mock private ProjectRepository projectRepository;
     @Mock private CatalogService catalogService;
     @Mock private LimitService limitService;
 
@@ -83,6 +85,7 @@ class EstimateServiceTest {
         assertThat(response.materialsSubtotal()).isEqualByComparingTo("0.00");
         assertThat(response.total()).isEqualByComparingTo("0.00");
         verify(estimateRepository).save(any(Estimate.class));
+        verify(projectRepository).incrementEstimatesCreated(projectId); // lifetime churn counter
     }
 
     @Test
@@ -242,6 +245,7 @@ class EstimateServiceTest {
         estimateService.delete(estimateId, ownerId);
 
         verify(estimateRepository).delete(draft);
+        verify(projectRepository).incrementEstimatesDeleted(projectId); // lifetime churn counter
     }
 
     @Test

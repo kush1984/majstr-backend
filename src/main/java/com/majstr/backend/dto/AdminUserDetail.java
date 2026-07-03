@@ -5,6 +5,7 @@ import com.majstr.backend.entity.Role;
 import com.majstr.backend.entity.Trade;
 
 import java.time.Instant;
+import java.util.List;
 import java.util.Set;
 import java.util.UUID;
 
@@ -32,8 +33,14 @@ public record AdminUserDetail(
         long catalogItemsCount,
         boolean hasLogo,
         Instant lastEstimateCreatedAt,
-        UpgradeUserActivity upgrade
+        UpgradeUserActivity upgrade,
+        // Per-object lifetime estimate churn (created vs deleted) — surfaces the
+        // delete→create bypass of the concurrent FREE cap without blocking it.
+        List<ObjectEstimateChurn> estimateChurn
 ) {
     /** Estimate counts split by status, plus the total. */
     public record EstimateBreakdown(long total, long draft, long sent, long signed, long rejected) {}
+
+    /** One object: how many estimates were ever created / deleted in it. */
+    public record ObjectEstimateChurn(String name, int created, int deleted) {}
 }

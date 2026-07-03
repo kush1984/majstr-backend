@@ -86,6 +86,11 @@ public class AdminUserService {
 
         boolean hasLogo = user.getLogoUrl() != null && !user.getLogoUrl().isBlank();
 
+        List<AdminUserDetail.ObjectEstimateChurn> churn =
+                projectRepository.findEstimateStatsByOwner(userId).stream()
+                        .map(s -> new AdminUserDetail.ObjectEstimateChurn(s.getName(), s.getCreated(), s.getDeleted()))
+                        .toList();
+
         return new AdminUserDetail(
                 user.getId(),
                 user.getEmail(),
@@ -104,7 +109,8 @@ public class AdminUserService {
                 catalogRepository.countByOwnerId(userId),
                 hasLogo,
                 estimateRepository.findLastEstimateCreatedAt(userId),
-                upgradeEventService.userActivity(userId)
+                upgradeEventService.userActivity(userId),
+                churn
         );
     }
 

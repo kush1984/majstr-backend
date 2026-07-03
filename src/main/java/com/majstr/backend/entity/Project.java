@@ -60,6 +60,17 @@ public class Project {
     @Column(name = "completed_at")
     private Instant completedAt;
 
+    /** Lifetime counters: how many estimates were ever created / deleted in this
+     *  object. Never decremented — they reveal churn (delete→create) that the
+     *  concurrent FREE cap can't see. Admin-only visibility; no gate today. */
+    @Column(name = "estimates_created", nullable = false)
+    @Builder.Default
+    private int estimatesCreated = 0;
+
+    @Column(name = "estimates_deleted", nullable = false)
+    @Builder.Default
+    private int estimatesDeleted = 0;
+
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
 

@@ -21,6 +21,7 @@ import com.majstr.backend.exception.ResourceNotFoundException;
 import com.majstr.backend.feature.LimitService;
 import com.majstr.backend.repository.EstimateItemRepository;
 import com.majstr.backend.repository.EstimateRepository;
+import com.majstr.backend.repository.ProjectRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
@@ -45,6 +46,7 @@ public class EstimateService {
     private final EstimateRepository estimateRepository;
     private final EstimateItemRepository itemRepository;
     private final ProjectService projectService;
+    private final ProjectRepository projectRepository;
     private final CatalogService catalogService;
     private final EstimatePdfService pdfService;
     private final LimitService limitService;
@@ -63,6 +65,7 @@ public class EstimateService {
                 .notes(normalize(req.notes()))
                 .build();
         Estimate saved = estimateRepository.save(estimate);
+        projectRepository.incrementEstimatesCreated(projectId); // lifetime churn counter
         return toResponse(saved, List.of());
     }
 
@@ -109,7 +112,9 @@ public class EstimateService {
         if (estimate.getStatus() == EstimateStatus.SIGNED) {
             throw new EstimateSignedException();
         }
+        UUID projectId = estimate.getProject().getId();
         estimateRepository.delete(estimate);
+        projectRepository.incrementEstimatesDeleted(projectId); // lifetime churn counter
     }
 
     /**

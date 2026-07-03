@@ -137,6 +137,12 @@ check "LIGA partner seeded (V38)" "$liga" "1"
 no_src="$(scalar "SELECT COUNT(*) FROM users WHERE referral_source IS NULL OR referral_source = '';")"
 check "users without referral_source (V38 backfill)" "$no_src" "0"
 
+# V39: per-object estimate churn counters + truthful backfill (created = live count).
+churn_cols="$(scalar "SELECT COUNT(*) FROM information_schema.columns WHERE table_name='projects' AND column_name IN ('estimates_created','estimates_deleted');")"
+check "projects churn counters (V39)" "$churn_cols" "2"
+bad_backfill="$(scalar "SELECT COUNT(*) FROM projects p WHERE p.estimates_created <> (SELECT COUNT(*) FROM estimates e WHERE e.project_id = p.id);")"
+check "projects with wrong estimates_created backfill (V39)" "$bad_backfill" "0"
+
 echo "=== summary (informational) ==="
 psql -P pager=off -c "SELECT trade, COUNT(*), COUNT(*) FILTER (WHERE suggested_price > 0) AS priced
                       FROM catalog_templates GROUP BY trade ORDER BY 2 DESC;"

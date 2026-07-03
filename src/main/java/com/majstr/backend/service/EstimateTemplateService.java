@@ -20,6 +20,7 @@ import com.majstr.backend.repository.EstimateItemRepository;
 import com.majstr.backend.repository.EstimateRepository;
 import com.majstr.backend.repository.EstimateTemplateItemRepository;
 import com.majstr.backend.repository.EstimateTemplateRepository;
+import com.majstr.backend.repository.ProjectRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
@@ -51,6 +52,7 @@ public class EstimateTemplateService {
     private final EstimateItemRepository estimateItemRepository;
     private final CatalogItemRepository catalogRepository;
     private final ProjectService projectService;
+    private final ProjectRepository projectRepository;
     private final LimitService limitService;
     private final EstimateService estimateService;
 
@@ -214,6 +216,7 @@ public class EstimateTemplateService {
                     .build());
         }
         estimateItemRepository.saveAll(toSave);
+        projectRepository.incrementEstimatesCreated(projectId); // lifetime churn counter
         return estimateService.get(estimate.getId(), ownerId);
     }
 

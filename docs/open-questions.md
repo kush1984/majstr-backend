@@ -366,6 +366,23 @@ one-line summary — keep the item in the file as a record.
   Revisit alongside billing/trial (a trial could lift the caps for N days
   instead of a hard FREE wall). Tie-in: plan-downgrade-with-over-limit-data.
 
+### FREE estimate cap: delete→create loophole (concurrent vs lifetime)
+- **Status:** OPEN
+- **Since:** 2026-07-03
+- **Context:** `LimitService.requireCanAddEstimate` counts **concurrent** estimates
+  (`countByProjectId`), so a FREE user can delete an estimate to free a slot and
+  create another — unbounded *throughput* per object (though they can never *hold*
+  >3, and the 2-object cap — the real monetization gate — is untouched). By design
+  today; flagged as a possible bypass.
+- **Notes / options:** Severity is low (churn is mostly self-harm — you lose the old
+  estimate to make a new one; the object cap still gates paid value). Options if we
+  close it: a **lifetime** `estimates_created` counter per object (never decremented)
+  with a slightly higher cap (~5) so honest deletes don't hurt but infinite churn is
+  blocked; or a total per-account estimate cap; or accept the concurrent semantics.
+  **Decided for now:** don't block — instead **monitor** it (admin shows per-object
+  estimates created/deleted, so we can see if anyone actually churns) and revisit
+  with the FREE-limit-numbers tuning above.
+
 ### Billing integration
 - **Status:** IN_PROGRESS
 - **Since:** step 4

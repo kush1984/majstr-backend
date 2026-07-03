@@ -504,6 +504,13 @@
                 <tr><td>Кліків «Апгрейд»</td><td>${d.upgrade.clicks} <span class="muted">${d.upgrade.clicks > 0 ? '(останній ' + fmt(d.upgrade.lastClickAt) + ')' : ''}</span></td></tr>
                 <tr><td>Подав заявку на PRO</td><td>${yn(d.upgrade.interested)}${d.upgrade.interested && d.upgrade.interestReason ? ' <span class="muted">— ' + escapeHtml(d.upgrade.interestReason) + '</span>' : ''}</td></tr>
             </table>
+            ${(d.estimateChurn && d.estimateChurn.length) ? `
+            <h2 style="text-transform:none; letter-spacing:0;">Кошториси по об'єктах (створено / видалено)</h2>
+            <table>
+                <thead><tr><th>Об'єкт</th><th>Створено</th><th>Видалено</th></tr></thead>
+                <tbody>${d.estimateChurn.map(o => `<tr><td>${escapeHtml(o.name)}</td><td>${o.created}</td><td>${o.deleted > 0 ? '<b style="color:var(--danger)">' + o.deleted + '</b>' : '<span class="muted">0</span>'}</td></tr>`).join('')}</tbody>
+            </table>
+            <p class="muted" style="font-size:0.8rem">Багато видалень при малій к-ті одночасних = обхід ліміту 3/об'єкт (delete→create). Наразі лише моніторимо.</p>` : ''}
         `;
         document.getElementById('src-save').addEventListener('click', async (ev) => {
             const uid = ev.target.dataset.user;
@@ -713,9 +720,9 @@
                 <td><input class="ti-name" value="${escapeHtml(it.name)}"></td>
                 <td><select class="ti-type">${optionsHtml(TYPES, it.type)}</select></td>
                 <td><select class="ti-unit">${optionsHtml(UNITS, it.unit)}</select></td>
-                <td>
-                    <button class="small ti-save" data-item="${it.id}">💾</button>
-                    <button class="small danger ti-del" data-item="${it.id}">🗑</button>
+                <td style="white-space:nowrap; text-align:center; width:1%">
+                    <button class="small ti-save" data-item="${it.id}" title="Зберегти">💾</button>
+                    <button class="small danger ti-del" data-item="${it.id}" title="Видалити">🗑</button>
                 </td>
             </tr>`).join('');
         document.getElementById('tpl-detail').innerHTML = `
@@ -728,14 +735,19 @@
                     <button id="td-del" class="danger small">Видалити шаблон</button>
                 </div>
                 <table>
-                    <thead><tr><th>Назва</th><th>Тип</th><th>Од.</th><th></th></tr></thead>
+                    <thead><tr><th>Назва</th><th>Тип</th><th>Од.</th><th style="text-align:center">Дії</th></tr></thead>
                     <tbody>${itemRows || '<tr><td colspan="4" class="muted">Позицій немає</td></tr>'}</tbody>
                 </table>
                 <div class="formrow" style="margin-top:8px">
-                    <input id="ni-name" placeholder="Нова позиція">
+                    <input id="ni-name" placeholder="Нова позиція (вручну)">
                     <select id="ni-type">${optionsHtml(TYPES, 'WORK')}</select>
                     <select id="ni-unit">${optionsHtml(UNITS, 'M2')}</select>
                     <button id="ni-add" class="primary small">+ Додати</button>
+                </div>
+                <div class="formrow" style="margin-top:6px">
+                    <input id="ni-cat" placeholder="…або знайди в каталозі + Enter" style="flex:2">
+                    <select id="ni-cat-sel"><option value="">— оберіть із каталогу —</option></select>
+                    <button id="ni-cat-add" class="primary small">+ З каталогу</button>
                 </div>
                 <div class="error" id="td-error"></div>
             </div>`;
@@ -743,6 +755,8 @@
         document.getElementById('td-save').addEventListener('click', () => saveTemplate(d.id));
         document.getElementById('td-del').addEventListener('click', () => deleteTemplate(d.id, d.name));
         document.getElementById('ni-add').addEventListener('click', () => addTemplateItem(d.id));
+        document.getElementById('ni-cat').addEventListener('keyup', e => { if (e.key === 'Enter') searchTemplateCatalog(); });
+        document.getElementById('ni-cat-add').addEventListener('click', () => addTemplateItemFromCatalog(d.id));
         document.querySelectorAll('.ti-save').forEach(b =>
             b.addEventListener('click', () => saveTemplateItem(d.id, b.dataset.item, b.closest('tr'))));
         document.querySelectorAll('.ti-del').forEach(b =>
@@ -774,6 +788,36 @@
         if (!resp.ok) { document.getElementById('td-error').textContent = 'Не вдалося додати'; return; }
         renderTemplateDetail(await resp.json());
         loadTemplates(); // refresh counts
+    }
+
+    // "Add from catalog": search the default catalog positions, pick one, add it
+    // to the template with its name/type/unit (no manual typing).
+    let catalogPickResults = [];
+    async function searchTemplateCatalog() {
+        const params = new URLSearchParams();
+        const q = val('ni-cat').trim();
+        if (q) params.set('q', q);
+        params.set('size', '50');
+        const resp = await api('/admin/catalog-templates?' + params.toString());
+        if (!resp.ok) { document.getElementById('td-error').textContent = 'Помилка пошуку каталогу'; return; }
+        catalogPickResults = (await resp.json()).items || [];
+        const sel = document.getElementById('ni-cat-sel');
+        sel.innerHTML = catalogPickResults.length
+            ? '<option value="">— оберіть із каталогу —</option>' + catalogPickResults.map((c, i) =>
+                `<option value="${i}">${escapeHtml(c.name)} · ${typeLabel(c.type)} · ${unitLabel(c.unit)}</option>`).join('')
+            : '<option value="">нічого не знайдено</option>';
+    }
+
+    async function addTemplateItemFromCatalog(id) {
+        const idx = val('ni-cat-sel');
+        if (idx === '') { document.getElementById('td-error').textContent = 'Оберіть позицію з каталогу'; return; }
+        const c = catalogPickResults[Number(idx)];
+        if (!c) return;
+        const body = { name: c.name, type: c.type, unit: c.unit };
+        const resp = await api(`/admin/estimate-templates/${id}/items`, { method: 'POST', body: JSON.stringify(body) });
+        if (!resp.ok) { document.getElementById('td-error').textContent = 'Не вдалося додати з каталогу'; return; }
+        renderTemplateDetail(await resp.json());
+        loadTemplates();
     }
 
     async function saveTemplateItem(id, itemId, tr) {
