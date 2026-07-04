@@ -298,6 +298,31 @@
     </div>
 </div>
 
+<div id="tplCatOverlay" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.4); z-index:60;">
+    <div class="card" style="max-width:760px; margin:28px auto; max-height:90vh; overflow:auto; display:flex; flex-direction:column;">
+        <div style="display:flex; justify-content:space-between; align-items:center; gap:12px;">
+            <h2 style="margin:0; text-transform:none; letter-spacing:0;">Додати з каталогу</h2>
+            <button id="tplCatClose">✕</button>
+        </div>
+        <div class="filters" style="margin-top:12px">
+            <input id="tplCat-q" class="grow" placeholder="Пошук за назвою">
+            <select id="tplCat-trade"></select>
+            <select id="tplCat-type"></select>
+            <button id="tplCat-reload">Оновити</button>
+        </div>
+        <div id="tplCat-list" style="flex:1; overflow:auto; min-height:120px;"></div>
+        <div class="pager">
+            <button id="tplCat-prev">←</button>
+            <span id="tplCat-page-info" style="align-self:center">—</span>
+            <button id="tplCat-next">→</button>
+        </div>
+        <div style="position:sticky; bottom:0; background:var(--card); border-top:1px solid var(--border); padding-top:10px; margin-top:6px;">
+            <button id="tplCat-add" class="primary">Додати обрані (<span id="tplCat-count">0</span>)</button>
+            <span class="error" id="tplCat-error" style="margin-left:8px"></span>
+        </div>
+    </div>
+</div>
+
 <script>
 (function () {
     const API = '/api';
@@ -744,10 +769,8 @@
                     <select id="ni-unit">${optionsHtml(UNITS, 'M2')}</select>
                     <button id="ni-add" class="primary small">+ Додати</button>
                 </div>
-                <div class="formrow" style="margin-top:6px">
-                    <input id="ni-cat" placeholder="…або знайди в каталозі + Enter" style="flex:2">
-                    <select id="ni-cat-sel"><option value="">— оберіть із каталогу —</option></select>
-                    <button id="ni-cat-add" class="primary small">+ З каталогу</button>
+                <div style="margin-top:8px">
+                    <button id="ni-cat-open" class="primary small">+ Додати з каталогу</button>
                 </div>
                 <div class="error" id="td-error"></div>
             </div>`;
@@ -755,8 +778,7 @@
         document.getElementById('td-save').addEventListener('click', () => saveTemplate(d.id));
         document.getElementById('td-del').addEventListener('click', () => deleteTemplate(d.id, d.name));
         document.getElementById('ni-add').addEventListener('click', () => addTemplateItem(d.id));
-        document.getElementById('ni-cat').addEventListener('keyup', e => { if (e.key === 'Enter') searchTemplateCatalog(); });
-        document.getElementById('ni-cat-add').addEventListener('click', () => addTemplateItemFromCatalog(d.id));
+        document.getElementById('ni-cat-open').addEventListener('click', () => openTplCatPicker(d));
         document.querySelectorAll('.ti-save').forEach(b =>
             b.addEventListener('click', () => saveTemplateItem(d.id, b.dataset.item, b.closest('tr'))));
         document.querySelectorAll('.ti-del').forEach(b =>
@@ -790,34 +812,91 @@
         loadTemplates(); // refresh counts
     }
 
-    // "Add from catalog": search the default catalog positions, pick one, add it
-    // to the template with its name/type/unit (no manual typing).
-    let catalogPickResults = [];
-    async function searchTemplateCatalog() {
-        const params = new URLSearchParams();
-        const q = val('ni-cat').trim();
-        if (q) params.set('q', q);
-        params.set('size', '50');
-        const resp = await api('/admin/catalog-templates?' + params.toString());
-        if (!resp.ok) { document.getElementById('td-error').textContent = 'Помилка пошуку каталогу'; return; }
-        catalogPickResults = (await resp.json()).items || [];
-        const sel = document.getElementById('ni-cat-sel');
-        sel.innerHTML = catalogPickResults.length
-            ? '<option value="">— оберіть із каталогу —</option>' + catalogPickResults.map((c, i) =>
-                `<option value="${i}">${escapeHtml(c.name)} · ${typeLabel(c.type)} · ${unitLabel(c.unit)}</option>`).join('')
-            : '<option value="">нічого не знайдено</option>';
+    // ===== "Add from catalog" modal: trade filter + multi-select =====
+    let tplCatTemplateId = null;
+    let tplCatSelected = new Map();        // catalog id -> {name, type, unit}
+    let tplCatExistingNames = new Set();   // lowercased names already in the template
+    let tplCatPage = 0, tplCatTotalPages = 1;
+
+    function initTplCatSelects() {
+        document.getElementById('tplCat-trade').innerHTML = optionsHtml(TRADES, '', 'Усі трейди');
+        document.getElementById('tplCat-type').innerHTML = optionsHtml(TYPES, '', 'Усі типи');
     }
 
-    async function addTemplateItemFromCatalog(id) {
-        const idx = val('ni-cat-sel');
-        if (idx === '') { document.getElementById('td-error').textContent = 'Оберіть позицію з каталогу'; return; }
-        const c = catalogPickResults[Number(idx)];
-        if (!c) return;
-        const body = { name: c.name, type: c.type, unit: c.unit };
-        const resp = await api(`/admin/estimate-templates/${id}/items`, { method: 'POST', body: JSON.stringify(body) });
-        if (!resp.ok) { document.getElementById('td-error').textContent = 'Не вдалося додати з каталогу'; return; }
-        renderTemplateDetail(await resp.json());
-        loadTemplates();
+    function openTplCatPicker(d) {
+        tplCatTemplateId = d.id;
+        tplCatSelected = new Map();
+        tplCatExistingNames = new Set((d.items || []).map(i => i.name.toLowerCase()));
+        tplCatPage = 0;
+        document.getElementById('tplCat-q').value = '';
+        document.getElementById('tplCat-trade').value = d.trade || '';
+        document.getElementById('tplCat-type').value = '';
+        document.getElementById('tplCat-error').textContent = '';
+        updateTplCatCount();
+        document.getElementById('tplCatOverlay').style.display = 'block';
+        loadTplCatPage();
+    }
+
+    function closeTplCatPicker() { document.getElementById('tplCatOverlay').style.display = 'none'; }
+
+    function updateTplCatCount() {
+        document.getElementById('tplCat-count').textContent = String(tplCatSelected.size);
+    }
+
+    async function loadTplCatPage() {
+        const params = new URLSearchParams();
+        const trade = val('tplCat-trade'); if (trade) params.set('trade', trade);
+        const type = val('tplCat-type'); if (type) params.set('type', type);
+        const q = val('tplCat-q').trim(); if (q) params.set('q', q);
+        params.set('page', String(tplCatPage));
+        params.set('size', '50');
+        const resp = await api('/admin/catalog-templates?' + params.toString());
+        if (resp.status === 401 || resp.status === 403) { logout(); return; }
+        if (!resp.ok) { document.getElementById('tplCat-list').innerHTML = '<p class="error">Помилка завантаження</p>'; return; }
+        const data = await resp.json();
+        tplCatTotalPages = Math.max(data.totalPages, 1);
+        document.getElementById('tplCat-page-info').textContent = `стор ${data.page + 1}/${tplCatTotalPages} · знайдено ${data.totalItems}`;
+        document.getElementById('tplCat-list').innerHTML = data.items.length === 0
+            ? '<p class="muted">Нічого не знайдено</p>'
+            : `<table><thead><tr><th></th><th>Назва</th><th>Трейд</th><th>Тип</th><th>Од.</th></tr></thead><tbody>`
+              + data.items.map(c => {
+                  const exists = tplCatExistingNames.has(c.name.toLowerCase());
+                  const checked = tplCatSelected.has(c.id) ? ' checked' : '';
+                  return `<tr>
+                    <td style="width:1%"><input type="checkbox" class="tplCat-cb" data-json='${escapeHtml(JSON.stringify({ id: c.id, name: c.name, type: c.type, unit: c.unit }))}'${checked}${exists ? ' disabled title="вже в шаблоні"' : ''}></td>
+                    <td>${escapeHtml(c.name)}${exists ? ' <span class="muted" style="font-size:0.75rem">(вже в шаблоні)</span>' : ''}</td>
+                    <td class="muted">${tradeLabel(c.trade)}</td>
+                    <td>${typeLabel(c.type)}</td>
+                    <td>${unitLabel(c.unit)}</td>
+                  </tr>`;
+              }).join('')
+              + `</tbody></table>`;
+        document.querySelectorAll('.tplCat-cb').forEach(cb => cb.addEventListener('change', () => {
+            const c = JSON.parse(cb.dataset.json);
+            if (cb.checked) tplCatSelected.set(c.id, { name: c.name, type: c.type, unit: c.unit });
+            else tplCatSelected.delete(c.id);
+            updateTplCatCount();
+        }));
+    }
+
+    async function addSelectedFromCatalog() {
+        if (tplCatSelected.size === 0) { document.getElementById('tplCat-error').textContent = 'Нічого не обрано'; return; }
+        const btn = document.getElementById('tplCat-add');
+        btn.disabled = true;
+        try {
+            // No batch endpoint for template items — append sequentially.
+            for (const item of tplCatSelected.values()) {
+                const resp = await api(`/admin/estimate-templates/${tplCatTemplateId}/items`, {
+                    method: 'POST', body: JSON.stringify(item)
+                });
+                if (!resp.ok) { document.getElementById('tplCat-error').textContent = 'Помилка при додаванні «' + item.name + '»'; btn.disabled = false; return; }
+            }
+        } finally {
+            btn.disabled = false;
+        }
+        closeTplCatPicker();
+        openTemplateDetail(tplCatTemplateId); // re-render with the new items
+        loadTemplates();                       // refresh the "Поз." counts
     }
 
     async function saveTemplateItem(id, itemId, tr) {
@@ -872,6 +951,19 @@
         if (ev.target.id === 'detailOverlay') closeDetail();
     });
 
+    // "Add from catalog" modal wiring
+    document.getElementById('tplCatClose').addEventListener('click', closeTplCatPicker);
+    document.getElementById('tplCatOverlay').addEventListener('click', (ev) => {
+        if (ev.target.id === 'tplCatOverlay') closeTplCatPicker();
+    });
+    document.getElementById('tplCat-reload').addEventListener('click', () => { tplCatPage = 0; loadTplCatPage(); });
+    document.getElementById('tplCat-trade').addEventListener('change', () => { tplCatPage = 0; loadTplCatPage(); });
+    document.getElementById('tplCat-type').addEventListener('change', () => { tplCatPage = 0; loadTplCatPage(); });
+    document.getElementById('tplCat-q').addEventListener('keyup', e => { if (e.key === 'Enter') { tplCatPage = 0; loadTplCatPage(); } });
+    document.getElementById('tplCat-prev').addEventListener('click', () => { if (tplCatPage > 0) { tplCatPage--; loadTplCatPage(); } });
+    document.getElementById('tplCat-next').addEventListener('click', () => { if (tplCatPage < tplCatTotalPages - 1) { tplCatPage++; loadTplCatPage(); } });
+    document.getElementById('tplCat-add').addEventListener('click', addSelectedFromCatalog);
+
     document.getElementById('reload').addEventListener('click', () => { page = 0; loadUsers(); });
     document.getElementById('search').addEventListener('keyup', e => { if (e.key === 'Enter') { page = 0; loadUsers(); } });
     document.getElementById('sourceFilter').addEventListener('keyup', e => { if (e.key === 'Enter') { page = 0; loadUsers(); } });
@@ -880,6 +972,7 @@
     document.getElementById('nextPage').addEventListener('click', () => { if (page < totalPages - 1) { page++; loadUsers(); } });
 
     initCatalogSelects();
+    initTplCatSelects();
 
     if (token) {
         showApp();
