@@ -417,6 +417,12 @@ one-line summary — keep the item in the file as a record.
   without a real charge. The failed-payment email already links to `/profile`; that link
   would point here. Confirm the monobank capability before building; otherwise the
   checkout-again path is an acceptable fallback.
+- **Update (2026-07-06):** the sibling case — a PRO master who upgraded **without** opting
+  into auto-renew and later wants to enable it — now routes through checkout (auto-renew
+  pre-checked; pays the next period, saves the card) in the profile "Підписка" section
+  (`enableAutoRenewNoCardHint`). The **zero-charge verification invoice** is the shared
+  future improvement for both this and the card-swap case — same monobank-capability
+  question.
 
 ### Auto-renew: push notification on T-3 in addition to email
 - **Status:** OPEN
