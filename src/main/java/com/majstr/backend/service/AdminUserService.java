@@ -10,7 +10,10 @@ import com.majstr.backend.repository.CatalogItemRepository;
 import com.majstr.backend.repository.ClientRepository;
 import com.majstr.backend.repository.EstimateRepository;
 import com.majstr.backend.repository.EstimateShareLinkRepository;
+import com.majstr.backend.entity.Payment;
+import com.majstr.backend.entity.PaymentKind;
 import com.majstr.backend.repository.OwnerCount;
+import com.majstr.backend.repository.PaymentRepository;
 import com.majstr.backend.repository.ProjectRepository;
 import com.majstr.backend.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
@@ -43,6 +46,7 @@ public class AdminUserService {
     private final EstimateRepository estimateRepository;
     private final EstimateShareLinkRepository shareLinkRepository;
     private final CatalogItemRepository catalogRepository;
+    private final PaymentRepository paymentRepository;
     private final UpgradeEventService upgradeEventService;
 
     @Transactional(readOnly = true)
@@ -91,6 +95,10 @@ public class AdminUserService {
                         .map(s -> new AdminUserDetail.ObjectEstimateChurn(s.getName(), s.getCreated(), s.getDeleted()))
                         .toList();
 
+        Payment lastAuto = paymentRepository
+                .findFirstByUserIdAndKindOrderByCreatedAtDesc(userId, PaymentKind.AUTO_RENEW)
+                .orElse(null);
+
         return new AdminUserDetail(
                 user.getId(),
                 user.getEmail(),
@@ -110,7 +118,12 @@ public class AdminUserService {
                 hasLogo,
                 estimateRepository.findLastEstimateCreatedAt(userId),
                 upgradeEventService.userActivity(userId),
-                churn
+                churn,
+                user.getPlanExpiresAt(),
+                user.isAutoRenew(),
+                user.getCardMask(),
+                lastAuto == null ? null : lastAuto.getStatus().name(),
+                lastAuto == null ? null : lastAuto.getCreatedAt()
         );
     }
 

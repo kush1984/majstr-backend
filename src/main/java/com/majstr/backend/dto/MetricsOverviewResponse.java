@@ -13,7 +13,9 @@ public record MetricsOverviewResponse(
         long usersActive30d,
         Map<Plan, Long> planDistribution,
         BigDecimal conversionRatePercent,
-        ChurnSummary churn
+        ChurnSummary churn,
+        // Masters with subscription auto-renew on — an MRR/retention signal.
+        long autoRenewUsers
 ) {
     public record ChurnSummary(
             long activeLastMonth,

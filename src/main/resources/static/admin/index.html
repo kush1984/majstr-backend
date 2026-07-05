@@ -442,6 +442,7 @@
             <div class="stat"><div class="label">Активних (30 днів)</div><div class="value">${m.usersActive30d}</div></div>
             <div class="stat"><div class="label">Конверсія в платні</div><div class="value">${m.conversionRatePercent}%</div></div>
             <div class="stat"><div class="label">Churn (з минулого місяця)</div><div class="value">${m.churn.churned}</div><div class="sub">з ${m.churn.activeLastMonth} активних</div></div>
+            <div class="stat"><div class="label">Автопродовження увімк.</div><div class="value">${m.autoRenewUsers}</div><div class="sub">MRR-сигнал</div></div>
             ${planRows}
         `;
     }
@@ -528,6 +529,8 @@
                 <tr><td>Останній кошторис</td><td>${fmt(d.lastEstimateCreatedAt)}</td></tr>
                 <tr><td>Кліків «Апгрейд»</td><td>${d.upgrade.clicks} <span class="muted">${d.upgrade.clicks > 0 ? '(останній ' + fmt(d.upgrade.lastClickAt) + ')' : ''}</span></td></tr>
                 <tr><td>Подав заявку на PRO</td><td>${yn(d.upgrade.interested)}${d.upgrade.interested && d.upgrade.interestReason ? ' <span class="muted">— ' + escapeHtml(d.upgrade.interestReason) + '</span>' : ''}</td></tr>
+                <tr><td>Автопродовження</td><td>${d.autoRenew ? '✅ увімкнено' : '❌ вимкнено'}${d.cardMask ? ' <span class="muted">· картка ' + escapeHtml(d.cardMask) + '</span>' : ''}${d.planExpiresAt ? ' <span class="muted">· PRO до ' + fmt(d.planExpiresAt) + '</span>' : ''}</td></tr>
+                <tr><td>Останнє автосписання</td><td>${d.lastAutoRenewStatus ? escapeHtml(d.lastAutoRenewStatus) + ' <span class="muted">(' + fmt(d.lastAutoRenewAt) + ')</span>' : '<span class="muted">—</span>'}</td></tr>
             </table>
             ${(d.estimateChurn && d.estimateChurn.length) ? `
             <h2 style="text-transform:none; letter-spacing:0;">Кошториси по об'єктах (створено / видалено)</h2>

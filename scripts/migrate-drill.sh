@@ -143,6 +143,14 @@ check "projects churn counters (V39)" "$churn_cols" "2"
 bad_backfill="$(scalar "SELECT COUNT(*) FROM projects p WHERE p.estimates_created <> (SELECT COUNT(*) FROM estimates e WHERE e.project_id = p.id);")"
 check "projects with wrong estimates_created backfill (V39)" "$bad_backfill" "0"
 
+# V40: auto-renew columns (users) + payments.kind + backfill (existing = CHECKOUT).
+ar_cols="$(scalar "SELECT COUNT(*) FROM information_schema.columns WHERE table_name='users' AND column_name IN ('auto_renew','card_token','card_mask','wallet_id','renew_reminder_sent_at');")"
+check "users auto-renew columns (V40)" "$ar_cols" "5"
+kind_col="$(scalar "SELECT COUNT(*) FROM information_schema.columns WHERE table_name='payments' AND column_name='kind';")"
+check "payments.kind column (V40)" "$kind_col" "1"
+non_checkout="$(scalar "SELECT COUNT(*) FROM payments WHERE kind <> 'CHECKOUT';")"
+check "existing payments backfilled to CHECKOUT (V40)" "$non_checkout" "0"
+
 echo "=== summary (informational) ==="
 psql -P pager=off -c "SELECT trade, COUNT(*), COUNT(*) FILTER (WHERE suggested_price > 0) AS priced
                       FROM catalog_templates GROUP BY trade ORDER BY 2 DESC;"

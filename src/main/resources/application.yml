@@ -136,6 +136,8 @@ app:
     # Dev-simulation (grant PRO with no token) is allowed in dev; prod forces this
     # false (application-prod.yml) so a missing token can never hand out free PRO.
     allow-dev-simulation: ${BILLING_ALLOW_DEV_SIM:true}
+    # Days before expiry to send the auto-renew warning email (T-N).
+    renew-reminder-days: ${BILLING_RENEW_REMINDER_DAYS:3}
     # PRO price (UAH/month) and the granted period.
     pro-price: ${BILLING_PRO_PRICE:299}
     pro-days: ${BILLING_PRO_DAYS:30}

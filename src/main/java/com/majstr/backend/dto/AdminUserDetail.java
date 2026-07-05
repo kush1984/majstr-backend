@@ -36,7 +36,14 @@ public record AdminUserDetail(
         UpgradeUserActivity upgrade,
         // Per-object lifetime estimate churn (created vs deleted) — surfaces the
         // delete→create bypass of the concurrent FREE cap without blocking it.
-        List<ObjectEstimateChurn> estimateChurn
+        List<ObjectEstimateChurn> estimateChurn,
+        // Subscription auto-renew: state, masked card, and the last auto-charge
+        // outcome (never the raw token).
+        Instant planExpiresAt,
+        boolean autoRenew,
+        String cardMask,
+        String lastAutoRenewStatus,
+        Instant lastAutoRenewAt
 ) {
     /** Estimate counts split by status, plus the total. */
     public record EstimateBreakdown(long total, long draft, long sent, long signed, long rejected) {}

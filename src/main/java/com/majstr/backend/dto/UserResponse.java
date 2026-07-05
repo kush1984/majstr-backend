@@ -28,7 +28,11 @@ public record UserResponse(
         Instant acknowledgedClientDataAt,
         // When a billing-granted PRO ends (null = FREE, or admin-granted with no
         // expiry). Drives the PWA's "PRO активний до DD.MM" badge.
-        Instant planExpiresAt
+        Instant planExpiresAt,
+        // Auto-renewal state + masked card for the profile "Підписка" section.
+        // NEVER the raw token/walletId — display-safe only.
+        boolean autoRenew,
+        String cardMask
 ) {
     public static UserResponse from(User user) {
         return new UserResponse(
@@ -45,7 +49,9 @@ public record UserResponse(
                 user.getCreatedAt(),
                 user.getConsentedToPrivacyAt(),
                 user.getAcknowledgedClientDataAt(),
-                user.getPlanExpiresAt()
+                user.getPlanExpiresAt(),
+                user.isAutoRenew(),
+                user.getCardMask()
         );
     }
 

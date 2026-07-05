@@ -13,6 +13,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.DeleteMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -69,5 +70,12 @@ public class ProfileController {
     @PostMapping("/acknowledge-client-data")
     public UserResponse acknowledgeClientData(@AuthenticationPrincipal UserPrincipal principal) {
         return profileService.acknowledgeClientData(principal.id());
+    }
+
+    @Operation(summary = "Toggle subscription auto-renewal (disable is instant; enable needs a saved card)")
+    @PatchMapping("/auto-renew")
+    public UserResponse setAutoRenew(@RequestParam boolean enabled,
+                                     @AuthenticationPrincipal UserPrincipal principal) {
+        return profileService.setAutoRenew(principal.id(), enabled);
     }
 }

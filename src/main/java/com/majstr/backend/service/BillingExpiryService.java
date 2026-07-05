@@ -39,6 +39,8 @@ public class BillingExpiryService {
         for (User user : expired) {
             user.setPlan(Plan.FREE);
             user.setPlanExpiresAt(null);
+            // Grace exhausted — stop retrying a card that never charged.
+            user.setAutoRenew(false);
         }
         if (!expired.isEmpty()) {
             log.info("Downgraded {} expired PRO subscription(s) to FREE", expired.size());

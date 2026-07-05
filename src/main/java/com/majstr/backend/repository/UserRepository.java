@@ -116,6 +116,29 @@ public interface UserRepository extends JpaRepository<User, UUID> {
     @Query("SELECT u FROM User u WHERE u.planExpiresAt IS NOT NULL AND u.planExpiresAt < :cutoff")
     List<User> findExpiredSubscriptions(@Param("cutoff") Instant cutoff);
 
+    /** Auto-renew subscriptions due a T-N warning email: opted in, tokenized, no
+     *  reminder yet this cycle, expiring within the reminder window. */
+    @Query("""
+            SELECT u FROM User u
+            WHERE u.autoRenew = true AND u.cardToken IS NOT NULL AND u.renewReminderSentAt IS NULL
+              AND u.planExpiresAt IS NOT NULL
+              AND u.planExpiresAt > :now AND u.planExpiresAt <= :reminderCutoff
+            """)
+    List<User> findAutoRenewReminderDue(@Param("now") Instant now, @Param("reminderCutoff") Instant reminderCutoff);
+
+    /** Auto-renew subscriptions due a charge: opted in, tokenized, expired but still
+     *  within grace (so a retry window remains before downgrade). */
+    @Query("""
+            SELECT u FROM User u
+            WHERE u.autoRenew = true AND u.cardToken IS NOT NULL AND u.planExpiresAt IS NOT NULL
+              AND u.planExpiresAt <= :now AND u.planExpiresAt > :graceStart
+            """)
+    List<User> findAutoRenewChargeDue(@Param("now") Instant now, @Param("graceStart") Instant graceStart);
+
+    /** How many masters have auto-renew on (MRR signal for the admin). */
+    @Query("SELECT COUNT(u) FROM User u WHERE u.autoRenew = true")
+    long countAutoRenewUsers();
+
     /** Registrations grouped by referral source (masters only) — the admin
      *  by-source report. One grouped query, no N+1. */
     @Query("""

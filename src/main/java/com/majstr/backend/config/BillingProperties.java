@@ -30,7 +30,9 @@ public record BillingProperties(
         int graceDays,
         String returnUrl,
         String webhookUrl,
-        boolean allowDevSimulation
+        boolean allowDevSimulation,
+        // Days before expiry to send the auto-renew warning email (T-N).
+        int renewReminderDays
 ) {
     public boolean isConfigured() {
         return monobankToken != null && !monobankToken.isBlank();

@@ -26,7 +26,7 @@ class BillingExpiryServiceTest {
 
     private BillingExpiryService service() {
         BillingProperties props = new BillingProperties("", "https://api.monobank.ua",
-                new BigDecimal("299"), 30, 3, "http://ret", "http://hook", true);
+                new BigDecimal("299"), 30, 3, "http://ret", "http://hook", true, 3);
         return new BillingExpiryService(userRepository, props);
     }
 

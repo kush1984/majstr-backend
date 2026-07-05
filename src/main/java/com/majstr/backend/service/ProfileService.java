@@ -57,6 +57,19 @@ public class ProfileService {
         return UserResponse.from(user);
     }
 
+    /**
+     * Toggle subscription auto-renewal. Disabling is instant (no confirm) and keeps
+     * the saved token for a quick re-enable — no charges happen while off. Enabling
+     * needs a saved card (from a prior opt-in checkout); without one it stays off and
+     * the PWA sends the master to a fresh checkout.
+     */
+    @Transactional
+    public UserResponse setAutoRenew(UUID userId, boolean enabled) {
+        User user = loadUser(userId);
+        user.setAutoRenew(enabled && user.getCardToken() != null);
+        return UserResponse.from(user);
+    }
+
     private User loadUser(UUID userId) {
         return userRepository.findById(userId)
                 .orElseThrow(() -> new ResourceNotFoundException("User not found: " + userId));

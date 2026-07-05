@@ -384,7 +384,12 @@ one-line summary — keep the item in the file as a record.
   with the FREE-limit-numbers tuning above.
 
 ### Billing integration
-- **Status:** IN_PROGRESS
+- **Status:** RESOLVED — self-serve one-time PRO checkout (phase 1) + tokenized
+  auto-renew (phase 2, V40) both shipped via monobank Acquiring. Real recurring charge
+  works; grace + soft-downgrade job in place. Remaining follow-ups split into their own
+  items below (card-update flow, T-3 push, offer wording) and the `subscription_status`
+  machine stays deferred (the `plan` + `plan_expires_at` + `auto_renew` fields cover
+  current needs).
 - **Since:** step 4
 - **Context:** Plan change today is admin-only manual via `PATCH /api/admin/users/{id}/plan`. Real customers need self-serve checkout + recurring billing.
 - **Notes / options:** WayForPay or Fondy for UA market; Stripe if going international. Webhook-driven plan changes flowing through the same admin endpoint internally.
@@ -398,6 +403,43 @@ one-line summary — keep the item in the file as a record.
   [iteration-billing-monobank.md](iteration-billing-monobank.md). **Still open:** tokenized
   **auto-renew** (phase 2), the PWA wiring (checkout button + return page), and an explicit
   `subscription_status` machine (ACTIVE/GRACE/EXPIRED, SPEC G1) — deferred with auto-renew.
+
+### Auto-renew: change the saved card without a fresh checkout
+- **Status:** OPEN
+- **Since:** Auto-renew iteration (2026-07-05)
+- **Context:** V40 stores one `card_token` per user, captured on the opt-in checkout. To
+  swap a card today the master would disable auto-renew and go through checkout again with
+  the box ticked (the success webhook then captures the new token). There's no in-app
+  "update card" that keeps the subscription running.
+- **Notes / options:** If monobank exposes a token-replace / re-verify flow (a zero/low
+  amount verification invoice that only refreshes the wallet token), wire an "update card"
+  button in the profile that reuses the existing `walletId` + success-webhook capture path
+  without a real charge. The failed-payment email already links to `/profile`; that link
+  would point here. Confirm the monobank capability before building; otherwise the
+  checkout-again path is an acceptable fallback.
+
+### Auto-renew: push notification on T-3 in addition to email
+- **Status:** OPEN
+- **Since:** Auto-renew iteration (2026-07-05)
+- **Context:** The T-3 renewal reminder is email-only (`sendRenewReminderEmail`). We
+  already have a working Web Push channel (`PushService`, VAPID) used for sign/question
+  events. Some masters may not watch email closely.
+- **Notes / options:** Add a fail-soft `pushService.sendToUser` alongside the reminder
+  email (same `renewReminderSentAt` dedup so it fires once per cycle), click-through to
+  `/profile`. Cheap to add, reuses the existing push plumbing; deferred to keep the V40
+  surface small. Consider only after we see whether email alone is enough.
+
+### Auto-renew: recurring-charge clause in the public offer
+- **Status:** OPEN
+- **Since:** Auto-renew iteration (2026-07-05)
+- **Context:** There is no public offer / terms document yet (privacy policy exists). Once
+  real recurring charges run against saved cards, the offer must state the recurring nature
+  (amount, cadence, that the card is charged automatically, how to cancel) — a legal and
+  card-scheme requirement for merchant-initiated payments.
+- **Notes / options:** When the offer is drafted, add an auto-renewal clause: 299 ₴/month,
+  charged automatically until cancelled, one-tap cancel in the profile, T-3 reminder. Link
+  it from the checkout modal near the auto-renew checkbox. Tied to the broader
+  "public launch legal docs" work, not standalone.
 
 ### Partner rev-share money math
 - **Status:** OPEN

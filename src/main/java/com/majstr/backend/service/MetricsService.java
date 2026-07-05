@@ -103,7 +103,8 @@ public class MetricsService {
                         activeLastMonth.size(),
                         stillActive,
                         churned
-                )
+                ),
+                userRepository.countAutoRenewUsers()
         );
     }
 

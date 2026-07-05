@@ -4,7 +4,9 @@ import com.majstr.backend.billing.MonobankClient;
 import com.majstr.backend.billing.MonobankSignatureVerifier;
 import com.majstr.backend.config.BillingProperties;
 import com.majstr.backend.dto.CheckoutResponse;
+import com.majstr.backend.email.EmailService;
 import com.majstr.backend.entity.Payment;
+import com.majstr.backend.entity.PaymentKind;
 import com.majstr.backend.entity.PaymentProvider;
 import com.majstr.backend.entity.PaymentStatus;
 import com.majstr.backend.entity.Plan;
@@ -50,9 +52,10 @@ public class BillingService {
     private final PaymentRepository paymentRepository;
     private final UserRepository userRepository;
     private final ObjectMapper objectMapper;
+    private final EmailService emailService;
 
     @Transactional
-    public CheckoutResponse checkout(UUID userId) {
+    public CheckoutResponse checkout(UUID userId, boolean autoRenew) {
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new ResourceNotFoundException("User not found: " + userId));
 
@@ -64,7 +67,14 @@ public class BillingService {
                 .status(PaymentStatus.PENDING)
                 .plan(Plan.PRO)
                 .days(props.proDays())
+                .kind(PaymentKind.CHECKOUT)
                 .build());
+
+        // Opt-in tokenization: a fresh wallet id marks this checkout as "save the
+        // card"; the success webhook then fetches + stores the token (see onSuccess).
+        // Cleared when not opting in, so a plain checkout never triggers a fetch.
+        String walletId = autoRenew ? UUID.randomUUID().toString() : null;
+        user.setWalletId(walletId);
 
         if (!props.isConfigured()) {
             if (!props.allowDevSimulation()) {
@@ -72,22 +82,71 @@ public class BillingService {
                 throw new IllegalStateException(
                         "Billing is not configured (MONOBANK_TOKEN missing) and dev-simulation is disabled");
             }
-            // Dev: no merchant token — simulate a paid invoice so the flow works end-to-end.
+            // Dev: simulate a paid invoice (and, if opted in, a tokenized card) so
+            // the whole auto-renew flow is testable without a merchant account.
             payment.setStatus(PaymentStatus.SUCCESS);
             payment.setPaidAt(Instant.now());
+            if (autoRenew) {
+                user.setCardToken("DEV-TOKEN-" + walletId);
+                user.setCardMask("424242****4242");
+                user.setAutoRenew(true);
+            }
             extendPro(user);
-            log.warn("[DEV] MONOBANK_TOKEN not set — simulated PRO purchase for {} (payment {})",
-                    user.getEmail(), payment.getId());
+            log.warn("[DEV] MONOBANK_TOKEN not set — simulated PRO purchase for {} (autoRenew={})",
+                    user.getEmail(), autoRenew);
             return new CheckoutResponse(props.returnUrl());
         }
 
         MonobankClient.InvoiceCreated invoice = monobankClient.createInvoice(
                 toKopiykas(props.proPrice()), UAH, payment.getId().toString(),
-                "Підписка Majstr PRO — " + props.proDays() + " днів");
+                "Підписка Majstr PRO — " + props.proDays() + " днів", walletId);
         payment.setInvoiceId(invoice.invoiceId());
-        log.info("Created monobank invoice {} for user {} (payment {})",
-                invoice.invoiceId(), user.getEmail(), payment.getId());
+        log.info("Created monobank invoice {} for user {} (payment {}, autoRenew={})",
+                invoice.invoiceId(), user.getEmail(), payment.getId(), autoRenew);
         return new CheckoutResponse(invoice.pageUrl());
+    }
+
+    /**
+     * Merchant-initiated auto-renew charge of the user's saved token — called by the
+     * scheduled {@code AutoRenewService} for a due subscription. Creates an
+     * AUTO_RENEW payment; the result arrives via the same webhook (which extends PRO
+     * + emails a receipt). Caller guarantees the user has a token and is due.
+     */
+    @Transactional
+    public void chargeAutoRenew(UUID userId) {
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new ResourceNotFoundException("User not found: " + userId));
+
+        Payment payment = paymentRepository.save(Payment.builder()
+                .userId(userId)
+                .provider(PaymentProvider.MONOBANK)
+                .amount(props.proPrice())
+                .ccy(UAH)
+                .status(PaymentStatus.PENDING)
+                .plan(Plan.PRO)
+                .days(props.proDays())
+                .kind(PaymentKind.AUTO_RENEW)
+                .build());
+
+        if (!props.isConfigured()) {
+            if (!props.allowDevSimulation()) {
+                log.warn("Auto-renew charge skipped for {} — billing not configured", user.getEmail());
+                payment.setStatus(PaymentStatus.FAILURE);
+                return;
+            }
+            payment.setStatus(PaymentStatus.SUCCESS);
+            payment.setPaidAt(Instant.now());
+            extendPro(user);
+            emailService.sendRenewReceiptEmail(user, user.getPlanExpiresAt(), props.proPrice());
+            log.warn("[DEV] simulated auto-renew charge for {} (until {})", user.getEmail(), user.getPlanExpiresAt());
+            return;
+        }
+
+        String invoiceId = monobankClient.tokenPayment(
+                user.getCardToken(), toKopiykas(props.proPrice()), UAH,
+                payment.getId().toString(), "Автопродовження Majstr PRO — " + props.proDays() + " днів");
+        payment.setInvoiceId(invoiceId);
+        log.info("Auto-renew charge started for {} (invoice {})", user.getEmail(), invoiceId);
     }
 
     /**
@@ -154,11 +213,34 @@ public class BillingService {
         payment.setStatus(PaymentStatus.SUCCESS);
         payment.setPaidAt(Instant.now());
         extendPro(user);
-        log.info("PRO granted to {} via invoice {} (until {})",
-                user.getEmail(), payment.getInvoiceId(), user.getPlanExpiresAt());
+
+        // A tokenizing checkout just succeeded → fetch + store the saved card and
+        // turn auto-renew on. Only fires when this checkout opted in (walletId set,
+        // no token yet) — never for an auto-renew charge (token already present).
+        if (user.getWalletId() != null && user.getCardToken() == null) {
+            try {
+                MonobankClient.WalletCard card = monobankClient.firstWalletCard(user.getWalletId());
+                if (card != null) {
+                    user.setCardToken(card.cardToken());
+                    user.setCardMask(card.maskedPan());
+                    user.setAutoRenew(true);
+                    log.info("Auto-renew enabled for {} (card {})", user.getEmail(), card.maskedPan());
+                }
+            } catch (Exception e) {
+                // Non-fatal: the PRO grant stands; the master can retry enabling auto-renew.
+                log.error("Failed to fetch tokenized card for {}: {}", user.getEmail(), e.getMessage());
+            }
+        }
+
+        if (payment.getKind() == PaymentKind.AUTO_RENEW) {
+            emailService.sendRenewReceiptEmail(user, user.getPlanExpiresAt(), payment.getAmount());
+        }
+        log.info("PRO granted to {} via invoice {} (until {}, kind {})",
+                user.getEmail(), payment.getInvoiceId(), user.getPlanExpiresAt(), payment.getKind());
     }
 
-    /** Extends PRO by {@code proDays} — stacking onto a still-active subscription, or from now if lapsed/new. */
+    /** Extends PRO by {@code proDays} — stacking onto a still-active subscription, or
+     *  from now if lapsed/new. Clears the T-3 reminder flag so the next cycle gets one. */
     private void extendPro(User user) {
         Instant now = Instant.now();
         Instant base = (user.getPlanExpiresAt() != null && user.getPlanExpiresAt().isAfter(now))
@@ -166,6 +248,7 @@ public class BillingService {
                 : now;
         user.setPlan(Plan.PRO);
         user.setPlanExpiresAt(base.plus(props.proDays(), ChronoUnit.DAYS));
+        user.setRenewReminderSentAt(null); // new cycle → allow one reminder
         userRepository.save(user);
     }
 

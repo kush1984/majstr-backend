@@ -70,6 +70,12 @@ public class Payment {
     @Column(name = "days", nullable = false)
     private int days;
 
+    /** Manual checkout vs scheduled auto-renew token charge. */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "kind", nullable = false, length = 20)
+    @Builder.Default
+    private PaymentKind kind = PaymentKind.CHECKOUT;
+
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
 

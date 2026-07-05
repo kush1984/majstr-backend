@@ -42,6 +42,7 @@ class BillingServiceTest {
     @Mock MonobankSignatureVerifier signatureVerifier;
     @Mock PaymentRepository paymentRepository;
     @Mock UserRepository userRepository;
+    @Mock com.majstr.backend.email.EmailService emailService;
 
     private final ObjectMapper mapper = JsonMapper.builder().build();
 
@@ -52,12 +53,12 @@ class BillingServiceTest {
     private BillingProperties props(String token, boolean allowDevSim) {
         return new BillingProperties(token, "https://api.monobank.ua",
                 new BigDecimal("299"), 30, 3,
-                "http://ret", "http://hook", allowDevSim);
+                "http://ret", "http://hook", allowDevSim, 3);
     }
 
     private BillingService service(BillingProperties props) {
         return new BillingService(props, monobankClient, signatureVerifier,
-                paymentRepository, userRepository, mapper);
+                paymentRepository, userRepository, mapper, emailService);
     }
 
     private User freeUser(UUID id) {
@@ -72,7 +73,7 @@ class BillingServiceTest {
         ArgumentCaptor<Payment> saved = ArgumentCaptor.forClass(Payment.class);
         given(paymentRepository.save(saved.capture())).willAnswer(i -> i.getArgument(0));
 
-        CheckoutResponse resp = service(props("")).checkout(uid); // blank token → dev
+        CheckoutResponse resp = service(props("")).checkout(uid, false); // blank token → dev
 
         assertThat(resp.pageUrl()).isEqualTo("http://ret");
         assertThat(user.getPlan()).isEqualTo(Plan.PRO);
@@ -90,7 +91,7 @@ class BillingServiceTest {
         given(userRepository.findById(uid)).willReturn(Optional.of(user));
         given(paymentRepository.save(any(Payment.class))).willAnswer(i -> i.getArgument(0));
 
-        assertThatThrownBy(() -> service(props("", false)).checkout(uid))
+        assertThatThrownBy(() -> service(props("", false)).checkout(uid, false))
                 .isInstanceOf(IllegalStateException.class);
         assertThat(user.getPlan()).isEqualTo(Plan.FREE);
         verify(userRepository, never()).save(any());
@@ -106,10 +107,10 @@ class BillingServiceTest {
             if (p.getId() == null) p.setId(UUID.randomUUID()); // simulate @PrePersist
             return p;
         });
-        given(monobankClient.createInvoice(anyLong(), eq(980), anyString(), anyString()))
+        given(monobankClient.createInvoice(anyLong(), eq(980), anyString(), anyString(), any()))
                 .willReturn(new MonobankClient.InvoiceCreated("inv123", "http://pay"));
 
-        CheckoutResponse resp = service(props("tok")).checkout(uid);
+        CheckoutResponse resp = service(props("tok")).checkout(uid, false);
 
         assertThat(resp.pageUrl()).isEqualTo("http://pay");
         assertThat(user.getPlan()).isEqualTo(Plan.FREE); // granted only by the webhook

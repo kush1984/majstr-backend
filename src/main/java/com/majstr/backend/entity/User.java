@@ -33,7 +33,7 @@ import java.util.UUID;
 @NoArgsConstructor
 @AllArgsConstructor
 @EqualsAndHashCode(of = "id")
-@ToString(exclude = {"passwordHash", "trades"})
+@ToString(exclude = {"passwordHash", "trades", "cardToken"})
 public class User {
 
     @Id
@@ -124,6 +124,31 @@ public class User {
     @Column(name = "referral_source", nullable = false, length = 40)
     @Builder.Default
     private String referralSource = "DIRECT";
+
+    /** Auto-renewal of a billing-granted PRO. When true and a card token is stored,
+     *  the scheduled job charges the saved card before {@code planExpiresAt}. The
+     *  master can disable it in one tap (token kept for quick re-enable). */
+    @Column(name = "auto_renew", nullable = false)
+    @Builder.Default
+    private boolean autoRenew = false;
+
+    /** monobank card token for merchant-initiated auto-renew charges. SENSITIVE —
+     *  never logged (excluded from toString), never returned by any API. */
+    @Column(name = "card_token", length = 255)
+    private String cardToken;
+
+    /** Masked PAN for display only (e.g. {@code 424242****4242}). Safe to show. */
+    @Column(name = "card_mask", length = 40)
+    private String cardMask;
+
+    /** The monobank wallet id we generated to tokenize the card at checkout. */
+    @Column(name = "wallet_id", length = 64)
+    private String walletId;
+
+    /** When the T-3 auto-renew reminder was sent for the current period — cleared
+     *  on every extension so exactly one reminder goes out per cycle. */
+    @Column(name = "renew_reminder_sent_at")
+    private Instant renewReminderSentAt;
 
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;

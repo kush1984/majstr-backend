@@ -1,5 +1,6 @@
 package com.majstr.backend.controller;
 
+import com.majstr.backend.dto.CheckoutRequest;
 import com.majstr.backend.dto.CheckoutResponse;
 import com.majstr.backend.security.UserPrincipal;
 import com.majstr.backend.service.BillingService;
@@ -34,8 +35,10 @@ public class BillingController {
     @Operation(summary = "Start a PRO checkout — returns the monobank payment page URL to redirect to")
     @SecurityRequirement(name = "bearer-jwt")
     @PostMapping("/checkout")
-    public CheckoutResponse checkout(@AuthenticationPrincipal UserPrincipal principal) {
-        return billingService.checkout(principal.id());
+    public CheckoutResponse checkout(@RequestBody(required = false) CheckoutRequest req,
+                                     @AuthenticationPrincipal UserPrincipal principal) {
+        boolean autoRenew = req != null && req.autoRenew();
+        return billingService.checkout(principal.id(), autoRenew);
     }
 
     @Operation(summary = "monobank invoice-status webhook (public; signature-verified)")

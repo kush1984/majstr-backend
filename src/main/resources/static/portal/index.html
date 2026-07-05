@@ -97,11 +97,14 @@
             table-layout: fixed;
         }
         /* Stable column widths so headers and numbers line up regardless
-           of the longest line. First column (Назва) takes the remainder. */
-        th:nth-child(2), td:nth-child(2) { width: 12%; }
-        th:nth-child(3), td:nth-child(3) { width: 14%; }
-        th:nth-child(4), td:nth-child(4) { width: 18%; }
-        th:nth-child(5), td:nth-child(5) { width: 20%; }
+           of the longest line. First column (Назва) takes the remainder and
+           ellipsizes; the numeric columns get the room because prices/sums are
+           the widest cells. Currency ("грн") is shown once in the header, not
+           per row, so the monospace figures fit even on narrow phones. */
+        th:nth-child(2), td:nth-child(2) { width: 11%; }
+        th:nth-child(3), td:nth-child(3) { width: 15%; }
+        th:nth-child(4), td:nth-child(4) { width: 20%; }
+        th:nth-child(5), td:nth-child(5) { width: 22%; }
         td:first-child {
             overflow: hidden;
             text-overflow: ellipsis;
@@ -266,7 +269,16 @@
         @media (max-width: 480px) {
             .container { padding: 14px 12px 32px; }
             .card { padding: 16px; }
-            tbody td, thead th { padding: 7px 5px; font-size: 0.86rem; }
+            tbody td, thead th { padding: 7px 4px; font-size: 0.86rem; }
+            /* Give the price/sum columns the room and shrink the ellipsized
+               name so the monospace figures never collide on a phone. The
+               unit code gets a slightly smaller font so "компл" fits one line. */
+            th:nth-child(2), td:nth-child(2) { width: 12%; }
+            th:nth-child(3), td:nth-child(3) { width: 10%; }
+            th:nth-child(4), td:nth-child(4) { width: 26%; }
+            th:nth-child(5), td:nth-child(5) { width: 27%; }
+            th.num, td.num { font-size: 0.76rem; }
+            td.center, th.center { font-size: 0.72rem; }
             .actions button, .actions a.btn { width: 100%; text-align: center; }
         }
     </style>
@@ -331,6 +343,12 @@
         return moneyFormat.format(Number(value)) + ' грн';
     }
 
+    // Currency is shown once in the column header, so per-row cells carry the
+    // bare figure — keeps the monospace numbers from overflowing narrow phones.
+    function amount(value) {
+        return moneyFormat.format(Number(value));
+    }
+
     function unit(code) {
         return UNIT_LABEL[code] || code;
     }
@@ -350,8 +368,8 @@
                 <td>${escapeHtml(i.name)}</td>
                 <td class="center">${escapeHtml(unit(i.unit))}</td>
                 <td class="num">${escapeHtml(i.quantity)}</td>
-                <td class="num">${money(i.unitPrice)}</td>
-                <td class="num">${money(i.lineTotal)}</td>
+                <td class="num">${amount(i.unitPrice)}</td>
+                <td class="num">${amount(i.lineTotal)}</td>
             </tr>
         `).join('');
         return `
@@ -362,8 +380,8 @@
                         <th>Назва</th>
                         <th class="center">Од.</th>
                         <th class="num">К-сть</th>
-                        <th class="num">Ціна</th>
-                        <th class="num">Сума</th>
+                        <th class="num">Ціна, ₴</th>
+                        <th class="num">Сума, ₴</th>
                     </tr></thead>
                     <tbody>${rows}</tbody>
                 </table>

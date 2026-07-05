@@ -30,9 +30,15 @@ public class MonobankClient {
         this.props = props;
     }
 
-    /** Creates a hosted-page invoice; returns the gateway invoice id + the page URL to redirect the payer to. */
+    /**
+     * Creates a hosted-page invoice; returns the gateway invoice id + the page URL
+     * to redirect the payer to. When {@code saveToWalletId} is non-null the card is
+     * tokenized on payment (saveCardData) into that wallet, so it can later be
+     * charged merchant-initiated for auto-renewal.
+     */
     @SuppressWarnings("unchecked")
-    public InvoiceCreated createInvoice(long amountKopiykas, int ccy, String reference, String destination) {
+    public InvoiceCreated createInvoice(long amountKopiykas, int ccy, String reference,
+                                        String destination, String saveToWalletId) {
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("amount", amountKopiykas);
         body.put("ccy", ccy);
@@ -41,6 +47,9 @@ public class MonobankClient {
         body.put("webHookUrl", props.webhookUrl());
         body.put("validity", 3600); // seconds the payment page stays valid
         body.put("paymentType", "debit");
+        if (saveToWalletId != null && !saveToWalletId.isBlank()) {
+            body.put("saveCardData", Map.of("saveCard", true, "walletId", saveToWalletId));
+        }
 
         Map<String, Object> resp = restClient.post()
                 .uri(props.monobankApiBase() + "/api/merchant/invoice/create")
@@ -53,6 +62,64 @@ public class MonobankClient {
             throw new IllegalStateException("monobank invoice/create returned no invoiceId/pageUrl");
         }
         return new InvoiceCreated((String) resp.get("invoiceId"), (String) resp.get("pageUrl"));
+    }
+
+    /**
+     * The first tokenized card in a wallet (cardToken + masked PAN), or null if none
+     * yet. Called after a tokenizing checkout succeeds to persist the token.
+     * {@code GET /api/merchant/wallet?walletId=...}.
+     */
+    @SuppressWarnings("unchecked")
+    public WalletCard firstWalletCard(String walletId) {
+        Map<String, Object> resp = restClient.get()
+                .uri(props.monobankApiBase() + "/api/merchant/wallet?walletId=" + walletId)
+                .header("X-Token", props.monobankToken())
+                .retrieve()
+                .body(Map.class);
+        if (resp == null) {
+            return null;
+        }
+        Object wallet = resp.get("wallet");
+        if (!(wallet instanceof java.util.List<?> cards) || cards.isEmpty()) {
+            return null;
+        }
+        Map<String, Object> card = (Map<String, Object>) cards.get(0);
+        String token = (String) card.get("cardToken");
+        if (token == null) {
+            return null;
+        }
+        return new WalletCard(token, (String) card.get("maskedPan"));
+    }
+
+    /**
+     * Merchant-initiated charge of a saved card token (auto-renewal). Returns the
+     * gateway invoice id; the actual result arrives via the SAME invoice-status
+     * webhook (so idempotency reuses {@code payments.invoice_id}).
+     * {@code POST /api/merchant/wallet/payment}, {@code initiationKind=merchant}.
+     */
+    @SuppressWarnings("unchecked")
+    public String tokenPayment(String cardToken, long amountKopiykas, int ccy,
+                               String reference, String destination) {
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("cardToken", cardToken);
+        body.put("amount", amountKopiykas);
+        body.put("ccy", ccy);
+        body.put("initiationKind", "merchant"); // recurring, merchant-initiated
+        body.put("webHookUrl", props.webhookUrl());
+        body.put("paymentType", "debit");
+        body.put("merchantPaymInfo", Map.of("reference", reference, "destination", destination));
+
+        Map<String, Object> resp = restClient.post()
+                .uri(props.monobankApiBase() + "/api/merchant/wallet/payment")
+                .header("X-Token", props.monobankToken())
+                .contentType(MediaType.APPLICATION_JSON)
+                .body(body)
+                .retrieve()
+                .body(Map.class);
+        if (resp == null || resp.get("invoiceId") == null) {
+            throw new IllegalStateException("monobank wallet/payment returned no invoiceId");
+        }
+        return (String) resp.get("invoiceId");
     }
 
     /**
@@ -80,4 +147,7 @@ public class MonobankClient {
     }
 
     public record InvoiceCreated(String invoiceId, String pageUrl) {}
+
+    /** A tokenized card: the token (sensitive) + masked PAN (display-safe). */
+    public record WalletCard(String cardToken, String maskedPan) {}
 }
