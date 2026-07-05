@@ -151,6 +151,20 @@ check "payments.kind column (V40)" "$kind_col" "1"
 non_checkout="$(scalar "SELECT COUNT(*) FROM payments WHERE kind <> 'CHECKOUT';")"
 check "existing payments backfilled to CHECKOUT (V40)" "$non_checkout" "0"
 
+# V41: master referrals (code backfilled + unique) + referral_rewards + payments.period.
+ref_cols="$(scalar "SELECT COUNT(*) FROM information_schema.columns WHERE table_name='users' AND column_name IN ('referral_code','referred_by_user_id','renew_period');")"
+check "users referral columns (V41)" "$ref_cols" "3"
+null_codes="$(scalar "SELECT COUNT(*) FROM users WHERE referral_code IS NULL;")"
+check "all users have a referral_code (V41)" "$null_codes" "0"
+dup_codes="$(scalar "SELECT COUNT(*) FROM (SELECT referral_code FROM users GROUP BY referral_code HAVING COUNT(*) > 1) d;")"
+check "referral_code is unique across users (V41)" "$dup_codes" "0"
+rewards_tbl="$(scalar "SELECT COUNT(*) FROM information_schema.tables WHERE table_name='referral_rewards';")"
+check "referral_rewards table exists (V41)" "$rewards_tbl" "1"
+period_col="$(scalar "SELECT COUNT(*) FROM information_schema.columns WHERE table_name='payments' AND column_name='period';")"
+check "payments.period column (V41)" "$period_col" "1"
+non_month="$(scalar "SELECT COUNT(*) FROM payments WHERE period <> 'MONTH';")"
+check "existing payments backfilled to MONTH (V41)" "$non_month" "0"
+
 echo "=== summary (informational) ==="
 psql -P pager=off -c "SELECT trade, COUNT(*), COUNT(*) FILTER (WHERE suggested_price > 0) AS priced
                       FROM catalog_templates GROUP BY trade ORDER BY 2 DESC;"

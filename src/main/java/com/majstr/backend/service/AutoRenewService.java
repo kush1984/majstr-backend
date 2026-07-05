@@ -2,9 +2,12 @@ package com.majstr.backend.service;
 
 import com.majstr.backend.config.BillingProperties;
 import com.majstr.backend.email.EmailService;
+import com.majstr.backend.entity.BillingPeriod;
 import com.majstr.backend.entity.Payment;
 import com.majstr.backend.entity.PaymentStatus;
 import com.majstr.backend.entity.User;
+
+import java.math.BigDecimal;
 import com.majstr.backend.repository.PaymentRepository;
 import com.majstr.backend.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
@@ -56,7 +59,7 @@ public class AutoRenewService {
         Instant cutoff = now.plus(props.renewReminderDays(), ChronoUnit.DAYS);
         List<User> due = userRepository.findAutoRenewReminderDue(now, cutoff);
         for (User user : due) {
-            emailService.sendRenewReminderEmail(user, user.getPlanExpiresAt(), props.proPrice());
+            emailService.sendRenewReminderEmail(user, user.getPlanExpiresAt(), renewPrice(user));
             user.setRenewReminderSentAt(now);
             userRepository.save(user);
         }
@@ -85,7 +88,7 @@ public class AutoRenewService {
             if (failures == 1) {
                 // Exactly after the first failure resolved → ask them to update the card (once).
                 emailService.sendRenewFailedEmail(user,
-                        user.getPlanExpiresAt().plus(props.graceDays(), ChronoUnit.DAYS), props.proPrice());
+                        user.getPlanExpiresAt().plus(props.graceDays(), ChronoUnit.DAYS), renewPrice(user));
             }
             try {
                 billingService.chargeAutoRenew(user.getId());
@@ -97,5 +100,12 @@ public class AutoRenewService {
 
     private static boolean isFailed(PaymentStatus s) {
         return s == PaymentStatus.FAILURE || s == PaymentStatus.EXPIRED || s == PaymentStatus.REVERSED;
+    }
+
+    /** The amount auto-renew will charge this user — their stored period's price
+     *  (MONTH for legacy subscriptions tokenized before periods existed). */
+    private BigDecimal renewPrice(User user) {
+        BillingPeriod period = user.getRenewPeriod() != null ? user.getRenewPeriod() : BillingPeriod.MONTH;
+        return props.priceFor(period);
     }
 }

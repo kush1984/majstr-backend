@@ -141,6 +141,10 @@ app:
     # PRO price (UAH/month) and the granted period.
     pro-price: ${BILLING_PRO_PRICE:299}
     pro-days: ${BILLING_PRO_DAYS:30}
+    # Half-year tariff (6 months, discounted): 1494 = 249/mo (vs 299 monthly).
+    pro-half-year-price: ${BILLING_PRO_HALF_YEAR_PRICE:1494}
+    # PRO days awarded to a referrer when their invited master first pays.
+    referral-reward-days: ${BILLING_REFERRAL_REWARD_DAYS:30}
     # Days after expiry before the daily job downgrades PRO → FREE (late-renew window).
     grace-days: ${BILLING_GRACE_DAYS:3}
     # Where monobank redirects the payer back (PWA) and where it POSTs the result

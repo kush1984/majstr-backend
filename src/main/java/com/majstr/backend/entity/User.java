@@ -125,6 +125,27 @@ public class User {
     @Builder.Default
     private String referralSource = "DIRECT";
 
+    /** This master's own personal referral code — the shareable link is
+     *  {@code majstr.pro/?ref=m-<referralCode>}. Generated uniquely at registration
+     *  (backfilled for existing users in V41). UNIQUE. */
+    @Column(name = "referral_code", nullable = false, unique = true, length = 16)
+    private String referralCode;
+
+    /** The master who invited this one (first-touch via their {@code m-<code>} link
+     *  or promo code). Set once at registration, never auto-changed. NULL = not
+     *  referred by another master. Drives the referral reward on this user's first
+     *  payment. */
+    @Column(name = "referred_by_user_id")
+    private UUID referredByUserId;
+
+    /** Period auto-renew recharges with — the one the master bought while opting in
+     *  ({@code MONTH} → 299/30d, {@code HALF_YEAR} → 1494/180d). NULL when auto-renew
+     *  is off. Set on the tokenizing checkout so a 6-month subscription renews for
+     *  6 months, not one. */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "renew_period", length = 20)
+    private BillingPeriod renewPeriod;
+
     /** Auto-renewal of a billing-granted PRO. When true and a card token is stored,
      *  the scheduled job charges the saved card before {@code planExpiresAt}. The
      *  master can disable it in one tap (token kept for quick re-enable). */

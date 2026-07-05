@@ -75,6 +75,24 @@ part of finishing the step, not an afterthought.
   and flip any open-questions items the work resolved. A step isn't done until
   its doc reflects reality.
 
+## Bump the app version every iteration (do not skip)
+
+The user-visible app version lives in `C:\Work\majstr-pwa\package.json`
+(`"version"`), surfaced in the Profile "Версія застосунку" row via
+`__APP_VERSION__`. Bump it as part of finishing **every** iteration, before the
+PWA gate:
+
+- **Big feature** (a new headline capability — a new prompt/step, a new
+  entity/migration-backed feature): bump the **minor** — `0.2.0 → 0.3.0`.
+- **Small change** (a fix, polish, or follow-up on shipped work): bump the
+  **patch** — `0.2.0 → 0.2.1`.
+- We're in `0.x`; do **not** bump to `1.0.0` without the user's explicit say-so.
+
+Do this even for backend-only iterations — the PWA version is the product's
+single visible version number, so it tracks the product, not just frontend work.
+The backend `build.gradle.kts` version is a separate SNAPSHOT and is left alone
+unless the user asks.
+
 ## Shared project docs in C:\Work (read every iteration)
 
 Two cross-repo docs live one directory up in `C:\Work` — shared by both

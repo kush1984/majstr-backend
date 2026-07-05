@@ -35,6 +35,10 @@ public class AuthService {
         if (userRepository.existsByEmailIgnoreCase(email)) {
             throw new EmailAlreadyExistsException(email);
         }
+        // First-touch attribution (ref link wins, then promo code, else DIRECT).
+        // A master's m-<code> also yields the inviting user's id. Stamped once here;
+        // only an admin can change it later.
+        ReferralService.Attribution attribution = referralService.resolve(req.ref(), req.promoCode());
         User user = User.builder()
                 .email(email)
                 .passwordHash(passwordEncoder.encode(req.password()))
@@ -44,9 +48,10 @@ public class AuthService {
                 .companyName(req.companyName().trim())
                 // Consent is required (@AssertTrue on the request) — stamp it.
                 .consentedToPrivacyAt(Instant.now())
-                // First-touch attribution (ref link wins, then promo code, else
-                // DIRECT). Stamped once here; only an admin can change it later.
-                .referralSource(referralService.resolveSource(req.ref(), req.promoCode()))
+                .referralSource(attribution.source())
+                .referredByUserId(attribution.referredByUserId())
+                // This master's own shareable code (majstr.pro/?ref=m-<code>).
+                .referralCode(referralService.generateUniqueCode())
                 .build();
         user = userRepository.save(user);
         // Copy starter catalog templates for every chosen trade (merged,

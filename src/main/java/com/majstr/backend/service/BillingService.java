@@ -5,14 +5,17 @@ import com.majstr.backend.billing.MonobankSignatureVerifier;
 import com.majstr.backend.config.BillingProperties;
 import com.majstr.backend.dto.CheckoutResponse;
 import com.majstr.backend.email.EmailService;
+import com.majstr.backend.entity.BillingPeriod;
 import com.majstr.backend.entity.Payment;
 import com.majstr.backend.entity.PaymentKind;
 import com.majstr.backend.entity.PaymentProvider;
 import com.majstr.backend.entity.PaymentStatus;
 import com.majstr.backend.entity.Plan;
+import com.majstr.backend.entity.ReferralReward;
 import com.majstr.backend.entity.User;
 import com.majstr.backend.exception.ResourceNotFoundException;
 import com.majstr.backend.repository.PaymentRepository;
+import com.majstr.backend.repository.ReferralRewardRepository;
 import com.majstr.backend.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -51,30 +54,40 @@ public class BillingService {
     private final MonobankSignatureVerifier signatureVerifier;
     private final PaymentRepository paymentRepository;
     private final UserRepository userRepository;
+    private final ReferralRewardRepository referralRewardRepository;
     private final ObjectMapper objectMapper;
     private final EmailService emailService;
 
     @Transactional
-    public CheckoutResponse checkout(UUID userId, boolean autoRenew) {
+    public CheckoutResponse checkout(UUID userId, boolean autoRenew, BillingPeriod period) {
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new ResourceNotFoundException("User not found: " + userId));
 
+        // Amount + day count are derived server-side from the period — the client
+        // sends only the period, never a price it could tamper with.
+        BigDecimal price = props.priceFor(period);
+        int days = props.daysFor(period);
         Payment payment = paymentRepository.save(Payment.builder()
                 .userId(userId)
                 .provider(PaymentProvider.MONOBANK)
-                .amount(props.proPrice())
+                .amount(price)
                 .ccy(UAH)
                 .status(PaymentStatus.PENDING)
                 .plan(Plan.PRO)
-                .days(props.proDays())
+                .days(days)
+                .period(period)
                 .kind(PaymentKind.CHECKOUT)
                 .build());
 
         // Opt-in tokenization: a fresh wallet id marks this checkout as "save the
         // card"; the success webhook then fetches + stores the token (see onSuccess).
         // Cleared when not opting in, so a plain checkout never triggers a fetch.
+        // renewPeriod is stored so auto-renew later recharges the SAME period.
         String walletId = autoRenew ? UUID.randomUUID().toString() : null;
         user.setWalletId(walletId);
+        if (autoRenew) {
+            user.setRenewPeriod(period);
+        }
 
         if (!props.isConfigured()) {
             if (!props.allowDevSimulation()) {
@@ -91,18 +104,19 @@ public class BillingService {
                 user.setCardMask("424242****4242");
                 user.setAutoRenew(true);
             }
-            extendPro(user);
-            log.warn("[DEV] MONOBANK_TOKEN not set — simulated PRO purchase for {} (autoRenew={})",
-                    user.getEmail(), autoRenew);
+            extendPro(user, days);
+            grantReferralReward(user, payment);
+            log.warn("[DEV] MONOBANK_TOKEN not set — simulated PRO purchase for {} (period={}, autoRenew={})",
+                    user.getEmail(), period, autoRenew);
             return new CheckoutResponse(props.returnUrl());
         }
 
         MonobankClient.InvoiceCreated invoice = monobankClient.createInvoice(
-                toKopiykas(props.proPrice()), UAH, payment.getId().toString(),
-                "Підписка Majstr PRO — " + props.proDays() + " днів", walletId);
+                toKopiykas(price), UAH, payment.getId().toString(),
+                "Підписка Majstr PRO — " + days + " днів", walletId);
         payment.setInvoiceId(invoice.invoiceId());
-        log.info("Created monobank invoice {} for user {} (payment {}, autoRenew={})",
-                invoice.invoiceId(), user.getEmail(), payment.getId(), autoRenew);
+        log.info("Created monobank invoice {} for user {} (payment {}, period {}, autoRenew={})",
+                invoice.invoiceId(), user.getEmail(), payment.getId(), period, autoRenew);
         return new CheckoutResponse(invoice.pageUrl());
     }
 
@@ -117,14 +131,20 @@ public class BillingService {
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new ResourceNotFoundException("User not found: " + userId));
 
+        // Recharge the SAME period the master bought (default MONTH for legacy
+        // subscriptions tokenized before periods existed).
+        BillingPeriod period = user.getRenewPeriod() != null ? user.getRenewPeriod() : BillingPeriod.MONTH;
+        BigDecimal price = props.priceFor(period);
+        int days = props.daysFor(period);
         Payment payment = paymentRepository.save(Payment.builder()
                 .userId(userId)
                 .provider(PaymentProvider.MONOBANK)
-                .amount(props.proPrice())
+                .amount(price)
                 .ccy(UAH)
                 .status(PaymentStatus.PENDING)
                 .plan(Plan.PRO)
-                .days(props.proDays())
+                .days(days)
+                .period(period)
                 .kind(PaymentKind.AUTO_RENEW)
                 .build());
 
@@ -136,17 +156,18 @@ public class BillingService {
             }
             payment.setStatus(PaymentStatus.SUCCESS);
             payment.setPaidAt(Instant.now());
-            extendPro(user);
-            emailService.sendRenewReceiptEmail(user, user.getPlanExpiresAt(), props.proPrice());
-            log.warn("[DEV] simulated auto-renew charge for {} (until {})", user.getEmail(), user.getPlanExpiresAt());
+            extendPro(user, days);
+            emailService.sendRenewReceiptEmail(user, user.getPlanExpiresAt(), price);
+            log.warn("[DEV] simulated auto-renew charge for {} (period {}, until {})",
+                    user.getEmail(), period, user.getPlanExpiresAt());
             return;
         }
 
         String invoiceId = monobankClient.tokenPayment(
-                user.getCardToken(), toKopiykas(props.proPrice()), UAH,
-                payment.getId().toString(), "Автопродовження Majstr PRO — " + props.proDays() + " днів");
+                user.getCardToken(), toKopiykas(price), UAH,
+                payment.getId().toString(), "Автопродовження Majstr PRO — " + days + " днів");
         payment.setInvoiceId(invoiceId);
-        log.info("Auto-renew charge started for {} (invoice {})", user.getEmail(), invoiceId);
+        log.info("Auto-renew charge started for {} (invoice {}, period {})", user.getEmail(), invoiceId, period);
     }
 
     /**
@@ -212,7 +233,8 @@ public class BillingService {
         }
         payment.setStatus(PaymentStatus.SUCCESS);
         payment.setPaidAt(Instant.now());
-        extendPro(user);
+        extendPro(user, payment.getDays());
+        grantReferralReward(user, payment);
 
         // A tokenizing checkout just succeeded → fetch + store the saved card and
         // turn auto-renew on. Only fires when this checkout opted in (walletId set,
@@ -239,17 +261,50 @@ public class BillingService {
                 user.getEmail(), payment.getInvoiceId(), user.getPlanExpiresAt(), payment.getKind());
     }
 
-    /** Extends PRO by {@code proDays} — stacking onto a still-active subscription, or
+    /** Extends PRO by {@code days} — stacking onto a still-active subscription, or
      *  from now if lapsed/new. Clears the T-3 reminder flag so the next cycle gets one. */
-    private void extendPro(User user) {
+    private void extendPro(User user, int days) {
         Instant now = Instant.now();
         Instant base = (user.getPlanExpiresAt() != null && user.getPlanExpiresAt().isAfter(now))
                 ? user.getPlanExpiresAt()
                 : now;
         user.setPlan(Plan.PRO);
-        user.setPlanExpiresAt(base.plus(props.proDays(), ChronoUnit.DAYS));
+        user.setPlanExpiresAt(base.plus(days, ChronoUnit.DAYS));
         user.setRenewReminderSentAt(null); // new cycle → allow one reminder
         userRepository.save(user);
+    }
+
+    /**
+     * Master→master reward: when {@code payer} makes their <b>first</b> successful
+     * payment and was invited by another master, the referrer earns
+     * {@code referralRewardDays} of PRO. One-time per invited master, guaranteed by
+     * {@code referral_rewards.referred_user_id} UNIQUE (a retried webhook or a second
+     * payment can't double-grant — the existence check short-circuits, the constraint
+     * is the hard backstop). A referrer already on an admin-granted <b>dateless</b> PRO
+     * has nothing to extend, so the reward is recorded with 0 days (audit only).
+     */
+    private void grantReferralReward(User payer, Payment payment) {
+        UUID referrerId = payer.getReferredByUserId();
+        if (referrerId == null || referralRewardRepository.existsByReferredUserId(payer.getId())) {
+            return;
+        }
+        User referrer = userRepository.findById(referrerId).orElse(null);
+        if (referrer == null) {
+            return;
+        }
+        boolean datelessPro = referrer.getPlan() == Plan.PRO && referrer.getPlanExpiresAt() == null;
+        int grantedDays = datelessPro ? 0 : props.referralRewardDays();
+        if (!datelessPro) {
+            extendPro(referrer, grantedDays);
+        }
+        referralRewardRepository.save(ReferralReward.builder()
+                .referrerId(referrerId)
+                .referredUserId(payer.getId())
+                .paymentId(payment.getId())
+                .grantedDays(grantedDays)
+                .build());
+        log.info("Referral reward: {} PRO day(s) to referrer {} for {}'s first payment (payment {})",
+                grantedDays, referrerId, payer.getEmail(), payment.getId());
     }
 
     private void mark(Payment payment, PaymentStatus status) {

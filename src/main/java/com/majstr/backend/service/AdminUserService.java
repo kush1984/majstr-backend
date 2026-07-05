@@ -15,6 +15,7 @@ import com.majstr.backend.entity.PaymentKind;
 import com.majstr.backend.repository.OwnerCount;
 import com.majstr.backend.repository.PaymentRepository;
 import com.majstr.backend.repository.ProjectRepository;
+import com.majstr.backend.repository.ReferralRewardRepository;
 import com.majstr.backend.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -47,6 +48,7 @@ public class AdminUserService {
     private final EstimateShareLinkRepository shareLinkRepository;
     private final CatalogItemRepository catalogRepository;
     private final PaymentRepository paymentRepository;
+    private final ReferralRewardRepository referralRewardRepository;
     private final UpgradeEventService upgradeEventService;
 
     @Transactional(readOnly = true)
@@ -99,6 +101,11 @@ public class AdminUserService {
                 .findFirstByUserIdAndKindOrderByCreatedAtDesc(userId, PaymentKind.AUTO_RENEW)
                 .orElse(null);
 
+        String referredByEmail = user.getReferredByUserId() == null ? null
+                : userRepository.findById(user.getReferredByUserId()).map(User::getEmail).orElse(null);
+        long invitedCount = userRepository.countByReferredByUserId(userId);
+        long invitedPaidCount = referralRewardRepository.countByReferrerId(userId);
+
         return new AdminUserDetail(
                 user.getId(),
                 user.getEmail(),
@@ -123,7 +130,10 @@ public class AdminUserService {
                 user.isAutoRenew(),
                 user.getCardMask(),
                 lastAuto == null ? null : lastAuto.getStatus().name(),
-                lastAuto == null ? null : lastAuto.getCreatedAt()
+                lastAuto == null ? null : lastAuto.getCreatedAt(),
+                referredByEmail,
+                invitedCount,
+                invitedPaidCount
         );
     }
 

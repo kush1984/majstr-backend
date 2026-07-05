@@ -4,11 +4,14 @@ import com.majstr.backend.billing.MonobankClient;
 import com.majstr.backend.billing.MonobankSignatureVerifier;
 import com.majstr.backend.config.BillingProperties;
 import com.majstr.backend.dto.CheckoutResponse;
+import com.majstr.backend.entity.BillingPeriod;
 import com.majstr.backend.entity.Payment;
 import com.majstr.backend.entity.PaymentStatus;
 import com.majstr.backend.entity.Plan;
+import com.majstr.backend.entity.ReferralReward;
 import com.majstr.backend.entity.User;
 import com.majstr.backend.repository.PaymentRepository;
+import com.majstr.backend.repository.ReferralRewardRepository;
 import com.majstr.backend.repository.UserRepository;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -42,6 +45,7 @@ class BillingServiceTest {
     @Mock MonobankSignatureVerifier signatureVerifier;
     @Mock PaymentRepository paymentRepository;
     @Mock UserRepository userRepository;
+    @Mock ReferralRewardRepository referralRewardRepository;
     @Mock com.majstr.backend.email.EmailService emailService;
 
     private final ObjectMapper mapper = JsonMapper.builder().build();
@@ -52,13 +56,13 @@ class BillingServiceTest {
 
     private BillingProperties props(String token, boolean allowDevSim) {
         return new BillingProperties(token, "https://api.monobank.ua",
-                new BigDecimal("299"), 30, 3,
-                "http://ret", "http://hook", allowDevSim, 3);
+                new BigDecimal("299"), 30, new BigDecimal("1494"), 3,
+                "http://ret", "http://hook", allowDevSim, 3, 30);
     }
 
     private BillingService service(BillingProperties props) {
         return new BillingService(props, monobankClient, signatureVerifier,
-                paymentRepository, userRepository, mapper, emailService);
+                paymentRepository, userRepository, referralRewardRepository, mapper, emailService);
     }
 
     private User freeUser(UUID id) {
@@ -73,7 +77,7 @@ class BillingServiceTest {
         ArgumentCaptor<Payment> saved = ArgumentCaptor.forClass(Payment.class);
         given(paymentRepository.save(saved.capture())).willAnswer(i -> i.getArgument(0));
 
-        CheckoutResponse resp = service(props("")).checkout(uid, false); // blank token → dev
+        CheckoutResponse resp = service(props("")).checkout(uid, false, BillingPeriod.MONTH); // blank token → dev
 
         assertThat(resp.pageUrl()).isEqualTo("http://ret");
         assertThat(user.getPlan()).isEqualTo(Plan.PRO);
@@ -91,7 +95,7 @@ class BillingServiceTest {
         given(userRepository.findById(uid)).willReturn(Optional.of(user));
         given(paymentRepository.save(any(Payment.class))).willAnswer(i -> i.getArgument(0));
 
-        assertThatThrownBy(() -> service(props("", false)).checkout(uid, false))
+        assertThatThrownBy(() -> service(props("", false)).checkout(uid, false, BillingPeriod.MONTH))
                 .isInstanceOf(IllegalStateException.class);
         assertThat(user.getPlan()).isEqualTo(Plan.FREE);
         verify(userRepository, never()).save(any());
@@ -110,7 +114,7 @@ class BillingServiceTest {
         given(monobankClient.createInvoice(anyLong(), eq(980), anyString(), anyString(), any()))
                 .willReturn(new MonobankClient.InvoiceCreated("inv123", "http://pay"));
 
-        CheckoutResponse resp = service(props("tok")).checkout(uid, false);
+        CheckoutResponse resp = service(props("tok")).checkout(uid, false, BillingPeriod.MONTH);
 
         assertThat(resp.pageUrl()).isEqualTo("http://pay");
         assertThat(user.getPlan()).isEqualTo(Plan.FREE); // granted only by the webhook
@@ -196,6 +200,76 @@ class BillingServiceTest {
 
         verify(userRepository, never()).findById(any());
         verify(userRepository, never()).save(any());
+    }
+
+    @Test
+    void checkout_halfYear_grantsSixMonthsAndRemembersPeriodForAutoRenew() {
+        UUID uid = UUID.randomUUID();
+        User user = freeUser(uid);
+        given(userRepository.findById(uid)).willReturn(Optional.of(user));
+        ArgumentCaptor<Payment> saved = ArgumentCaptor.forClass(Payment.class);
+        given(paymentRepository.save(saved.capture())).willAnswer(i -> i.getArgument(0));
+
+        service(props("")).checkout(uid, true, BillingPeriod.HALF_YEAR); // dev + opt-in auto-renew
+
+        // Amount + days come from the server-side period, never the client.
+        assertThat(saved.getValue().getAmount()).isEqualByComparingTo("1494");
+        assertThat(saved.getValue().getDays()).isEqualTo(180);
+        assertThat(saved.getValue().getPeriod()).isEqualTo(BillingPeriod.HALF_YEAR);
+        assertThat(user.getPlanExpiresAt()).isCloseTo(
+                Instant.now().plus(180, ChronoUnit.DAYS), within60s());
+        // Auto-renew will recharge the SAME period.
+        assertThat(user.getRenewPeriod()).isEqualTo(BillingPeriod.HALF_YEAR);
+        assertThat(user.isAutoRenew()).isTrue();
+    }
+
+    @Test
+    void webhook_firstPayment_grantsReferralRewardToReferrer() {
+        UUID referrerId = UUID.randomUUID();
+        UUID payerId = UUID.randomUUID();
+        User referrer = freeUser(referrerId);
+        User payer = freeUser(payerId);
+        payer.setReferredByUserId(referrerId);
+        Payment payment = pending(payerId, "inv1");
+        given(signatureVerifier.verify(any(), any(), any())).willReturn(true);
+        given(monobankClient.publicKey()).willReturn("pk");
+        given(paymentRepository.findByInvoiceId("inv1")).willReturn(Optional.of(payment));
+        given(userRepository.findById(payerId)).willReturn(Optional.of(payer));
+        given(referralRewardRepository.existsByReferredUserId(payerId)).willReturn(false);
+        given(userRepository.findById(referrerId)).willReturn(Optional.of(referrer));
+
+        service(props("tok")).handleWebhook(body("inv1", "success", 29900), "sig");
+
+        // Payer got PRO; referrer earned a 30-day reward + an audit row.
+        assertThat(payer.getPlan()).isEqualTo(Plan.PRO);
+        assertThat(referrer.getPlan()).isEqualTo(Plan.PRO);
+        assertThat(referrer.getPlanExpiresAt()).isCloseTo(
+                Instant.now().plus(30, ChronoUnit.DAYS), within60s());
+        ArgumentCaptor<ReferralReward> reward = ArgumentCaptor.forClass(ReferralReward.class);
+        verify(referralRewardRepository).save(reward.capture());
+        assertThat(reward.getValue().getReferrerId()).isEqualTo(referrerId);
+        assertThat(reward.getValue().getReferredUserId()).isEqualTo(payerId);
+        assertThat(reward.getValue().getGrantedDays()).isEqualTo(30);
+    }
+
+    @Test
+    void webhook_referralRewardNotGrantedTwice() {
+        UUID referrerId = UUID.randomUUID();
+        UUID payerId = UUID.randomUUID();
+        User payer = freeUser(payerId);
+        payer.setReferredByUserId(referrerId);
+        Payment payment = pending(payerId, "inv2");
+        given(signatureVerifier.verify(any(), any(), any())).willReturn(true);
+        given(monobankClient.publicKey()).willReturn("pk");
+        given(paymentRepository.findByInvoiceId("inv2")).willReturn(Optional.of(payment));
+        given(userRepository.findById(payerId)).willReturn(Optional.of(payer));
+        given(referralRewardRepository.existsByReferredUserId(payerId)).willReturn(true); // already rewarded
+
+        service(props("tok")).handleWebhook(body("inv2", "success", 29900), "sig");
+
+        // Second payment of an already-rewarded invitee grants nothing (one-time).
+        verify(referralRewardRepository, never()).save(any());
+        verify(userRepository, never()).findById(referrerId);
     }
 
     private static Payment pending(UUID uid, String invoiceId) {

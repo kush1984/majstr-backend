@@ -43,7 +43,12 @@ public record AdminUserDetail(
         boolean autoRenew,
         String cardMask,
         String lastAutoRenewStatus,
-        Instant lastAutoRenewAt
+        Instant lastAutoRenewAt,
+        // Master→master referrals: who invited this master (email, null if none),
+        // and how many they invited / of those paid.
+        String referredByEmail,
+        long invitedCount,
+        long invitedPaidCount
 ) {
     /** Estimate counts split by status, plus the total. */
     public record EstimateBreakdown(long total, long draft, long sent, long signed, long rejected) {}

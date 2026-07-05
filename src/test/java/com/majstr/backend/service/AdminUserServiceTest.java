@@ -45,6 +45,7 @@ class AdminUserServiceTest {
     @Mock EstimateShareLinkRepository shareLinkRepository;
     @Mock CatalogItemRepository catalogRepository;
     @Mock com.majstr.backend.repository.PaymentRepository paymentRepository;
+    @Mock com.majstr.backend.repository.ReferralRewardRepository referralRewardRepository;
     @Mock UpgradeEventService upgradeEventService;
     @InjectMocks AdminUserService adminUserService;
 

@@ -13,6 +13,7 @@ import com.majstr.backend.entity.User;
 import com.majstr.backend.repository.EstimateRepository;
 import com.majstr.backend.repository.EstimateShareLinkRepository;
 import com.majstr.backend.repository.ProjectRepository;
+import com.majstr.backend.repository.ReferralRewardRepository;
 import com.majstr.backend.repository.UpgradeEventRepository;
 import com.majstr.backend.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
@@ -53,6 +54,7 @@ public class MetricsService {
     private final EstimateRepository estimateRepository;
     private final EstimateShareLinkRepository shareLinkRepository;
     private final UpgradeEventRepository upgradeEventRepository;
+    private final ReferralRewardRepository referralRewardRepository;
 
     @Transactional(readOnly = true)
     public MetricsOverviewResponse overview() {
@@ -104,7 +106,8 @@ public class MetricsService {
                         stillActive,
                         churned
                 ),
-                userRepository.countAutoRenewUsers()
+                userRepository.countAutoRenewUsers(),
+                referralRewardRepository.countAllRewards()
         );
     }
 

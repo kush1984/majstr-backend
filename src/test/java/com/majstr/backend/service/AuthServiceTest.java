@@ -38,7 +38,9 @@ class AuthServiceTest {
                 Set.of(Trade.ELECTRICAL), "+380501112233", "FOP", true, null, null);
         given(userRepository.existsByEmailIgnoreCase("new@user.com")).willReturn(false);
         given(passwordEncoder.encode("Sup3rPass!")).willReturn("hash");
-        given(referralService.resolveSource(null, null)).willReturn("DIRECT");
+        given(referralService.resolve(null, null))
+                .willReturn(new ReferralService.Attribution("DIRECT", null));
+        given(referralService.generateUniqueCode()).willReturn("abc12345");
         given(userRepository.save(any(User.class))).willAnswer(inv -> inv.getArgument(0));
         given(jwtService.generateAccessToken(any(), any())).willReturn("access");
         given(jwtService.accessTtlSeconds()).willReturn(900L);
@@ -51,6 +53,8 @@ class AuthServiceTest {
         assertThat(resp.user().emailVerified()).isFalse();
         // Privacy consent is stamped at registration.
         assertThat(resp.user().consentedToPrivacyAt()).isNotNull();
+        // A personal referral code is minted for the new master.
+        assertThat(resp.user().referralCode()).isEqualTo("abc12345");
         verify(catalogTemplateService).seedForUser(any(User.class));
         verify(emailVerificationService).issueAndSend(any(User.class));
     }

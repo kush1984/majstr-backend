@@ -443,6 +443,7 @@
             <div class="stat"><div class="label">Конверсія в платні</div><div class="value">${m.conversionRatePercent}%</div></div>
             <div class="stat"><div class="label">Churn (з минулого місяця)</div><div class="value">${m.churn.churned}</div><div class="sub">з ${m.churn.activeLastMonth} активних</div></div>
             <div class="stat"><div class="label">Автопродовження увімк.</div><div class="value">${m.autoRenewUsers}</div><div class="sub">MRR-сигнал</div></div>
+            <div class="stat"><div class="label">Реферальні винагороди</div><div class="value">${m.referralRewards}</div><div class="sub">майстер→майстер</div></div>
             ${planRows}
         `;
     }
@@ -531,6 +532,8 @@
                 <tr><td>Подав заявку на PRO</td><td>${yn(d.upgrade.interested)}${d.upgrade.interested && d.upgrade.interestReason ? ' <span class="muted">— ' + escapeHtml(d.upgrade.interestReason) + '</span>' : ''}</td></tr>
                 <tr><td>Автопродовження</td><td>${d.autoRenew ? '✅ увімкнено' : '❌ вимкнено'}${d.cardMask ? ' <span class="muted">· картка ' + escapeHtml(d.cardMask) + '</span>' : ''}${d.planExpiresAt ? ' <span class="muted">· PRO до ' + fmt(d.planExpiresAt) + '</span>' : ''}</td></tr>
                 <tr><td>Останнє автосписання</td><td>${d.lastAutoRenewStatus ? escapeHtml(d.lastAutoRenewStatus) + ' <span class="muted">(' + fmt(d.lastAutoRenewAt) + ')</span>' : '<span class="muted">—</span>'}</td></tr>
+                <tr><td>Запросив (реферер)</td><td>${d.referredByEmail ? escapeHtml(d.referredByEmail) : '<span class="muted">—</span>'}</td></tr>
+                <tr><td>Запросив майстрів</td><td>${d.invitedCount} <span class="muted">· оплатили ${d.invitedPaidCount}</span></td></tr>
             </table>
             ${(d.estimateChurn && d.estimateChurn.length) ? `
             <h2 style="text-transform:none; letter-spacing:0;">Кошториси по об'єктах (створено / видалено)</h2>

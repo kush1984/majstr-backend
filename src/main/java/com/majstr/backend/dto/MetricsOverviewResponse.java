@@ -15,7 +15,9 @@ public record MetricsOverviewResponse(
         BigDecimal conversionRatePercent,
         ChurnSummary churn,
         // Masters with subscription auto-renew on — an MRR/retention signal.
-        long autoRenewUsers
+        long autoRenewUsers,
+        // Total master→master referral rewards granted (viral-loop signal).
+        long referralRewards
 ) {
     public record ChurnSummary(
             long activeLastMonth,

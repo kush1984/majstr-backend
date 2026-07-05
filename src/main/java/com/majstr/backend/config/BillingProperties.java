@@ -1,5 +1,6 @@
 package com.majstr.backend.config;
 
+import com.majstr.backend.entity.BillingPeriod;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
 import java.math.BigDecimal;
@@ -27,14 +28,28 @@ public record BillingProperties(
         String monobankApiBase,
         BigDecimal proPrice,
         int proDays,
+        // Half-year (6×proDays) price — the discounted "pay once for 6 months" tariff.
+        BigDecimal proHalfYearPrice,
         int graceDays,
         String returnUrl,
         String webhookUrl,
         boolean allowDevSimulation,
         // Days before expiry to send the auto-renew warning email (T-N).
-        int renewReminderDays
+        int renewReminderDays,
+        // PRO days granted per master→master referral reward (referrer's first-payment bonus).
+        int referralRewardDays
 ) {
     public boolean isConfigured() {
         return monobankToken != null && !monobankToken.isBlank();
+    }
+
+    /** Server-side price for a period — the client never sends an amount. */
+    public BigDecimal priceFor(BillingPeriod period) {
+        return period == BillingPeriod.HALF_YEAR ? proHalfYearPrice : proPrice;
+    }
+
+    /** Server-side day count for a period (half-year = 6 months). */
+    public int daysFor(BillingPeriod period) {
+        return period == BillingPeriod.HALF_YEAR ? proDays * 6 : proDays;
     }
 }

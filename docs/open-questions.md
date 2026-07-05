@@ -466,6 +466,44 @@ one-line summary — keep the item in the file as a record.
   masters actually type the code, sharpening LIGA attribution. Revisit with the trial-period
   item.
 
+### Master referral reward when the referrer is on admin-granted (dateless) PRO
+- **Status:** OPEN
+- **Since:** Master-referral iteration (2026-07-05)
+- **Context:** The master→master reward grants the referrer 30 days PRO on the referred
+  user's first payment. Three referrer states are handled: FREE → PRO+30d, PRO-with-date
+  → +30d. But an **admin-granted PRO has no `plan_expires_at`** (never auto-downgraded) —
+  stacking 30 days would *set* an expiry on an unlimited plan, which is wrong.
+- **Notes / options:** For now the reward is **recorded in `referral_rewards`** (audit +
+  "months earned" stat still count) but the **plan is not touched** — the referrer already
+  has unlimited PRO, so there's nothing to extend. Open: what to actually give a dateless-PRO
+  referrer instead — a credit ledger (banked days applied when/if they drop to a dated plan),
+  a payout, or nothing. Decide when admin-PRO referrers actually occur (rare — mostly staff).
+
+### Two-sided referral bonus (perk for the referred master too)
+- **Status:** OPEN
+- **Since:** Master-referral iteration (2026-07-05)
+- **Context:** v1 rewards only the **referrer** (30 days PRO for the invitee's first payment).
+  A two-sided incentive — the **referred** master also gets something (e.g. −50 ₴ on the
+  first month, or a few bonus days) — typically converts better (the invitee has a reason to
+  act, not just the inviter).
+- **Notes / options:** Adds pricing complexity (a per-user first-purchase discount → the
+  server-side amount is no longer a flat constant; needs a discount/coupon concept). Deferred
+  to keep v1's "amounts are a server constant" invariant. Revisit with the promo-code-bonus
+  and trial items — they'd share a discount mechanism. Decide by conversion data.
+
+### Recurring monobank charges vs the half-year tariff
+- **Status:** OPEN
+- **Since:** Master-referral + half-year iteration (2026-07-05)
+- **Context:** The half-year tariff (1494 ₴ / 6 mo) was framed as the anti-churn weapon
+  *while* there's no true recurring billing. Tokenized auto-renew (V40) already recharges the
+  saved card, and this iteration makes it **period-matched** (a 6-month subscription
+  auto-renews for 6 months), so the recurring gap is largely covered for opted-in users.
+- **Notes / options:** Still open for masters who buy without auto-renew: the half-year
+  invoice buys 6 months of "forget to renew" safety but eventually lapses. A monobank
+  subscription/recurring product (vs our merchant-initiated token charge) could remove the
+  scheduled-job machinery entirely; low urgency now that period-matched auto-renew + half-year
+  both exist. Ties into the auto-renew "card-update flow" and "offer clause" items.
+
 ### Plan downgrade with over-limit data
 - **Status:** OPEN
 - **Since:** step 4

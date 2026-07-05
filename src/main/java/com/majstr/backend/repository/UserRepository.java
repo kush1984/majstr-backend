@@ -39,6 +39,18 @@ public interface UserRepository extends JpaRepository<User, UUID> {
     /** Used by the first-admin auto-seed to stay idempotent. */
     boolean existsByRole(Role role);
 
+    // ---- referrals --------------------------------------------------------
+
+    /** Resolve a master's personal referral code (from an {@code m-<code>} link) to
+     *  the owning user. Codes are stored lowercase; the resolver lowercases input. */
+    Optional<User> findByReferralCode(String referralCode);
+
+    /** Collision check for generating a new unique referral code at registration. */
+    boolean existsByReferralCode(String referralCode);
+
+    /** How many masters this one has invited (registered with their code). */
+    long countByReferredByUserId(UUID referrerId);
+
     // ---- admin activation funnel ------------------------------------------
 
     /** Registered masters (excludes admins). */

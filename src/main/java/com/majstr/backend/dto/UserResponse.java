@@ -32,7 +32,10 @@ public record UserResponse(
         // Auto-renewal state + masked card for the profile "Підписка" section.
         // NEVER the raw token/walletId — display-safe only.
         boolean autoRenew,
-        String cardMask
+        String cardMask,
+        // This master's personal referral code — the PWA builds the invite link
+        // majstr.pro/?ref=m-<referralCode> from it.
+        String referralCode
 ) {
     public static UserResponse from(User user) {
         return new UserResponse(
@@ -51,7 +54,8 @@ public record UserResponse(
                 user.getAcknowledgedClientDataAt(),
                 user.getPlanExpiresAt(),
                 user.isAutoRenew(),
-                user.getCardMask()
+                user.getCardMask(),
+                user.getReferralCode()
         );
     }
 

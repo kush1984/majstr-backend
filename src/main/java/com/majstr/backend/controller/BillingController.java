@@ -2,6 +2,7 @@ package com.majstr.backend.controller;
 
 import com.majstr.backend.dto.CheckoutRequest;
 import com.majstr.backend.dto.CheckoutResponse;
+import com.majstr.backend.entity.BillingPeriod;
 import com.majstr.backend.security.UserPrincipal;
 import com.majstr.backend.service.BillingService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -38,7 +39,8 @@ public class BillingController {
     public CheckoutResponse checkout(@RequestBody(required = false) CheckoutRequest req,
                                      @AuthenticationPrincipal UserPrincipal principal) {
         boolean autoRenew = req != null && req.autoRenew();
-        return billingService.checkout(principal.id(), autoRenew);
+        BillingPeriod period = req != null ? req.periodOrDefault() : BillingPeriod.MONTH;
+        return billingService.checkout(principal.id(), autoRenew, period);
     }
 
     @Operation(summary = "monobank invoice-status webhook (public; signature-verified)")

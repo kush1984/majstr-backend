@@ -32,6 +32,7 @@ class MetricsServiceTest {
     @Mock ProjectRepository projectRepository;
     @Mock EstimateRepository estimateRepository;
     @Mock EstimateShareLinkRepository shareLinkRepository;
+    @Mock com.majstr.backend.repository.ReferralRewardRepository referralRewardRepository;
     @InjectMocks MetricsService metricsService;
 
     @Test
