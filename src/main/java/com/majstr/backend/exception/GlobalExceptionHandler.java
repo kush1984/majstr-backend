@@ -117,6 +117,12 @@ public class GlobalExceptionHandler {
         return build(HttpStatus.PAYLOAD_TOO_LARGE, msg("error.upload.too-large"), req);
     }
 
+    @ExceptionHandler(CatalogImportException.class)
+    public ResponseEntity<ErrorResponse> handleCatalogImport(CatalogImportException ex, HttpServletRequest req) {
+        // The throw sites pass a bundle key as the exception message.
+        return build(HttpStatus.BAD_REQUEST, msg(ex.getMessage()), req);
+    }
+
     @ExceptionHandler(FeatureNotAvailableException.class)
     public ResponseEntity<ErrorResponse> handleFeatureGate(FeatureNotAvailableException ex, HttpServletRequest req) {
         String message = msg("error.feature.unavailable",

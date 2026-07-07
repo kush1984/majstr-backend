@@ -642,6 +642,38 @@ one-line summary — keep the item in the file as a record.
   match / per-item template-name match). Defer until a real master reports a painful
   "Інше" pile; the per-item edit + always-tagged-new-items covers the common case.
 
+### Price-list import from a photo / handwriting (vision-LLM)
+- **Status:** OPEN
+- **Since:** Catalog price-import iteration (2026-07-06)
+- **Context:** The Excel/CSV/paste import (this iteration) lands on a review screen built to
+  be **modality-agnostic**. The natural next modality is a photo of a paper price list or a
+  handwritten notebook page → OCR/vision-LLM → the *same* review screen. Deliberately out of
+  this step: it needs an external vision API (cost, rate limits, latency) and a "don't store
+  the photo" policy, unlike the fully-local deterministic parser.
+- **Notes / options:** When the Excel import shows real usage, add a `POST /parse` variant
+  that takes an image, calls a vision model to extract `{name, unit, price}` rows, and
+  returns the **same** `CatalogImportParseResponse` — so the whole review/commit funnel is
+  reused. Env-gated + fail-soft like the other external integrations; the image is parsed and
+  discarded (never persisted). Decide the provider/prompt then.
+
+### Import an ESTIMATE (not a price list) from a file
+- **Status:** OPEN
+- **Since:** Catalog price-import iteration (2026-07-06)
+- **Context:** This iteration imports a master's **price list into the catalog**. A different
+  ask is importing a whole **estimate** (positions + quantities for one object) from a file —
+  e.g. a master already priced a job in Excel and wants it as a Majstr estimate.
+- **Notes / options:** Reuses the parser but targets `Estimate`/`EstimateItem` (with a
+  quantity column) instead of `CatalogItem`, and needs a target project. Build only if asked;
+  the catalog import is the higher-leverage onboarding unlock.
+
+### Export the catalog back to xlsx
+- **Status:** OPEN
+- **Since:** Catalog price-import iteration (2026-07-06)
+- **Context:** Symmetry with import — let a master export their catalog to .xlsx (backup, or
+  editing in Excel then re-importing).
+- **Notes / options:** POI is now on the classpath, so a `GET /api/catalog/export` streaming
+  an xlsx is cheap. Build on request — no demonstrated need yet.
+
 ### Email notifications
 - **Status:** RESOLVED
 - **Since:** step 3

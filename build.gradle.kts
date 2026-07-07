@@ -81,6 +81,11 @@ dependencies {
     // PDF generation. OpenPDF is LGPL fork of iText 4, actively maintained.
     implementation("com.github.librepdf:openpdf:2.0.3")
 
+    // Spreadsheet parsing for the "import my price list" flow (.xlsx via XSSF,
+    // legacy .xls via HSSF). Deterministic parsing only — no AI. POI's log4j2-api
+    // logging routes to logback via spring-boot-starter-logging's log4j-to-slf4j.
+    implementation("org.apache.poi:poi-ooxml:5.3.0")
+
     runtimeOnly("org.postgresql:postgresql")
 
     compileOnly("org.projectlombok:lombok")
