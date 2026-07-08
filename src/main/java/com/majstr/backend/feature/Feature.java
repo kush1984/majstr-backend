@@ -10,5 +10,8 @@ public enum Feature {
     CLIENT_PORTAL,
     ONLINE_SIGNATURE,
     PHOTO_REPORTS,
-    AI_ASSISTANT
+    AI_ASSISTANT,
+    /** Per-object expense journal + real-profit summary (PRO+). Plan-gated, so an
+     *  admin-granted dateless PRO qualifies. */
+    OBJECT_ECONOMY
 }

@@ -472,6 +472,53 @@ one-line summary — keep the item in the file as a record.
   masters actually type the code, sharpening LIGA attribution. Revisit with the trial-period
   item.
 
+### Object economy: PLAN-margin (my price vs client price) on estimate positions
+- **Status:** OPEN
+- **Since:** Object-economy iteration (2026-07-06)
+- **Context:** v1 object economy is **fact** — real spend logged after the fact. The natural
+  next step is **plan-margin**: a second (cost/my) price per estimate position alongside the
+  client price, so the master sees the built-in margin *before* work starts.
+- **Notes / options:** Add a cost price to `EstimateItem` (nullable). **Critical isolation:**
+  the cost/second price must NEVER leak to the portal/PDF/share — same rule as economy (guard
+  it in `PublicEstimateView`, extend `PublicEstimateIsolationTest`). Plan-margin vs the
+  fact-based economy are two lenses on the same object; decide how they combine in the UI.
+  Build after the fact-based economy proves used.
+
+### Object economy: "actually received from client" (payments/prepayments) line
+- **Status:** OPEN
+- **Since:** Object-economy iteration (2026-07-06)
+- **Context:** Economy today is income (estimates) − expenses. A third line — **what the
+  client actually paid** (prepayments / staged payments) — would show real cash flow, not
+  just the contracted total.
+- **Notes / options:** A `client_payments` journal per object (amount, date, note), mirroring
+  `object_expenses`; economy then shows contracted vs received vs spent. Owner-only, same
+  isolation. Defer until masters ask for cash-flow tracking.
+
+### Object economy: profit rollup across all objects (dashboard)
+- **Status:** OPEN
+- **Since:** Object-economy iteration (2026-07-06)
+- **Context:** Per-object profit ships; a master will want a **total** — earnings across all
+  objects for a month/year on the dashboard.
+- **Notes / options:** Aggregate income−expenses over the owner's objects by period (watch the
+  UTC month-boundary item). PRO-gated like the per-object view. Build once per-object economy
+  is validated.
+
+### Object economy: import expenses from Excel
+- **Status:** OPEN
+- **Since:** Object-economy iteration (2026-07-06)
+- **Context:** Symmetry with the catalog price-list import — bulk-import an object's expenses
+  from a spreadsheet, for a master who tracked them in Excel.
+- **Notes / options:** Reuse the import parser (POI is already on the classpath), targeting
+  `object_expenses` (amount/category/date columns) with the same review screen. Build on request.
+
+### Object economy: photo of a receipt attached to an expense
+- **Status:** OPEN
+- **Since:** Object-economy iteration (2026-07-06)
+- **Context:** Attaching a receipt photo to an expense is a common bookkeeping want.
+- **Notes / options:** Reuse `StorageService` (a `receipt_url` on `object_expense`), owner-only
+  read like logos-but-private (ties into the "public file serving needs auth" open question).
+  Build on request; not needed for the core profit view.
+
 ### Master referral reward when the referrer is on admin-granted (dateless) PRO
 - **Status:** OPEN
 - **Since:** Master-referral iteration (2026-07-05)

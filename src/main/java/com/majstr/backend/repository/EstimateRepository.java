@@ -98,4 +98,25 @@ public interface EstimateRepository extends JpaRepository<Estimate, UUID> {
             """, nativeQuery = true)
     BigDecimal sumLatestEstimateTotalForCompletedSince(@Param("ownerId") UUID ownerId,
                                                        @Param("monthStart") Instant monthStart);
+
+    /**
+     * Income for one object (project) — the sum of ALL its estimates' line totals
+     * EXCEPT rejected ones. Line totals are rounded per line (HALF_UP, matching
+     * EstimateService), so the numbers agree with the estimate view. Drives the
+     * object-economy summary; one aggregate query, no N+1.
+     */
+    @Query(value = """
+            SELECT COALESCE(SUM(ROUND(i.quantity * i.unit_price, 2)), 0)
+            FROM estimates e JOIN estimate_items i ON i.estimate_id = e.id
+            WHERE e.project_id = :projectId AND e.status <> 'REJECTED'
+            """, nativeQuery = true)
+    BigDecimal sumIncomeExcludingRejected(@Param("projectId") UUID projectId);
+
+    /** Same, restricted to SIGNED estimates — the "of which signed" figure. */
+    @Query(value = """
+            SELECT COALESCE(SUM(ROUND(i.quantity * i.unit_price, 2)), 0)
+            FROM estimates e JOIN estimate_items i ON i.estimate_id = e.id
+            WHERE e.project_id = :projectId AND e.status = 'SIGNED'
+            """, nativeQuery = true)
+    BigDecimal sumIncomeSigned(@Param("projectId") UUID projectId);
 }

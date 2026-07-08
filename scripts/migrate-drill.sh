@@ -165,6 +165,14 @@ check "payments.period column (V41)" "$period_col" "1"
 non_month="$(scalar "SELECT COUNT(*) FROM payments WHERE period <> 'MONTH';")"
 check "existing payments backfilled to MONTH (V41)" "$non_month" "0"
 
+# V42: object_expenses table (FK cascade to projects, category CHECK, amount >= 0).
+oe_tbl="$(scalar "SELECT COUNT(*) FROM information_schema.tables WHERE table_name='object_expenses';")"
+check "object_expenses table exists (V42)" "$oe_tbl" "1"
+oe_fk="$(scalar "SELECT COUNT(*) FROM information_schema.referential_constraints rc JOIN information_schema.table_constraints tc ON rc.constraint_name=tc.constraint_name WHERE tc.table_name='object_expenses' AND rc.delete_rule='CASCADE';")"
+check "object_expenses -> projects ON DELETE CASCADE (V42)" "$oe_fk" "1"
+oe_idx="$(scalar "SELECT COUNT(*) FROM pg_indexes WHERE tablename='object_expenses' AND indexname='idx_object_expenses_object';")"
+check "object_expenses object_id index (V42)" "$oe_idx" "1"
+
 echo "=== summary (informational) ==="
 psql -P pager=off -c "SELECT trade, COUNT(*), COUNT(*) FILTER (WHERE suggested_price > 0) AS priced
                       FROM catalog_templates GROUP BY trade ORDER BY 2 DESC;"

@@ -45,7 +45,8 @@ public final class PlanConfig {
                         Feature.BRANDED_PDF,
                         Feature.CLIENT_PORTAL,
                         Feature.ONLINE_SIGNATURE,
-                        Feature.PHOTO_REPORTS
+                        Feature.PHOTO_REPORTS,
+                        Feature.OBJECT_ECONOMY
                 )
         ));
 
@@ -56,7 +57,8 @@ public final class PlanConfig {
                         Feature.CLIENT_PORTAL,
                         Feature.ONLINE_SIGNATURE,
                         Feature.PHOTO_REPORTS,
-                        Feature.AI_ASSISTANT
+                        Feature.AI_ASSISTANT,
+                        Feature.OBJECT_ECONOMY
                 )
         ));
     }

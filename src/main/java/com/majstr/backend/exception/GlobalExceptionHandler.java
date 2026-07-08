@@ -127,7 +127,11 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ErrorResponse> handleFeatureGate(FeatureNotAvailableException ex, HttpServletRequest req) {
         String message = msg("error.feature.unavailable",
                 ex.getFeature().name(), ex.getCurrentPlan().name(), ex.getRequiredPlan().name());
-        return build(HttpStatus.FORBIDDEN, message, req);
+        // Machine-readable code so a PRO-gated surface (e.g. the object-economy block)
+        // can show its own upgrade teaser instead of a raw error.
+        ErrorResponse body = ErrorResponse.coded(HttpStatus.FORBIDDEN.value(),
+                HttpStatus.FORBIDDEN.getReasonPhrase(), message, req.getRequestURI(), "UPGRADE_REQUIRED");
+        return ResponseEntity.status(HttpStatus.FORBIDDEN).body(body);
     }
 
     @ExceptionHandler(LimitExceededException.class)

@@ -64,6 +64,15 @@ class DefaultFeatureGuardTest {
         assertThat(PlanConfig.minimumPlanFor(Feature.AI_ASSISTANT)).isEqualTo(Plan.TEAM);
     }
 
+    @Test
+    void objectEconomyIsProAndAbove() {
+        // FREE is blocked (403), PRO+ (incl. admin-granted dateless PRO — plan-gated) passes.
+        assertThat(guard.isEnabled(userOnPlan(Plan.FREE), Feature.OBJECT_ECONOMY)).isFalse();
+        assertThat(guard.isEnabled(userOnPlan(Plan.PRO),  Feature.OBJECT_ECONOMY)).isTrue();
+        assertThat(guard.isEnabled(userOnPlan(Plan.TEAM), Feature.OBJECT_ECONOMY)).isTrue();
+        assertThat(PlanConfig.minimumPlanFor(Feature.OBJECT_ECONOMY)).isEqualTo(Plan.PRO);
+    }
+
     private User userOnPlan(Plan plan) {
         return User.builder().id(UUID.randomUUID()).plan(plan).build();
     }
