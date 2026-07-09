@@ -32,6 +32,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.math.BigDecimal;
 import java.util.LinkedHashSet;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
@@ -238,7 +239,7 @@ class EstimateTemplateServiceTest {
                 .id(templateId).isDefault(false).owner(owner).build();
         given(templateRepository.findById(templateId)).willReturn(Optional.of(template));
         given(templateItemRepository.findByTemplateIdOrderBySortOrderAscIdAsc(templateId))
-                .willReturn(List.of(templateItem(template, "Існуюча", Unit.M2, 0)));
+                .willReturn(new ArrayList<>(List.of(templateItem(template, "Існуюча", Unit.M2, 0))));
         given(templateItemRepository.save(any())).willAnswer(inv -> {
             EstimateTemplateItem i = inv.getArgument(0);
             i.setId(UUID.randomUUID());

@@ -17,6 +17,15 @@ spring:
       hibernate:
         jdbc:
           time_zone: UTC
+          # Batch bulk inserts into few multi-row round-trips instead of one per
+          # row. Registration seeds a fresh catalog from ~1900 templates (all
+          # trades) via saveAll — unbatched that is ~1900 INSERT round-trips and
+          # minutes of latency against a managed Postgres. IDs are application-
+          # assigned UUIDs so batching engages (IDENTITY generation would disable
+          # it). order_inserts groups same-table inserts so a batch stays contiguous.
+          batch_size: 100
+        order_inserts: true
+        order_updates: true
         format_sql: false
   jackson:
     default-property-inclusion: non_null

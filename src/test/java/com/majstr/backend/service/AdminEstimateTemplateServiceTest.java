@@ -19,6 +19,7 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -82,10 +83,10 @@ class AdminEstimateTemplateServiceTest {
         UUID id = UUID.randomUUID();
         EstimateTemplate t = defaultTemplate(id);
         given(templateRepository.findById(id)).willReturn(Optional.of(t));
-        given(itemRepository.findByTemplateIdOrderBySortOrderAscIdAsc(id)).willReturn(List.of(
+        given(itemRepository.findByTemplateIdOrderBySortOrderAscIdAsc(id)).willReturn(new ArrayList<>(List.of(
                 EstimateTemplateItem.builder().id(UUID.randomUUID()).template(t).name("A").type(ItemType.WORK).unit(Unit.M2).sortOrder(0).build(),
                 EstimateTemplateItem.builder().id(UUID.randomUUID()).template(t).name("B").type(ItemType.WORK).unit(Unit.M2).sortOrder(1).build()
-        ));
+        )));
         given(itemRepository.save(any(EstimateTemplateItem.class))).willAnswer(inv -> inv.getArgument(0));
 
         EstimateTemplateDetail detail = service.addItem(
