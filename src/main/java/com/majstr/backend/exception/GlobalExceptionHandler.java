@@ -12,6 +12,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.MessageSource;
 import org.springframework.context.i18n.LocaleContextHolder;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -86,9 +87,51 @@ public class GlobalExceptionHandler {
         return build(HttpStatus.FORBIDDEN, msg("error.access-denied"), req);
     }
 
+    /** Unique email constraint, checked in the DB. Used by both the fast pre-check
+     *  ({@link EmailAlreadyExistsException}) and the fallback constraint catch below. */
+    private static final String EMAIL_UNIQUE_CONSTRAINT = "users_email_unique";
+
     @ExceptionHandler(EmailAlreadyExistsException.class)
     public ResponseEntity<ErrorResponse> handleDupEmail(EmailAlreadyExistsException ex, HttpServletRequest req) {
-        return build(HttpStatus.CONFLICT, msg("error.email-taken"), req);
+        return emailTaken(req);
+    }
+
+    /**
+     * Level 2 (race safety): the pre-check in {@code AuthService.register} can't prevent
+     * two concurrent registrations of the same email — the DB unique constraint does, and
+     * surfaces at commit as a {@link DataIntegrityViolationException}. Map ONLY the email
+     * constraint to the same clean 409 (no Sentry noise); any other integrity violation is
+     * a real problem and keeps the 500 + Sentry path.
+     */
+    @ExceptionHandler(DataIntegrityViolationException.class)
+    public ResponseEntity<ErrorResponse> handleDataIntegrity(DataIntegrityViolationException ex, HttpServletRequest req) {
+        if (isEmailUniqueViolation(ex)) {
+            return emailTaken(req);
+        }
+        return handleAny(ex, req);
+    }
+
+    private ResponseEntity<ErrorResponse> emailTaken(HttpServletRequest req) {
+        ErrorResponse body = ErrorResponse.coded(HttpStatus.CONFLICT.value(),
+                HttpStatus.CONFLICT.getReasonPhrase(), msg("error.email-taken"),
+                req.getRequestURI(), "EMAIL_ALREADY_REGISTERED");
+        return ResponseEntity.status(HttpStatus.CONFLICT).body(body);
+    }
+
+    /** True only for the {@code users_email_unique} violation — never swallows other
+     *  constraints. Checks the Hibernate constraint name and, defensively, the message. */
+    private static boolean isEmailUniqueViolation(Throwable ex) {
+        for (Throwable cause = ex; cause != null; cause = cause.getCause()) {
+            if (cause instanceof org.hibernate.exception.ConstraintViolationException cve
+                    && EMAIL_UNIQUE_CONSTRAINT.equalsIgnoreCase(cve.getConstraintName())) {
+                return true;
+            }
+            String message = cause.getMessage();
+            if (message != null && message.toLowerCase(java.util.Locale.ROOT).contains(EMAIL_UNIQUE_CONSTRAINT)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     @ExceptionHandler(ResourceNotFoundException.class)

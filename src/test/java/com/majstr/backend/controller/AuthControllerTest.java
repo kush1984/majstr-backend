@@ -106,6 +106,50 @@ class AuthControllerTest {
     }
 
     @Test
+    void register_duplicateEmail_returns409WithCode() throws Exception {
+        RegisterRequest req = validRegisterRequest("taken@example.com");
+        given(authService.register(any(RegisterRequest.class)))
+                .willThrow(new com.majstr.backend.exception.EmailAlreadyExistsException("taken@example.com"));
+
+        mockMvc.perform(post("/api/auth/register")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(req)))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code", is("EMAIL_ALREADY_REGISTERED")));
+    }
+
+    @Test
+    void register_emailConstraintRace_isMappedTo409NotServerError() throws Exception {
+        RegisterRequest req = validRegisterRequest("race@example.com");
+        // The pre-check passed, but a concurrent insert hit the DB unique constraint.
+        given(authService.register(any(RegisterRequest.class)))
+                .willThrow(new org.springframework.dao.DataIntegrityViolationException("insert failed",
+                        new org.hibernate.exception.ConstraintViolationException(
+                                "duplicate", new java.sql.SQLException("dup"), "users_email_unique")));
+
+        mockMvc.perform(post("/api/auth/register")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(req)))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code", is("EMAIL_ALREADY_REGISTERED")));
+    }
+
+    @Test
+    void register_otherIntegrityViolation_stillReturns500() throws Exception {
+        RegisterRequest req = validRegisterRequest("other@example.com");
+        // A different constraint must NOT be swallowed as a dup-email 409.
+        given(authService.register(any(RegisterRequest.class)))
+                .willThrow(new org.springframework.dao.DataIntegrityViolationException("insert failed",
+                        new org.hibernate.exception.ConstraintViolationException(
+                                "fk", new java.sql.SQLException("fk"), "some_other_fk")));
+
+        mockMvc.perform(post("/api/auth/register")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(req)))
+                .andExpect(status().isInternalServerError());
+    }
+
+    @Test
     void register_rejectsInvalidEmail() throws Exception {
         RegisterRequest invalid = new RegisterRequest(
                 "not-an-email",
@@ -178,6 +222,11 @@ class AuthControllerTest {
                         .content(objectMapper.writeValueAsString(invalid)))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.status", is(400)));
+    }
+
+    private static RegisterRequest validRegisterRequest(String email) {
+        return new RegisterRequest(email, "Sup3r-Secret!", "John Smith",
+                Set.of(Trade.ELECTRICAL), "+15551234567", "Smith Electrical LLC", true, null, null);
     }
 
     private AuthResponse sampleAuthResponse(String email) {
