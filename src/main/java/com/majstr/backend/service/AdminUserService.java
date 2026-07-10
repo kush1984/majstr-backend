@@ -116,6 +116,8 @@ public class AdminUserService {
                 user.getReferralSource(),
                 user.getCreatedAt(),
                 user.getLastActiveAt(),
+                user.getLastDeviceType(),
+                user.getLastOs(),
                 clientRepository.countByOwnerId(userId),
                 projectRepository.countByOwnerId(userId),
                 breakdown,

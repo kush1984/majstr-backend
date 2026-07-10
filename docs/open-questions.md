@@ -96,6 +96,19 @@ one-line summary — keep the item in the file as a record.
   The structured-audit want is unchanged; if it lands, fold these admin mutations
   (and the plan change) into it.
 
+### Device / OS a master logs in from (admin)
+- **Status:** IN_PROGRESS
+- **Since:** 2026-07-10
+- **Context:** We never captured which device masters use. The only device signal today
+  is `push_subscriptions.user_agent` (push opt-ins only — biased). Product wants to know
+  phone vs desktop + OS to steer mobile-first decisions.
+- **Notes / options:** Parse the `User-Agent` at token-issue time (login/register/refresh)
+  into `deviceType` (MOBILE/TABLET/DESKTOP/UNKNOWN) + `os`; store the LAST one on `users`
+  (refresh keeps it current for active masters). Browser deliberately NOT tracked (not
+  useful). Surface in `AdminUserSummary`/`AdminUserDetail`. Adjacent: the "Audit log for
+  sensitive actions" item (a fuller `login_events` history would subsume this) and the
+  privacy policy "technical data" line (mention device type at the next policy review).
+
 ### Admin metrics by trade after the multi-trade move
 - **Status:** OPEN
 - **Since:** Fix A (2026-05-30)

@@ -121,6 +121,13 @@ public interface UserRepository extends JpaRepository<User, UUID> {
     @Query("UPDATE User u SET u.lastActiveAt = :now WHERE u.id = :id")
     int touchLastActive(@Param("id") UUID id, @Param("now") Instant now);
 
+    /** Same throttled touch, but also records the device parsed from the
+     *  User-Agent (only called when the UA yielded something meaningful). */
+    @Modifying
+    @Query("UPDATE User u SET u.lastActiveAt = :now, u.lastDeviceType = :deviceType, u.lastOs = :os WHERE u.id = :id")
+    int touchLastActiveAndDevice(@Param("id") UUID id, @Param("now") Instant now,
+                                 @Param("deviceType") String deviceType, @Param("os") String os);
+
     /** Billing-granted subscriptions whose expiry (+ grace, folded into the
      *  cutoff by the caller) has passed — the daily job downgrades these to FREE.
      *  Only rows with a non-null {@code planExpiresAt} qualify, so admin-granted

@@ -43,8 +43,8 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                             new UsernamePasswordAuthenticationToken(principal, null, principal.getAuthorities());
                     auth.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
                     SecurityContextHolder.getContext().setAuthentication(auth);
-                    // Stamp last_active_at (throttled per user to avoid DB churn).
-                    lastActiveTracker.touch(user.getId());
+                    // Stamp last_active_at + device (throttled per user to avoid DB churn).
+                    lastActiveTracker.touch(user.getId(), request.getHeader(HttpHeaders.USER_AGENT));
                 });
             } catch (JwtException ex) {
                 log.debug("Invalid JWT: {}", ex.getMessage());

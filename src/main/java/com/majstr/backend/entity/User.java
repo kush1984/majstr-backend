@@ -87,6 +87,15 @@ public class User {
     @Column(name = "last_active_at")
     private Instant lastActiveAt;
 
+    /** Device the master last used, parsed from the User-Agent (throttled with
+     *  last_active_at). MOBILE/TABLET/DESKTOP/UNKNOWN; null until first seen. */
+    @Column(name = "last_device_type", length = 20)
+    private String lastDeviceType;
+
+    /** OS the master last used (iOS/Android/Windows/macOS/Linux/ChromeOS); null until seen. */
+    @Column(name = "last_os", length = 40)
+    private String lastOs;
+
     /** Soft email verification — new users start false; only "send to client" actions require it. */
     @Column(name = "email_verified", nullable = false)
     @Builder.Default

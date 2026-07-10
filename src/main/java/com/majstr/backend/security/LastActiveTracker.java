@@ -39,7 +39,7 @@ public class LastActiveTracker {
      * here never poisons the request's main transaction.
      */
     @Transactional(propagation = Propagation.REQUIRES_NEW)
-    public void touch(UUID userId) {
+    public void touch(UUID userId, String userAgent) {
         Instant now = Instant.now();
         Instant prev = lastTouched.get(userId);
         if (prev != null && Duration.between(prev, now).compareTo(THROTTLE) < 0) {
@@ -47,7 +47,14 @@ public class LastActiveTracker {
         }
         lastTouched.put(userId, now);
         try {
-            userRepository.touchLastActive(userId, now);
+            // Record the device alongside the activity stamp — but never let a
+            // blank/unrecognized UA (API tools) wipe a known device.
+            DeviceInfo.Parsed device = DeviceInfo.parse(userAgent);
+            if (device.isKnown()) {
+                userRepository.touchLastActiveAndDevice(userId, now, device.deviceType().name(), device.os());
+            } else {
+                userRepository.touchLastActive(userId, now);
+            }
         } catch (Exception e) {
             log.warn("Failed to update last_active_at for {}: {}", userId, e.getMessage());
         }

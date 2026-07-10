@@ -25,6 +25,8 @@ public record AdminUserDetail(
         String referralSource,
         Instant createdAt,
         Instant lastActiveAt,
+        String lastDeviceType,
+        String lastOs,
         long clientsCount,
         long projectsCount,
         EstimateBreakdown estimates,
