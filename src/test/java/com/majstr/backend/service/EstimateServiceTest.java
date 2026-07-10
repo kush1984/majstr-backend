@@ -174,7 +174,7 @@ class EstimateServiceTest {
         given(estimateRepository.findById(estimateId)).willReturn(Optional.of(signed));
 
         assertThatThrownBy(() -> estimateService.update(
-                estimateId, new EstimateUpdateRequest(EstimateStatus.DRAFT, null, null, null), ownerId))
+                estimateId, new EstimateUpdateRequest(EstimateStatus.DRAFT, null, null, null, null), ownerId))
                 .isInstanceOf(EstimateSignedException.class);
         assertThat(signed.getStatus()).isEqualTo(EstimateStatus.SIGNED);
     }
@@ -185,7 +185,7 @@ class EstimateServiceTest {
         given(estimateRepository.findById(estimateId)).willReturn(Optional.of(draft));
 
         assertThatThrownBy(() -> estimateService.update(
-                estimateId, new EstimateUpdateRequest(EstimateStatus.SIGNED, null, null, null), ownerId))
+                estimateId, new EstimateUpdateRequest(EstimateStatus.SIGNED, null, null, null, null), ownerId))
                 .isInstanceOf(InvalidEstimateStatusException.class);
         assertThat(draft.getStatus()).isEqualTo(EstimateStatus.DRAFT);
     }
@@ -198,9 +198,57 @@ class EstimateServiceTest {
         given(itemRepository.findByEstimateIdOrderBySortOrderAscIdAsc(estimateId)).willReturn(List.of());
 
         EstimateResponse resp = estimateService.update(
-                estimateId, new EstimateUpdateRequest(EstimateStatus.REJECTED, null, null, null), ownerId);
+                estimateId, new EstimateUpdateRequest(EstimateStatus.REJECTED, null, null, null, null), ownerId);
 
         assertThat(resp.status()).isEqualTo(EstimateStatus.REJECTED);
+    }
+
+    @Test
+    void update_setsDepositAndComputesBalance() {
+        Estimate sent = ownedEstimate(ownerId);
+        sent.setStatus(EstimateStatus.SENT);
+        given(estimateRepository.findById(estimateId)).willReturn(Optional.of(sent));
+        given(itemRepository.findByEstimateIdOrderBySortOrderAscIdAsc(estimateId))
+                .willReturn(List.of(item(ItemType.WORK, "Монтаж", "3", "100"))); // total 300
+
+        EstimateResponse resp = estimateService.update(estimateId,
+                new EstimateUpdateRequest(EstimateStatus.SENT, null, null, null, new BigDecimal("120")), ownerId);
+
+        assertThat(resp.total()).isEqualByComparingTo("300.00");
+        assertThat(resp.depositAmount()).isEqualByComparingTo("120.00");
+        assertThat(resp.balance()).isEqualByComparingTo("180.00");
+        assertThat(sent.getDepositAmount()).isEqualByComparingTo("120.00");
+    }
+
+    @Test
+    void update_clearsDepositWhenNull_balanceEqualsTotal() {
+        Estimate sent = ownedEstimate(ownerId);
+        sent.setStatus(EstimateStatus.SENT);
+        sent.setDepositAmount(new BigDecimal("50.00"));
+        given(estimateRepository.findById(estimateId)).willReturn(Optional.of(sent));
+        given(itemRepository.findByEstimateIdOrderBySortOrderAscIdAsc(estimateId))
+                .willReturn(List.of(item(ItemType.WORK, "Монтаж", "2", "100"))); // total 200
+
+        EstimateResponse resp = estimateService.update(estimateId,
+                new EstimateUpdateRequest(EstimateStatus.SENT, null, null, null, null), ownerId);
+
+        assertThat(resp.depositAmount()).isNull();
+        assertThat(resp.balance()).isEqualByComparingTo("200.00");
+        assertThat(sent.getDepositAmount()).isNull();
+    }
+
+    @Test
+    void update_depositExceedingTotal_clampsBalanceToZero() {
+        Estimate sent = ownedEstimate(ownerId);
+        sent.setStatus(EstimateStatus.SENT);
+        given(estimateRepository.findById(estimateId)).willReturn(Optional.of(sent));
+        given(itemRepository.findByEstimateIdOrderBySortOrderAscIdAsc(estimateId))
+                .willReturn(List.of(item(ItemType.WORK, "Монтаж", "1", "100"))); // total 100
+
+        EstimateResponse resp = estimateService.update(estimateId,
+                new EstimateUpdateRequest(EstimateStatus.SENT, null, null, null, new BigDecimal("150")), ownerId);
+
+        assertThat(resp.balance()).isEqualByComparingTo("0.00");
     }
 
     @Test

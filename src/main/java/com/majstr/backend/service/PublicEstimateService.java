@@ -155,6 +155,10 @@ public class PublicEstimateService {
             }
         }
         BigDecimal total = works.add(materials);
+        BigDecimal deposit = estimate.getDepositAmount();
+        BigDecimal balance = deposit == null
+                ? total
+                : total.subtract(deposit).max(BigDecimal.ZERO).setScale(MONEY_SCALE, MONEY_ROUNDING);
 
         PublicEstimateView.Contractor contractorDto = new PublicEstimateView.Contractor(
                 contractor.getCompanyName(),
@@ -182,6 +186,8 @@ public class PublicEstimateService {
                 works,
                 materials,
                 total,
+                deposit,
+                balance,
                 signatureDto
         );
     }

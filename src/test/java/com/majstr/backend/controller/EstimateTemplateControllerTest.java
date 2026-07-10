@@ -134,7 +134,7 @@ class EstimateTemplateControllerTest {
         given(templateService.applyToProject(eq(projectId), eq(templateId), any(), eq(userId)))
                 .willReturn(new EstimateResponse(estimateId, projectId, "Кухня",
                         EstimateStatus.DRAFT, null, null, null, null, List.of(),
-                        BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO));
+                        BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, null, BigDecimal.ZERO));
 
         mockMvc.perform(post("/api/projects/{p}/estimates/from-template/{t}", projectId, templateId)
                         .contentType(MediaType.APPLICATION_JSON)

@@ -163,6 +163,14 @@ public class EstimatePdfService {
         addTotalRow(table, "Сума робіт:", formatMoney(totals.works), false);
         addTotalRow(table, "Сума матеріалів:", formatMoney(totals.materials), false);
         addTotalRow(table, "РАЗОМ:", formatMoney(totals.grand), true);
+        // Deposit / balance, only when a deposit was recorded (client-facing).
+        BigDecimal deposit = model.estimate().getDepositAmount();
+        if (deposit != null) {
+            BigDecimal balance = totals.grand.subtract(deposit).max(BigDecimal.ZERO)
+                    .setScale(MONEY_SCALE, MONEY_ROUNDING);
+            addTotalRow(table, "Завдаток:", formatMoney(deposit), false);
+            addTotalRow(table, "ЗАЛИШОК:", formatMoney(balance), true);
+        }
         doc.add(table);
     }
 

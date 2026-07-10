@@ -20,5 +20,9 @@ public record EstimateResponse(
         List<EstimateItemResponse> items,
         BigDecimal worksSubtotal,
         BigDecimal materialsSubtotal,
-        BigDecimal total
+        BigDecimal total,
+        /** Deposit paid up front (завдаток); null = none. */
+        BigDecimal depositAmount,
+        /** total − deposit, clamped at 0 (залишок). Equals total when no deposit. */
+        BigDecimal balance
 ) {}

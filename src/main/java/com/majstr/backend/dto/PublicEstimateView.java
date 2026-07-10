@@ -24,6 +24,8 @@ public record PublicEstimateView(
         BigDecimal worksSubtotal,
         BigDecimal materialsSubtotal,
         BigDecimal total,
+        BigDecimal depositAmount,
+        BigDecimal balance,
         Signature signature
 ) {
     public record Contractor(

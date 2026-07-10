@@ -420,6 +420,9 @@
                     <div class="row"><span>Сума робіт:</span><span>${money(data.worksSubtotal)}</span></div>
                     <div class="row"><span>Сума матеріалів:</span><span>${money(data.materialsSubtotal)}</span></div>
                     <div class="row grand"><span>РАЗОМ:</span><span>${money(data.total)}</span></div>
+                    ${data.depositAmount != null ? `
+                    <div class="row"><span>Завдаток:</span><span>${money(data.depositAmount)}</span></div>
+                    <div class="row grand"><span>ЗАЛИШОК:</span><span>${money(data.balance)}</span></div>` : ''}
                 </div>
             </section>
 

@@ -19,6 +19,7 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
 
+import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.UUID;
@@ -55,6 +56,11 @@ public class Estimate {
 
     @Column(name = "notes", columnDefinition = "TEXT")
     private String notes;
+
+    /** Deposit the client pays up front (завдаток); null = none. The balance
+     *  (залишок = total − deposit) is computed, never stored. Client-facing. */
+    @Column(name = "deposit_amount", precision = 15, scale = 2)
+    private BigDecimal depositAmount;
 
     @Column(name = "signed_at")
     private Instant signedAt;

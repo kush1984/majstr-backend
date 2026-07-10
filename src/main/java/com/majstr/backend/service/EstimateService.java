@@ -96,6 +96,9 @@ public class EstimateService {
         estimate.setName(normalize(req.name()));
         estimate.setValidUntil(req.validUntil());
         estimate.setNotes(normalize(req.notes()));
+        estimate.setDepositAmount(req.depositAmount() == null
+                ? null
+                : req.depositAmount().setScale(MONEY_SCALE, MONEY_ROUNDING));
         List<EstimateItem> items = itemRepository.findByEstimateIdOrderBySortOrderAscIdAsc(estimateId);
         return toResponse(estimate, items);
     }
@@ -314,6 +317,10 @@ public class EstimateService {
             }
         }
         BigDecimal total = worksSubtotal.add(materialsSubtotal);
+        BigDecimal deposit = estimate.getDepositAmount();
+        BigDecimal balance = deposit == null
+                ? total
+                : total.subtract(deposit).max(BigDecimal.ZERO).setScale(MONEY_SCALE, MONEY_ROUNDING);
         return new EstimateResponse(
                 estimate.getId(),
                 estimate.getProject().getId(),
@@ -326,7 +333,9 @@ public class EstimateService {
                 itemDtos,
                 worksSubtotal,
                 materialsSubtotal,
-                total
+                total,
+                deposit,
+                balance
         );
     }
 

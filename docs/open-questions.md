@@ -494,6 +494,20 @@ one-line summary — keep the item in the file as a record.
   `object_expenses`; economy then shows contracted vs received vs spent. Owner-only, same
   isolation. Defer until masters ask for cash-flow tracking.
 
+### Estimate: deposit → balance (завдаток / залишок)
+- **Status:** IN_PROGRESS
+- **Since:** Excel-example review (2026-07-10)
+- **Context:** A real stretch-ceiling master's Excel estimate ends with Загальна вартість /
+  Завдаток / Залишок. Majstr estimates show only the total — no prepayment or balance-due,
+  which is how most trade deals actually run (deposit up front, balance on completion).
+- **Notes / options:** v1 = a single nullable `deposit_amount` on `Estimate`; balance =
+  `max(0, total − deposit)`, computed server-side. Shown on the estimate, the client
+  **portal**, and the PDF (client-facing — deliberately NOT isolated). Editable while the
+  estimate is editable (locked once SIGNED, like other fields). Distinct from the owner-side
+  "actually received from client (prepayments)" journal above — that's a cash-flow ledger;
+  this is one client-facing figure on the estimate. Open: whether the deposit later becomes
+  the first entry of that payments journal.
+
 ### Object economy: profit rollup across all objects (dashboard)
 - **Status:** OPEN
 - **Since:** Object-economy iteration (2026-07-06)
@@ -659,6 +673,19 @@ one-line summary — keep the item in the file as a record.
   possibly parametrised by a per-template "area" input (quantity = area × factor).
   Revisit after real use — empty-first avoids the silent-wrong-number risk.
 
+### Measurement → quantity calculator on estimate lines
+- **Status:** IN_PROGRESS
+- **Since:** Excel-example review (2026-07-10)
+- **Context:** The same master's Excel auto-computes area from side lengths
+  (5.31 × 3.69 → 19.59 m²) and multiplies by the m² rate. Majstr requires the master to
+  pre-compute the quantity and type it in — but masters measure sides, not areas.
+- **Notes / options:** v1 = **frontend-only** helper on the quantity field: area
+  (д×ш → м²), length/perimeter (→ м.пог), minus openings (прорізи: ш×в×к-ть); the result is
+  written into the existing `quantity` field. Dimensions are **not persisted** (empty-first,
+  no silent-wrong-number — same discipline as template quantities above). If masters later
+  want the breakdown stored/editable, add dimension fields to `EstimateItem` then. No backend
+  change for v1.
+
 ### Estimate templates spanning multiple trades
 - **Status:** OPEN
 - **Since:** Estimate-templates iteration (2026-06-22)
@@ -712,6 +739,12 @@ one-line summary — keep the item in the file as a record.
 - **Notes / options:** Reuses the parser but targets `Estimate`/`EstimateItem` (with a
   quantity column) instead of `CatalogItem`, and needs a target project. Build only if asked;
   the catalog import is the higher-leverage onboarding unlock.
+- **Decision (2026-07-10):** Chosen approach = **LLM extraction (Claude / AI_ASSISTANT)** —
+  the only path that parses masters' arbitrary real Excels (each format differs; a
+  deterministic parser can't handle the 2D room+ops+totals layouts). Reuses the price-import
+  review/commit screen, targets `Estimate`/`EstimateItem`, env-gated + fail-soft, PRO-gated,
+  file parsed then discarded (never persisted). Scheduled **after** the deposit/balance +
+  measurement-calculator iteration (quick wins first).
 
 ### Export the catalog back to xlsx
 - **Status:** OPEN
