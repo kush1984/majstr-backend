@@ -166,6 +166,16 @@ public class GlobalExceptionHandler {
         return build(HttpStatus.BAD_REQUEST, msg(ex.getMessage()), req);
     }
 
+    @ExceptionHandler(AiExtractionException.class)
+    public ResponseEntity<ErrorResponse> handleAiExtraction(AiExtractionException ex, HttpServletRequest req) {
+        // Not configured (dev) or an upstream/parse failure — the AI couldn't do it
+        // right now. 503 + a machine code so the PWA can offer "enter manually".
+        log.warn("AI extraction unavailable at {} {}: {}", req.getMethod(), req.getRequestURI(), ex.getMessage());
+        ErrorResponse body = ErrorResponse.coded(HttpStatus.SERVICE_UNAVAILABLE.value(),
+                HttpStatus.SERVICE_UNAVAILABLE.getReasonPhrase(), msg(ex.getMessage()), req.getRequestURI(), "AI_UNAVAILABLE");
+        return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).body(body);
+    }
+
     @ExceptionHandler(FeatureNotAvailableException.class)
     public ResponseEntity<ErrorResponse> handleFeatureGate(FeatureNotAvailableException ex, HttpServletRequest req) {
         String message = msg("error.feature.unavailable",

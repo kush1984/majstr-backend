@@ -13,5 +13,9 @@ public enum Feature {
     AI_ASSISTANT,
     /** Per-object expense journal + real-profit summary (PRO+). Plan-gated, so an
      *  admin-granted dateless PRO qualifies. */
-    OBJECT_ECONOMY
+    OBJECT_ECONOMY,
+    /** Import a ready estimate from an Excel/CSV file or a photo via LLM extraction
+     *  (PRO+). Distinct from {@link #AI_ASSISTANT} (TEAM-only, reserved for "draft an
+     *  estimate from a description") — this is a concrete PRO onboarding unlock. */
+    ESTIMATE_IMPORT
 }

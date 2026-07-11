@@ -28,6 +28,17 @@ class UnitNormalizerTest {
     }
 
     @Test
+    void recognizesSquareMetreKilometreAndCount() {
+        assertThat(UnitNormalizer.normalize("м.кв.")).isEqualTo(Unit.M2); // "м.кв." → мкв
+        assertThat(UnitNormalizer.normalize("м.кв")).isEqualTo(Unit.M2);
+        assertThat(UnitNormalizer.normalize("км")).isEqualTo(Unit.KM);
+        assertThat(UnitNormalizer.normalize("km")).isEqualTo(Unit.KM);
+        assertThat(UnitNormalizer.normalize("кількість")).isEqualTo(Unit.PIECE);
+        assertThat(UnitNormalizer.normalize("к-сть")).isEqualTo(Unit.PIECE); // hyphen stripped → ксть
+        assertThat(UnitNormalizer.normalize("к-ть")).isEqualTo(Unit.PIECE);
+    }
+
+    @Test
     void plainMetreVsLinearMetreDoNotCollide() {
         assertThat(UnitNormalizer.normalize("м")).isEqualTo(Unit.M);
         assertThat(UnitNormalizer.normalize("м.п.")).isEqualTo(Unit.LINEAR_METER);

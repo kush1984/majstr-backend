@@ -21,9 +21,14 @@ public final class UnitNormalizer {
     // Keys are pre-normalized (see normalizeToken): lowercase, no dots, no spaces,
     // Cyrillic and Latin variants both listed. "²"/"³" are folded to "2"/"3".
     private static final Map<String, Unit> SYNONYMS = Map.ofEntries(
-            // м² — square metre
-            Map.entry("м2", Unit.M2), Map.entry("квм", Unit.M2), Map.entry("m2", Unit.M2),
-            Map.entry("кв", Unit.M2), Map.entry("sqm", Unit.M2),
+            // м² — square metre ("м.кв." normalizes to "мкв", "кв.м" to "квм")
+            Map.entry("м2", Unit.M2), Map.entry("квм", Unit.M2), Map.entry("мкв", Unit.M2),
+            Map.entry("m2", Unit.M2), Map.entry("кв", Unit.M2), Map.entry("sqm", Unit.M2),
+            // km — kilometre (cable runs etc.)
+            Map.entry("км", Unit.KM), Map.entry("km", Unit.KM),
+            // count written as "кількість"/"к-сть"/"к-ть" → pieces (same as шт)
+            Map.entry("кількість", Unit.PIECE), Map.entry("кількості", Unit.PIECE),
+            Map.entry("ксть", Unit.PIECE), Map.entry("кть", Unit.PIECE),
             // м³ — cubic metre
             Map.entry("м3", Unit.M3), Map.entry("кубм", Unit.M3), Map.entry("m3", Unit.M3),
             Map.entry("куб", Unit.M3),
@@ -62,11 +67,12 @@ public final class UnitNormalizer {
         return SYNONYMS.get(normalizeToken(raw));
     }
 
-    /** Lowercase, drop dots/spaces/quotes, fold ²→2 and ³→3, keep Cyrillic/Latin. */
+    /** Lowercase, drop dots/spaces/hyphens/quotes, fold ²→2 and ³→3, keep Cyrillic/Latin. */
     static String normalizeToken(String raw) {
         String s = raw.toLowerCase(Locale.ROOT).trim()
                 .replace('²', '2')
-                .replace('³', '3');
+                .replace('³', '3')
+                .replace("-", ""); // "к-сть" → "ксть", "м-п" → "мп"
         StringBuilder sb = new StringBuilder(s.length());
         for (char c : s.toCharArray()) {
             if (c == '.' || c == ' ' || c == '\'' || c == '"' || c == ' ') {

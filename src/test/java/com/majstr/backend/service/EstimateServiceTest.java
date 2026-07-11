@@ -425,6 +425,50 @@ class EstimateServiceTest {
         return estimate;
     }
 
+    @Test
+    @SuppressWarnings("unchecked")
+    void createFromImport_persistsItemsWithDepositAndBalance() {
+        Project project = ownedProject(ownerId);
+        given(projectService.loadOwned(projectId, ownerId)).willReturn(project);
+        given(estimateRepository.save(any(Estimate.class))).willAnswer(invocation -> {
+            Estimate e = invocation.getArgument(0);
+            e.setId(estimateId);
+            e.setStatus(EstimateStatus.DRAFT);
+            e.setCreatedAt(Instant.now());
+            e.setUpdatedAt(Instant.now());
+            return e;
+        });
+        // toResponse re-reads the items after saveAll — return what was saved.
+        List<EstimateItem>[] saved = new List[1];
+        given(itemRepository.saveAll(anyList())).willAnswer(invocation -> {
+            saved[0] = invocation.getArgument(0);
+            return saved[0];
+        });
+        given(itemRepository.findByEstimateIdOrderBySortOrderAscIdAsc(estimateId))
+                .willAnswer(invocation -> saved[0]);
+
+        var data = new EstimateService.ImportEstimateData(
+                "Import", new BigDecimal("100"),
+                List.of(
+                        new EstimateService.ImportEstimateData.ImportItem(
+                                ItemType.WORK, "Малярні роботи", "Кімната", Unit.M2,
+                                new BigDecimal("2"), new BigDecimal("100")),
+                        new EstimateService.ImportEstimateData.ImportItem(
+                                ItemType.MATERIAL, "Клей", null, Unit.PIECE,
+                                new BigDecimal("3"), new BigDecimal("50"))));
+
+        EstimateResponse response = estimateService.createFromImport(projectId, data, ownerId);
+
+        assertThat(response.items()).hasSize(2);
+        assertThat(response.worksSubtotal()).isEqualByComparingTo("200.00");
+        assertThat(response.materialsSubtotal()).isEqualByComparingTo("150.00");
+        assertThat(response.total()).isEqualByComparingTo("350.00");
+        assertThat(response.depositAmount()).isEqualByComparingTo("100.00");
+        assertThat(response.balance()).isEqualByComparingTo("250.00"); // total − deposit
+        verify(limitService).requireCanAddEstimate(ownerId, projectId); // FREE cap still enforced
+        verify(projectRepository).incrementEstimatesCreated(projectId); // lifetime churn counter
+    }
+
     private Project ownedProject(UUID userId) {
         User owner = User.builder().id(userId).build();
         Project project = Project.builder().id(projectId).owner(owner).build();

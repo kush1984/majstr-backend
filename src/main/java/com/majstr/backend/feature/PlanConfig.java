@@ -46,7 +46,8 @@ public final class PlanConfig {
                         Feature.CLIENT_PORTAL,
                         Feature.ONLINE_SIGNATURE,
                         Feature.PHOTO_REPORTS,
-                        Feature.OBJECT_ECONOMY
+                        Feature.OBJECT_ECONOMY,
+                        Feature.ESTIMATE_IMPORT
                 )
         ));
 
@@ -58,7 +59,8 @@ public final class PlanConfig {
                         Feature.ONLINE_SIGNATURE,
                         Feature.PHOTO_REPORTS,
                         Feature.AI_ASSISTANT,
-                        Feature.OBJECT_ECONOMY
+                        Feature.OBJECT_ECONOMY,
+                        Feature.ESTIMATE_IMPORT
                 )
         ));
     }

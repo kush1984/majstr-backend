@@ -742,9 +742,14 @@ one-line summary — keep the item in the file as a record.
   returns the **same** `CatalogImportParseResponse` — so the whole review/commit funnel is
   reused. Env-gated + fail-soft like the other external integrations; the image is parsed and
   discarded (never persisted). Decide the provider/prompt then.
+- **Update (2026-07-11):** the sibling **estimate** import (see "Import an ESTIMATE from a
+  file") now builds exactly this vision-LLM machinery — `ClaudeExtractionService` (raw HTTP to
+  Anthropic, Opus 4.8, base64 `image` block, structured JSON out). To add photo/handwriting
+  import for the **catalog price list**, reuse that service with a `{name, unit, price}` schema
+  and return the existing `CatalogImportParseResponse`. Provider/prompt are now decided.
 
 ### Import an ESTIMATE (not a price list) from a file
-- **Status:** OPEN
+- **Status:** IN_PROGRESS
 - **Since:** Catalog price-import iteration (2026-07-06)
 - **Context:** This iteration imports a master's **price list into the catalog**. A different
   ask is importing a whole **estimate** (positions + quantities for one object) from a file —
@@ -758,6 +763,32 @@ one-line summary — keep the item in the file as a record.
   review/commit screen, targets `Estimate`/`EstimateItem`, env-gated + fail-soft, PRO-gated,
   file parsed then discarded (never persisted). Scheduled **after** the deposit/balance +
   measurement-calculator iteration (quick wins first).
+- **In progress (Estimate-import-LLM iteration, 2026-07-11):** see
+  [iteration-estimate-import-llm.md](iteration-estimate-import-llm.md). Backend: raw-HTTP
+  `ClaudeExtractionService` → Anthropic `/v1/messages` (**Opus 4.8**, `output_config.format`
+  JSON schema, no beta headers), two input branches — **Excel/CSV** via POI → text grid,
+  **photo** (printed + handwritten) via base64 `image` block (vision). Returns a
+  **review payload** (no auto-commit); commit creates `Estimate`+`EstimateItem` on a chosen
+  object **and** upserts positions into the master's catalog. Also extracts a nullable
+  `depositAmount` (ties to the deposit/balance item). Gated by a **new `Feature.ESTIMATE_IMPORT`
+  granted to PRO+TEAM** (NOT the TEAM-only `AI_ASSISTANT`). Env-gated on `ANTHROPIC_API_KEY`
+  (blank → feature 503, not a silent no-op — the import is synchronous, the master waits on it);
+  the uploaded file is parsed then discarded, never persisted. Two PWA entry points agreed
+  (object-create "тип кошторису: З файлу/фото" + the "+ Новий" picker on a project); catalog
+  name-conflicts resolved **on the review screen** (per-item, master decides). "Import-append
+  into an already-open estimate" (editor entry point) deliberately deferred — see below.
+
+### Import-append into an already-open estimate (editor entry point)
+- **Status:** DEFERRED
+- **Since:** Estimate-import-LLM iteration (2026-07-11)
+- **Context:** The estimate import (above) always **creates a new** estimate from a file/photo.
+  A third possible entry point is "Додати позиції з файлу" **inside an open estimate editor** —
+  appending parsed rows into the current item list rather than creating a new estimate.
+- **Notes / options:** Deferred from v1 — different semantics (merge into an existing list vs
+  create), a heavier UX (dedup against current rows, unit/price reconciliation), and the
+  signed-estimate immutability rule would have to gate it. The extraction backend is the same
+  `ClaudeExtractionService`; only a new "append" commit path + editor UI would be needed.
+  Revisit if masters ask to grow an existing estimate from a file.
 
 ### Export the catalog back to xlsx
 - **Status:** OPEN

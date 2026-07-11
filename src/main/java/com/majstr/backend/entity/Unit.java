@@ -11,5 +11,6 @@ public enum Unit {
     M3,
     T,
     POINT,
-    PERCENT
+    PERCENT,
+    KM
 }

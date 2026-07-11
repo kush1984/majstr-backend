@@ -508,6 +508,12 @@
         const yn = b => b ? '✅' : '❌';
         const e = d.estimates;
         const fmt = iso => iso ? dateFormat.format(new Date(iso)) : '—';
+        const deviceLabel = (type, os) => {
+            const map = { MOBILE: '📱 Телефон', TABLET: '📱 Планшет', DESKTOP: '💻 Комп\'ютер' };
+            const label = map[type];
+            if (!label) return '—';
+            return os ? label + ' (' + os + ')' : label;
+        };
         document.getElementById('detailTitle').textContent = d.email;
         document.getElementById('detailBody').innerHTML = `
             <p>Email: ${yn(d.emailVerified)} &nbsp; Трейди: ${(d.trades || []).join(', ') || '—'}</p>
@@ -517,7 +523,7 @@
                <button id="src-save" class="small" data-user="${id}">Зберегти</button>
                <span class="muted" style="font-size:0.8rem">first-touch; ручна правка — для конфліктів/лідів опитування</span>
             </p>
-            <p class="muted">Реєстрація: ${fmt(d.createdAt)} &nbsp;·&nbsp; Остання активність: ${fmt(d.lastActiveAt)}</p>
+            <p class="muted">Реєстрація: ${fmt(d.createdAt)} &nbsp;·&nbsp; Остання активність: ${fmt(d.lastActiveAt)} &nbsp;·&nbsp; Пристрій: ${deviceLabel(d.lastDeviceType, d.lastOs)}</p>
             <h2 style="text-transform:none; letter-spacing:0;">Воронка активації</h2>
             <table>
                 <tr><td>Клієнтів</td><td>${d.clientsCount}</td></tr>

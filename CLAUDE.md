@@ -321,6 +321,30 @@ bucket needs **no public-read policy**; keys are identical across backends, so a
 stored `logoUrl` survives a local→R2 switch. A direct-public / CDN read path is a
 possible future optimization, not needed now.
 
+### Estimate import from Excel/photo is LLM extraction (Anthropic, raw HTTP)
+
+`POST /api/estimates/import/parse` (multipart) and `/commit` (JSON) import a ready
+estimate **onto an object** from an Excel/CSV file or a **photo** (printed or
+hand-written). PRO-gated via `Feature.ESTIMATE_IMPORT` (PRO+TEAM — deliberately
+**not** the TEAM-only `AI_ASSISTANT`, which stays reserved for "draft from a
+description"). `ClaudeEstimateExtractor` (in `service/importer/`) calls Anthropic
+`/v1/messages` over **raw HTTP** (Spring `RestClient` — same no-SDK precedent as
+`ResendEmailService`/`MonobankClient`), model **`claude-opus-4-8`**, structured
+output via `output_config.format` (a JSON schema; **no beta header** — structured
+outputs + vision are GA on Opus). Two input branches, one extractor: Excel/CSV →
+POI text grid → `text` block; photo → base64 `image` block (vision). Config is
+`app.anthropic.*` (`ANTHROPIC_API_KEY` env only). **Not fire-and-forget:** unlike
+email/push, a blank key or a call/parse failure throws `AiExtractionException` →
+**503 `AI_UNAVAILABLE`** (the import is synchronous, the master is waiting), so the
+PWA can offer "enter manually". The uploaded file is parsed then **discarded**
+(never stored). `parse` returns a review proposal (no auto-commit; units normalized
+via `UnitNormalizer`, unreadable values flagged in `issues`); `commit` creates the
+estimate through `EstimateService.createFromImport` (respects the FREE estimate cap
++ ownership) **and** upserts the ticked positions into the catalog by reusing
+`CatalogImportService.commit` — one transaction, no external I/O inside it. The
+`SYSTEM_PROMPT` tells the model to use sentinels (0 / empty string) for unreadable
+values rather than guessing — mapped back to null + a review flag server-side.
+
 ### Entities vs. records
 
 - **Entities** (`User`, `RefreshToken`) — mutable JPA, Lombok

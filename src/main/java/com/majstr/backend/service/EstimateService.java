@@ -15,6 +15,7 @@ import com.majstr.backend.entity.EstimateItem;
 import com.majstr.backend.entity.ItemType;
 import com.majstr.backend.entity.EstimateStatus;
 import com.majstr.backend.entity.Project;
+import com.majstr.backend.entity.Unit;
 import com.majstr.backend.exception.EstimateSignedException;
 import com.majstr.backend.exception.InvalidEstimateStatusException;
 import com.majstr.backend.exception.ResourceNotFoundException;
@@ -41,6 +42,8 @@ public class EstimateService {
 
     /** Money is rounded to two decimal places (kopiykas) using HALF_UP. */
     static final int MONEY_SCALE = 2;
+    /** Quantity keeps three decimals (matches the estimate_items column scale). */
+    static final int QUANTITY_SCALE = 3;
     static final RoundingMode MONEY_ROUNDING = RoundingMode.HALF_UP;
 
     private final EstimateRepository estimateRepository;
@@ -67,6 +70,45 @@ public class EstimateService {
         Estimate saved = estimateRepository.save(estimate);
         projectRepository.incrementEstimatesCreated(projectId); // lifetime churn counter
         return toResponse(saved, List.of());
+    }
+
+    /**
+     * Creates an estimate on an object from an LLM-extracted import (Excel/photo).
+     * Respects the FREE per-project estimate cap and ownership like a normal create,
+     * bumps the lifetime churn counter, and persists the extracted items in order.
+     * The deposit (завдаток) is carried onto the estimate; money is scaled HALF_UP.
+     * The caller ({@code EstimateImportService}) has already gated the feature.
+     */
+    @Transactional
+    public EstimateResponse createFromImport(UUID projectId, ImportEstimateData data, UUID ownerId) {
+        Project project = projectService.loadOwned(projectId, ownerId);
+        limitService.requireCanAddEstimate(ownerId, projectId);
+        Estimate estimate = Estimate.builder()
+                .project(project)
+                .name(normalize(data.name()))
+                .depositAmount(data.depositAmount() == null
+                        ? null
+                        : data.depositAmount().setScale(MONEY_SCALE, MONEY_ROUNDING))
+                .build();
+        Estimate saved = estimateRepository.save(estimate);
+        projectRepository.incrementEstimatesCreated(projectId); // lifetime churn counter
+
+        List<EstimateItem> items = new ArrayList<>();
+        int sortOrder = 0;
+        for (ImportEstimateData.ImportItem in : data.items()) {
+            items.add(EstimateItem.builder()
+                    .estimate(saved)
+                    .type(in.type())
+                    .name(in.name().trim())
+                    .category(CatalogService.normalizeCategory(in.category()))
+                    .unit(in.unit())
+                    .quantity(in.quantity().setScale(QUANTITY_SCALE, MONEY_ROUNDING))
+                    .unitPrice(in.unitPrice().setScale(MONEY_SCALE, MONEY_ROUNDING))
+                    .sortOrder(sortOrder++)
+                    .build());
+        }
+        itemRepository.saveAll(items);
+        return toResponse(saved, itemRepository.findByEstimateIdOrderBySortOrderAscIdAsc(saved.getId()));
     }
 
     @Transactional(readOnly = true)
@@ -341,5 +383,21 @@ public class EstimateService {
 
     private static String normalize(String s) {
         return s == null || s.isBlank() ? null : s.trim();
+    }
+
+    /**
+     * Server-side input for {@link #createFromImport}: the estimate name + deposit and
+     * the final (master-confirmed) items. Units/types/amounts are already resolved by
+     * {@code EstimateImportService} from the LLM extraction and the review-screen edits.
+     */
+    public record ImportEstimateData(String name, BigDecimal depositAmount, List<ImportItem> items) {
+        public record ImportItem(
+                ItemType type,
+                String name,
+                String category,
+                Unit unit,
+                BigDecimal quantity,
+                BigDecimal unitPrice
+        ) {}
     }
 }

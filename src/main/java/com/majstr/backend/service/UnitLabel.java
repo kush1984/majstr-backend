@@ -24,7 +24,8 @@ public final class UnitLabel {
             entry(Unit.M3,           "м³"),
             entry(Unit.T,            "т"),
             entry(Unit.POINT,        "точка"),
-            entry(Unit.PERCENT,      "%")
+            entry(Unit.PERCENT,      "%"),
+            entry(Unit.KM,           "км")
     );
 
     private UnitLabel() {}

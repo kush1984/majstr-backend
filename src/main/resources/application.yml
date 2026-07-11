@@ -67,8 +67,11 @@ management:
       enabled: true
 
 spring.servlet.multipart:
-  max-file-size: 2MB
-  max-request-size: 4MB
+  # 10 MB covers a phone photo of an estimate (estimate import). The logo upload
+  # still enforces its own ≤2 MB check in code, so this larger servlet ceiling
+  # doesn't weaken it.
+  max-file-size: 10MB
+  max-request-size: 12MB
 
 app:
   jwt:
@@ -123,6 +126,14 @@ app:
       public-key: ${VAPID_PUBLIC_KEY:}
       private-key: ${VAPID_PRIVATE_KEY:}
       subject: ${VAPID_SUBJECT:mailto:admin@majstr.app}
+  anthropic:
+    # Claude API for the estimate-import LLM extraction (Excel/photo → estimate).
+    # The key is env only and blank in local dev — then the import feature reports
+    # "unavailable" (503) instead of running, since the call is synchronous. Opus 4.8
+    # is chosen for table/number OCR accuracy; the uploaded file is never persisted.
+    api-key: ${ANTHROPIC_API_KEY:}
+    model: ${ANTHROPIC_MODEL:claude-opus-4-8}
+    max-tokens: ${ANTHROPIC_MAX_TOKENS:8000}
   sentry:
     # Error monitoring. DSN is env only and blank in local dev (then Sentry is
     # disabled — nothing is sent, no noise). PII is never sent (send-default-pii
