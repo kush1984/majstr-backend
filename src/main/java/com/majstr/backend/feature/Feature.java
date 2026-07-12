@@ -17,5 +17,8 @@ public enum Feature {
     /** Import a ready estimate from an Excel/CSV file or a photo via LLM extraction
      *  (PRO+). Distinct from {@link #AI_ASSISTANT} (TEAM-only, reserved for "draft an
      *  estimate from a description") — this is a concrete PRO onboarding unlock. */
-    ESTIMATE_IMPORT
+    ESTIMATE_IMPORT,
+    /** Object measurements (Заміри): per-object rooms + measured elements, pulled into
+     *  estimate line quantities. PRO+ — measuring pays off on big jobs (crews = PRO). */
+    MEASUREMENTS
 }

@@ -97,7 +97,7 @@ one-line summary — keep the item in the file as a record.
   (and the plan change) into it.
 
 ### Device / OS a master logs in from (admin)
-- **Status:** IN_PROGRESS
+- **Status:** RESOLVED
 - **Since:** 2026-07-10
 - **Context:** We never captured which device masters use. The only device signal today
   is `push_subscriptions.user_agent` (push opt-ins only — biased). Product wants to know
@@ -108,6 +108,11 @@ one-line summary — keep the item in the file as a record.
   useful). Surface in `AdminUserSummary`/`AdminUserDetail`. Adjacent: the "Audit log for
   sensitive actions" item (a fuller `login_events` history would subsume this) and the
   privacy policy "technical data" line (mention device type at the next policy review).
+- **Resolution:** Login-device iteration ([iteration-login-device.md](iteration-login-device.md)) —
+  `DeviceInfo.parse` + `LastActiveTracker` store `users.last_device_type` / `last_os` (V44), surfaced on
+  `AdminUserSummary` / `AdminUserDetail`. The backend admin page now **renders** it: the user-detail modal
+  shows a "Пристрій" line (📱 Телефон / Планшет / 💻 Комп'ютер + OS) next to last activity
+  (`static/admin/index.html`). The PWA has no admin UI by design; the fields ride on the admin JSON.
 
 ### Admin metrics by trade after the multi-trade move
 - **Status:** OPEN
@@ -698,6 +703,44 @@ one-line summary — keep the item in the file as a record.
   no silent-wrong-number — same discipline as template quantities above). If masters later
   want the breakdown stored/editable, add dimension fields to `EstimateItem` then. No backend
   change for v1.
+- **Update (Object-measurements iteration, 2026-07-11):** the "stored/editable breakdown" want
+  is now met at the **object** level — Заміри (`measurement_room`/`measurement_item`, V46) persist
+  the entered dimensions (payload) and are substituted into line quantities via "Вибрати з
+  замірів". This single-line calculator stays as the quick per-line helper (unchanged, надбудова).
+
+### Object measurements: complex shapes (mansard / triangle / cut corner) in SURFACE
+- **Status:** DEFERRED
+- **Since:** Object-measurements iteration (2026-07-11)
+- **Context:** SURFACE is Σ(д×ш) − прорізи (like the single-line calculator). Rooms with a
+  mansard, triangular gable, or cut corner need a shape calculator with figures.
+- **Notes / options:** Add a figures calculator (rectangle/triangle/trapezoid with a formula
+  hint) into the SURFACE editor when demand is confirmed — most jobs are "периметр × висота −
+  проєми". The standalone figure calculator built earlier can be grafted in then.
+
+### Object measurements: LIVE link (re-measure → prompt to update the estimate)
+- **Status:** DEFERRED
+- **Since:** Object-measurements iteration (2026-07-11)
+- **Context:** v1 is **selection memory** only — a line stores which elements it summed
+  (`measurement_refs`), but changing a measurement does NOT auto-update lines that used it.
+- **Notes / options:** A live link (re-measured a room → banner "N lines use this — update?")
+  would be convenient but risks silently changing signed/sent sums. Keep memory-only until asked;
+  if built, gate it behind reopen/re-sign like every other edit to a SIGNED estimate.
+
+### Object measurements: rooms as templates (typical bathroom)
+- **Status:** OPEN
+- **Since:** Object-measurements iteration (2026-07-11)
+- **Context:** A master measures similar rooms repeatedly (a "typical bathroom": ceiling +
+  walls + reveal). A room template would seed the elements to re-measure.
+- **Notes / options:** A saved room template (element skeleton, empty dimensions — same
+  empty-first discipline as estimate templates) dropped into an object. Build on feedback.
+
+### Object measurements: mixing different units into one line — forbidden
+- **Status:** RESOLVED (by design)
+- **Since:** Object-measurements iteration (2026-07-11)
+- **Context:** Could a line sum m² AND м.пог elements? No.
+- **Resolution:** Deliberately disallowed — the "Вибрати з замірів" picker filters to the line's
+  unit, and `MeasurementService.sumForRefs` rejects a unit mismatch (400 `unit-mismatch`). A line
+  has one unit; mixing metres and square-metres into one quantity is meaningless.
 
 ### Estimate templates spanning multiple trades
 - **Status:** OPEN
@@ -749,7 +792,7 @@ one-line summary — keep the item in the file as a record.
   and return the existing `CatalogImportParseResponse`. Provider/prompt are now decided.
 
 ### Import an ESTIMATE (not a price list) from a file
-- **Status:** IN_PROGRESS
+- **Status:** RESOLVED
 - **Since:** Catalog price-import iteration (2026-07-06)
 - **Context:** This iteration imports a master's **price list into the catalog**. A different
   ask is importing a whole **estimate** (positions + quantities for one object) from a file —
@@ -777,6 +820,48 @@ one-line summary — keep the item in the file as a record.
   (object-create "тип кошторису: З файлу/фото" + the "+ Новий" picker on a project); catalog
   name-conflicts resolved **on the review screen** (per-item, master decides). "Import-append
   into an already-open estimate" (editor entry point) deliberately deferred — see below.
+- **Resolution:** Estimate-import-LLM iteration ([iteration-estimate-import-llm.md](iteration-estimate-import-llm.md))
+  — shipped. `POST /api/estimates/import/parse|commit`, `ClaudeEstimateExtractor` (Anthropic raw HTTP, Opus 4.8,
+  vision + `output_config.format` JSON schema), POI text-grid for Excel/CSV, base64 image for photos (printed +
+  hand-written). Review screen (units normalized, **0 qty/price allowed** — a master may know the price before the
+  count), commit creates the estimate on the object + upserts the ticked positions into the catalog (reuses
+  `CatalogImportService.commit`). PRO-gated (`Feature.ESTIMATE_IMPORT`, PRO+TEAM). Two PWA entry points
+  (object-create tile + project "+ Новий" picker). Follow-up: new `KM` unit (V45) + `м.кв.`→м² recognition. PWA
+  green (tsc / 84 tests / build); backend build on the user.
+
+### Measurements: complex shapes (mansard / triangle / cut corner) in a SURFACE element
+- **Status:** DEFERRED
+- **Since:** Object-measurements iteration (2026-07-11)
+- **Context:** A SURFACE element is Σ(l·w) − Σ openings (same as the single-line calculator).
+  Non-rectangular shapes (mansard, triangle, cut corner) aren't expressible.
+- **Notes / options:** The standalone shape calculator (built separately) can be folded into
+  SURFACE later, when demand is confirmed — most masters are fine with "perimeter × height −
+  openings". Not now.
+
+### Measurements: live link (re-measure a room → prompt to update the estimate)
+- **Status:** DEFERRED
+- **Since:** Object-measurements iteration (2026-07-11)
+- **Context:** v1 is **selection memory** only — a line remembers which elements were summed
+  (`measurement_refs`), but changing an element's result does NOT auto-update the line quantity.
+- **Notes / options:** A live link (re-measure → "update N estimates?") is convenient but risks
+  silently changing signed sums. Deferred deliberately; revisit only with a clear guard around
+  SIGNED estimates.
+
+### Measurements: rooms as templates (typical bathroom)
+- **Status:** OPEN
+- **Since:** Object-measurements iteration (2026-07-11)
+- **Context:** A master measures similar rooms repeatedly (a standard bathroom). A "room template"
+  (a preset set of elements) could speed this up.
+- **Notes / options:** Build by feedback — mirror the estimate-template idea (`measurement_room`
+  preset + apply-to-object). Confirm the want first.
+
+### Measurements: mixing different-unit sums into one line (forbidden by design)
+- **Status:** RESOLVED
+- **Since:** Object-measurements iteration (2026-07-11)
+- **Context:** Could a line sum both m² and м.пог elements? No — a line has one unit.
+- **Resolution:** Deliberately forbidden — the "Вибрати з замірів" dialog filters to the line's
+  unit (Stage 2), and the server re-checks each ref's unit against the line's. A line's quantity
+  is always one unit.
 
 ### Import-append into an already-open estimate (editor entry point)
 - **Status:** DEFERRED

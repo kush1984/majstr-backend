@@ -14,8 +14,10 @@ import com.majstr.backend.entity.Estimate;
 import com.majstr.backend.entity.EstimateItem;
 import com.majstr.backend.entity.ItemType;
 import com.majstr.backend.entity.EstimateStatus;
+import com.majstr.backend.entity.MeasurementRefs;
 import com.majstr.backend.entity.Project;
 import com.majstr.backend.entity.Unit;
+import com.majstr.backend.service.measurement.MeasurementService;
 import com.majstr.backend.exception.EstimateSignedException;
 import com.majstr.backend.exception.InvalidEstimateStatusException;
 import com.majstr.backend.exception.ResourceNotFoundException;
@@ -53,6 +55,7 @@ public class EstimateService {
     private final CatalogService catalogService;
     private final EstimatePdfService pdfService;
     private final LimitService limitService;
+    private final MeasurementService measurementService;
 
     // ---- estimates ---------------------------------------------------------
 
@@ -217,17 +220,40 @@ public class EstimateService {
     public EstimateItemResponse addItem(UUID estimateId, EstimateItemRequest req, UUID ownerId) {
         Estimate estimate = loadOwned(estimateId, ownerId);
         requireNotSigned(estimate);
+        Resolved r = resolveQuantity(estimate, req);
         EstimateItem item = EstimateItem.builder()
                 .estimate(estimate)
                 .type(req.type())
                 .name(req.name().trim())
                 .category(CatalogService.normalizeCategory(req.category()))
                 .unit(req.unit())
-                .quantity(req.quantity())
+                .quantity(r.quantity())
                 .unitPrice(req.unitPrice())
+                .measurementRefs(r.refs())
+                .quantityManual(r.manual())
                 .sortOrder(req.sortOrder() == null ? 0 : req.sortOrder())
                 .build();
         return EstimateItemResponse.from(itemRepository.save(item));
+    }
+
+    /**
+     * Resolves the line's quantity + measurement selection. When the line pulled from
+     * measurements (refs present, not hand-edited), the quantity is <b>recomputed on the
+     * server</b> from the selected elements — the client's number is never trusted, and
+     * each element's unit is checked against the line's. Otherwise the sent quantity stands
+     * and the selection is kept as memory (with the manual flag).
+     */
+    private record Resolved(BigDecimal quantity, String refs, boolean manual) {}
+
+    private Resolved resolveQuantity(Estimate estimate, EstimateItemRequest req) {
+        String refs = MeasurementRefs.format(req.measurementRefs());
+        boolean hasRefs = req.measurementRefs() != null && !req.measurementRefs().isEmpty();
+        if (hasRefs && !req.quantityManual()) {
+            BigDecimal quantity = measurementService.sumForRefs(
+                    estimate.getProject().getId(), req.measurementRefs(), req.unit());
+            return new Resolved(quantity, refs, false);
+        }
+        return new Resolved(req.quantity(), refs, req.quantityManual());
     }
 
     @Transactional
@@ -287,14 +313,18 @@ public class EstimateService {
                                            UUID itemId,
                                            EstimateItemRequest req,
                                            UUID ownerId) {
-        requireNotSigned(loadOwned(estimateId, ownerId));
+        Estimate estimate = loadOwned(estimateId, ownerId);
+        requireNotSigned(estimate);
         EstimateItem item = loadItemInEstimate(estimateId, itemId);
         item.setType(req.type());
         item.setName(req.name().trim());
         item.setCategory(CatalogService.normalizeCategory(req.category()));
         item.setUnit(req.unit());
-        item.setQuantity(req.quantity());
+        Resolved r = resolveQuantity(estimate, req);
+        item.setQuantity(r.quantity());
         item.setUnitPrice(req.unitPrice());
+        item.setMeasurementRefs(r.refs());
+        item.setQuantityManual(r.manual());
         if (req.sortOrder() != null) {
             item.setSortOrder(req.sortOrder());
         }

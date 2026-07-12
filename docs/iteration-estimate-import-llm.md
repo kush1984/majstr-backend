@@ -6,7 +6,7 @@ confirms; we create a **ready estimate on an object** and upsert the positions
 into the master's catalog. PRO-gated. The uploaded file is parsed then
 discarded — never persisted.
 
-- **Status:** 🔨 Backend code complete; `./gradlew build` pending at the gate.
+- **Status:** 🔨 BACKEND (build on the user); PWA done & green (tsc / 84 tests / build).
 - **App version:** PWA `0.5.4 → 0.6.0` (headline feature → minor bump).
 - **Open-questions:** promotes "Import an ESTIMATE from a file" → IN_PROGRESS;
   adds the deferred "import-append into an open estimate" item; notes the

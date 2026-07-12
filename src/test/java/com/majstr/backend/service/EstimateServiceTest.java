@@ -19,6 +19,7 @@ import com.majstr.backend.entity.User;
 import com.majstr.backend.exception.LimitExceededException;
 import com.majstr.backend.feature.Limit;
 import com.majstr.backend.feature.LimitService;
+import com.majstr.backend.service.measurement.MeasurementService;
 import com.majstr.backend.repository.EstimateItemRepository;
 import com.majstr.backend.repository.EstimateRepository;
 import com.majstr.backend.repository.ProjectRepository;
@@ -40,6 +41,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.willThrow;
 import static org.mockito.Mockito.never;
@@ -54,6 +56,7 @@ class EstimateServiceTest {
     @Mock private ProjectRepository projectRepository;
     @Mock private CatalogService catalogService;
     @Mock private LimitService limitService;
+    @Mock private MeasurementService measurementService;
 
     @InjectMocks private EstimateService estimateService;
 
@@ -143,7 +146,7 @@ class EstimateServiceTest {
 
         EstimateItemRequest req = new EstimateItemRequest(
                 ItemType.WORK, "Plastering", "  Walls  ", Unit.M2,
-                new BigDecimal("25.000"), new BigDecimal("180.00"), 1);
+                new BigDecimal("25.000"), new BigDecimal("180.00"), 1, null, false);
 
         var resp = estimateService.addItem(estimateId, req, ownerId);
 
@@ -154,13 +157,55 @@ class EstimateServiceTest {
     }
 
     @Test
+    void addItem_withMeasurementRefs_recomputesQuantityServerSide() {
+        Estimate estimate = ownedEstimate(ownerId);
+        given(estimateRepository.findById(estimateId)).willReturn(Optional.of(estimate));
+        given(itemRepository.save(any(EstimateItem.class))).willAnswer(inv -> inv.getArgument(0));
+        // Server is the source of truth — the sum, not the client's number.
+        given(measurementService.sumForRefs(eq(projectId), anyList(), eq(Unit.M2)))
+                .willReturn(new BigDecimal("30.000"));
+
+        List<UUID> refs = List.of(UUID.randomUUID(), UUID.randomUUID());
+        EstimateItemRequest req = new EstimateItemRequest(
+                ItemType.WORK, "Стеля", null, Unit.M2,
+                new BigDecimal("999.000"), // client preview — must be ignored
+                new BigDecimal("100.00"), 0, refs, false);
+
+        var resp = estimateService.addItem(estimateId, req, ownerId);
+
+        assertThat(resp.quantity()).isEqualByComparingTo("30.000"); // recomputed, not 999
+        assertThat(resp.lineTotal()).isEqualByComparingTo("3000.00"); // 30 × 100
+        assertThat(resp.measurementRefs()).hasSize(2);
+        assertThat(resp.quantityManual()).isFalse();
+    }
+
+    @Test
+    void addItem_manualQuantityKeepsRefsButIsNotRecomputed() {
+        Estimate estimate = ownedEstimate(ownerId);
+        given(estimateRepository.findById(estimateId)).willReturn(Optional.of(estimate));
+        given(itemRepository.save(any(EstimateItem.class))).willAnswer(inv -> inv.getArgument(0));
+
+        List<UUID> refs = List.of(UUID.randomUUID());
+        EstimateItemRequest req = new EstimateItemRequest(
+                ItemType.WORK, "Стеля", null, Unit.M2,
+                new BigDecimal("42.000"), new BigDecimal("100.00"), 0, refs, true); // manual
+
+        var resp = estimateService.addItem(estimateId, req, ownerId);
+
+        assertThat(resp.quantity()).isEqualByComparingTo("42.000"); // kept, not recomputed
+        assertThat(resp.quantityManual()).isTrue();
+        assertThat(resp.measurementRefs()).hasSize(1); // selection memory kept
+        verify(measurementService, never()).sumForRefs(any(), anyList(), any());
+    }
+
+    @Test
     void addItem_rejectsWhenEstimateBelongsToAnotherUser() {
         Estimate estimate = ownedEstimate(otherUserId);
         given(estimateRepository.findById(estimateId)).willReturn(Optional.of(estimate));
 
         EstimateItemRequest req = new EstimateItemRequest(
                 ItemType.WORK, "X", null, Unit.PIECE,
-                new BigDecimal("1.000"), new BigDecimal("1.00"), 0);
+                new BigDecimal("1.000"), new BigDecimal("1.00"), 0, null, false);
 
         assertThatThrownBy(() -> estimateService.addItem(estimateId, req, ownerId))
                 .isInstanceOf(AccessDeniedException.class);
@@ -257,7 +302,7 @@ class EstimateServiceTest {
 
         EstimateItemRequest req = new EstimateItemRequest(
                 ItemType.WORK, "X", null, Unit.PIECE,
-                new BigDecimal("1.000"), new BigDecimal("1.00"), 0);
+                new BigDecimal("1.000"), new BigDecimal("1.00"), 0, null, false);
 
         assertThatThrownBy(() -> estimateService.addItem(estimateId, req, ownerId))
                 .isInstanceOf(EstimateSignedException.class);
@@ -269,7 +314,7 @@ class EstimateServiceTest {
 
         EstimateItemRequest req = new EstimateItemRequest(
                 ItemType.WORK, "X", null, Unit.PIECE,
-                new BigDecimal("1.000"), new BigDecimal("1.00"), 0);
+                new BigDecimal("1.000"), new BigDecimal("1.00"), 0, null, false);
 
         assertThatThrownBy(() -> estimateService.updateItem(estimateId, UUID.randomUUID(), req, ownerId))
                 .isInstanceOf(EstimateSignedException.class);

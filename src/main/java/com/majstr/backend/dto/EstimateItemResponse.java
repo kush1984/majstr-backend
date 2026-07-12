@@ -2,10 +2,12 @@ package com.majstr.backend.dto;
 
 import com.majstr.backend.entity.EstimateItem;
 import com.majstr.backend.entity.ItemType;
+import com.majstr.backend.entity.MeasurementRefs;
 import com.majstr.backend.entity.Unit;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.util.List;
 import java.util.UUID;
 
 public record EstimateItemResponse(
@@ -17,7 +19,12 @@ public record EstimateItemResponse(
         BigDecimal quantity,
         BigDecimal unitPrice,
         BigDecimal lineTotal,
-        int sortOrder
+        int sortOrder,
+        /** Measurement elements this line's quantity was summed from (empty = none) —
+         *  drives the "Вибрати з замірів" pre-selection. */
+        List<UUID> measurementRefs,
+        /** True when the master edited the quantity by hand — drives the overwrite warning. */
+        boolean quantityManual
 ) {
     public static EstimateItemResponse from(EstimateItem item) {
         BigDecimal lineTotal = item.getQuantity()
@@ -32,7 +39,9 @@ public record EstimateItemResponse(
                 item.getQuantity(),
                 item.getUnitPrice(),
                 lineTotal,
-                item.getSortOrder()
+                item.getSortOrder(),
+                MeasurementRefs.parse(item.getMeasurementRefs()),
+                item.isQuantityManual()
         );
     }
 }

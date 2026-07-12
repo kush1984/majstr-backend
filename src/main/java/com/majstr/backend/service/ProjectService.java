@@ -105,7 +105,9 @@ public class ProjectService {
         // Estimates and items are cascaded by the FK ON DELETE CASCADE.
     }
 
-    Project loadOwned(UUID id, UUID ownerId) {
+    /** Load a project or throw — existence (404) + ownership (403). Public so
+     *  services in sub-packages (e.g. measurements) can reuse the same owner guard. */
+    public Project loadOwned(UUID id, UUID ownerId) {
         Project project = projectRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Project not found: " + id));
         if (!project.getOwner().getId().equals(ownerId)) {

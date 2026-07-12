@@ -166,6 +166,12 @@ public class GlobalExceptionHandler {
         return build(HttpStatus.BAD_REQUEST, msg(ex.getMessage()), req);
     }
 
+    @ExceptionHandler(MeasurementException.class)
+    public ResponseEntity<ErrorResponse> handleMeasurement(MeasurementException ex, HttpServletRequest req) {
+        // The throw sites pass a bundle key as the exception message.
+        return build(HttpStatus.BAD_REQUEST, msg(ex.getMessage()), req);
+    }
+
     @ExceptionHandler(AiExtractionException.class)
     public ResponseEntity<ErrorResponse> handleAiExtraction(AiExtractionException ex, HttpServletRequest req) {
         // Not configured (dev) or an upstream/parse failure — the AI couldn't do it

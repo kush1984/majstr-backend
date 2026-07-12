@@ -47,7 +47,8 @@ public final class PlanConfig {
                         Feature.ONLINE_SIGNATURE,
                         Feature.PHOTO_REPORTS,
                         Feature.OBJECT_ECONOMY,
-                        Feature.ESTIMATE_IMPORT
+                        Feature.ESTIMATE_IMPORT,
+                        Feature.MEASUREMENTS
                 )
         ));
 
@@ -60,7 +61,8 @@ public final class PlanConfig {
                         Feature.PHOTO_REPORTS,
                         Feature.AI_ASSISTANT,
                         Feature.OBJECT_ECONOMY,
-                        Feature.ESTIMATE_IMPORT
+                        Feature.ESTIMATE_IMPORT,
+                        Feature.MEASUREMENTS
                 )
         ));
     }

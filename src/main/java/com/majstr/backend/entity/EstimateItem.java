@@ -62,6 +62,19 @@ public class EstimateItem {
     @Column(name = "sort_order", nullable = false)
     private int sortOrder;
 
+    /** Measurement elements whose result was summed into {@code quantity} — a JSON array
+     *  of measurement_item ids (selection memory for the "Вибрати з замірів" dialog). Null
+     *  when the quantity wasn't derived from measurements. Refs to deleted elements are
+     *  ignored (never a hard failure). */
+    @Column(name = "measurement_refs", columnDefinition = "text")
+    private String measurementRefs;
+
+    /** True once the master edited {@code quantity} by hand — then the measurement dialog
+     *  must not silently overwrite it (shows the selection as a hint + a soft warning). */
+    @Builder.Default
+    @Column(name = "quantity_manual", nullable = false)
+    private boolean quantityManual = false;
+
     @PrePersist
     void onCreate() {
         if (id == null) {
