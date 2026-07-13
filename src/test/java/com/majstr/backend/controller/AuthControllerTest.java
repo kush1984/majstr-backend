@@ -247,6 +247,7 @@ class AuthControllerTest {
                 null,
                 false,
                 null,
+                null,
                 "refcode1");
         return AuthResponse.of("access-jwt", "refresh-token", 900L, user);
     }

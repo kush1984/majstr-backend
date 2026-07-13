@@ -510,7 +510,7 @@ one-line summary — keep the item in the file as a record.
   Build after the fact-based economy proves used.
 
 ### Object economy: "actually received from client" (payments/prepayments) line
-- **Status:** OPEN
+- **Status:** IN_PROGRESS
 - **Since:** Object-economy iteration (2026-07-06)
 - **Context:** Economy today is income (estimates) − expenses. A third line — **what the
   client actually paid** (prepayments / staged payments) — would show real cash flow, not
@@ -518,6 +518,22 @@ one-line summary — keep the item in the file as a record.
 - **Notes / options:** A `client_payments` journal per object (amount, date, note), mirroring
   `object_expenses`; economy then shows contracted vs received vs spent. Owner-only, same
   isolation. Defer until masters ask for cash-flow tracking.
+- **Update (economy-rework, 2026-07-13):** cash-flow now IS shown — `received` = Σ deposits of
+  the counted estimates, and the economy reports **cashBalance = received − spent** (NOT clamped;
+  negative = master out of pocket) + **dueFromClient = contracted − received**. The remaining
+  open part is a **multi-payment journal** (staged payments beyond the single `deposit_amount`):
+  today the master edits the estimate's `depositAmount` to reflect total received so far. Build a
+  `client_payments` ledger when masters need more than one payment line.
+
+### Object economy: income double-counted across estimates
+- **Status:** RESOLVED
+- **Since:** Object-economy iteration (2026-07-06)
+- **Context:** Income summed ALL of an object's estimates (minus REJECTED), so variants
+  (econom/premium), a consolidated estimate + its sources, and working drafts were all
+  counted — 2–3× the real deal.
+- **Resolution:** Economy-rework (2026-07-13) — `estimates.count_in_economy` flag (V51). Income =
+  Σ flagged estimates only. Auto: sign → on; consolidate → consolidated on + sources off; drafts
+  off; owner toggle `PATCH …/count-in-economy`. See [iteration-object-economy-rework.md](iteration-object-economy-rework.md).
 
 ### Estimate: deposit → balance (завдаток / залишок)
 - **Status:** IN_PROGRESS
@@ -766,6 +782,22 @@ one-line summary — keep the item in the file as a record.
   if ANY trade matches the master) or a dedicated `GENERAL`/multi tag. Cheap to
   migrate later (single → set). Defer until a real cross-trade default is authored;
   single-trade covers every current default.
+- **Update (tetris templates, V50, 2026-07-13):** the 23 tetris section-templates ship with
+  **best-guess trades** (per section) — the master will fine-tune them (e.g. ГІДРОІЗОЛЯЦІЯ,
+  ЗВУКОІЗОЛЯЦІЯ are debatable) via the admin catalog/template editor, or a follow-up migration.
+  A single-trade tag still covers all 23. Not blocking.
+
+### Tetris default catalog: punctuation-stripped names + market-price gap
+- **Status:** OPEN
+- **Since:** Tetris-templates iteration (2026-07-13)
+- **Context:** The existing default catalog (V27) was seeded from the same tetris source with
+  **punctuation stripped** from names, so V50 had to reference those canonical (uglier) names in
+  templates for price resolution and add only the 201 net-new positions. The 355 pre-existing
+  positions keep their V31 prices, not the master's tetris prices (data-sacred).
+- **Notes / options:** If we later want the nicer-punctuated names or the master's exact prices on
+  the pre-existing 355, that's the broader "market-price updates for existing catalog items"
+  opt-in-diff work (see that item) — never a silent overwrite. Low priority; templates resolve and
+  read fine today.
 
 ### Bulk-assign trade to the "Інше" (OTHER) catalog pile
 - **Status:** OPEN
@@ -939,6 +971,10 @@ one-line summary — keep the item in the file as a record.
   is a one-line matrix edit). MANUAL progress photos can be shared to the client via the portal
   token (SHARED); RECEIPT photos are always PRIVATE. See
   [iteration-consolidated-receipts-photos.md](iteration-consolidated-receipts-photos.md).
+- **Follow-ups (2026-07-13):** per-object photo caps (FREE 5 / PRO 50 progress, receipts 50) +
+  8 MB server cap + client downscale; a **fullscreen lightbox** (tap-to-view, prev/next, Esc) —
+  functionally complete now. Deferred: **swipe** gesture in the lightbox (arrows/chevrons only for
+  now); a future move to PRO-only would be a one-line `PlanConfig` edit.
 
 ### AI_ASSISTANT
 - **Status:** OPEN
@@ -978,6 +1014,30 @@ one-line summary — keep the item in the file as a record.
 - **Since:** step 2
 - **Context:** All deletes are hard. No "trash" / undo.
 - **Notes / options:** Add `deleted_at` columns + repository scoping. Defer until someone deletes the wrong thing in anger.
+
+### METAL trade default prices are orientative
+- **Status:** OPEN
+- **Since:** metal-trade iteration
+- **Context:** V54 seeds 66 METAL catalog positions with market-hint prices from domain knowledge (WebSearch was rate-limited at authoring time). They're placeholders a fabricator refines, same as every other default catalog — but no real market pass was done.
+- **Notes / options:** Do a proper price pass once a metalworker uses it, or tune via the admin catalog editor (`AdminCatalogTemplatePage`). Non-blocking — masters set their own prices.
+
+### PRO trial: "ending soon" reminder
+- **Status:** OPEN
+- **Since:** pro-trial iteration
+- **Context:** The 5-day self-serve trial reverts to FREE silently via `BillingExpiryService`; the master gets no "trial ends tomorrow" nudge (a conversion moment).
+- **Notes / options:** Reuse the auto-renew T-N reminder machinery (`findAutoRenewReminderDue` pattern) for a trial-ending email.
+
+### Multi-account abuse: AI-call daily quota + blocklist upkeep
+- **Status:** OPEN
+- **Since:** anti-abuse-email iteration
+- **Context:** The anti-abuse iteration closed the sharp edges — trial + client PDF now require a verified email, registration blocks disposable/no-MX domains and dedupes gmail aliases (`email_canonical`, V55). Not taken: option **E**, a hard per-user/day cap on LLM extraction calls (estimate/receipt import) — the strongest ceiling on live API cost if a determined abuser still verifies throwaway inboxes. Also: the disposable-domain blocklist is curated, not exhaustive; the SQL backfill only canonicalizes gmail (legacy non-gmail plus-aliases aren't retro-deduped).
+- **Notes / options:** Add a daily AI-call quota keyed by user (even for PRO/trial) if trial abuse persists. Periodically refresh the blocklist from a maintained public list. Consider device/IP signals only if email-level guards prove insufficient.
+
+### Seeders miss referral_code (NOT NULL since V41)
+- **Status:** RESOLVED
+- **Since:** anti-abuse-email iteration
+- **Context:** `AdminSeeder` and `DevDataSeeder` built a `User` without `referralCode`, which is `NOT NULL UNIQUE` (V41) — a fresh seed (empty DB) failed on that column. Dormant today because existing DBs were backfilled by V41; only bit a brand-new deploy/dev DB.
+- **Resolution:** Both seeders now inject `ReferralService` and set `.referralCode(referralService.generateUniqueCode())` (plus `.emailCanonical(...)` from V55). `AdminSeederTest` asserts the saved admin has non-null `referralCode`/`emailCanonical`. (DevDataSeeder is `@Profile("dev")`, untested.)
 
 ---
 

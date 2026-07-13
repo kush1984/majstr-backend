@@ -178,6 +178,30 @@ another's dedup.
   Import / estimate-import upsert paths were verified to never insert a violating row.
 - Tests: `CatalogServiceTest` (create-idempotent update-in-place). Build on the user.
 
+## Follow-ups (polish, after live testing)
+
+- **Photo limits + compression** — per-object caps with separate budgets: FREE 5 / PRO+TEAM 50
+  progress photos; receipts 50 (FREE 0 — receipts are PRO anyway). `Limit.MAX_PHOTOS_PER_OBJECT`
+  / `MAX_RECEIPT_PHOTOS_PER_OBJECT` in `PlanConfig`, enforced by `LimitService.requireCanAddPhoto`
+  (counts by source). Server hard cap **8 MB** + **client-side downscale to ~2048px/JPEG**
+  (`lib/image.ts`) before upload — a 6 MB phone photo becomes <1.5 MB invisibly. `403
+  PHOTO_LIMIT_REACHED` / `RECEIPT_PHOTO_LIMIT_REACHED` (uk «фото» is plural-invariant, no plural
+  helper); `PlanLimitsResponse` carries the caps for preventive UI (disable + upsell).
+- **Receipt extraction quality** — the receipt vision prompt was rewritten around the exact
+  Ukrainian fiscal-receipt layout (qty×price line above the name; VAT letter; `#`-article line
+  with the unit) with an anchor «one item per `#`-article line», so dense receipts don't
+  under-extract. Parse now sends the **full-resolution** image (downscale only for the *stored*
+  receipt photo) — small monospace receipt text was lost at 2048px.
+- **Small UX:** `ConsolidateSheet` pre-fills the name «Зведений кошторис» (editable); `ItemForm`
+  shows an **empty** quantity/price field when the value is 0 (an imported line) so there's
+  nothing to erase on mobile — save still requires a positive number (`decimalString`).
+- **Fullscreen photo viewer (lightbox)** — tapping a photo in the «Фото» tab opens it full-screen
+  (`object-contain`), close on backdrop / ✕ / Esc, prev/next chevrons + ←/→, a «n / N» counter,
+  body-scroll lock. Reuses the authenticated blob fetch (`usePhotoBlobUrl`). Built for phones
+  (≈99% of users); no backend change — same `GET …/photos/{id}/file` stream.
+- Tests: `LimitServiceTest` (+photo caps), `ProjectPhotoServiceTest` (+limit), `CatalogServiceTest`
+  (+create idempotency). PWA green (tsc / vitest / build). App version `0.8.1`.
+
 ## Gotchas
 
 - Jackson 3 (`tools.jackson.*`) for any ObjectMapper use.

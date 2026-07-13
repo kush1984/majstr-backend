@@ -18,7 +18,8 @@ public record EstimateSummary(
         EstimateStatus status,
         LocalDate validUntil,
         Instant createdAt,
-        Instant updatedAt
+        Instant updatedAt,
+        boolean countInEconomy
 ) {
     public static EstimateSummary from(Estimate estimate) {
         return new EstimateSummary(
@@ -28,7 +29,8 @@ public record EstimateSummary(
                 estimate.getStatus(),
                 estimate.getValidUntil(),
                 estimate.getCreatedAt(),
-                estimate.getUpdatedAt()
+                estimate.getUpdatedAt(),
+                estimate.isCountInEconomy()
         );
     }
 }

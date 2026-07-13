@@ -36,6 +36,10 @@ public interface UserRepository extends JpaRepository<User, UUID> {
 
     boolean existsByEmailIgnoreCase(String email);
 
+    /** Anti-abuse duplicate detection: true if any account already resolves to this
+     *  canonical email (gmail aliases collapsed — see {@code EmailPolicyService}). */
+    boolean existsByEmailCanonical(String emailCanonical);
+
     /** Used by the first-admin auto-seed to stay idempotent. */
     boolean existsByRole(Role role);
 

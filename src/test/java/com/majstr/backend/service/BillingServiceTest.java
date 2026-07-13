@@ -57,7 +57,7 @@ class BillingServiceTest {
     private BillingProperties props(String token, boolean allowDevSim) {
         return new BillingProperties(token, "https://api.monobank.ua",
                 new BigDecimal("299"), 30, new BigDecimal("1494"), 3,
-                "http://ret", "http://hook", allowDevSim, 3, 30);
+                "http://ret", "http://hook", allowDevSim, 3, 30, 5);
     }
 
     private BillingService service(BillingProperties props) {
@@ -72,7 +72,7 @@ class BillingServiceTest {
     @Test
     void checkout_devMode_grantsProImmediatelyAndReturnsReturnUrl() {
         UUID uid = UUID.randomUUID();
-        User user = freeUser(uid);
+        User user = verifiedFreeUser(uid);
         given(userRepository.findById(uid)).willReturn(Optional.of(user));
         ArgumentCaptor<Payment> saved = ArgumentCaptor.forClass(Payment.class);
         given(paymentRepository.save(saved.capture())).willAnswer(i -> i.getArgument(0));
@@ -88,10 +88,22 @@ class BillingServiceTest {
     }
 
     @Test
+    void checkout_unverifiedEmail_throwsAndGrantsNothing() {
+        UUID uid = UUID.randomUUID();
+        User user = freeUser(uid); // emailVerified defaults false
+        given(userRepository.findById(uid)).willReturn(Optional.of(user));
+
+        assertThatThrownBy(() -> service(props("")).checkout(uid, false, BillingPeriod.MONTH))
+                .isInstanceOf(com.majstr.backend.exception.EmailNotVerifiedException.class);
+        assertThat(user.getPlan()).isEqualTo(Plan.FREE);
+        verify(paymentRepository, never()).save(any());
+    }
+
+    @Test
     void checkout_noToken_withSimulationDisabled_throwsAndGrantsNothing() {
         // Prod footgun guard: no MONOBANK_TOKEN + dev-sim off must NOT grant free PRO.
         UUID uid = UUID.randomUUID();
-        User user = freeUser(uid);
+        User user = verifiedFreeUser(uid);
         given(userRepository.findById(uid)).willReturn(Optional.of(user));
         given(paymentRepository.save(any(Payment.class))).willAnswer(i -> i.getArgument(0));
 
@@ -104,7 +116,7 @@ class BillingServiceTest {
     @Test
     void checkout_configured_createsInvoiceAndDoesNotGrantYet() {
         UUID uid = UUID.randomUUID();
-        User user = freeUser(uid);
+        User user = verifiedFreeUser(uid);
         given(userRepository.findById(uid)).willReturn(Optional.of(user));
         given(paymentRepository.save(any(Payment.class))).willAnswer(i -> {
             Payment p = i.getArgument(0);
@@ -205,7 +217,7 @@ class BillingServiceTest {
     @Test
     void checkout_halfYear_grantsSixMonthsAndRemembersPeriodForAutoRenew() {
         UUID uid = UUID.randomUUID();
-        User user = freeUser(uid);
+        User user = verifiedFreeUser(uid);
         given(userRepository.findById(uid)).willReturn(Optional.of(user));
         ArgumentCaptor<Payment> saved = ArgumentCaptor.forClass(Payment.class);
         given(paymentRepository.save(saved.capture())).willAnswer(i -> i.getArgument(0));
@@ -270,6 +282,62 @@ class BillingServiceTest {
         // Second payment of an already-rewarded invitee grants nothing (one-time).
         verify(referralRewardRepository, never()).save(any());
         verify(userRepository, never()).findById(referrerId);
+    }
+
+    private User verifiedFreeUser(UUID id) {
+        User u = freeUser(id);
+        u.setEmailVerified(true); // trial requires a verified email
+        return u;
+    }
+
+    @Test
+    void startTrial_freeUnusedVerified_grantsProForTrialDaysAndStamps() {
+        UUID uid = UUID.randomUUID();
+        User user = verifiedFreeUser(uid);
+        given(userRepository.findWithTradesById(uid)).willReturn(Optional.of(user));
+
+        User result = service(props("tok")).startTrial(uid);
+
+        assertThat(result.getPlan()).isEqualTo(Plan.PRO);
+        assertThat(result.getTrialStartedAt()).isNotNull();
+        assertThat(result.getPlanExpiresAt()).isCloseTo(
+                Instant.now().plus(5, ChronoUnit.DAYS), within60s());
+    }
+
+    @Test
+    void startTrial_unverifiedEmail_throwsAndGrantsNothing() {
+        UUID uid = UUID.randomUUID();
+        User user = freeUser(uid); // emailVerified defaults false
+        given(userRepository.findWithTradesById(uid)).willReturn(Optional.of(user));
+
+        assertThatThrownBy(() -> service(props("tok")).startTrial(uid))
+                .isInstanceOf(com.majstr.backend.exception.EmailNotVerifiedException.class);
+        assertThat(user.getPlan()).isEqualTo(Plan.FREE);
+        assertThat(user.getTrialStartedAt()).isNull();
+    }
+
+    @Test
+    void startTrial_alreadyUsed_throwsAndGrantsNothing() {
+        UUID uid = UUID.randomUUID();
+        User user = verifiedFreeUser(uid);
+        user.setTrialStartedAt(Instant.now().minus(10, ChronoUnit.DAYS));
+        given(userRepository.findWithTradesById(uid)).willReturn(Optional.of(user));
+
+        assertThatThrownBy(() -> service(props("tok")).startTrial(uid))
+                .isInstanceOf(com.majstr.backend.exception.TrialNotAvailableException.class);
+        assertThat(user.getPlan()).isEqualTo(Plan.FREE);
+    }
+
+    @Test
+    void startTrial_notFree_throws() {
+        UUID uid = UUID.randomUUID();
+        User user = verifiedFreeUser(uid);
+        user.setPlan(Plan.PRO); // already PRO — nothing to trial
+        given(userRepository.findWithTradesById(uid)).willReturn(Optional.of(user));
+
+        assertThatThrownBy(() -> service(props("tok")).startTrial(uid))
+                .isInstanceOf(com.majstr.backend.exception.TrialNotAvailableException.class);
+        assertThat(user.getTrialStartedAt()).isNull();
     }
 
     private static Payment pending(UUID uid, String invoiceId) {

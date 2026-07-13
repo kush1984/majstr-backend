@@ -127,6 +127,16 @@ class EstimateServiceTest {
     }
 
     @Test
+    void renderPdf_unverifiedOwner_throwsEmailNotVerified() {
+        // Anti-abuse: the client-facing PDF requires a verified email even on FREE.
+        Estimate estimate = ownedEstimate(ownerId); // owner emailVerified defaults false
+        given(estimateRepository.findById(estimateId)).willReturn(Optional.of(estimate));
+
+        assertThatThrownBy(() -> estimateService.renderPdf(estimateId, ownerId))
+                .isInstanceOf(com.majstr.backend.exception.EmailNotVerifiedException.class);
+    }
+
+    @Test
     void get_throwsAccessDeniedWhenEstimateBelongsToAnotherUser() {
         Estimate estimate = ownedEstimate(otherUserId);
         given(estimateRepository.findById(estimateId)).willReturn(Optional.of(estimate));
@@ -538,6 +548,46 @@ class EstimateServiceTest {
 
         assertThatThrownBy(() -> estimateService.consolidate(projectId, null, List.of(src), ownerId))
                 .isInstanceOf(AccessDeniedException.class);
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void consolidate_flagsNewInEconomyAndUnflagsSources() {
+        UUID srcA = UUID.randomUUID();
+        UUID consolidatedId = UUID.randomUUID();
+        given(projectService.loadOwned(projectId, ownerId)).willReturn(ownedProject(ownerId));
+        Estimate[] savedConsolidated = new Estimate[1];
+        given(estimateRepository.save(any(Estimate.class))).willAnswer(inv -> {
+            Estimate e = inv.getArgument(0);
+            e.setId(consolidatedId);
+            e.setStatus(EstimateStatus.DRAFT);
+            e.setCreatedAt(Instant.now());
+            e.setUpdatedAt(Instant.now());
+            savedConsolidated[0] = e;
+            return e;
+        });
+        Estimate source = sourceEstimate(srcA, ownerId);
+        source.setCountInEconomy(true); // was the accepted deal before consolidation
+        given(estimateRepository.findById(srcA)).willReturn(Optional.of(source));
+        given(itemRepository.findByEstimateIdOrderBySortOrderAscIdAsc(srcA)).willReturn(List.of());
+        given(itemRepository.findByEstimateIdOrderBySortOrderAscIdAsc(consolidatedId)).willReturn(List.of());
+
+        estimateService.consolidate(projectId, "Зведений", List.of(srcA), ownerId);
+
+        assertThat(savedConsolidated[0].isCountInEconomy()).isTrue();  // the deal now
+        assertThat(source.isCountInEconomy()).isFalse();               // superseded → dropped
+    }
+
+    @Test
+    void setCountInEconomy_togglesFlagInAnyStatus() {
+        Estimate signed = signedEstimate();
+        given(estimateRepository.findById(estimateId)).willReturn(Optional.of(signed));
+        given(itemRepository.findByEstimateIdOrderBySortOrderAscIdAsc(estimateId)).willReturn(List.of());
+
+        estimateService.setCountInEconomy(estimateId, false, ownerId);
+        assertThat(signed.isCountInEconomy()).isFalse();
+        estimateService.setCountInEconomy(estimateId, true, ownerId);
+        assertThat(signed.isCountInEconomy()).isTrue();
     }
 
     // ---- appendItems (receipt import) --------------------------------------

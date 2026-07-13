@@ -1,6 +1,7 @@
 package com.majstr.backend.dto;
 
 import com.majstr.backend.entity.ExpenseCategory;
+import com.majstr.backend.entity.ExpenseSource;
 import com.majstr.backend.entity.ObjectExpense;
 
 import java.math.BigDecimal;
@@ -13,12 +14,13 @@ public record ExpenseResponse(
         UUID id,
         BigDecimal amount,
         ExpenseCategory category,
+        ExpenseSource source,
         String note,
         LocalDate spentAt,
         Instant createdAt
 ) {
     public static ExpenseResponse from(ObjectExpense e) {
-        return new ExpenseResponse(e.getId(), e.getAmount(), e.getCategory(), e.getNote(),
+        return new ExpenseResponse(e.getId(), e.getAmount(), e.getCategory(), e.getSource(), e.getNote(),
                 e.getSpentAt(), e.getCreatedAt());
     }
 }

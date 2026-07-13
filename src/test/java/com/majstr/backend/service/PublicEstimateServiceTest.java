@@ -142,6 +142,8 @@ class PublicEstimateServiceTest {
         assertThat(estimate.getSignerIp()).isEqualTo("203.0.113.42");
         // Signing activates the project so it counts in "active projects".
         assertThat(estimate.getProject().getStatus()).isEqualTo(ProjectStatus.IN_PROGRESS);
+        // The signed estimate is the accepted deal → auto-counted in the object economy.
+        assertThat(estimate.isCountInEconomy()).isTrue();
         assertThat(view.signature()).isNotNull();
         assertThat(view.signature().signerName()).isEqualTo("Олена Іваненко");
         // Contractor is pushed a real-time signing notification.

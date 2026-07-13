@@ -8,6 +8,23 @@ description: Use at the start of every new iteration, step, or coding chunk befo
 You are about to start (or just started) a new iteration. Walk through
 the open-questions log so nothing important is silently skipped.
 
+## Mobile-first — priority #1 (verify on EVERY change, incl. tiny fixes)
+
+**~95% of masters use the product on a phone.** Mobile is the primary target,
+not an afterthought — this applies to every iteration AND every small fix, so it
+sits above the "skip for tiny fixes" rule below.
+
+- Any UI/UX change must look and work correctly on a **narrow phone viewport
+  first** (≈375px). Design mobile-first, then let it scale up — never the reverse.
+- Before finishing UI work, **verify the mobile layout**: use the Browser pane
+  with `resize_window` preset `mobile` (375×812), check tap targets, no horizontal
+  overflow, readable text, reachable actions (thumb zone), and modals/sheets that
+  fit. Prefer bottom sheets / full-width controls over desktop-style dialogs.
+- Backend changes that surface in the PWA (new fields, errors, flows) still count:
+  confirm the PWA renders them acceptably on mobile.
+- If a change can't be mobile-verified in the moment, say so explicitly rather than
+  silently assuming desktop is enough.
+
 ## Steps
 
 1. **Read** `docs/open-questions.md` in full.

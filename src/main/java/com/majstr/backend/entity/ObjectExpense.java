@@ -50,6 +50,13 @@ public class ObjectExpense {
     @Column(name = "category", nullable = false, length = 20)
     private ExpenseCategory category;
 
+    /** Receipt-logged (real material cost, against the deposit) vs hand-entered
+     *  (unforeseen, subtracted from earnings). Defaults MANUAL. */
+    @Builder.Default
+    @Enumerated(EnumType.STRING)
+    @Column(name = "source", nullable = false, length = 20)
+    private ExpenseSource source = ExpenseSource.MANUAL;
+
     @Column(name = "note", length = 500)
     private String note;
 

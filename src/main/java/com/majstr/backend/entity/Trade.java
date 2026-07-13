@@ -9,6 +9,7 @@ public enum Trade {
     DRYWALL,
     FLOORING,
     DEMOLITION,
+    METAL,
     GENERAL,
     OTHER
 }

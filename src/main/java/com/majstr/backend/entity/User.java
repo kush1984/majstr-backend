@@ -43,6 +43,12 @@ public class User {
     @Column(name = "email", nullable = false, unique = true, length = 255)
     private String email;
 
+    /** Canonical form of {@link #email} for duplicate-account detection only (NOT the
+     *  login address). Gmail aliases (dots, +tag) collapse to one value — see
+     *  {@code EmailPolicyService}. Set on register / unverified email change. */
+    @Column(name = "email_canonical", nullable = false, length = 255)
+    private String emailCanonical;
+
     @Column(name = "password_hash", nullable = false, length = 255)
     private String passwordHash;
 
@@ -125,6 +131,12 @@ public class User {
      *  once it (+ grace) passes. */
     @Column(name = "plan_expires_at")
     private Instant planExpiresAt;
+
+    /** When the master activated the one-time 5-day PRO trial. NULL = never used;
+     *  set once and never cleared (even after the trial lapses to FREE), so the
+     *  trial can be claimed at most once and admin can see who tried PRO. */
+    @Column(name = "trial_started_at")
+    private Instant trialStartedAt;
 
     /** First-touch referral source for partner rev-share (DIRECT by default; a
      *  partner code like LIGA when the master arrived via a ?ref= link or promo).

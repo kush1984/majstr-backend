@@ -1,6 +1,7 @@
 package com.majstr.backend.controller;
 
 import com.majstr.backend.dto.AddCatalogItemsBatchRequest;
+import com.majstr.backend.dto.CountInEconomyRequest;
 import com.majstr.backend.dto.EstimateConsolidateRequest;
 import com.majstr.backend.dto.EstimateCreateRequest;
 import com.majstr.backend.dto.EstimateItemFromCatalogRequest;
@@ -30,6 +31,7 @@ import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -107,6 +109,14 @@ public class EstimateController {
     public EstimateResponse reopen(@PathVariable UUID id,
                                    @AuthenticationPrincipal UserPrincipal principal) {
         return estimateService.reopen(id, principal.id());
+    }
+
+    @Operation(summary = "Toggle whether this estimate counts toward the object's economy (income)")
+    @PatchMapping("/api/estimates/{id}/count-in-economy")
+    public EstimateResponse setCountInEconomy(@PathVariable UUID id,
+                                              @Valid @RequestBody CountInEconomyRequest req,
+                                              @AuthenticationPrincipal UserPrincipal principal) {
+        return estimateService.setCountInEconomy(id, req.countInEconomy(), principal.id());
     }
 
     @Operation(summary = "Download the estimate as a PDF")

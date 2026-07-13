@@ -18,6 +18,7 @@ import com.majstr.backend.entity.MeasurementRefs;
 import com.majstr.backend.entity.Project;
 import com.majstr.backend.entity.Unit;
 import com.majstr.backend.service.measurement.MeasurementService;
+import com.majstr.backend.exception.EmailNotVerifiedException;
 import com.majstr.backend.exception.EstimateSignedException;
 import com.majstr.backend.exception.InvalidEstimateStatusException;
 import com.majstr.backend.exception.ResourceNotFoundException;
@@ -131,6 +132,9 @@ public class EstimateService {
         Estimate consolidated = estimateRepository.save(Estimate.builder()
                 .project(project)
                 .name(normalize(name) == null ? "Зведений кошторис" : normalize(name))
+                // The consolidated estimate is the deal now — count it in the economy,
+                // and drop its sources so the same work isn't double-counted.
+                .countInEconomy(true)
                 .build());
         projectRepository.incrementEstimatesCreated(projectId); // lifetime churn counter
 
@@ -141,6 +145,7 @@ public class EstimateService {
             if (!source.getProject().getId().equals(projectId)) {
                 throw new AccessDeniedException("Estimate does not belong to project " + projectId);
             }
+            source.setCountInEconomy(false); // superseded by the consolidated estimate
             for (EstimateItem item : itemRepository.findByEstimateIdOrderBySortOrderAscIdAsc(sourceId)) {
                 copies.add(EstimateItem.builder()
                         .estimate(consolidated)
@@ -235,9 +240,25 @@ public class EstimateService {
         return toResponse(estimate, items);
     }
 
+    /**
+     * Toggle whether this estimate counts toward the object's economy (income). Owner-only;
+     * works in any status (you can flag a SIGNED deal or un-flag a superseded variant).
+     */
+    @Transactional
+    public EstimateResponse setCountInEconomy(UUID estimateId, boolean value, UUID ownerId) {
+        Estimate estimate = loadOwned(estimateId, ownerId);
+        estimate.setCountInEconomy(value);
+        return toResponse(estimate, itemRepository.findByEstimateIdOrderBySortOrderAscIdAsc(estimateId));
+    }
+
     @Transactional(readOnly = true)
     public byte[] renderPdf(UUID estimateId, UUID ownerId) throws IOException, DocumentException {
         Estimate estimate = loadOwned(estimateId, ownerId);
+        // The PDF is a client-facing deliverable — gate it behind a verified email
+        // (even on FREE) so a throwaway account can't churn out finished estimates.
+        if (!estimate.getProject().getOwner().isEmailVerified()) {
+            throw new EmailNotVerifiedException("error.email-not-verified");
+        }
         return renderPdf(estimate);
     }
 

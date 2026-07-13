@@ -77,6 +77,8 @@ public class PublicEstimateService {
         estimate.setSignerName(req.clientName().trim());
         estimate.setSignerPhone(req.clientPhone().trim());
         estimate.setSignerIp(clientIp);
+        // A signed estimate is the accepted deal → count it in the object's economy.
+        estimate.setCountInEconomy(true);
         // A signed estimate means work begins — activate the project so it
         // counts in the "active projects" metric. Don't override a project
         // that's already in progress or completed.

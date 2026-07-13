@@ -46,6 +46,8 @@ public record AdminUserDetail(
         String cardMask,
         String lastAutoRenewStatus,
         Instant lastAutoRenewAt,
+        // When this master activated the one-time self-serve PRO trial (null = never).
+        Instant trialStartedAt,
         // Master→master referrals: who invited this master (email, null if none),
         // and how many they invited / of those paid.
         String referredByEmail,

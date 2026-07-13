@@ -18,6 +18,7 @@ import com.majstr.backend.repository.EstimateRepository;
 import com.majstr.backend.repository.ProjectRepository;
 import com.majstr.backend.repository.UserRepository;
 import com.majstr.backend.service.CatalogTemplateService;
+import com.majstr.backend.service.ReferralService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.ApplicationArguments;
@@ -60,6 +61,7 @@ public class DevDataSeeder implements ApplicationRunner {
     private final ProjectRepository projectRepository;
     private final EstimateRepository estimateRepository;
     private final EstimateItemRepository estimateItemRepository;
+    private final ReferralService referralService;
 
     @Override
     @Transactional
@@ -81,6 +83,8 @@ public class DevDataSeeder implements ApplicationRunner {
         }
         User user = User.builder()
                 .email(email)
+                .emailCanonical(email) // dev seed — canonical dedup irrelevant
+                .referralCode(referralService.generateUniqueCode()) // referral_code is NOT NULL UNIQUE (V41)
                 .passwordHash(passwordEncoder.encode(password))
                 .fullName(fullName)
                 .trades(new LinkedHashSet<>(trades))
@@ -88,6 +92,8 @@ public class DevDataSeeder implements ApplicationRunner {
                 .companyName(fullName + " ФОП")
                 .plan(plan)
                 .role(role)
+                .emailVerified(true) // dev convenience — verified so PRO/share/trial flows are testable
+
                 .build();
         user = userRepository.save(user);
         int templateCount = catalogTemplateService.seedForUser(user);

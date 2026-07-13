@@ -33,6 +33,9 @@ public record UserResponse(
         // NEVER the raw token/walletId — display-safe only.
         boolean autoRenew,
         String cardMask,
+        // When the one-time PRO trial was activated (null = never used). The PWA
+        // shows the "try PRO free" button only when this is null and plan is FREE.
+        Instant trialStartedAt,
         // This master's personal referral code — the PWA builds the invite link
         // majstr.pro/?ref=m-<referralCode> from it.
         String referralCode
@@ -55,6 +58,7 @@ public record UserResponse(
                 user.getPlanExpiresAt(),
                 user.isAutoRenew(),
                 user.getCardMask(),
+                user.getTrialStartedAt(),
                 user.getReferralCode()
         );
     }

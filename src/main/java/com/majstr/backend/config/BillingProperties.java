@@ -37,7 +37,9 @@ public record BillingProperties(
         // Days before expiry to send the auto-renew warning email (T-N).
         int renewReminderDays,
         // PRO days granted per master→master referral reward (referrer's first-payment bonus).
-        int referralRewardDays
+        int referralRewardDays,
+        // Length of the self-serve one-time PRO trial (opt-in, no card).
+        int trialDays
 ) {
     public boolean isConfigured() {
         return monobankToken != null && !monobankToken.isBlank();

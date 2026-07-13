@@ -1,0 +1,65 @@
+# Disposable / temporary email domains blocked at registration (anti-abuse).
+# One domain per line, lowercase; blank lines and lines starting with # are ignored.
+# Curated set of the most common throwaway providers — not exhaustive; extend as
+# abuse is observed. Matching is exact on the email's domain (and its bare parent
+# is not implied, so add subdomains explicitly if needed).
+mailinator.com
+mailinator.net
+temp-mail.org
+tempmail.com
+tempmailo.com
+tempr.email
+tempmail.plus
+10minutemail.com
+10minutemail.net
+guerrillamail.com
+guerrillamail.net
+guerrillamail.org
+guerrillamail.biz
+guerrillamailblock.com
+sharklasers.com
+grr.la
+spam4.me
+getnada.com
+nada.email
+dispostable.com
+mailnesia.com
+maildrop.cc
+mailcatch.com
+throwawaymail.com
+trashmail.com
+trashmail.de
+trash-mail.com
+yopmail.com
+yopmail.fr
+yopmail.net
+fakeinbox.com
+fakemailgenerator.com
+emailondeck.com
+mohmal.com
+mytemp.email
+tmpmail.org
+tmpmail.net
+tmpeml.com
+mailtemp.info
+inboxkitten.com
+33mail.com
+anonbox.net
+mailexpire.com
+spambox.us
+mvrht.net
+tempinbox.com
+burnermail.io
+moakt.com
+luxusmail.org
+mailpoof.com
+1secmail.com
+1secmail.net
+1secmail.org
+emltmp.com
+cs.email
+dropmail.me
+minuteinbox.com
+mail-temp.com
+tempmailaddress.com
+disposablemail.com

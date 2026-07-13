@@ -13,7 +13,9 @@ import com.majstr.backend.entity.PaymentStatus;
 import com.majstr.backend.entity.Plan;
 import com.majstr.backend.entity.ReferralReward;
 import com.majstr.backend.entity.User;
+import com.majstr.backend.exception.EmailNotVerifiedException;
 import com.majstr.backend.exception.ResourceNotFoundException;
+import com.majstr.backend.exception.TrialNotAvailableException;
 import com.majstr.backend.repository.PaymentRepository;
 import com.majstr.backend.repository.ReferralRewardRepository;
 import com.majstr.backend.repository.UserRepository;
@@ -62,6 +64,13 @@ public class BillingService {
     public CheckoutResponse checkout(UUID userId, boolean autoRenew, BillingPeriod period) {
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new ResourceNotFoundException("User not found: " + userId));
+
+        // No PRO without a verified email — same rule as the trial. Keeps every PRO
+        // account reachable (receipts, renewal reminders, recovery) and the policy
+        // consistent: a throwaway inbox can't buy its way past verification either.
+        if (!user.isEmailVerified()) {
+            throw new EmailNotVerifiedException("error.email-not-verified");
+        }
 
         // Amount + day count are derived server-side from the period — the client
         // sends only the period, never a price it could tamper with.
@@ -118,6 +127,39 @@ public class BillingService {
         log.info("Created monobank invoice {} for user {} (payment {}, period {}, autoRenew={})",
                 invoice.invoiceId(), user.getEmail(), payment.getId(), period, autoRenew);
         return new CheckoutResponse(invoice.pageUrl());
+    }
+
+    /**
+     * Activates the one-time self-serve PRO trial: grants {@code trialDays} of PRO
+     * with no payment and no card. Allowed only for a master currently on FREE who
+     * has never taken the trial ({@code trialStartedAt == null}); otherwise 409
+     * {@code TRIAL_UNAVAILABLE}. The daily {@link BillingExpiryService} downgrades it
+     * back to FREE after it lapses (the master keeps everything they created), and
+     * {@code trialStartedAt} stays set so it can't be claimed twice.
+     */
+    @Transactional
+    public User startTrial(UUID userId) {
+        // Fetch trades in-session — the controller maps UserResponse after the tx
+        // commits (open-in-view off), so the LAZY collection must be initialized here.
+        User user = userRepository.findWithTradesById(userId)
+                .orElseThrow(() -> new ResourceNotFoundException("User not found: " + userId));
+        // A trial grants PRO (incl. paid AI features that cost real API money) — so
+        // require a verified email, else a throwaway address can farm free trials.
+        if (!user.isEmailVerified()) {
+            throw new EmailNotVerifiedException("error.email-not-verified");
+        }
+        if (user.getTrialStartedAt() != null) {
+            throw new TrialNotAvailableException("Trial already used by " + user.getEmail());
+        }
+        if (user.getPlan() != Plan.FREE) {
+            throw new TrialNotAvailableException("Trial available only on FREE (current: " + user.getPlan() + ")");
+        }
+        Instant now = Instant.now();
+        user.setTrialStartedAt(now);
+        user.setPlan(Plan.PRO);
+        user.setPlanExpiresAt(now.plus(props.trialDays(), ChronoUnit.DAYS));
+        log.info("PRO trial started for {} ({} days, until {})", user.getEmail(), props.trialDays(), user.getPlanExpiresAt());
+        return user;
     }
 
     /**

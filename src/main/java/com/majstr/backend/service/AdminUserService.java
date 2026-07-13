@@ -133,6 +133,7 @@ public class AdminUserService {
                 user.getCardMask(),
                 lastAuto == null ? null : lastAuto.getStatus().name(),
                 lastAuto == null ? null : lastAuto.getCreatedAt(),
+                user.getTrialStartedAt(),
                 referredByEmail,
                 invitedCount,
                 invitedPaidCount

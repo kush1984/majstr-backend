@@ -35,7 +35,7 @@ class AutoRenewServiceTest {
 
     private AutoRenewService service() {
         BillingProperties props = new BillingProperties("tok", "https://api.monobank.ua",
-                new BigDecimal("299"), 30, new BigDecimal("1494"), 3, "http://ret", "http://hook", true, 3, 30);
+                new BigDecimal("299"), 30, new BigDecimal("1494"), 3, "http://ret", "http://hook", true, 3, 30, 5);
         return new AutoRenewService(props, billingService, emailService, userRepository, paymentRepository);
     }
 

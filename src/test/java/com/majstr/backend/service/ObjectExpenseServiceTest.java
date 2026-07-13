@@ -4,15 +4,16 @@ import com.majstr.backend.dto.ExpenseRequest;
 import com.majstr.backend.dto.ExpenseResponse;
 import com.majstr.backend.dto.ObjectEconomyResponse;
 import com.majstr.backend.entity.ExpenseCategory;
+import com.majstr.backend.entity.ExpenseSource;
 import com.majstr.backend.entity.ObjectExpense;
 import com.majstr.backend.entity.Plan;
 import com.majstr.backend.entity.Project;
+import com.majstr.backend.entity.ProjectStatus;
 import com.majstr.backend.entity.User;
 import com.majstr.backend.feature.DefaultFeatureGuard;
 import com.majstr.backend.feature.FeatureNotAvailableException;
 import com.majstr.backend.repository.EstimateRepository;
 import com.majstr.backend.repository.ObjectExpenseRepository;
-import com.majstr.backend.repository.ObjectExpenseRepository.CategoryTotal;
 import com.majstr.backend.repository.UserRepository;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -21,7 +22,6 @@ import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
-import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -52,11 +52,10 @@ class ObjectExpenseServiceTest {
         given(userRepository.findById(id)).willReturn(Optional.of(User.builder().id(id).plan(plan).build()));
     }
 
-    private static CategoryTotal cat(ExpenseCategory c, String total) {
-        return new CategoryTotal() {
-            public ExpenseCategory getCategory() { return c; }
-            public BigDecimal getTotal() { return new BigDecimal(total); }
-        };
+    private Project object(ProjectStatus status) {
+        Project p = new Project();
+        p.setStatus(status);
+        return p;
     }
 
     @Test
@@ -70,7 +69,7 @@ class ObjectExpenseServiceTest {
 
         // Gate fires first — ownership/data never touched.
         verify(projectService, never()).loadOwned(any(), any());
-        verify(estimateRepository, never()).sumIncomeExcludingRejected(any());
+        verify(estimateRepository, never()).sumWorksCounted(any());
     }
 
     @Test
@@ -82,33 +81,76 @@ class ObjectExpenseServiceTest {
         given(expenseRepository.save(any(ObjectExpense.class))).willAnswer(i -> i.getArgument(0));
 
         ExpenseResponse res = service().add(object, owner,
-                new ExpenseRequest(new BigDecimal("450.00"), ExpenseCategory.MATERIALS, "  клей  ", null));
+                new ExpenseRequest(new BigDecimal("450.00"), ExpenseCategory.MATERIALS, "  клей  ", null, null));
 
         assertThat(res.amount()).isEqualByComparingTo("450.00");
         assertThat(res.category()).isEqualTo(ExpenseCategory.MATERIALS);
         assertThat(res.note()).isEqualTo("клей");              // trimmed
         assertThat(res.spentAt()).isEqualTo(LocalDate.now());  // defaulted to today
+        assertThat(res.source()).isEqualTo(ExpenseSource.MANUAL); // hand-entered → unforeseen
     }
 
     @Test
-    void economy_incomeExcludesRejected_andProfitIsIncomeMinusExpenses() {
+    void economy_worksAreEarnings_manualReducesThem_materialsAreCash() {
         UUID owner = UUID.randomUUID();
         UUID object = UUID.randomUUID();
         user(owner, Plan.PRO);
-        given(projectService.loadOwned(object, owner)).willReturn(new Project());
-        given(estimateRepository.sumIncomeExcludingRejected(object)).willReturn(new BigDecimal("10000.00"));
-        given(estimateRepository.sumIncomeSigned(object)).willReturn(new BigDecimal("6000.00"));
-        given(expenseRepository.sumByCategory(object)).willReturn(List.of(
-                cat(ExpenseCategory.MATERIALS, "3000.00"),
-                cat(ExpenseCategory.LABOR, "1000.00")));
+        given(projectService.loadOwned(object, owner)).willReturn(object(ProjectStatus.IN_PROGRESS));
+        given(estimateRepository.sumWorksCounted(object)).willReturn(new BigDecimal("10000.00"));
+        given(estimateRepository.sumMaterialsCounted(object)).willReturn(new BigDecimal("4000.00"));
+        given(estimateRepository.sumDepositsCounted(object)).willReturn(new BigDecimal("6000.00"));
+        given(expenseRepository.sumBySource(object, ExpenseSource.RECEIPT)).willReturn(new BigDecimal("3000.00"));
+        given(expenseRepository.sumBySource(object, ExpenseSource.MANUAL)).willReturn(new BigDecimal("500.00"));
 
         ObjectEconomyResponse eco = service().economy(object, owner);
 
-        assertThat(eco.incomeTotal()).isEqualByComparingTo("10000.00");
-        assertThat(eco.incomeSigned()).isEqualByComparingTo("6000.00");
-        assertThat(eco.expensesTotal()).isEqualByComparingTo("4000.00");
-        assertThat(eco.profit()).isEqualByComparingTo("6000.00");        // 10000 − 4000
-        assertThat(eco.profitSigned()).isEqualByComparingTo("2000.00");  // 6000 − 4000
-        assertThat(eco.expensesByCategory()).containsEntry(ExpenseCategory.MATERIALS, new BigDecimal("3000.00"));
+        assertThat(eco.works()).isEqualByComparingTo("10000.00");
+        assertThat(eco.materials()).isEqualByComparingTo("4000.00");     // reference, not earnings
+        assertThat(eco.received()).isEqualByComparingTo("6000.00");
+        assertThat(eco.spentReceipts()).isEqualByComparingTo("3000.00");
+        assertThat(eco.spentManual()).isEqualByComparingTo("500.00");
+        // Not completed → profit = works − manual (materials NOT included).
+        assertThat(eco.profit()).isEqualByComparingTo("9500.00");        // 10000 − 500
+        assertThat(eco.cashBalance()).isEqualByComparingTo("3000.00");   // received 6000 − receipts 3000
+    }
+
+    @Test
+    void economy_cashGoesNegativeWhenReceiptsExceedDeposit_store_run() {
+        // Client paid a 3000 deposit, the master spent 5000 on receipts out of pocket
+        // → materials cash −2000 (NOT clamped). Profit is works − manual, unaffected.
+        UUID owner = UUID.randomUUID();
+        UUID object = UUID.randomUUID();
+        user(owner, Plan.PRO);
+        given(projectService.loadOwned(object, owner)).willReturn(object(ProjectStatus.IN_PROGRESS));
+        given(estimateRepository.sumWorksCounted(object)).willReturn(new BigDecimal("15000.00"));
+        given(estimateRepository.sumMaterialsCounted(object)).willReturn(new BigDecimal("6000.00"));
+        given(estimateRepository.sumDepositsCounted(object)).willReturn(new BigDecimal("3000.00"));
+        given(expenseRepository.sumBySource(object, ExpenseSource.RECEIPT)).willReturn(new BigDecimal("5000.00"));
+        given(expenseRepository.sumBySource(object, ExpenseSource.MANUAL)).willReturn(new BigDecimal("0.00"));
+
+        ObjectEconomyResponse eco = service().economy(object, owner);
+
+        assertThat(eco.cashBalance()).isEqualByComparingTo("-2000.00");  // 3000 − 5000
+        assertThat(eco.profit()).isEqualByComparingTo("15000.00");       // works − manual (not completed)
+    }
+
+    @Test
+    void economy_completedObject_leftoverDepositSettlesIntoProfit() {
+        // Object CLOSED: the materials pot (received − receipts = 1000 leftover) becomes earnings.
+        UUID owner = UUID.randomUUID();
+        UUID object = UUID.randomUUID();
+        user(owner, Plan.PRO);
+        given(projectService.loadOwned(object, owner)).willReturn(object(ProjectStatus.COMPLETED));
+        given(estimateRepository.sumWorksCounted(object)).willReturn(new BigDecimal("10000.00"));
+        given(estimateRepository.sumMaterialsCounted(object)).willReturn(new BigDecimal("4000.00"));
+        given(estimateRepository.sumDepositsCounted(object)).willReturn(new BigDecimal("4000.00"));
+        given(expenseRepository.sumBySource(object, ExpenseSource.RECEIPT)).willReturn(new BigDecimal("3000.00"));
+        given(expenseRepository.sumBySource(object, ExpenseSource.MANUAL)).willReturn(new BigDecimal("200.00"));
+
+        ObjectEconomyResponse eco = service().economy(object, owner);
+
+        assertThat(eco.cashBalance()).isEqualByComparingTo("1000.00");   // 4000 − 3000 leftover
+        // Completed → profit = works − manual + leftover = 10000 − 200 + 1000.
+        assertThat(eco.profit()).isEqualByComparingTo("10800.00");
     }
 }

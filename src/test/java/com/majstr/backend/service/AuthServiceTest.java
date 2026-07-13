@@ -30,13 +30,16 @@ class AuthServiceTest {
     @Mock CatalogTemplateService catalogTemplateService;
     @Mock EmailVerificationService emailVerificationService;
     @Mock ReferralService referralService;
+    @Mock EmailPolicyService emailPolicyService;
     @InjectMocks AuthService authService;
 
     @Test
     void register_seedsCatalogAndIssuesVerificationEmail() {
         RegisterRequest req = new RegisterRequest("New@User.com", "Sup3rPass!", "Іван",
                 Set.of(Trade.ELECTRICAL), "+380501112233", "FOP", true, null, null);
+        given(emailPolicyService.canonicalize("new@user.com")).willReturn("new@user.com");
         given(userRepository.existsByEmailIgnoreCase("new@user.com")).willReturn(false);
+        given(userRepository.existsByEmailCanonical("new@user.com")).willReturn(false);
         given(passwordEncoder.encode("Sup3rPass!")).willReturn("hash");
         given(referralService.resolve(null, null))
                 .willReturn(new ReferralService.Attribution("DIRECT", null));

@@ -119,4 +119,38 @@ public interface EstimateRepository extends JpaRepository<Estimate, UUID> {
             WHERE e.project_id = :projectId AND e.status = 'SIGNED'
             """, nativeQuery = true)
     BigDecimal sumIncomeSigned(@Param("projectId") UUID projectId);
+
+    /** Object income = the sum of line totals of estimates FLAGGED to count in the
+     *  economy (the accepted deal(s)) — replaces the sum-of-all figure. */
+    @Query(value = """
+            SELECT COALESCE(SUM(ROUND(i.quantity * i.unit_price, 2)), 0)
+            FROM estimates e JOIN estimate_items i ON i.estimate_id = e.id
+            WHERE e.project_id = :projectId AND e.count_in_economy = true
+            """, nativeQuery = true)
+    BigDecimal sumIncomeCounted(@Param("projectId") UUID projectId);
+
+    /** Works (labour) subtotal of the counted estimates — the master's earnings base. */
+    @Query(value = """
+            SELECT COALESCE(SUM(ROUND(i.quantity * i.unit_price, 2)), 0)
+            FROM estimates e JOIN estimate_items i ON i.estimate_id = e.id
+            WHERE e.project_id = :projectId AND e.count_in_economy = true AND i.type = 'WORK'
+            """, nativeQuery = true)
+    BigDecimal sumWorksCounted(@Param("projectId") UUID projectId);
+
+    /** Materials subtotal of the counted estimates — passthrough, not earnings (reference). */
+    @Query(value = """
+            SELECT COALESCE(SUM(ROUND(i.quantity * i.unit_price, 2)), 0)
+            FROM estimates e JOIN estimate_items i ON i.estimate_id = e.id
+            WHERE e.project_id = :projectId AND e.count_in_economy = true AND i.type = 'MATERIAL'
+            """, nativeQuery = true)
+    BigDecimal sumMaterialsCounted(@Param("projectId") UUID projectId);
+
+    /** Sum of deposits (завдаток) across the object's counted estimates — the
+     *  "received from client" cash-flow figure. */
+    @Query("""
+            SELECT COALESCE(SUM(e.depositAmount), 0)
+            FROM Estimate e
+            WHERE e.project.id = :projectId AND e.countInEconomy = true AND e.depositAmount IS NOT NULL
+            """)
+    BigDecimal sumDepositsCounted(@Param("projectId") UUID projectId);
 }

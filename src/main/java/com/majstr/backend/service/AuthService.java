@@ -28,11 +28,16 @@ public class AuthService {
     private final CatalogTemplateService catalogTemplateService;
     private final EmailVerificationService emailVerificationService;
     private final ReferralService referralService;
+    private final EmailPolicyService emailPolicyService;
 
     @Transactional
     public AuthResponse register(RegisterRequest req) {
         String email = req.email().toLowerCase().trim();
-        if (userRepository.existsByEmailIgnoreCase(email)) {
+        // Anti-abuse: reject disposable/no-mail domains (fail-open on DNS), and dedupe
+        // on the canonical form so gmail aliases can't spawn parallel accounts.
+        emailPolicyService.assertAcceptable(email);
+        String canonical = emailPolicyService.canonicalize(email);
+        if (userRepository.existsByEmailIgnoreCase(email) || userRepository.existsByEmailCanonical(canonical)) {
             throw new EmailAlreadyExistsException(email);
         }
         // First-touch attribution (ref link wins, then promo code, else DIRECT).
@@ -41,6 +46,7 @@ public class AuthService {
         ReferralService.Attribution attribution = referralService.resolve(req.ref(), req.promoCode());
         User user = User.builder()
                 .email(email)
+                .emailCanonical(canonical)
                 .passwordHash(passwordEncoder.encode(req.password()))
                 .fullName(req.fullName().trim())
                 .trades(new LinkedHashSet<>(req.trades()))

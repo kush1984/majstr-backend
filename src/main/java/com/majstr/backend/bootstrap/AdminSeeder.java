@@ -6,6 +6,7 @@ import com.majstr.backend.entity.Role;
 import com.majstr.backend.entity.Trade;
 import com.majstr.backend.entity.User;
 import com.majstr.backend.repository.UserRepository;
+import com.majstr.backend.service.ReferralService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.ApplicationArguments;
@@ -44,6 +45,7 @@ public class AdminSeeder implements ApplicationRunner {
     private final AdminSeedProperties properties;
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
+    private final ReferralService referralService;
 
     @Override
     @Transactional
@@ -64,6 +66,8 @@ public class AdminSeeder implements ApplicationRunner {
         }
         User admin = User.builder()
                 .email(email)
+                .emailCanonical(email) // single trusted account — canonical dedup is irrelevant here
+                .referralCode(referralService.generateUniqueCode()) // referral_code is NOT NULL UNIQUE (V41)
                 .passwordHash(passwordEncoder.encode(properties.password()))
                 .fullName(ADMIN_FULL_NAME)
                 .companyName(ADMIN_COMPANY)

@@ -5,6 +5,7 @@ import com.majstr.backend.entity.Plan;
 import com.majstr.backend.entity.Role;
 import com.majstr.backend.entity.User;
 import com.majstr.backend.repository.UserRepository;
+import com.majstr.backend.service.ReferralService;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
@@ -24,9 +25,10 @@ class AdminSeederTest {
 
     @Mock private UserRepository userRepository;
     @Mock private PasswordEncoder passwordEncoder;
+    @Mock private ReferralService referralService;
 
     private AdminSeeder seeder(String email, String password) {
-        return new AdminSeeder(new AdminSeedProperties(email, password), userRepository, passwordEncoder);
+        return new AdminSeeder(new AdminSeedProperties(email, password), userRepository, passwordEncoder, referralService);
     }
 
     @Test
@@ -34,6 +36,7 @@ class AdminSeederTest {
         given(userRepository.existsByRole(Role.ADMIN)).willReturn(false);
         given(userRepository.existsByEmailIgnoreCase("admin@majstr.pro")).willReturn(false);
         given(passwordEncoder.encode("S3cret-Admin!")).willReturn("bcrypt-hash");
+        given(referralService.generateUniqueCode()).willReturn("admincode1");
 
         seeder("Admin@Majstr.pro", "S3cret-Admin!").run(null);
 
@@ -46,6 +49,9 @@ class AdminSeederTest {
         assertThat(admin.getPasswordHash()).isNotEqualTo("S3cret-Admin!");
         assertThat(admin.isEmailVerified()).isTrue();
         assertThat(admin.getPlan()).isEqualTo(Plan.TEAM);
+        // NOT NULL columns must be populated or the insert fails (referral_code V41, email_canonical V55).
+        assertThat(admin.getReferralCode()).isEqualTo("admincode1");
+        assertThat(admin.getEmailCanonical()).isEqualTo("admin@majstr.pro");
     }
 
     @Test

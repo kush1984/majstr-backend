@@ -2,6 +2,7 @@ package com.majstr.backend.controller;
 
 import com.majstr.backend.dto.CheckoutRequest;
 import com.majstr.backend.dto.CheckoutResponse;
+import com.majstr.backend.dto.UserResponse;
 import com.majstr.backend.entity.BillingPeriod;
 import com.majstr.backend.security.UserPrincipal;
 import com.majstr.backend.service.BillingService;
@@ -41,6 +42,13 @@ public class BillingController {
         boolean autoRenew = req != null && req.autoRenew();
         BillingPeriod period = req != null ? req.periodOrDefault() : BillingPeriod.MONTH;
         return billingService.checkout(principal.id(), autoRenew, period);
+    }
+
+    @Operation(summary = "Start the one-time self-serve 5-day PRO trial (FREE only, no card) — returns the updated profile")
+    @SecurityRequirement(name = "bearer-jwt")
+    @PostMapping("/trial")
+    public UserResponse startTrial(@AuthenticationPrincipal UserPrincipal principal) {
+        return UserResponse.from(billingService.startTrial(principal.id()));
     }
 
     @Operation(summary = "monobank invoice-status webhook (public; signature-verified)")

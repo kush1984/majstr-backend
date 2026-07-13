@@ -32,6 +32,7 @@ class ProfileServiceTest {
     @Mock UserRepository userRepository;
     @Mock StorageService storage;                       // unused here, needed for @InjectMocks
     @Mock EmailVerificationService emailVerificationService;
+    @Mock EmailPolicyService emailPolicyService;
     @InjectMocks ProfileService profileService;
 
     private final UUID userId = UUID.randomUUID();
@@ -72,13 +73,30 @@ class ProfileServiceTest {
     void update_unverifiedEmailChanged_setsEmailAndReissuesVerification() {
         User u = user(false, "old@example.com");
         given(userRepository.findById(userId)).willReturn(Optional.of(u));
+        given(emailPolicyService.canonicalize("new@example.com")).willReturn("new@example.com");
         given(userRepository.existsByEmailIgnoreCase("new@example.com")).willReturn(false);
+        given(userRepository.existsByEmailCanonical("new@example.com")).willReturn(false);
 
         profileService.updateProfile(userId, req("New@Example.com"));
 
         assertThat(u.getEmail()).isEqualTo("new@example.com"); // normalized
+        assertThat(u.getEmailCanonical()).isEqualTo("new@example.com");
         assertThat(u.isEmailVerified()).isFalse();
         verify(emailVerificationService).replaceForNewEmail(u);
+    }
+
+    @Test
+    void update_disposableEmailDomain_throwsAndKeepsOldEmail() {
+        User u = user(false, "old@example.com");
+        given(userRepository.findById(userId)).willReturn(Optional.of(u));
+        org.mockito.BDDMockito.willThrow(
+                        new com.majstr.backend.exception.EmailDomainNotAllowedException("error.email.domain-not-allowed"))
+                .given(emailPolicyService).assertAcceptable("throwaway@mailinator.com");
+
+        assertThatThrownBy(() -> profileService.updateProfile(userId, req("throwaway@mailinator.com")))
+                .isInstanceOf(com.majstr.backend.exception.EmailDomainNotAllowedException.class);
+        assertThat(u.getEmail()).isEqualTo("old@example.com");
+        verify(emailVerificationService, never()).replaceForNewEmail(any());
     }
 
     @Test

@@ -3,8 +3,10 @@ package com.majstr.backend.service;
 import com.majstr.backend.dto.ExpenseRequest;
 import com.majstr.backend.dto.ExpenseResponse;
 import com.majstr.backend.dto.ObjectEconomyResponse;
-import com.majstr.backend.entity.ExpenseCategory;
+import com.majstr.backend.entity.ExpenseSource;
 import com.majstr.backend.entity.ObjectExpense;
+import com.majstr.backend.entity.Project;
+import com.majstr.backend.entity.ProjectStatus;
 import com.majstr.backend.entity.User;
 import com.majstr.backend.exception.ResourceNotFoundException;
 import com.majstr.backend.feature.Feature;
@@ -18,9 +20,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
-import java.util.EnumMap;
 import java.util.List;
-import java.util.Map;
 import java.util.UUID;
 
 /**
@@ -51,6 +51,7 @@ public class ObjectExpenseService {
                 .objectId(objectId)
                 .amount(req.amount())
                 .category(req.category())
+                .source(req.source() != null ? req.source() : ExpenseSource.MANUAL)
                 .note(trimToNull(req.note()))
                 .spentAt(req.spentAt() != null ? req.spentAt() : LocalDate.now())
                 .build();
@@ -86,33 +87,36 @@ public class ObjectExpenseService {
 
     @Transactional(readOnly = true)
     public ObjectEconomyResponse economy(UUID objectId, UUID ownerId) {
-        requireEconomy(objectId, ownerId);
+        Project object = requireEconomy(objectId, ownerId);
 
-        BigDecimal incomeTotal = estimateRepository.sumIncomeExcludingRejected(objectId);
-        BigDecimal incomeSigned = estimateRepository.sumIncomeSigned(objectId);
+        // Only the flagged estimates (the accepted deal) — split into works (earnings)
+        // and materials (passthrough); never the sum of all drafts/variants.
+        BigDecimal works = estimateRepository.sumWorksCounted(objectId);
+        BigDecimal materials = estimateRepository.sumMaterialsCounted(objectId);
+        BigDecimal received = estimateRepository.sumDepositsCounted(objectId); // deposits paid so far
 
-        Map<ExpenseCategory, BigDecimal> byCategory = new EnumMap<>(ExpenseCategory.class);
-        for (ObjectExpenseRepository.CategoryTotal row : expenseRepository.sumByCategory(objectId)) {
-            byCategory.put(row.getCategory(), row.getTotal());
-        }
-        BigDecimal expensesTotal = byCategory.values().stream()
-                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        BigDecimal spentReceipts = expenseRepository.sumBySource(objectId, ExpenseSource.RECEIPT); // real material cost
+        BigDecimal spentManual = expenseRepository.sumBySource(objectId, ExpenseSource.MANUAL);    // unforeseen
 
-        return new ObjectEconomyResponse(
-                incomeTotal,
-                incomeSigned,
-                expensesTotal,
-                byCategory,
-                incomeTotal.subtract(expensesTotal),
-                incomeSigned.subtract(expensesTotal));
+        // Materials pot: the deposit covers material purchases. Negative = out of pocket.
+        BigDecimal cashBalance = received.subtract(spentReceipts);
+
+        // Earnings = labour − unforeseen. Materials aren't earnings — but once the object is
+        // CLOSED, whatever is left in the materials pot (positive or negative) settles into profit.
+        boolean completed = object.getStatus() == ProjectStatus.COMPLETED;
+        BigDecimal profit = works.subtract(spentManual)
+                .add(completed ? cashBalance : BigDecimal.ZERO);
+
+        return new ObjectEconomyResponse(works, materials, received, spentReceipts, spentManual, profit, cashBalance);
     }
 
-    /** Plan gate (PRO+) THEN ownership — a FREE master is refused before any object read. */
-    private void requireEconomy(UUID objectId, UUID ownerId) {
+    /** Plan gate (PRO+) THEN ownership — a FREE master is refused before any object read.
+     *  Returns the owned object so the caller can read its status (e.g. COMPLETED). */
+    private Project requireEconomy(UUID objectId, UUID ownerId) {
         User user = userRepository.findById(ownerId)
                 .orElseThrow(() -> new ResourceNotFoundException("User not found: " + ownerId));
         featureGuard.requireFeature(user, Feature.OBJECT_ECONOMY);
-        projectService.loadOwned(objectId, ownerId); // existence + ownership (404 / 403)
+        return projectService.loadOwned(objectId, ownerId); // existence + ownership (404 / 403)
     }
 
     private ObjectExpense loadExpense(UUID objectId, UUID expenseId) {

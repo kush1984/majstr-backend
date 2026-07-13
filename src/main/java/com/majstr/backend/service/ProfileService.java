@@ -34,6 +34,7 @@ public class ProfileService {
     private final UserRepository userRepository;
     private final StorageService storage;
     private final EmailVerificationService emailVerificationService;
+    private final EmailPolicyService emailPolicyService;
 
     /** Stamp privacy-policy consent (one-time login modal for users who predate the
      *  registration checkbox). Idempotent — a prior stamp is kept. */
@@ -104,10 +105,14 @@ public class ProfileService {
         if (newEmail.equals(user.getEmail()) || user.isEmailVerified()) {
             return; // unchanged, or locked because already verified
         }
-        if (userRepository.existsByEmailIgnoreCase(newEmail)) {
+        // Same anti-abuse guards as registration (a typo-fix must not become a bypass).
+        emailPolicyService.assertAcceptable(newEmail);
+        String canonical = emailPolicyService.canonicalize(newEmail);
+        if (userRepository.existsByEmailIgnoreCase(newEmail) || userRepository.existsByEmailCanonical(canonical)) {
             throw new EmailAlreadyExistsException(newEmail);
         }
         user.setEmail(newEmail);
+        user.setEmailCanonical(canonical);
         emailVerificationService.replaceForNewEmail(user);
     }
 

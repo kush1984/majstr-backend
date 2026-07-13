@@ -266,6 +266,20 @@ public class GlobalExceptionHandler {
         return build(HttpStatus.BAD_REQUEST, msg(ex.getMessage()), req);
     }
 
+    @ExceptionHandler(TrialNotAvailableException.class)
+    public ResponseEntity<ErrorResponse> handleTrialNotAvailable(TrialNotAvailableException ex, HttpServletRequest req) {
+        ErrorResponse body = ErrorResponse.coded(HttpStatus.CONFLICT.value(),
+                HttpStatus.CONFLICT.getReasonPhrase(), msg("error.trial.unavailable"), req.getRequestURI(), "TRIAL_UNAVAILABLE");
+        return ResponseEntity.status(HttpStatus.CONFLICT).body(body);
+    }
+
+    @ExceptionHandler(EmailDomainNotAllowedException.class)
+    public ResponseEntity<ErrorResponse> handleEmailDomainBlocked(EmailDomainNotAllowedException ex, HttpServletRequest req) {
+        ErrorResponse body = ErrorResponse.coded(HttpStatus.BAD_REQUEST.value(),
+                HttpStatus.BAD_REQUEST.getReasonPhrase(), msg(ex.getMessage()), req.getRequestURI(), "EMAIL_DOMAIN_BLOCKED");
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(body);
+    }
+
     @ExceptionHandler(OptimisticLockingFailureException.class)
     public ResponseEntity<ErrorResponse> handleOptimisticLock(OptimisticLockingFailureException ex, HttpServletRequest req) {
         return build(HttpStatus.CONFLICT, msg("error.conflict.concurrent"), req);
