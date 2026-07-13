@@ -287,13 +287,20 @@ one-line summary — keep the item in the file as a record.
   raw-vs-hashed share-token question above.
 
 ### Public file serving needs auth once non-public assets exist
-- **Status:** OPEN
+- **Status:** IN_PROGRESS
 - **Since:** Fix I code review (2026-06-10)
 - **Context:** `/api/files/**` is fully public. Today it only serves contractor
   logos, which are public by design (anonymous portal + PDF). The moment
   photo reports or other private uploads land, public serving becomes a leak.
 - **Notes / options:** Signed URLs (time-limited) or authenticated streaming
   for non-logo assets; ties into the S3/R2 migration item.
+- **In progress (consolidated/receipts/photos iteration, 2026-07-12):** the first private
+  uploads (object photos, esp. receipt photos) land now. They deliberately do **not** go
+  through `/api/files/**` — served via an **authenticated owner-only** endpoint
+  (`GET /api/projects/{id}/photos/{photoId}/file`, `loadOwned`) and a **portal-token-gated**
+  endpoint that only serves `SHARED` photos of the token's object. The storage key is never
+  exposed to the client. `/api/files/**` stays public and logo-only. The broader "signed URLs
+  for all private assets" idea remains open for future asset types.
 
 ### Email enumeration on register
 - **Status:** OPEN
@@ -550,6 +557,12 @@ one-line summary — keep the item in the file as a record.
 - **Notes / options:** Reuse `StorageService` (a `receipt_url` on `object_expense`), owner-only
   read like logos-but-private (ties into the "public file serving needs auth" open question).
   Build on request; not needed for the core profit view.
+- **Update (2026-07-12):** the consolidated/receipts/photos iteration adds `project_photo`
+  (owner-only private storage with an authenticated stream) and a **receipt** photo source
+  linked to an estimate. That's a different flow (photo of a receipt whose LINES were parsed
+  into an estimate, not an attachment on an `object_expense` row) — but if this want is built,
+  it can reuse `project_photo`'s private-storage + auth-stream pattern (a `MANUAL`/expense
+  variant or a `receipt_url` on `object_expense`).
 
 ### Master referral reward when the referrer is on admin-granted (dateless) PRO
 - **Status:** OPEN
@@ -875,6 +888,20 @@ one-line summary — keep the item in the file as a record.
   `ClaudeExtractionService`; only a new "append" commit path + editor UI would be needed.
   Revisit if masters ask to grow an existing estimate from a file.
 
+### Add items from a receipt photo into an OPEN estimate (LLM)
+- **Status:** RESOLVED
+- **Since:** Consolidated/receipts/photos iteration (2026-07-12)
+- **Context:** Narrower than the deferred "import-append into an already-open estimate" — masters
+  wanted to photograph a store/terminal/handwritten **receipt** and have its lines added to the
+  estimate they're editing, with sums recomputed. Prices from receipts are NOT added to the catalog.
+- **Resolution:** `POST /api/estimates/{id}/receipt-items/parse|commit` — reuses
+  `ClaudeEstimateExtractor` (vision) with a receipt-tuned system prompt; parse returns a review
+  payload, commit appends the reviewed lines into the estimate (SIGNED → 409), no catalog upsert.
+  New `Feature.RECEIPT_IMPORT` (PRO+TEAM); FREE sees the fab item → upgrade painted-door. The
+  general "append parsed rows into an open estimate from Excel" case stays DEFERRED (below) — this
+  resolves only the receipt-photo path. See
+  [iteration-consolidated-receipts-photos.md](iteration-consolidated-receipts-photos.md).
+
 ### Export the catalog back to xlsx
 - **Status:** OPEN
 - **Since:** Catalog price-import iteration (2026-07-06)
@@ -901,10 +928,17 @@ one-line summary — keep the item in the file as a record.
 ## Features in the catalog enum but not implemented
 
 ### PHOTO_REPORTS
-- **Status:** OPEN
+- **Status:** IN_PROGRESS
 - **Since:** step 3
-- **Context:** Enum value exists in `Feature` and grants in PRO/TEAM. No code path uses it.
+- **Context:** Enum value exists in `Feature` and grants to **all plans incl. FREE** (part of
+  the "show the client the product" workflow). No code path used it — dead until now.
 - **Notes / options:** Likely a per-project gallery of contractor-uploaded photos with timestamped notes; reuses `StorageService`.
+- **In progress (consolidated/receipts/photos iteration, 2026-07-12):** revived as the object
+  «Фото» tab — one `project_photo` table (V47), source RECEIPT|MANUAL, visibility PRIVATE|SHARED.
+  Gated by `PHOTO_REPORTS` (routed through `FeatureGuard`, so all plans see it today; flip to PRO
+  is a one-line matrix edit). MANUAL progress photos can be shared to the client via the portal
+  token (SHARED); RECEIPT photos are always PRIVATE. See
+  [iteration-consolidated-receipts-photos.md](iteration-consolidated-receipts-photos.md).
 
 ### AI_ASSISTANT
 - **Status:** OPEN

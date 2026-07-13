@@ -114,6 +114,50 @@ public class EstimateService {
         return toResponse(saved, itemRepository.findByEstimateIdOrderBySortOrderAscIdAsc(saved.getId()));
     }
 
+    /**
+     * Folds several of the object's estimates into one new DRAFT estimate. Every line
+     * item from the picked estimates is copied in order (works + materials) — a plain
+     * concat, no dedup: the master tidies quantities in the editor, and we never guess
+     * which price to keep when the same material cost differently across sources. The
+     * copies are independent (measurement selection is NOT carried over). Ownership is
+     * checked on the target project and on each source estimate; the FREE per-project
+     * estimate cap applies like any create.
+     */
+    @Transactional
+    public EstimateResponse consolidate(UUID projectId, String name, List<UUID> estimateIds, UUID ownerId) {
+        Project project = projectService.loadOwned(projectId, ownerId);
+        limitService.requireCanAddEstimate(ownerId, projectId);
+
+        Estimate consolidated = estimateRepository.save(Estimate.builder()
+                .project(project)
+                .name(normalize(name) == null ? "Зведений кошторис" : normalize(name))
+                .build());
+        projectRepository.incrementEstimatesCreated(projectId); // lifetime churn counter
+
+        List<EstimateItem> copies = new ArrayList<>();
+        int sortOrder = 0;
+        for (UUID sourceId : estimateIds) {
+            Estimate source = loadOwned(sourceId, ownerId);
+            if (!source.getProject().getId().equals(projectId)) {
+                throw new AccessDeniedException("Estimate does not belong to project " + projectId);
+            }
+            for (EstimateItem item : itemRepository.findByEstimateIdOrderBySortOrderAscIdAsc(sourceId)) {
+                copies.add(EstimateItem.builder()
+                        .estimate(consolidated)
+                        .type(item.getType())
+                        .name(item.getName())
+                        .category(item.getCategory())
+                        .unit(item.getUnit())
+                        .quantity(item.getQuantity())
+                        .unitPrice(item.getUnitPrice())
+                        .sortOrder(sortOrder++)
+                        .build());
+            }
+        }
+        itemRepository.saveAll(copies);
+        return toResponse(consolidated, itemRepository.findByEstimateIdOrderBySortOrderAscIdAsc(consolidated.getId()));
+    }
+
     @Transactional(readOnly = true)
     public List<EstimateSummary> listForProject(UUID projectId, UUID ownerId) {
         projectService.loadOwned(projectId, ownerId);
@@ -302,6 +346,36 @@ public class EstimateService {
                     .quantity(e.quantity())
                     .unitPrice(source.getDefaultPrice())
                     .sortOrder(e.sortOrder() == null ? 0 : e.sortOrder())
+                    .build());
+        }
+        itemRepository.saveAll(toSave);
+        return toResponse(estimate, itemRepository.findByEstimateIdOrderBySortOrderAscIdAsc(estimateId));
+    }
+
+    /**
+     * Appends several already-resolved items to an estimate in one transaction — used by
+     * the receipt import (lines parsed from a receipt photo, reviewed by the master). New
+     * items go after the current last one (sortOrder continues). A signed estimate is
+     * rejected (409) like every other item write. No catalog side-effect. Returns the
+     * full updated estimate so the client refreshes once with recomputed sums.
+     */
+    @Transactional
+    public EstimateResponse appendItems(UUID estimateId, List<ImportEstimateData.ImportItem> items, UUID ownerId) {
+        Estimate estimate = loadOwned(estimateId, ownerId);
+        requireNotSigned(estimate);
+        List<EstimateItem> existing = itemRepository.findByEstimateIdOrderBySortOrderAscIdAsc(estimateId);
+        int sortOrder = existing.stream().mapToInt(EstimateItem::getSortOrder).max().orElse(-1) + 1;
+        List<EstimateItem> toSave = new ArrayList<>();
+        for (ImportEstimateData.ImportItem in : items) {
+            toSave.add(EstimateItem.builder()
+                    .estimate(estimate)
+                    .type(in.type())
+                    .name(in.name().trim())
+                    .category(CatalogService.normalizeCategory(in.category()))
+                    .unit(in.unit())
+                    .quantity(in.quantity().setScale(QUANTITY_SCALE, MONEY_ROUNDING))
+                    .unitPrice(in.unitPrice().setScale(MONEY_SCALE, MONEY_ROUNDING))
+                    .sortOrder(sortOrder++)
                     .build());
         }
         itemRepository.saveAll(toSave);

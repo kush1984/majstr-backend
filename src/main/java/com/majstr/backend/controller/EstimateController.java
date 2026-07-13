@@ -1,6 +1,7 @@
 package com.majstr.backend.controller;
 
 import com.majstr.backend.dto.AddCatalogItemsBatchRequest;
+import com.majstr.backend.dto.EstimateConsolidateRequest;
 import com.majstr.backend.dto.EstimateCreateRequest;
 import com.majstr.backend.dto.EstimateItemFromCatalogRequest;
 import com.majstr.backend.dto.EstimateItemRequest;
@@ -64,6 +65,15 @@ public class EstimateController {
     public List<EstimateSummary> list(@PathVariable UUID projectId,
                                       @AuthenticationPrincipal UserPrincipal principal) {
         return estimateService.listForProject(projectId, principal.id());
+    }
+
+    @Operation(summary = "Consolidate several of the project's estimates into one new DRAFT estimate")
+    @PostMapping("/api/projects/{projectId}/estimates/consolidate")
+    public ResponseEntity<EstimateResponse> consolidate(@PathVariable UUID projectId,
+                                                        @Valid @RequestBody EstimateConsolidateRequest req,
+                                                        @AuthenticationPrincipal UserPrincipal principal) {
+        return ResponseEntity.status(HttpStatus.CREATED)
+                .body(estimateService.consolidate(projectId, req.name(), req.estimateIds(), principal.id()));
     }
 
     // ---- single estimate ---------------------------------------------------

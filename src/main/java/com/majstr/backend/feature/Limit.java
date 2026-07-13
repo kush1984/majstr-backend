@@ -11,5 +11,11 @@ package com.majstr.backend.feature;
  */
 public enum Limit {
     MAX_PROJECTS,
-    MAX_ESTIMATES_PER_PROJECT
+    MAX_ESTIMATES_PER_PROJECT,
+    /** Progress photos («Фото» tab) an object may hold. FREE keeps a small taster;
+     *  PRO/TEAM get a generous cap. Bounds storage without an unlimited free-for-all. */
+    MAX_PHOTOS_PER_OBJECT,
+    /** Receipt photos an object may hold — a separate budget so receipts don't eat the
+     *  progress-photo cap. Reachable only on PRO/TEAM (receipt import is PRO-gated). */
+    MAX_RECEIPT_PHOTOS_PER_OBJECT
 }

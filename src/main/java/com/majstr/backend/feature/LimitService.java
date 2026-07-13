@@ -1,10 +1,12 @@
 package com.majstr.backend.feature;
 
 import com.majstr.backend.dto.PlanLimitsResponse;
+import com.majstr.backend.entity.PhotoSource;
 import com.majstr.backend.entity.User;
 import com.majstr.backend.exception.LimitExceededException;
 import com.majstr.backend.exception.ResourceNotFoundException;
 import com.majstr.backend.repository.EstimateRepository;
+import com.majstr.backend.repository.ProjectPhotoRepository;
 import com.majstr.backend.repository.ProjectRepository;
 import com.majstr.backend.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
@@ -26,6 +28,7 @@ public class LimitService {
     private final UserRepository userRepository;
     private final ProjectRepository projectRepository;
     private final EstimateRepository estimateRepository;
+    private final ProjectPhotoRepository projectPhotoRepository;
 
     @Transactional(readOnly = true)
     public void requireWithinLimit(UUID userId, Limit limit) {
@@ -60,6 +63,28 @@ public class LimitService {
         }
     }
 
+    /**
+     * Enforces the per-object photo cap. Progress (MANUAL) and receipt (RECEIPT) photos
+     * have separate budgets so receipts don't eat the progress cap. Counts live photos of
+     * that source on the object. The caller must have verified the object belongs to the user.
+     */
+    @Transactional(readOnly = true)
+    public void requireCanAddPhoto(UUID userId, UUID projectId, PhotoSource source) {
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new ResourceNotFoundException("User not found: " + userId));
+        Limit limit = source == PhotoSource.RECEIPT
+                ? Limit.MAX_RECEIPT_PHOTOS_PER_OBJECT
+                : Limit.MAX_PHOTOS_PER_OBJECT;
+        int max = PlanConfig.limit(user.getPlan(), limit);
+        if (max < 0) {
+            return; // unlimited
+        }
+        long current = projectPhotoRepository.countByProjectIdAndSource(projectId, source);
+        if (current >= max) {
+            throw new LimitExceededException(limit, max, user.getPlan());
+        }
+    }
+
     /** The current user's plan limits, for the UI to disable "create" buttons
      *  preemptively (null = unlimited). The backend check stays the source of truth. */
     @Transactional(readOnly = true)
@@ -74,6 +99,8 @@ public class LimitService {
             case MAX_PROJECTS -> projectRepository.countByOwnerId(userId);
             case MAX_ESTIMATES_PER_PROJECT ->
                     throw new IllegalArgumentException("Per-project limit needs a project; use requireCanAddEstimate");
+            case MAX_PHOTOS_PER_OBJECT, MAX_RECEIPT_PHOTOS_PER_OBJECT ->
+                    throw new IllegalArgumentException("Per-object photo limit needs a project; use requireCanAddPhoto");
         };
     }
 }

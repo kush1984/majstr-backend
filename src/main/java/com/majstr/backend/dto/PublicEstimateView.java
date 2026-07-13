@@ -6,6 +6,7 @@ import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.List;
+import java.util.UUID;
 
 /**
  * Public-facing snapshot of an estimate served via a share link. Carries
@@ -26,7 +27,8 @@ public record PublicEstimateView(
         BigDecimal total,
         BigDecimal depositAmount,
         BigDecimal balance,
-        Signature signature
+        Signature signature,
+        List<SharedPhoto> sharedPhotos
 ) {
     public record Contractor(
             String companyName,
@@ -44,5 +46,12 @@ public record PublicEstimateView(
     public record Signature(
             Instant signedAt,
             String signerName
+    ) {}
+
+    /** A progress photo the master shared with the client. The portal streams the file from
+     *  {@code /api/public/estimates/{token}/photos/{id}/file} — the storage key stays server-side. */
+    public record SharedPhoto(
+            UUID id,
+            String caption
     ) {}
 }

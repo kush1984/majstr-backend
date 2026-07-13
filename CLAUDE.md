@@ -345,6 +345,39 @@ estimate through `EstimateService.createFromImport` (respects the FREE estimate 
 `SYSTEM_PROMPT` tells the model to use sentinels (0 / empty string) for unreadable
 values rather than guessing — mapped back to null + a review flag server-side.
 
+### Consolidated estimate, receipt import, and object photos
+
+Three related capabilities added together (docs/iteration-consolidated-receipts-photos.md):
+
+- **Consolidated estimate** — `POST /api/projects/{projectId}/estimates/consolidate`
+  (`EstimateService.consolidate`) folds the line items of several of the object's
+  estimates into one **new DRAFT** estimate (plain concat, no dedup;
+  `measurementRefs` not carried over). It's an ordinary estimate — counts against the
+  FREE per-project cap, goes through the normal editor. Each source estimate is
+  ownership- and same-project-checked.
+- **Receipt import** — `POST /api/estimates/{id}/receipt-items/parse|commit`
+  (`ReceiptImportService`, `service/importer/`) adds lines to an **open** estimate from
+  a **receipt photo** (store/terminal/hand-written) via `ClaudeEstimateExtractor` with a
+  **receipt-specific system prompt** (`call(content, systemPrompt)` was made
+  prompt-parameterized; the estimate prompt is unchanged). Image-only, no Excel branch;
+  `commit` calls `EstimateService.appendItems` (SIGNED → 409) — **no catalog upsert**
+  (unlike the estimate import). Gated by a **new `Feature.RECEIPT_IMPORT` (PRO+TEAM)**,
+  distinct from `ESTIMATE_IMPORT`. Same 503 `AI_UNAVAILABLE` / discard-the-file behaviour.
+- **Object photos** — `project_photo` (V47), served by `ProjectPhotoController`
+  (`/api/projects/{id}/photos`). Gated by `Feature.PHOTO_REPORTS` (**granted to all
+  plans incl. FREE** in `PlanConfig` — "show the client the product"; routed through
+  `FeatureGuard` so flipping to PRO is a one-line matrix edit). Two `source`s: `RECEIPT`
+  (always `PRIVATE`, linked to its estimate via `estimate_id` + a durable
+  `estimate_name_snapshot`) and `MANUAL` (progress photo, `PRIVATE` by default, toggle to
+  `SHARED`). **Privacy is the key design point:** photos are **never** served from the
+  public `/api/files/**` — an **authenticated owner** stream
+  (`GET /api/projects/{id}/photos/{photoId}/file`) and a **portal-token-gated** stream
+  (`GET /api/public/estimates/{token}/photos/{photoId}/file`, `SHARED`-only, same-object
+  re-checked) are the only read paths, and the storage key never leaves the server.
+  `PublicEstimateView.sharedPhotos` lists the object's SHARED photos for the portal
+  gallery (`static/portal/index.html`). This is the first private upload type — it closes
+  the "public file serving needs auth" open question for this asset class.
+
 ### Entities vs. records
 
 - **Entities** (`User`, `RefreshToken`) — mutable JPA, Lombok

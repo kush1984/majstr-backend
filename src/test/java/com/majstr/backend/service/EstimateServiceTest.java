@@ -33,6 +33,7 @@ import org.springframework.security.access.AccessDeniedException;
 
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -449,7 +450,154 @@ class EstimateServiceTest {
         verify(itemRepository, never()).saveAll(anyList());
     }
 
+    // ---- consolidate -------------------------------------------------------
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void consolidate_copiesItemsFromPickedEstimatesIntoOneNewDraft() {
+        UUID srcA = UUID.randomUUID();
+        UUID srcB = UUID.randomUUID();
+        UUID consolidatedId = UUID.randomUUID();
+        given(projectService.loadOwned(projectId, ownerId)).willReturn(ownedProject(ownerId));
+        given(estimateRepository.save(any(Estimate.class))).willAnswer(inv -> {
+            Estimate e = inv.getArgument(0);
+            e.setId(consolidatedId);
+            e.setStatus(EstimateStatus.DRAFT);
+            e.setCreatedAt(Instant.now());
+            e.setUpdatedAt(Instant.now());
+            return e;
+        });
+        given(estimateRepository.findById(srcA)).willReturn(Optional.of(sourceEstimate(srcA, ownerId)));
+        given(estimateRepository.findById(srcB)).willReturn(Optional.of(sourceEstimate(srcB, ownerId)));
+        given(itemRepository.findByEstimateIdOrderBySortOrderAscIdAsc(srcA))
+                .willReturn(List.of(item(ItemType.WORK, "Малярка", "2", "100")));
+        given(itemRepository.findByEstimateIdOrderBySortOrderAscIdAsc(srcB))
+                .willReturn(List.of(item(ItemType.MATERIAL, "Фарба", "3", "50")));
+        List<EstimateItem>[] saved = new List[1];
+        given(itemRepository.saveAll(anyList())).willAnswer(inv -> {
+            saved[0] = inv.getArgument(0);
+            return saved[0];
+        });
+        given(itemRepository.findByEstimateIdOrderBySortOrderAscIdAsc(consolidatedId))
+                .willAnswer(inv -> saved[0]);
+
+        EstimateResponse resp = estimateService.consolidate(
+                projectId, "  Зведений  ", List.of(srcA, srcB), ownerId);
+
+        assertThat(resp.name()).isEqualTo("Зведений"); // trimmed
+        assertThat(resp.items()).hasSize(2);
+        assertThat(resp.worksSubtotal()).isEqualByComparingTo("200.00");
+        assertThat(resp.materialsSubtotal()).isEqualByComparingTo("150.00");
+        assertThat(resp.total()).isEqualByComparingTo("350.00");
+        // sortOrder renumbered continuously across the two source estimates
+        assertThat(saved[0]).extracting(EstimateItem::getSortOrder).containsExactly(0, 1);
+        verify(limitService).requireCanAddEstimate(ownerId, projectId); // FREE cap enforced
+        verify(projectRepository).incrementEstimatesCreated(projectId);
+    }
+
+    @Test
+    void consolidate_defaultsNameWhenBlank() {
+        UUID src = UUID.randomUUID();
+        UUID consolidatedId = UUID.randomUUID();
+        given(projectService.loadOwned(projectId, ownerId)).willReturn(ownedProject(ownerId));
+        given(estimateRepository.save(any(Estimate.class))).willAnswer(inv -> {
+            Estimate e = inv.getArgument(0);
+            e.setId(consolidatedId);
+            e.setStatus(EstimateStatus.DRAFT);
+            e.setCreatedAt(Instant.now());
+            e.setUpdatedAt(Instant.now());
+            return e;
+        });
+        given(estimateRepository.findById(src)).willReturn(Optional.of(sourceEstimate(src, ownerId)));
+        given(itemRepository.findByEstimateIdOrderBySortOrderAscIdAsc(src)).willReturn(List.of());
+        given(itemRepository.findByEstimateIdOrderBySortOrderAscIdAsc(consolidatedId)).willReturn(List.of());
+
+        EstimateResponse resp = estimateService.consolidate(projectId, "  ", List.of(src), ownerId);
+
+        assertThat(resp.name()).isEqualTo("Зведений кошторис");
+    }
+
+    @Test
+    void consolidate_rejectsSourceFromAnotherProject() {
+        UUID src = UUID.randomUUID();
+        given(projectService.loadOwned(projectId, ownerId)).willReturn(ownedProject(ownerId));
+        given(estimateRepository.save(any(Estimate.class))).willAnswer(inv -> {
+            Estimate e = inv.getArgument(0);
+            e.setId(UUID.randomUUID());
+            e.setStatus(EstimateStatus.DRAFT);
+            e.setCreatedAt(Instant.now());
+            e.setUpdatedAt(Instant.now());
+            return e;
+        });
+        // Same owner, but the source estimate belongs to a DIFFERENT project.
+        User owner = User.builder().id(ownerId).build();
+        Project otherProject = Project.builder().id(UUID.randomUUID()).owner(owner).build();
+        Estimate foreign = Estimate.builder().id(src).project(otherProject)
+                .status(EstimateStatus.DRAFT).build();
+        given(estimateRepository.findById(src)).willReturn(Optional.of(foreign));
+
+        assertThatThrownBy(() -> estimateService.consolidate(projectId, null, List.of(src), ownerId))
+                .isInstanceOf(AccessDeniedException.class);
+    }
+
+    // ---- appendItems (receipt import) --------------------------------------
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void appendItems_appendsAfterExistingWithContinuedSortOrder() {
+        Estimate estimate = ownedEstimate(ownerId);
+        given(estimateRepository.findById(estimateId)).willReturn(Optional.of(estimate));
+        EstimateItem existing = item(ItemType.WORK, "Наявна", "1", "100");
+        existing.setSortOrder(4);
+        List<EstimateItem>[] saved = new List[1];
+        given(itemRepository.saveAll(anyList())).willAnswer(inv -> {
+            saved[0] = inv.getArgument(0);
+            return saved[0];
+        });
+        given(itemRepository.findByEstimateIdOrderBySortOrderAscIdAsc(estimateId))
+                .willReturn(List.of(existing)) // first call: compute max sortOrder
+                .willAnswer(inv -> {           // second call: toResponse
+                    List<EstimateItem> all = new ArrayList<>();
+                    all.add(existing);
+                    all.addAll(saved[0]);
+                    return all;
+                });
+
+        List<EstimateService.ImportEstimateData.ImportItem> items = List.of(
+                new EstimateService.ImportEstimateData.ImportItem(
+                        ItemType.MATERIAL, "Цемент", null, Unit.PIECE,
+                        new BigDecimal("2"), new BigDecimal("80")));
+
+        EstimateResponse resp = estimateService.appendItems(estimateId, items, ownerId);
+
+        assertThat(saved[0]).extracting(EstimateItem::getSortOrder).containsExactly(5); // continues 4 → 5
+        assertThat(resp.items()).hasSize(2);
+        assertThat(resp.total()).isEqualByComparingTo("260.00"); // 100 + 2×80
+    }
+
+    @Test
+    void appendItems_rejectsSignedEstimate() {
+        given(estimateRepository.findById(estimateId)).willReturn(Optional.of(signedEstimate()));
+
+        assertThatThrownBy(() -> estimateService.appendItems(estimateId, List.of(
+                new EstimateService.ImportEstimateData.ImportItem(
+                        ItemType.MATERIAL, "X", null, Unit.PIECE,
+                        new BigDecimal("1"), new BigDecimal("1"))), ownerId))
+                .isInstanceOf(EstimateSignedException.class);
+        verify(itemRepository, never()).saveAll(anyList());
+    }
+
     // ---- fixtures ---------------------------------------------------------
+
+    private Estimate sourceEstimate(UUID id, UUID userId) {
+        // Shares the fixed projectId (via ownedProject) so it passes the same-project check.
+        return Estimate.builder()
+                .id(id)
+                .project(ownedProject(userId))
+                .status(EstimateStatus.DRAFT)
+                .createdAt(Instant.now())
+                .build();
+    }
 
     private CatalogItem catalogItem(String name, ItemType type, Unit unit, String price, String category) {
         return CatalogItem.builder()

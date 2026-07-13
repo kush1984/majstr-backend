@@ -36,13 +36,29 @@ public class CatalogService {
 
     @Transactional
     public CatalogItemResponse create(CatalogItemRequest req, UUID ownerId) {
-        User owner = userRepository.getReferenceById(ownerId);
+        String name = req.name().trim();
+        // No specific trade → the single "Інше" catch-all (never null, V33).
+        Trade trade = req.trade() != null ? req.trade() : Trade.OTHER;
+        // The catalog is a reference library: one item per (name, type, unit) per owner
+        // (enforced by a unique index). Adding an item that already exists UPDATES it
+        // instead of creating a duplicate — idempotent, and it can never hit the constraint.
+        CatalogItem existing = catalogRepository.findByOwnerIdOrderByNameAsc(ownerId).stream()
+                .filter(i -> i.getType() == req.type()
+                        && i.getUnit() == req.unit()
+                        && i.getName().trim().equalsIgnoreCase(name))
+                .findFirst()
+                .orElse(null);
+        if (existing != null) {
+            existing.setCategory(normalizeCategory(req.category()));
+            existing.setTrade(trade);
+            existing.setDefaultPrice(req.defaultPrice());
+            return CatalogItemResponse.from(existing); // managed entity → dirty-checked
+        }
         CatalogItem item = CatalogItem.builder()
-                .owner(owner)
-                .name(req.name().trim())
+                .owner(userRepository.getReferenceById(ownerId))
+                .name(name)
                 .category(normalizeCategory(req.category()))
-                // No specific trade → the single "Інше" catch-all (never null, V33).
-                .trade(req.trade() != null ? req.trade() : Trade.OTHER)
+                .trade(trade)
                 .type(req.type())
                 .unit(req.unit())
                 .defaultPrice(req.defaultPrice())

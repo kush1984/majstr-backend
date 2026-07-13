@@ -52,6 +52,7 @@ class PublicEstimateServiceTest {
     @Mock private EstimateItemRepository itemRepository;
     @Mock private EstimateQuestionRepository questionRepository;
     @Mock private EstimateService estimateService;
+    @Mock private ProjectPhotoService projectPhotoService;
     @Mock private FeatureGuard featureGuard;
     @Mock private PushService pushService;
 
@@ -67,7 +68,7 @@ class PublicEstimateServiceTest {
         messages.setDefaultEncoding("UTF-8");
         messages.setFallbackToSystemLocale(false);
         publicService = new PublicEstimateService(shareLinkRepository, itemRepository,
-                questionRepository, estimateService, featureGuard, pushService, messages);
+                questionRepository, estimateService, projectPhotoService, featureGuard, pushService, messages);
     }
 
     @Test

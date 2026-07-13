@@ -62,6 +62,50 @@ public class ClaudeEstimateExtractor {
               - Keep the original order of the positions.
             """;
 
+    /**
+     * Receipt variant: extract purchased goods/services from a photo of a store, terminal,
+     * or hand-written receipt — the lines are appended to an existing estimate (no deposit,
+     * no catalog side-effect). Same output schema; depositAmount is unused (returns 0).
+     */
+    private static final String RECEIPT_SYSTEM_PROMPT = """
+            You transcribe EVERY purchased item from a photo of a Ukrainian retail receipt
+            (фіскальний чек) — a store/cash-register printout, a card-terminal slip, or a
+            hand-written note. Be exhaustive: a receipt usually has MANY items (10, 20 or more).
+            Do not stop after the first few — read the whole receipt top to bottom.
+
+            LAYOUT of a Ukrainian fiscal receipt — each purchased item spans up to 3 printed lines:
+              1) a quantity line "<QTY> x <UNIT_PRICE>"   e.g. "8 x 29,85"
+              2) the item NAME, then its LINE TOTAL and a VAT letter (A/Б/…)
+                                                          e.g. "Труба каналізаційна ПП   238,80 A"
+              3) an article line starting with "#", with the unit in parentheses
+                                                          e.g. "#70116191(шт.)"
+            The name may wrap or be truncated on the printout — transcribe what is visible.
+            IMPORTANT ANCHOR: there is exactly ONE item per "#"-article line. Count the "#..."
+            lines and return the SAME number of items — one JSON item for each "#"-article line,
+            in order, top to bottom. Duplicated products (the same name twice) are two items.
+
+            For each item return:
+              - name: the item text (Ukrainian, as printed), trimmed. Drop the "#code" itself.
+              - unit: from the parentheses on the "#" line ("шт", "уп", "м", "кг", "л", "компл",
+                "пач", "рул"); if none is shown, use "шт".
+              - quantity: the <QTY> from the "N x price" line (default 1 if only a price is shown).
+              - unitPrice: the <UNIT_PRICE> from the "N x price" line (the price PER UNIT, NOT the
+                line total). If only a line total and a quantity are printed, divide to get it.
+              - type: "MATERIAL" for goods (the usual case); "WORK" only for an explicit
+                service/labour charge.
+              - category: "" (receipts have no section headers).
+            Also return depositAmount: 0.
+
+            Rules:
+              - Do NOT invent items or numbers. Unreadable number → 0, unreadable text → "".
+                Never guess a blurred digit, but never skip an item that has a "#" line either.
+              - Skip ONLY non-item lines: store name/address/ПН, каса/касир, date/time, "N x price"
+                totals, ПДВ/tax, СУМА/РАЗОМ/ВСЬОГО, ГОТІВКОЮ/ЗДАЧА (cash/change), ФН/З.Н./ФІСКАЛЬНИЙ
+                ЧЕК and other terminal metadata, loyalty/bonus lines.
+              - type must be exactly "WORK" or "MATERIAL"; default "MATERIAL".
+              - Keep the original top-to-bottom order.
+            """;
+
     private final AnthropicProperties props;
     private final ObjectMapper objectMapper;
     private final RestClient restClient = RestClient.create();
@@ -74,32 +118,41 @@ public class ClaudeEstimateExtractor {
     /** Extract from a spreadsheet/CSV already rendered to a plain text grid. */
     public Extracted extractFromText(String grid) {
         String instruction = "Extract the estimate positions from this spreadsheet grid:\n\n" + grid;
-        return call(List.of(Map.of("type", "text", "text", instruction)));
+        return call(List.of(Map.of("type", "text", "text", instruction)), SYSTEM_PROMPT);
     }
 
     /** Extract from a photo (printed or hand-written). {@code mediaType} e.g. image/jpeg. */
     public Extracted extractFromImage(String mediaType, byte[] bytes) {
+        return call(imageContent(mediaType, bytes, "Extract the estimate positions from this photo."),
+                SYSTEM_PROMPT);
+    }
+
+    /** Extract purchased items from a receipt photo (store / terminal / hand-written). */
+    public Extracted extractReceiptFromImage(String mediaType, byte[] bytes) {
+        return call(imageContent(mediaType, bytes, "Extract the purchased items from this receipt photo."),
+                RECEIPT_SYSTEM_PROMPT);
+    }
+
+    private static List<Map<String, Object>> imageContent(String mediaType, byte[] bytes, String instruction) {
         String base64 = Base64.getEncoder().encodeToString(bytes);
         Map<String, Object> image = Map.of(
                 "type", "image",
                 "source", Map.of("type", "base64", "media_type", mediaType, "data", base64));
-        Map<String, Object> text = Map.of(
-                "type", "text",
-                "text", "Extract the estimate positions from this photo.");
-        return call(List.of(image, text));
+        Map<String, Object> text = Map.of("type", "text", "text", instruction);
+        return List.of(image, text);
     }
 
     // ---- Anthropic round-trip --------------------------------------------------
 
     @SuppressWarnings("unchecked")
-    private Extracted call(List<Map<String, Object>> content) {
+    private Extracted call(List<Map<String, Object>> content, String systemPrompt) {
         if (!props.isConfigured()) {
             throw new AiExtractionException("error.ai.unavailable");
         }
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("model", props.model());
         body.put("max_tokens", props.maxTokens());
-        body.put("system", SYSTEM_PROMPT);
+        body.put("system", systemPrompt);
         body.put("messages", List.of(Map.of("role", "user", "content", content)));
         body.put("output_config", Map.of("format",
                 Map.of("type", "json_schema", "schema", SCHEMA)));

@@ -22,6 +22,7 @@ import com.majstr.backend.exception.ResourceNotFoundException;
 import com.majstr.backend.feature.Feature;
 import com.majstr.backend.feature.FeatureGuard;
 import com.majstr.backend.push.PushService;
+import com.majstr.backend.service.ProjectPhotoService;
 import com.majstr.backend.repository.EstimateItemRepository;
 import com.majstr.backend.repository.EstimateQuestionRepository;
 import com.majstr.backend.repository.EstimateShareLinkRepository;
@@ -49,6 +50,7 @@ public class PublicEstimateService {
     private final EstimateItemRepository itemRepository;
     private final EstimateQuestionRepository questionRepository;
     private final EstimateService estimateService;
+    private final ProjectPhotoService projectPhotoService;
     private final FeatureGuard featureGuard;
     private final PushService pushService;
     private final MessageSource messages;
@@ -119,6 +121,17 @@ public class PublicEstimateService {
         return estimateService.renderPdf(estimate);
     }
 
+    /**
+     * Streams a photo the master shared with the client. The token resolves to the object;
+     * only a SHARED photo of that same object is served (a private / receipt photo, or a
+     * photo of another object, is a 404) — the client never reaches private assets.
+     */
+    @Transactional(readOnly = true)
+    public ProjectPhotoService.PhotoFile readSharedPhoto(String token, java.util.UUID photoId) throws IOException {
+        Estimate estimate = resolveEstimate(token);
+        return projectPhotoService.readSharedFile(estimate.getProject().getId(), photoId);
+    }
+
     // ---- helpers ----------------------------------------------------------
 
     /**
@@ -175,6 +188,11 @@ public class PublicEstimateService {
                 ? null
                 : new PublicEstimateView.Signature(estimate.getSignedAt(), estimate.getSignerName());
 
+        List<PublicEstimateView.SharedPhoto> sharedPhotos = projectPhotoService.sharedPhotos(project.getId())
+                .stream()
+                .map(p -> new PublicEstimateView.SharedPhoto(p.getId(), p.getCaption()))
+                .toList();
+
         return new PublicEstimateView(
                 contractorDto,
                 projectDto,
@@ -188,7 +206,8 @@ public class PublicEstimateService {
                 total,
                 deposit,
                 balance,
-                signatureDto
+                signatureDto,
+                sharedPhotos
         );
     }
 

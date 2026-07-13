@@ -13,13 +13,17 @@ import com.majstr.backend.feature.PlanConfig;
 public record PlanLimitsResponse(
         Plan plan,
         Integer maxProjects,
-        Integer maxEstimatesPerProject
+        Integer maxEstimatesPerProject,
+        Integer maxPhotosPerObject,
+        Integer maxReceiptPhotosPerObject
 ) {
     public static PlanLimitsResponse of(Plan plan) {
         return new PlanLimitsResponse(
                 plan,
                 nullIfUnlimited(PlanConfig.limit(plan, Limit.MAX_PROJECTS)),
-                nullIfUnlimited(PlanConfig.limit(plan, Limit.MAX_ESTIMATES_PER_PROJECT))
+                nullIfUnlimited(PlanConfig.limit(plan, Limit.MAX_ESTIMATES_PER_PROJECT)),
+                nullIfUnlimited(PlanConfig.limit(plan, Limit.MAX_PHOTOS_PER_OBJECT)),
+                nullIfUnlimited(PlanConfig.limit(plan, Limit.MAX_RECEIPT_PHOTOS_PER_OBJECT))
         );
     }
 

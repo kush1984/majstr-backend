@@ -218,6 +218,26 @@
         }
         /* Loading text (the script sets #root to a bare <p> while fetching). */
         #root > p { text-align: center; color: var(--muted); padding: 40px 0; }
+        /* Shared object photos gallery. */
+        .photos {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+            gap: 10px;
+        }
+        .photo { margin: 0; }
+        .photo img {
+            width: 100%;
+            aspect-ratio: 4 / 3;
+            object-fit: cover;
+            border-radius: 10px;
+            border: 1px solid var(--line, #e6dccb);
+            display: block;
+        }
+        .photo figcaption {
+            margin-top: 4px;
+            font-size: 0.82rem;
+            color: var(--muted);
+        }
         dialog {
             border: none;
             border-radius: 16px;
@@ -389,6 +409,22 @@
         `;
     }
 
+    // Photos the master chose to share (progress on the object). The file is streamed
+    // through the same share token — no public/guessable URL.
+    function renderPhotos(photos) {
+        if (!photos || !photos.length) return '';
+        const tiles = photos.map(p => `
+            <figure class="photo">
+                <a href="${apiBase}/photos/${encodeURIComponent(p.id)}/file" target="_blank" rel="noopener">
+                    <img loading="lazy" alt="${escapeHtml(p.caption || 'Фото об’єкта')}"
+                         src="${apiBase}/photos/${encodeURIComponent(p.id)}/file">
+                </a>
+                ${p.caption ? `<figcaption>${escapeHtml(p.caption)}</figcaption>` : ''}
+            </figure>
+        `).join('');
+        return `<section class="card"><h2>Фото об’єкта</h2><div class="photos">${tiles}</div></section>`;
+    }
+
     function render(data) {
         const signed = data.signature != null;
         const signedBanner = signed
@@ -427,6 +463,8 @@
             </section>
 
             ${data.notes ? `<section class="card"><h2>Умови</h2><p>${escapeHtml(data.notes)}</p></section>` : ''}
+
+            ${renderPhotos(data.sharedPhotos)}
 
             <section class="card">
                 ${signedBanner}

@@ -1,10 +1,12 @@
 package com.majstr.backend.feature;
 
 import com.majstr.backend.dto.PlanLimitsResponse;
+import com.majstr.backend.entity.PhotoSource;
 import com.majstr.backend.entity.Plan;
 import com.majstr.backend.entity.User;
 import com.majstr.backend.exception.LimitExceededException;
 import com.majstr.backend.repository.EstimateRepository;
+import com.majstr.backend.repository.ProjectPhotoRepository;
 import com.majstr.backend.repository.ProjectRepository;
 import com.majstr.backend.repository.UserRepository;
 import org.junit.jupiter.api.Test;
@@ -27,6 +29,7 @@ class LimitServiceTest {
     @Mock UserRepository userRepository;
     @Mock ProjectRepository projectRepository;
     @Mock EstimateRepository estimateRepository;
+    @Mock ProjectPhotoRepository projectPhotoRepository;
     @InjectMocks LimitService limitService;
 
     private final UUID userId = UUID.randomUUID();
@@ -110,10 +113,35 @@ class LimitServiceTest {
                 .doesNotThrowAnyException();
     }
 
+    // ---- per-object photo caps (separate progress / receipt budgets) -------
+
+    @Test
+    void requireCanAddPhoto_freeRejectsSixthProgressPhoto() {
+        givenUserOnPlan(Plan.FREE);
+        given(projectPhotoRepository.countByProjectIdAndSource(projectId, PhotoSource.MANUAL)).willReturn(5L);
+
+        assertThatThrownBy(() -> limitService.requireCanAddPhoto(userId, projectId, PhotoSource.MANUAL))
+                .isInstanceOfSatisfying(LimitExceededException.class, ex -> {
+                    assertThat(ex.getMaxAllowed()).isEqualTo(5);
+                    assertThat(ex.getLimit()).isEqualTo(Limit.MAX_PHOTOS_PER_OBJECT);
+                    assertThat(ex.getCurrentPlan()).isEqualTo(Plan.FREE);
+                });
+    }
+
+    @Test
+    void requireCanAddPhoto_receiptUsesItsOwnBudget() {
+        givenUserOnPlan(Plan.PRO);
+        // 49 receipts < 50 cap → allowed, and the progress-photo count is never consulted.
+        given(projectPhotoRepository.countByProjectIdAndSource(projectId, PhotoSource.RECEIPT)).willReturn(49L);
+
+        assertThatCode(() -> limitService.requireCanAddPhoto(userId, projectId, PhotoSource.RECEIPT))
+                .doesNotThrowAnyException();
+    }
+
     // ---- limits-for-UI -----------------------------------------------------
 
     @Test
-    void limitsFor_freeReturnsBothCaps() {
+    void limitsFor_freeReturnsAllCaps() {
         givenUserOnPlan(Plan.FREE);
 
         PlanLimitsResponse limits = limitService.limitsFor(userId);
@@ -121,16 +149,21 @@ class LimitServiceTest {
         assertThat(limits.plan()).isEqualTo(Plan.FREE);
         assertThat(limits.maxProjects()).isEqualTo(2);
         assertThat(limits.maxEstimatesPerProject()).isEqualTo(3);
+        assertThat(limits.maxPhotosPerObject()).isEqualTo(5);
+        assertThat(limits.maxReceiptPhotosPerObject()).isEqualTo(0);
     }
 
     @Test
-    void limitsFor_proReturnsNullsForUnlimited() {
+    void limitsFor_proReturnsNullsForUnlimitedButRealPhotoCaps() {
         givenUserOnPlan(Plan.PRO);
 
         PlanLimitsResponse limits = limitService.limitsFor(userId);
 
         assertThat(limits.maxProjects()).isNull();
         assertThat(limits.maxEstimatesPerProject()).isNull();
+        // Photo caps are real numbers even on PRO (not unlimited).
+        assertThat(limits.maxPhotosPerObject()).isEqualTo(50);
+        assertThat(limits.maxReceiptPhotosPerObject()).isEqualTo(50);
     }
 
     private void givenUserOnPlan(Plan plan) {

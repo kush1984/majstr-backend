@@ -136,12 +136,14 @@ public class CatalogTemplateService {
         return toCreate;
     }
 
-    /** Composite dedup key — same name + type + unit are treated as duplicate. */
+    /** Composite dedup key — same name (trimmed, case-insensitive) + type + unit are a
+     *  duplicate. Must match the {@code ux_catalog_items_owner_name_type_unit} index
+     *  expression {@code lower(trim(name))} so a copy never inserts a row the DB rejects. */
     private static String key(CatalogItem item) {
-        return item.getName().toLowerCase() + "|" + item.getType() + "|" + item.getUnit();
+        return item.getName().trim().toLowerCase() + "|" + item.getType() + "|" + item.getUnit();
     }
 
     private static String key(CatalogTemplate template) {
-        return template.getName().toLowerCase() + "|" + template.getType() + "|" + template.getUnit();
+        return template.getName().trim().toLowerCase() + "|" + template.getType() + "|" + template.getUnit();
     }
 }

@@ -4,6 +4,7 @@ import com.majstr.backend.dto.CatalogItemRequest;
 import com.majstr.backend.dto.CatalogItemResponse;
 import com.majstr.backend.entity.CatalogItem;
 import com.majstr.backend.entity.ItemType;
+import com.majstr.backend.entity.Trade;
 import com.majstr.backend.entity.Unit;
 import com.majstr.backend.entity.User;
 import com.majstr.backend.repository.CatalogItemRepository;
@@ -52,6 +53,30 @@ class CatalogServiceTest {
                 ownerId);
 
         assertThat(resp.category()).isEqualTo("Електро роботи");
+    }
+
+    @Test
+    void create_whenSameNameTypeUnitExists_updatesInsteadOfDuplicating() {
+        CatalogItem existing = CatalogItem.builder()
+                .id(UUID.randomUUID())
+                .owner(User.builder().id(ownerId).build())
+                .name("Кабель ВВГнг").category("Старе").trade(Trade.OTHER)
+                .type(ItemType.MATERIAL).unit(Unit.M).defaultPrice(new BigDecimal("10.00"))
+                .build();
+        given(catalogRepository.findByOwnerIdOrderByNameAsc(ownerId)).willReturn(List.of(existing));
+
+        CatalogItemResponse resp = catalogService.create(
+                new CatalogItemRequest("  кабель ввгнг  ", "Електрика", Trade.ELECTRICAL,
+                        ItemType.MATERIAL, Unit.M, new BigDecimal("42.00")),
+                ownerId);
+
+        // Matched by (name trimmed/case-insensitive, type, unit) → updated in place, no new row.
+        assertThat(existing.getDefaultPrice()).isEqualByComparingTo("42.00");
+        assertThat(existing.getCategory()).isEqualTo("Електрика");
+        assertThat(existing.getTrade()).isEqualTo(Trade.ELECTRICAL);
+        assertThat(resp.defaultPrice()).isEqualByComparingTo("42.00");
+        verify(catalogRepository, never()).save(any());
+        verify(userRepository, never()).getReferenceById(any());
     }
 
     @Test

@@ -90,6 +90,7 @@ public class GlobalExceptionHandler {
     /** Unique email constraint, checked in the DB. Used by both the fast pre-check
      *  ({@link EmailAlreadyExistsException}) and the fallback constraint catch below. */
     private static final String EMAIL_UNIQUE_CONSTRAINT = "users_email_unique";
+    private static final String CATALOG_UNIQUE_INDEX = "ux_catalog_items_owner_name_type_unit";
 
     @ExceptionHandler(EmailAlreadyExistsException.class)
     public ResponseEntity<ErrorResponse> handleDupEmail(EmailAlreadyExistsException ex, HttpServletRequest req) {
@@ -108,6 +109,14 @@ public class GlobalExceptionHandler {
         if (isEmailUniqueViolation(ex)) {
             return emailTaken(req);
         }
+        if (isConstraintViolation(ex, CATALOG_UNIQUE_INDEX)) {
+            // A catalog item with the same name+type+unit already exists — a friendly 409,
+            // not a 500. The normal paths de-dup; this is a safety net (e.g. a rename clash).
+            ErrorResponse body = ErrorResponse.coded(HttpStatus.CONFLICT.value(),
+                    HttpStatus.CONFLICT.getReasonPhrase(), msg("error.catalog.duplicate"),
+                    req.getRequestURI(), "CATALOG_ITEM_DUPLICATE");
+            return ResponseEntity.status(HttpStatus.CONFLICT).body(body);
+        }
         return handleAny(ex, req);
     }
 
@@ -118,16 +127,20 @@ public class GlobalExceptionHandler {
         return ResponseEntity.status(HttpStatus.CONFLICT).body(body);
     }
 
-    /** True only for the {@code users_email_unique} violation — never swallows other
-     *  constraints. Checks the Hibernate constraint name and, defensively, the message. */
     private static boolean isEmailUniqueViolation(Throwable ex) {
+        return isConstraintViolation(ex, EMAIL_UNIQUE_CONSTRAINT);
+    }
+
+    /** True only for the named constraint/index — never swallows other constraints.
+     *  Checks the Hibernate constraint name and, defensively, the message text. */
+    private static boolean isConstraintViolation(Throwable ex, String constraintName) {
         for (Throwable cause = ex; cause != null; cause = cause.getCause()) {
             if (cause instanceof org.hibernate.exception.ConstraintViolationException cve
-                    && EMAIL_UNIQUE_CONSTRAINT.equalsIgnoreCase(cve.getConstraintName())) {
+                    && constraintName.equalsIgnoreCase(cve.getConstraintName())) {
                 return true;
             }
             String message = cause.getMessage();
-            if (message != null && message.toLowerCase(java.util.Locale.ROOT).contains(EMAIL_UNIQUE_CONSTRAINT)) {
+            if (message != null && message.toLowerCase(java.util.Locale.ROOT).contains(constraintName)) {
                 return true;
             }
         }
@@ -195,11 +208,28 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(LimitExceededException.class)
     public ResponseEntity<ErrorResponse> handleLimitExceeded(LimitExceededException ex, HttpServletRequest req) {
-        boolean estimates = ex.getLimit() == Limit.MAX_ESTIMATES_PER_PROJECT;
-        String messageKey = estimates ? "error.limit.estimates" : "error.limit.projects";
-        String pluralPrefix = estimates ? "plural.estimates" : "plural.projects";
-        String code = estimates ? "ESTIMATE_LIMIT_REACHED" : "PROJECT_LIMIT_REACHED";
-        String message = msg(messageKey, ex.getMaxAllowed(), msg(pluralKey(pluralPrefix, ex.getMaxAllowed())));
+        int max = ex.getMaxAllowed();
+        String code;
+        String message;
+        switch (ex.getLimit()) {
+            case MAX_ESTIMATES_PER_PROJECT -> {
+                code = "ESTIMATE_LIMIT_REACHED";
+                message = msg("error.limit.estimates", max, msg(pluralKey("plural.estimates", max)));
+            }
+            case MAX_PHOTOS_PER_OBJECT -> {
+                // "фото" is invariant in Ukrainian plural — no plural helper needed.
+                code = "PHOTO_LIMIT_REACHED";
+                message = msg("error.limit.photos", max);
+            }
+            case MAX_RECEIPT_PHOTOS_PER_OBJECT -> {
+                code = "RECEIPT_PHOTO_LIMIT_REACHED";
+                message = msg("error.limit.receipt-photos", max);
+            }
+            default -> {
+                code = "PROJECT_LIMIT_REACHED";
+                message = msg("error.limit.projects", max, msg(pluralKey("plural.projects", max)));
+            }
+        }
         ErrorResponse body = ErrorResponse.coded(HttpStatus.FORBIDDEN.value(),
                 HttpStatus.FORBIDDEN.getReasonPhrase(), message, req.getRequestURI(), code);
         return ResponseEntity.status(HttpStatus.FORBIDDEN).body(body);

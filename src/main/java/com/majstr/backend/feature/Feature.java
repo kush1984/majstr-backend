@@ -20,5 +20,9 @@ public enum Feature {
     ESTIMATE_IMPORT,
     /** Object measurements (Заміри): per-object rooms + measured elements, pulled into
      *  estimate line quantities. PRO+ — measuring pays off on big jobs (crews = PRO). */
-    MEASUREMENTS
+    MEASUREMENTS,
+    /** Add line items to an estimate from a receipt photo via LLM vision (PRO+). Distinct
+     *  from {@link #ESTIMATE_IMPORT} (whole-estimate import + catalog upsert) — receipts
+     *  only append material/work lines to the open estimate, never touching the catalog. */
+    RECEIPT_IMPORT
 }

@@ -5,12 +5,14 @@ import com.majstr.backend.dto.PublicEstimateView;
 import com.majstr.backend.dto.QuestionRequest;
 import com.majstr.backend.dto.QuestionResponse;
 import com.majstr.backend.dto.SignRequest;
+import com.majstr.backend.service.ProjectPhotoService;
 import com.majstr.backend.service.PublicEstimateService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.CacheControl;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
@@ -23,6 +25,8 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.io.IOException;
+import java.time.Duration;
+import java.util.UUID;
 
 @RestController
 @RequestMapping("/api/public/estimates")
@@ -63,6 +67,18 @@ public class PublicEstimateController {
                 .contentType(MediaType.APPLICATION_PDF)
                 .header(HttpHeaders.CONTENT_DISPOSITION, "inline; filename=\"estimate.pdf\"")
                 .body(body);
+    }
+
+    @Operation(summary = "Stream a photo the master shared with the client (SHARED only)")
+    @GetMapping("/{token}/photos/{photoId}/file")
+    public ResponseEntity<byte[]> sharedPhoto(@PathVariable String token,
+                                              @PathVariable UUID photoId) throws IOException {
+        ProjectPhotoService.PhotoFile file = publicService.readSharedPhoto(token, photoId);
+        return ResponseEntity.ok()
+                .contentType(MediaType.parseMediaType(file.contentType()))
+                .cacheControl(CacheControl.maxAge(Duration.ofMinutes(10)).cachePrivate())
+                .header(HttpHeaders.CONTENT_DISPOSITION, "inline")
+                .body(file.bytes());
     }
 
     private String clientIp(HttpServletRequest request) {
