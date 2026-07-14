@@ -71,18 +71,18 @@ one-line summary — keep the item in the file as a record.
   **psql client ≥ 18** — an older psql chokes on it. Captured in `docs/db-restore.md`.
 
 ### Landing prerender / SSR for full SEO indexation
-- **Status:** OPEN
+- **Status:** RESOLVED (lightweight) — full SSG still optional
 - **Since:** SEO iteration (2026-06-13)
-- **Context:** The landing's `<head>` meta (title/description/og/canonical/JSON-LD)
-  are static, so Google gets the decisive signals without JS, and Google renders
-  JS so the page is indexable. But the landing **body text** is client-rendered,
-  which is less reliable for indexing. Prerendering was deferred — SEO is a weak
-  channel here (hygiene, not growth), and wiring SSG into the existing Vite +
-  `vite-plugin-pwa` + React-Router app restructures the router/entry (risky).
-- **Notes / options:** If body indexation becomes important: add prerender of just
-  the public `/` route (e.g. `vite-react-ssg`, or a build-time puppeteer prerender
-  of the landing) so the built HTML ships the full landing text; keep the private
-  routes client-only. Validate the PWA service worker + auth redirects still behave.
+- **Context:** The landing's `<head>` meta were already static; the **body text** was
+  client-rendered (less reliable to index).
+- **Resolution:** Instead of an SSG/prerender pipeline (risky in Vite + `vite-plugin-pwa`
+  + React-Router), a **static first-paint shell** was placed inside `#root` in
+  `index.html` (semantic `<h1>` + hero + feature list + trade keywords + CTA), which
+  `createRoot` replaces on mount — crawlers/no-JS clients get real body copy, the same
+  HTML is served to everyone (no cloaking). Added an `Organization` JSON-LD too.
+  Verified: `dist/index.html` ships the `<h1>`/features; dev server renders the full
+  React landing over it with no console errors. A true SSG remains possible later but
+  is unnecessary for this weak channel.
 
 ### Audit log for sensitive actions
 - **Status:** OPEN

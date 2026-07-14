@@ -36,15 +36,22 @@
   nofollow">` as a second layer beyond robots.txt (a portal URL with a token must
   never be indexed even if discovered).
 
-## Deferred — prerender / SSR (open-questions)
+## Follow-up — crawlable body without SSG (static first-paint shell)
 
-The landing **body text** is still client-rendered. Wiring SSG/prerender
-(`vite-react-ssg` etc.) into this Vite + `vite-plugin-pwa` + React-Router app
-restructures the router/entry and is risky for a marginal gain in a weak SEO
-channel — so it's **not done**, logged in open-questions. The static head already
-gives Google the decisive signals (title/description/og/canonical/JSON-LD), and
-Google does execute JS, so the page is indexable today; prerender would only make
-body indexation more reliable.
+Rather than wire a full SSG/prerender pipeline (risky in Vite + `vite-plugin-pwa` +
+React-Router), the landing **body content** is now crawlable via a **static
+first-paint shell inside `#root`** in `index.html`: a semantic `<h1>` + hero lede +
+"Що всередині" feature list + trade keywords + CTA links, hand-written to mirror the
+rendered landing. `main.tsx` uses `createRoot(#root)`, which **replaces** the shell
+on mount — so the same HTML is served to everyone (no cloaking), and crawlers /
+no-JS clients get real copy + headings without executing JS. Verified: built
+`dist/index.html` contains the `<h1>` and the feature list; the dev server renders
+the full React landing over it with **no console errors** (clean createRoot replace).
+Also added an **`Organization`** JSON-LD block (brand queries → the site).
+
+This closes the practical gap the earlier "prerender deferred" note described,
+without the SSG risk. A true SSG/prerender remains possible later but is unnecessary
+for this weak channel.
 
 ## Verify
 - Built `dist/index.html` `<head>` contains the title/description/canonical/og/
