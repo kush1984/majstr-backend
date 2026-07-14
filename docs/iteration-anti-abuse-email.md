@@ -66,8 +66,13 @@ bypass.
   single **Підтвердити email** CTA → `EmailVerifyModal`. (An earlier revision offered
   a "pay now instead" bypass; removed once the paid path was also gated — no PRO
   without verification, so there's nothing to bypass to.) A verified click runs the
-  real action. `UpgradeIntentModal`'s existing catch already toasts the localized
-  verify message if any other entry point reaches checkout while unverified.
+  real action. `UpgradeIntentModal` is **self-contained**: on a `EMAIL_NOT_VERIFIED`
+  from checkout it closes and opens its own `EmailVerifyModal` (conditionally mounted
+  so no QueryClient is needed until shown) instead of a bare, out-of-context toast —
+  fixing every entry point at once (the receipt-import FREE→PRO upsell on the estimate
+  page, the limit banner, the economy teaser), not just ProfilePage. The backend
+  `error.email-not-verified` message was neutralized ("Verify your email to continue")
+  since it now covers share, PDF, trial **and** checkout — no longer share-specific.
 - **Register** (`RegisterPage`): `EMAIL_DOMAIN_BLOCKED` renders inline under the
   email field (server message is already localized).
 
