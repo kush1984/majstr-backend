@@ -62,12 +62,14 @@ public class Estimate {
     @Column(name = "deposit_amount", precision = 15, scale = 2)
     private BigDecimal depositAmount;
 
-    /** Whether this estimate counts toward the object's economy (income). Only the
-     *  accepted deal should count — set true on sign, on consolidate (sources → false),
-     *  or toggled by the owner; false for drafts/variants. Owner-only, never client-facing. */
+    /** Whether this estimate counts toward the object's economy (income). Default
+     *  <b>true</b>: every estimate counts regardless of status, so the economy is
+     *  complete out of the box; the owner unchecks what shouldn't count. The one
+     *  exception is a <b>consolidated</b> estimate — created with false so it doesn't
+     *  double-count its (already-counted) sources. Owner-only, never client-facing. */
     @Builder.Default
     @Column(name = "count_in_economy", nullable = false)
-    private boolean countInEconomy = false;
+    private boolean countInEconomy = true;
 
     @Column(name = "signed_at")
     private Instant signedAt;

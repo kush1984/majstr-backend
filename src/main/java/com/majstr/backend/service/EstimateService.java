@@ -132,9 +132,10 @@ public class EstimateService {
         Estimate consolidated = estimateRepository.save(Estimate.builder()
                 .project(project)
                 .name(normalize(name) == null ? "Зведений кошторис" : normalize(name))
-                // The consolidated estimate is the deal now — count it in the economy,
-                // and drop its sources so the same work isn't double-counted.
-                .countInEconomy(true)
+                // Everything counts in the economy by default (true) — but the
+                // consolidated estimate must NOT, or it would double-count its sources
+                // (which stay counted). So this rollup is the one excluded.
+                .countInEconomy(false)
                 .build());
         projectRepository.incrementEstimatesCreated(projectId); // lifetime churn counter
 
@@ -145,7 +146,7 @@ public class EstimateService {
             if (!source.getProject().getId().equals(projectId)) {
                 throw new AccessDeniedException("Estimate does not belong to project " + projectId);
             }
-            source.setCountInEconomy(false); // superseded by the consolidated estimate
+            // Sources keep counting (the rollup above is the excluded one instead).
             for (EstimateItem item : itemRepository.findByEstimateIdOrderBySortOrderAscIdAsc(sourceId)) {
                 copies.add(EstimateItem.builder()
                         .estimate(consolidated)

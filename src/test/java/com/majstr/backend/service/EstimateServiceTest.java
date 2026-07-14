@@ -552,7 +552,7 @@ class EstimateServiceTest {
 
     @Test
     @SuppressWarnings("unchecked")
-    void consolidate_flagsNewInEconomyAndUnflagsSources() {
+    void consolidate_excludesRollupAndKeepsSourcesCounting() {
         UUID srcA = UUID.randomUUID();
         UUID consolidatedId = UUID.randomUUID();
         given(projectService.loadOwned(projectId, ownerId)).willReturn(ownedProject(ownerId));
@@ -566,16 +566,17 @@ class EstimateServiceTest {
             savedConsolidated[0] = e;
             return e;
         });
-        Estimate source = sourceEstimate(srcA, ownerId);
-        source.setCountInEconomy(true); // was the accepted deal before consolidation
+        Estimate source = sourceEstimate(srcA, ownerId); // counts by default
         given(estimateRepository.findById(srcA)).willReturn(Optional.of(source));
         given(itemRepository.findByEstimateIdOrderBySortOrderAscIdAsc(srcA)).willReturn(List.of());
         given(itemRepository.findByEstimateIdOrderBySortOrderAscIdAsc(consolidatedId)).willReturn(List.of());
 
         estimateService.consolidate(projectId, "Зведений", List.of(srcA), ownerId);
 
-        assertThat(savedConsolidated[0].isCountInEconomy()).isTrue();  // the deal now
-        assertThat(source.isCountInEconomy()).isFalse();               // superseded → dropped
+        // New rule: everything counts by default; the rollup is the one exclusion,
+        // so its sources keep counting (no double-count).
+        assertThat(savedConsolidated[0].isCountInEconomy()).isFalse(); // rollup excluded
+        assertThat(source.isCountInEconomy()).isTrue();                // sources still count
     }
 
     @Test
