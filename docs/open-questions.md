@@ -738,13 +738,23 @@ one-line summary — keep the item in the file as a record.
   замірів". This single-line calculator stays as the quick per-line helper (unchanged, надбудова).
 
 ### Object measurements: complex shapes (mansard / triangle / cut corner) in SURFACE
-- **Status:** DEFERRED
+- **Status:** IN_PROGRESS
 - **Since:** Object-measurements iteration (2026-07-11)
 - **Context:** SURFACE is Σ(д×ш) − прорізи (like the single-line calculator). Rooms with a
   mansard, triangular gable, or cut corner need a shape calculator with figures.
 - **Notes / options:** Add a figures calculator (rectangle/triangle/trapezoid with a formula
   hint) into the SURFACE editor when demand is confirmed — most jobs are "периметр × висота −
   проєми". The standalone figure calculator built earlier can be grafted in then.
+  (Duplicate copies of this item and the three below were merged into one each on 2026-07-16.)
+- **In progress (Surface-shapes iteration, 2026-07-16):** demand confirmed — taken up in
+  [iteration-surface-shapes.md](iteration-surface-shapes.md). A SURFACE plane becomes
+  `{shape, mode?, unit, values}` (rectangle / trapezoid / mansard ×2 modes / triangle ×2 modes /
+  cut corner), each with an SVG diagram whose letters are the input fields; surface = Σ planes −
+  Σ openings. Geometry is grafted from the standalone reference calculator
+  (`C:\Work\prompts\area-calculator.jsx`) into a shared module used by BOTH the single-line
+  calculator and the measurements SURFACE editor. Area via the **shoelace formula** over built
+  vertices (no per-shape formulas) — ported to the backend too, since the server stays the source
+  of truth for `result`. Legacy `{l, w}` planes read as rectangles (no migration).
 
 ### Object measurements: LIVE link (re-measure → prompt to update the estimate)
 - **Status:** DEFERRED
@@ -770,6 +780,36 @@ one-line summary — keep the item in the file as a record.
 - **Resolution:** Deliberately disallowed — the "Вибрати з замірів" picker filters to the line's
   unit, and `MeasurementService.sumForRefs` rejects a unit mismatch (400 `unit-mismatch`). A line
   has one unit; mixing metres and square-metres into one quantity is meaningless.
+
+### Surface shapes: real camera photo of the wall with dimension labels on top
+- **Status:** OPEN
+- **Since:** Surface-shapes iteration (2026-07-16)
+- **Context:** The shapes iteration draws **schematic SVG diagrams** (letters = input fields) —
+  deliberately NOT a camera photo. A master might instead want to snap the actual wall and label
+  the measured sides on the picture.
+- **Notes / options:** Different feature entirely — camera access, image storage, per-photo
+  annotation overlay. Would reuse the private-photo plumbing (`project_photo`, authenticated
+  stream) from the consolidated/receipts/photos iteration. Build only if masters ask; the drawn
+  schema is what removes the "which side is which" confusion, and it costs no storage.
+
+### Surface shapes: L-shaped / arbitrary contours via vertex entry
+- **Status:** OPEN
+- **Since:** Surface-shapes iteration (2026-07-16)
+- **Context:** The five shapes cover the common cases. An L-shaped room or a bay window still has
+  to be split into several planes by hand (which the "surface = Σ planes" model supports).
+- **Notes / options:** The shoelace engine already computes ANY polygon from vertices, so an
+  "enter the contour" mode is cheap on the math side — the cost is UI (a vertex editor is hard on
+  a phone) and it fights SPEC §G2's "don't model complex geometry automatically". Splitting into
+  simple planes stays the recommended path. Revisit on feedback.
+
+### Surface shapes: circular / arched forms
+- **Status:** OPEN
+- **Since:** Surface-shapes iteration (2026-07-16)
+- **Context:** Arches, round windows and semicircular niches aren't expressible — shoelace works
+  on straight-edged polygons only.
+- **Notes / options:** Either add dedicated formulas (circle/segment/arch = rectangle + half-
+  ellipse) outside the shoelace path, or approximate the curve with many vertices (shoelace then
+  works unchanged, error negligible at ~64 segments). Rare in finishing work; wait for a real ask.
 
 ### Estimate templates spanning multiple trades
 - **Status:** OPEN
@@ -874,40 +914,6 @@ one-line summary — keep the item in the file as a record.
   (object-create tile + project "+ Новий" picker). Follow-up: new `KM` unit (V45) + `м.кв.`→м² recognition. PWA
   green (tsc / 84 tests / build); backend build on the user.
 
-### Measurements: complex shapes (mansard / triangle / cut corner) in a SURFACE element
-- **Status:** DEFERRED
-- **Since:** Object-measurements iteration (2026-07-11)
-- **Context:** A SURFACE element is Σ(l·w) − Σ openings (same as the single-line calculator).
-  Non-rectangular shapes (mansard, triangle, cut corner) aren't expressible.
-- **Notes / options:** The standalone shape calculator (built separately) can be folded into
-  SURFACE later, when demand is confirmed — most masters are fine with "perimeter × height −
-  openings". Not now.
-
-### Measurements: live link (re-measure a room → prompt to update the estimate)
-- **Status:** DEFERRED
-- **Since:** Object-measurements iteration (2026-07-11)
-- **Context:** v1 is **selection memory** only — a line remembers which elements were summed
-  (`measurement_refs`), but changing an element's result does NOT auto-update the line quantity.
-- **Notes / options:** A live link (re-measure → "update N estimates?") is convenient but risks
-  silently changing signed sums. Deferred deliberately; revisit only with a clear guard around
-  SIGNED estimates.
-
-### Measurements: rooms as templates (typical bathroom)
-- **Status:** OPEN
-- **Since:** Object-measurements iteration (2026-07-11)
-- **Context:** A master measures similar rooms repeatedly (a standard bathroom). A "room template"
-  (a preset set of elements) could speed this up.
-- **Notes / options:** Build by feedback — mirror the estimate-template idea (`measurement_room`
-  preset + apply-to-object). Confirm the want first.
-
-### Measurements: mixing different-unit sums into one line (forbidden by design)
-- **Status:** RESOLVED
-- **Since:** Object-measurements iteration (2026-07-11)
-- **Context:** Could a line sum both m² and м.пог elements? No — a line has one unit.
-- **Resolution:** Deliberately forbidden — the "Вибрати з замірів" dialog filters to the line's
-  unit (Stage 2), and the server re-checks each ref's unit against the line's. A line's quantity
-  is always one unit.
-
 ### Import-append into an already-open estimate (editor entry point)
 - **Status:** DEFERRED
 - **Since:** Estimate-import-LLM iteration (2026-07-11)
@@ -933,6 +939,52 @@ one-line summary — keep the item in the file as a record.
   general "append parsed rows into an open estimate from Excel" case stays DEFERRED (below) — this
   resolves only the receipt-photo path. See
   [iteration-consolidated-receipts-photos.md](iteration-consolidated-receipts-photos.md).
+
+### Recognise a room SKETCH photo into measurements (LLM vision)
+- **Status:** RESOLVED
+- **Since:** Sketch-import iteration (2026-07-16)
+- **Context:** Masters already draw field sketches (кроки) of rooms with sizes on paper. Reading
+  the sketch beats a photo of the room itself: the numbers are *written* (the LLM reads, doesn't
+  guess scale) and the drawing gives topology. The danger isn't "can't read" but "reads a real
+  number and attaches it to the wrong side" → a plausible area → a silent money error.
+- **Resolution:** `POST /api/projects/{id}/measurements/sketch/parse|commit` — the **third** prompt
+  on `ClaudeEstimateExtractor` (estimate + receipt were the first two), reusing its ONE Anthropic
+  client via the new `requestJson(content, systemPrompt, schema)`. Parse maps the model's output
+  into the SAME payload the manual editor uses and computes each `result` with `MeasurementCalc`
+  (the model never calculates area, never invents an unreadable size — blank + low confidence). The
+  **guard against the misassigned-number error** is the review screen: the sketch photo sits above
+  OUR redrawn `ShapeDiagram` for each element, so the master compares two drawings at a glance; a
+  low-confidence element is highlighted and blocks commit until fixed or removed. New
+  `Feature.SKETCH_IMPORT` (PRO+TEAM). The image is discarded after parse; the master may optionally
+  keep it as a PRIVATE object photo. See [iteration-sketch-import.md](iteration-sketch-import.md).
+
+### Recognise ARCHITECTURAL drawings (PDF floor plans) into measurements
+- **Status:** OPEN
+- **Since:** Sketch-import iteration (2026-07-16)
+- **Context:** A step beyond hand sketches — a real architect's PDF/printed floor plan (labelled room
+  areas, wall runs). Harder: scale bars, axes, wall thickness, section heights on separate views.
+- **Notes / options:** A different extractor prompt (and PDF→image rendering) targeting the same
+  `measurement_room`/`measurement_item` draft + review screen. The labelled-areas case ("extract the
+  m² printed in each room") is the tractable first cut. Build on demand; sketch import covers the
+  common field workflow.
+
+### Paper LIST of measurements (columns of numbers, not a drawing)
+- **Status:** OPEN
+- **Since:** Sketch-import iteration (2026-07-16)
+- **Context:** Some masters write measurements as a table (room / element / size), not a drawing.
+  That's the receipt/estimate-import shape (rows of values), not the sketch shape (topology).
+- **Notes / options:** The same `ClaudeEstimateExtractor` transport with a list-tuned prompt → the
+  sketch review screen (or a simpler table review). Low effort once demand is shown; the sketch flow
+  already handles the drawing case which is the harder, higher-value one.
+
+### Sketch-import accuracy metric (edits per review)
+- **Status:** OPEN
+- **Since:** Sketch-import iteration (2026-07-16)
+- **Context:** The feature earns its keep only if the master makes FEW corrections on the review
+  screen. Many edits = it creates work instead of saving it — the metric of whether it's worth it.
+- **Notes / options:** Instrument the review → commit: count fields edited / elements deleted / a
+  wrong unit switched, per parse. Feed it back into the prompt. Deferred until the feature has real
+  usage to measure.
 
 ### Export the catalog back to xlsx
 - **Status:** OPEN

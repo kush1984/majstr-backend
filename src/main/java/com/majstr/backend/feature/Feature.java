@@ -24,5 +24,9 @@ public enum Feature {
     /** Add line items to an estimate from a receipt photo via LLM vision (PRO+). Distinct
      *  from {@link #ESTIMATE_IMPORT} (whole-estimate import + catalog upsert) — receipts
      *  only append material/work lines to the open estimate, never touching the catalog. */
-    RECEIPT_IMPORT
+    RECEIPT_IMPORT,
+    /** Recognise a hand-drawn room sketch photo into measurement rooms/elements via LLM
+     *  vision (PRO+). Builds a draft the master verifies against our redrawn schema before
+     *  it becomes real measurements — nothing is created without confirmation. */
+    SKETCH_IMPORT
 }

@@ -156,6 +156,40 @@ public class MeasurementService {
         return buildTree(objectId);
     }
 
+    // ---- sketch import (create a whole reviewed sketch at once) ----------------
+
+    /**
+     * Create the master-confirmed sketch in one transaction: each room with its elements,
+     * every {@code result} recomputed server-side from the payload (the LLM's/client's number
+     * is never trusted). Returns the fresh tree. Gated + owner-scoped like every other write.
+     */
+    @Transactional
+    public MeasurementsResponse createFromSketch(UUID objectId, UUID ownerId,
+                                                 List<com.majstr.backend.dto.SketchCommitRequest.Room> rooms) {
+        requireMeasurements(objectId, ownerId);
+        int roomOrder = 0;
+        for (var room : rooms) {
+            MeasurementRoom saved = roomRepository.save(MeasurementRoom.builder()
+                    .projectId(objectId)
+                    .name(room.name().trim())
+                    .sortOrder(roomOrder++)
+                    .build());
+            int itemOrder = 0;
+            for (var item : room.items()) {
+                itemRepository.save(MeasurementItem.builder()
+                        .roomId(saved.getId())
+                        .name(item.name().trim())
+                        .type(item.type())
+                        .unit(item.type().unit())
+                        .result(calc.compute(item.type(), item.payload()))
+                        .payload(item.payload().toString())
+                        .sortOrder(itemOrder++)
+                        .build());
+            }
+        }
+        return buildTree(objectId);
+    }
+
     // ---- tree + totals --------------------------------------------------------
 
     private MeasurementsResponse buildTree(UUID objectId) {

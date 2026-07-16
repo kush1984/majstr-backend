@@ -133,7 +133,9 @@ public class ClaudeEstimateExtractor {
                 RECEIPT_SYSTEM_PROMPT);
     }
 
-    private static List<Map<String, Object>> imageContent(String mediaType, byte[] bytes, String instruction) {
+    /** Build a user-message content list of one image block + one instruction — reusable by
+     *  any caller that needs a vision round-trip (estimate, receipt, sketch). */
+    public static List<Map<String, Object>> imageContent(String mediaType, byte[] bytes, String instruction) {
         String base64 = Base64.getEncoder().encodeToString(bytes);
         Map<String, Object> image = Map.of(
                 "type", "image",
@@ -144,8 +146,20 @@ public class ClaudeEstimateExtractor {
 
     // ---- Anthropic round-trip --------------------------------------------------
 
-    @SuppressWarnings("unchecked")
     private Extracted call(List<Map<String, Object>> content, String systemPrompt) {
+        return parse(requestJson(content, systemPrompt, SCHEMA));
+    }
+
+    /**
+     * The low-level Anthropic call: send {@code content} under {@code systemPrompt}, forcing
+     * structured output to {@code schema} ({@code output_config.format}), and return the first
+     * text block (the JSON string). Shared transport so a new extraction (e.g. room sketches)
+     * reuses the ONE client/error handling with its own prompt + schema. Any failure →
+     * {@link AiExtractionException} (surfaced synchronously, not logged-and-skipped).
+     */
+    @SuppressWarnings("unchecked")
+    public String requestJson(List<Map<String, Object>> content, String systemPrompt,
+                              Map<String, Object> schema) {
         if (!props.isConfigured()) {
             throw new AiExtractionException("error.ai.unavailable");
         }
@@ -155,7 +169,7 @@ public class ClaudeEstimateExtractor {
         body.put("system", systemPrompt);
         body.put("messages", List.of(Map.of("role", "user", "content", content)));
         body.put("output_config", Map.of("format",
-                Map.of("type", "json_schema", "schema", SCHEMA)));
+                Map.of("type", "json_schema", "schema", schema)));
 
         Map<String, Object> resp;
         try {
@@ -171,7 +185,7 @@ public class ClaudeEstimateExtractor {
             log.error("Anthropic extraction call failed: {}", e.getMessage());
             throw new AiExtractionException("error.ai.unavailable", e);
         }
-        return parse(firstTextBlock(resp));
+        return firstTextBlock(resp);
     }
 
     @SuppressWarnings("unchecked")

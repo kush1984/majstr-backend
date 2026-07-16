@@ -9,6 +9,7 @@ import tools.jackson.databind.ObjectMapper;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.util.List;
+import java.util.Map;
 
 /**
  * Server-side result calculator for measurement elements — the source of truth (the
@@ -44,22 +45,45 @@ public class MeasurementCalc {
 
     // ---- formulas -------------------------------------------------------------
 
-    /** Σ(l·w) − Σ(w·h·n). Same as the single-line area calculator. */
+    /**
+     * Σ planes − Σ(w·h·n), every dimension in the payload's unit (absent = metres).
+     * A plane is any shape ({@link Shapes}); a segment with no {@code shape} is a
+     * pre-shapes rectangle stored in metres, so old payloads keep their exact result.
+     */
     private static BigDecimal surface(SurfacePayload p) {
+        BigDecimal f2 = BigDecimal.valueOf(factor(p.unit())).pow(2);
         BigDecimal base = BigDecimal.ZERO;
         if (p.segments() != null) {
             for (SurfacePayload.Seg s : p.segments()) {
-                base = base.add(nz(s.l()).multiply(nz(s.w())));
+                if (s.shape() == null) {
+                    base = base.add(nz(s.l()).multiply(nz(s.w())).multiply(f2));
+                } else {
+                    base = base.add(
+                            BigDecimal.valueOf(Shapes.area(s.shape(), s.mode(), s.values())).multiply(f2));
+                }
             }
         }
         BigDecimal sub = BigDecimal.ZERO;
         if (p.openings() != null) {
             for (SurfacePayload.Opening o : p.openings()) {
                 int n = o.n() == null ? 1 : Math.max(0, o.n());
-                sub = sub.add(nz(o.w()).multiply(nz(o.h())).multiply(BigDecimal.valueOf(n)));
+                sub = sub.add(nz(o.w()).multiply(nz(o.h())).multiply(BigDecimal.valueOf(n)).multiply(f2));
             }
         }
         return clamp(base.subtract(sub));
+    }
+
+    /** Metres per unit. Absent/unknown = metres — what every dimension meant before units. */
+    private static double factor(String unit) {
+        if (unit == null) {
+            return 1;
+        }
+        return switch (unit) {
+            case "MM" -> 0.001;
+            case "CM" -> 0.01;
+            case "M" -> 1;
+            default -> throw new MeasurementException("error.measurement.invalid");
+        };
     }
 
     /** HW·left + HW·right + HD·end + WD·top — the obscured faces of a box/partition. */
@@ -114,8 +138,19 @@ public class MeasurementCalc {
 
     // ---- payload shapes (deserialized from the raw JSON per type) -------------
 
-    public record SurfacePayload(List<Seg> segments, List<Opening> openings) {
-        public record Seg(BigDecimal l, BigDecimal w) {}
+    /**
+     * @param unit     length unit of every dimension below; null = metres (pre-shapes payloads)
+     * @param segments the planes the surface is made of
+     */
+    public record SurfacePayload(String unit, List<Seg> segments, List<Opening> openings) {
+        /**
+         * @param l     legacy rectangle side, metres — set only on pre-shapes rows
+         * @param w     legacy rectangle side, metres
+         * @param shape null on a legacy row; otherwise the shape key (see Shapes)
+         */
+        public record Seg(BigDecimal l, BigDecimal w, String shape, String mode,
+                          Map<String, Double> values) {}
+
         public record Opening(BigDecimal w, BigDecimal h, Integer n) {}
     }
 
