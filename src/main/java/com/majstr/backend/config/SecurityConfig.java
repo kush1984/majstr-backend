@@ -41,6 +41,11 @@ public class SecurityConfig {
             "/api/files/**",
             "/portal/**",
             "/robots.txt",
+            // Browsers auto-probe /favicon.ico on every page. Without an explicit
+            // permit it falls to anyRequest().authenticated() and Security answers
+            // 403 before the DispatcherServlet — never the quiet 404 it should be.
+            "/favicon.ico",
+            "/logo.svg",
             "/v3/api-docs/**",
             "/swagger-ui.html",
             "/swagger-ui/**",
