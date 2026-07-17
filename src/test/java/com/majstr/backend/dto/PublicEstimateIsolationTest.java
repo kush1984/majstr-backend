@@ -34,6 +34,42 @@ class PublicEstimateIsolationTest {
         }
     }
 
+    /**
+     * Object NOTES (Нотатки) are private and must never reach the portal. The estimate's own
+     * client-facing {@code notes} field is a String (type "String"), so we check component
+     * TYPE names — a leaked {@code ProjectNote}/{@code NoteResponse}/{@code NoteView} record
+     * would surface here, while the legitimate estimate-notes String stays clear.
+     */
+    @Test
+    void publicEstimateViewCarriesNoObjectNoteType() {
+        List<String> typeNames = new ArrayList<>();
+        collectTypes(PublicEstimateView.class, typeNames, 0);
+        assertThat(typeNames).isNotEmpty();
+        for (String type : typeNames) {
+            assertThat(type.toLowerCase(Locale.ROOT))
+                    .as("public share DTO must not carry an object-note type (found '%s')", type)
+                    .doesNotContain("note");
+        }
+    }
+
+    private static void collectTypes(Class<?> type, List<String> typeNames, int depth) {
+        if (type == null || !type.isRecord() || depth > 5) {
+            return;
+        }
+        for (RecordComponent rc : type.getRecordComponents()) {
+            typeNames.add(rc.getType().getSimpleName());
+            collectTypes(rc.getType(), typeNames, depth + 1);
+            if (rc.getGenericType() instanceof java.lang.reflect.ParameterizedType pt) {
+                for (java.lang.reflect.Type arg : pt.getActualTypeArguments()) {
+                    if (arg instanceof Class<?> c) {
+                        typeNames.add(c.getSimpleName());
+                        collectTypes(c, typeNames, depth + 1);
+                    }
+                }
+            }
+        }
+    }
+
     private static void collect(Class<?> type, List<String> names, int depth) {
         if (type == null || !type.isRecord() || depth > 5) {
             return;

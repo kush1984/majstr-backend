@@ -1007,6 +1007,83 @@ one-line summary — keep the item in the file as a record.
 - **Context:** Web push ships behind VAPID keys supplied via env (`VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT`). In dev the keys may be blank — `PushService` then logs & skips, mirroring the email transport. For production a stable VAPID keypair must be generated once and kept (rotating it invalidates every existing browser subscription, forcing all clients to re-subscribe).
 - **Notes / options:** Generate the keypair once (any web-push tool / the README snippet), store the private key as a secret, expose the public key via `GET /api/push/vapid-public-key`. iOS only delivers web push to a PWA **added to the Home Screen** (installed / standalone) on iOS 16.4+ — a plain Safari tab gets nothing; the frontend must detect this and hint the user to install. Also: subscriptions accumulate in `push_subscriptions`; dead ones are pruned lazily on 404/410 from the push service, but a periodic sweep could join the refresh-token / verification-token cleanup job.
 
+### FREE gates the landing's headline features (measurements / recognition / economy)
+- **Status:** OPEN
+- **Since:** Landing-copy-v2 iteration (2026-07-16)
+- **Context:** The landing's four headline benefits are measurements, recognition (sketch/receipt/
+  estimate), the client portal, and object economy — **three of the four are PRO-only**
+  (`PlanConfig` FREE = `CLIENT_PORTAL` + `ONLINE_SIGNATURE` + `PHOTO_REPORTS`, 2 projects). A master
+  landing on "Заміряй об'єкт, склади кошторис…" meets a paywall on step one. For now the landing is
+  **honest about it** (a `PRO` badge on those benefits + a free-tier micro-line) rather than papering
+  over it.
+- **Notes / options:** The open product question is whether **MEASUREMENTS should move to FREE** — it's
+  the top-of-funnel hook and the thing the whole page leads with; gating it may be suppressing signup→
+  activation. A one-line `PlanConfig` edit. Counter-argument: measuring pays off on big jobs (crews =
+  PRO), and recognition/economy/logo already carry the paid value. Decide with real conversion data
+  (the by-trigger upgrade breakdown already tracks which ceiling drives clicks). Offered to the user
+  during the copy iteration and **declined for now** — honesty first, re-gate later if the data says so.
+
+### Stale PlanConfig comment: "Only BRANDED_PDF and AI_ASSISTANT stay paid"
+- **Status:** OPEN
+- **Since:** Landing-copy-v2 iteration (2026-07-16)
+- **Context:** `PlanConfig`'s FREE block comment states the plan is "capped on quantity, not features"
+  and that "Only BRANDED_PDF and AI_ASSISTANT stay paid". That stopped being true once MEASUREMENTS,
+  OBJECT_ECONOMY, ESTIMATE_IMPORT, RECEIPT_IMPORT and SKETCH_IMPORT landed as PRO — FREE is now capped
+  on **both** quantity and features.
+- **Notes / options:** A comment-only fix (no behaviour change), deliberately not made inside a copy
+  iteration. Fold it into whichever iteration next touches `PlanConfig` — and re-word it to state the
+  actual rule, since this comment is what a future reader will trust.
+
+### Landing og:image is the app icon, not a promo image
+- **Status:** OPEN
+- **Since:** Landing-copy-v2 iteration (2026-07-16)
+- **Context:** `og:image`/`twitter:image` point at `/icons/icon-512.png` — a plain square logo. Link
+  previews (Viber/Telegram/Facebook, where masters actually share) would convert better with a real
+  promo image (phone + estimate + the headline).
+- **Notes / options:** Needs a designed 1200×630 asset, then swap the two meta tags and set
+  `twitter:card` to `summary_large_image`. Content/design task, not code. Same batch as the onboarding
+  deck refresh (it still shows neither measurements nor the LLM features).
+
+### "Зміни / додаткові роботи" on an object (the freed «Зміни» tab idea)
+- **Status:** OPEN
+- **Since:** Project-notes iteration (2026-07-16)
+- **Context:** The object screen had a placeholder «Зміни» tab from the original vision that **no
+  master ever asked for**; the Notes iteration reused that tab SLOT for «Нотатки» (a real request).
+  The *idea* behind «Зміни» is kept here, not discarded — it may resurface via SIGNED re-signing:
+  recording **additional works** agreed mid-job as a separate change-order, without breaking the
+  original signed deal.
+- **Notes / options:** A change-order would likely be its own record (agreed extra items + price +
+  a client acknowledgement), distinct from a note. Ties into the SIGNED-estimate reopen/re-sign flow
+  and the "what changed" highlighting item. Build only when a master actually needs to formalise
+  extras; until then a note ("+ вивіз сміття, 500 ₴, узгоджено 12.07") covers the informal case.
+
+### Notes at the CLIENT level (not just per-object)
+- **Status:** OPEN
+- **Since:** Project-notes iteration (2026-07-16)
+- **Context:** Object notes ship. A master may also want notes tied to a **client** (spanning that
+  client's several objects) — "prefers calls after 18:00", "always pays in cash".
+- **Notes / options:** Mirror `project_note` as `client_note` (owner-scoped via the client). Small,
+  same pattern; build on feedback — per-object covers the on-site case first.
+
+### Checklist / to-do notes
+- **Status:** OPEN
+- **Since:** Project-notes iteration (2026-07-16)
+- **Context:** A note is free text today. A checklist variant (tickable items — "замовити плитку",
+  "викликати електрика") is a natural extension for job prep.
+- **Notes / options:** Either a note `kind` (TEXT | CHECKLIST) with a structured body, or a separate
+  entity. Keep the plain note as the default; add checklists only if masters ask — empty-first, no
+  premature structure (the whole point of notes is "write what you want").
+
+### Share a single note with the client (like a shared photo)
+- **Status:** OPEN
+- **Since:** Project-notes iteration (2026-07-16)
+- **Context:** Notes are PRIVATE by design (they may hold a subcontractor's phone or "client doesn't
+  pick up"). But a master might want to share ONE specific note with the client on the portal — e.g.
+  "access code 1234", "we start Monday 8:00".
+- **Notes / options:** A per-note `SHARED` toggle (mirror the photo visibility model) surfacing
+  shared notes on the portal. Requires care — the default must stay PRIVATE and the share must be
+  explicit and per-note. Build only if asked; the privacy default is the safe v1.
+
 ---
 
 ## Features in the catalog enum but not implemented
