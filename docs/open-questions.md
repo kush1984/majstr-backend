@@ -312,10 +312,16 @@ one-line summary — keep the item in the file as a record.
   rate limit (Fix I) already curbs bulk probing. Likely accept as-is for v1.
 
 ### Password reset flow
-- **Status:** OPEN
+- **Status:** RESOLVED
 - **Since:** step 1
 - **Context:** No reset endpoint — lock yourself out, lose the account.
 - **Notes / options:** Needs an email service first (see below). Email transport now exists (`EmailService` / Resend, Fix D) — unblocked; just add the reset endpoint + token + email template.
+- **Resolution:** Password-reset iteration ([iteration-password-reset-plus.md](iteration-password-reset-plus.md)) — mirrors
+  email verification. `PasswordResetToken` (V59, crypto-random, 45-min TTL, single-use `usedAt`). `POST /api/auth/forgot`
+  is anti-enumeration (always neutral 200, IP+email rate-limited); `POST /api/auth/reset` validates the token
+  (bad/expired/used → 400 `INVALID_OR_EXPIRED_TOKEN`), sets the BCrypt hash, consumes the token, and **revokes every
+  refresh token** (`revokeAllForUser` — a reset logs out all sessions). Resend `sendPasswordResetEmail`; both routes
+  public; PWA `/forgot-password` + `/reset-password?token=`. `PasswordResetServiceTest` covers it.
 
 ### Email verification on register
 - **Status:** RESOLVED
@@ -1114,6 +1120,26 @@ one-line summary — keep the item in the file as a record.
 ---
 
 ## Testing & quality
+
+### Register rate-limit conflicts with e2e (false 429 on repeated runs)
+- **Status:** RESOLVED
+- **Since:** Password-reset iteration (2026-07-17)
+- **Context:** The register limiter (5/hour/IP, Fix I) gives repeated Playwright e2e runs a false 429 —
+  many registrations from one IP look like abuse. Red tests you learn to ignore are dangerous.
+- **Resolution:** The register (and the new `/forgot`) IP limits are lifted in `application-dev.yml`
+  (max-attempts 100000/1min). The default profile is `dev` (`SPRING_PROFILES_ACTIVE:dev`), so this
+  covers local dev AND the e2e backend; prod runs under the `prod` profile and inherits the real base
+  caps (5/hour/IP) unchanged. Property-level merge, so other `app.*` config is untouched.
+
+### Service worker update UX (silent reload can drop form input)
+- **Status:** RESOLVED
+- **Since:** Password-reset iteration (2026-07-17)
+- **Context:** `registerSW`'s `onNeedRefresh` was a no-op with autoUpdate — a new build would swap in
+  on the next navigation, potentially dropping unsaved form input (a 30-line estimate in progress).
+- **Resolution:** `onNeedRefresh` now signals `lib/swUpdate.ts` (captures the returned `updateSW`); a
+  React `<UpdateBanner>` at the app root shows a non-intrusive "нова версія — Оновити" banner. The
+  reload happens only on the master's click (`updateSW(true)`) — never silently. `onOfflineReady` stays
+  quiet. Web push untouched. `UpdateBanner.test` covers show + apply.
 
 ### Integration tests with Testcontainers
 - **Status:** OPEN

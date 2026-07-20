@@ -17,6 +17,19 @@ spring:
     restart:
       enabled: true
 
+# The default profile (SPRING_PROFILES_ACTIVE defaults to `dev`), so this also
+# covers local dev AND the Playwright e2e backend. The register/forgot IP limits
+# are effectively lifted here so repeated e2e runs never hit a false 429; prod
+# runs under the `prod` profile and inherits the real base caps (5/hour/IP).
+app:
+  rate-limit:
+    register:
+      max-attempts: 100000
+      window-minutes: 1
+    forgot:
+      max-attempts: 100000
+      window-minutes: 1
+
 logging:
   level:
     com.majstr.backend: DEBUG

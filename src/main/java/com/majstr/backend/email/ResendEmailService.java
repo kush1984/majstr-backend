@@ -53,6 +53,18 @@ public class ResendEmailService implements EmailService {
 
     @Override
     @Async
+    public void sendPasswordResetEmail(User user, String token) {
+        String link = props.appUrl() + "/reset-password?token=" + URLEncoder.encode(token, StandardCharsets.UTF_8);
+        if (!props.isConfigured()) {
+            log.warn("RESEND_API_KEY not set — skipping password-reset email to {}. Reset link: {}",
+                    user.getEmail(), link);
+            return;
+        }
+        send(user.getEmail(), "Скидання пароля — Majstr", passwordResetHtml(user.getFullName(), link));
+    }
+
+    @Override
+    @Async
     public void sendEstimateShareEmail(String toEmail, String clientName, String contractorName,
                                        String projectName, String shareUrl) {
         if (!props.isConfigured()) {
@@ -127,6 +139,27 @@ public class ResendEmailService implements EmailService {
         } catch (Exception e) {
             log.error("Failed to send email to {} (subject: {}): {}", toEmail, subject, e.getMessage());
         }
+    }
+
+    private static String passwordResetHtml(String fullName, String link) {
+        return """
+                <div style="font-family:Arial,sans-serif;max-width:480px;margin:0 auto;color:#1a1a1a">
+                  <h2 style="color:#F26B1F">Скидання пароля%s</h2>
+                  <p>Ви (або хтось) попросили скинути пароль до вашого акаунту Majstr.
+                     Натисніть кнопку, щоб задати новий пароль.</p>
+                  <p style="margin:28px 0">
+                    <a href="%s" style="background:#F26B1F;color:#fff;text-decoration:none;
+                       padding:12px 24px;border-radius:8px;display:inline-block;font-weight:bold">
+                       Змінити пароль</a>
+                  </p>
+                  <p style="font-size:13px;color:#666">Якщо кнопка не працює, відкрийте посилання:<br>
+                     <a href="%s">%s</a></p>
+                  <p style="font-size:13px;color:#666">Посилання дійсне 45 хвилин. Якщо це не ви —
+                     просто проігноруйте цей лист, пароль лишиться той самий.</p>
+                </div>
+                """.formatted(
+                        fullName == null || fullName.isBlank() ? "" : ", " + fullName,
+                        link, link, link);
     }
 
     private static String verificationHtml(String fullName, String link) {

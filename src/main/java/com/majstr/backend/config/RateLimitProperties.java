@@ -9,6 +9,7 @@ import org.springframework.validation.annotation.Validated;
 public record RateLimitProperties(
         Login login,
         Register register,
+        Forgot forgot,
         Portal portal,
         Verification verification,
         EstimateEmail estimateEmail
@@ -20,6 +21,12 @@ public record RateLimitProperties(
 
     /** Cap on account registrations per client IP — curbs mass signups and verification-email spam. */
     public record Register(
+            @Positive int maxAttempts,
+            @Positive int windowMinutes
+    ) {}
+
+    /** Cap on password-reset requests per client IP+email — curbs reset-email spam. */
+    public record Forgot(
             @Positive int maxAttempts,
             @Positive int windowMinutes
     ) {}

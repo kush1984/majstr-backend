@@ -15,6 +15,9 @@ public interface EmailService {
     /** Send the "confirm your email" message. Implementations must not throw — a failure is logged, not propagated. */
     void sendVerificationEmail(User user, String token);
 
+    /** Send the "reset your password" link. Must not throw — a failure is logged, not propagated. */
+    void sendPasswordResetEmail(User user, String token);
+
     /** Send a client the portal link to their estimate. Must not throw — a failure is logged, not propagated. */
     void sendEstimateShareEmail(String toEmail, String clientName, String contractorName, String projectName, String shareUrl);
 

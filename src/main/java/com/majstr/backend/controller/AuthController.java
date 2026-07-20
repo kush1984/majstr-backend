@@ -1,9 +1,11 @@
 package com.majstr.backend.controller;
 
 import com.majstr.backend.dto.AuthResponse;
+import com.majstr.backend.dto.ForgotPasswordRequest;
 import com.majstr.backend.dto.LoginRequest;
 import com.majstr.backend.dto.RefreshTokenRequest;
 import com.majstr.backend.dto.RegisterRequest;
+import com.majstr.backend.dto.ResetPasswordRequest;
 import com.majstr.backend.dto.UserResponse;
 import com.majstr.backend.dto.VerifyEmailRequest;
 import com.majstr.backend.exception.TooManyRequestsException;
@@ -11,7 +13,11 @@ import com.majstr.backend.repository.UserRepository;
 import com.majstr.backend.security.UserPrincipal;
 import com.majstr.backend.service.AuthService;
 import com.majstr.backend.service.EmailVerificationService;
+import com.majstr.backend.service.ForgotPasswordRateLimiter;
+import com.majstr.backend.service.PasswordResetService;
 import com.majstr.backend.service.VerificationEmailRateLimiter;
+import jakarta.servlet.http.HttpServletRequest;
+import java.util.Locale;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -38,6 +44,8 @@ public class AuthController {
     private final UserRepository userRepository;
     private final EmailVerificationService emailVerificationService;
     private final VerificationEmailRateLimiter verificationEmailRateLimiter;
+    private final PasswordResetService passwordResetService;
+    private final ForgotPasswordRateLimiter forgotPasswordRateLimiter;
 
     @Operation(summary = "Register a new contractor")
     @PostMapping("/register")
@@ -72,6 +80,29 @@ public class AuthController {
         return ResponseEntity.ok().build();
     }
 
+    @Operation(summary = "Request a password-reset link (public, rate-limited, anti-enumeration)")
+    @PostMapping("/forgot")
+    public ResponseEntity<Void> forgotPassword(@Valid @RequestBody ForgotPasswordRequest request,
+                                               HttpServletRequest http) {
+        // Key by IP+email so a spammer can't hammer reset mail at one address, and one IP
+        // can't churn many addresses. The limit itself never leaks account existence.
+        String key = clientIp(http) + "|" + request.email().trim().toLowerCase(Locale.ROOT);
+        ForgotPasswordRateLimiter.ConsumeResult probe = forgotPasswordRateLimiter.tryConsume(key);
+        if (!probe.allowed()) {
+            throw new TooManyRequestsException("error.rate.forgot", probe.retryAfterSeconds());
+        }
+        passwordResetService.requestReset(request.email());
+        // Always 200, whether or not the account exists — the PWA shows a neutral screen.
+        return ResponseEntity.ok().build();
+    }
+
+    @Operation(summary = "Set a new password using the token from the reset link (public)")
+    @PostMapping("/reset")
+    public ResponseEntity<Void> resetPassword(@Valid @RequestBody ResetPasswordRequest request) {
+        passwordResetService.reset(request.token(), request.newPassword());
+        return ResponseEntity.ok().build();
+    }
+
     @Operation(summary = "Resend the verification email to the current user (rate-limited)",
             security = @SecurityRequirement(name = "bearer-jwt"))
     @PostMapping("/resend-verification")
@@ -98,5 +129,16 @@ public class AuthController {
                 .map(UserResponse::from)
                 .map(ResponseEntity::ok)
                 .orElseThrow(() -> new UsernameNotFoundException("User not found"));
+    }
+
+    /** First X-Forwarded-For entry if present, else the socket address — mirrors the rate-limit
+     *  filters. In prod the forward-headers strategy strips XFF so getRemoteAddr is the real IP. */
+    private static String clientIp(HttpServletRequest request) {
+        String forwarded = request.getHeader("X-Forwarded-For");
+        if (forwarded != null && !forwarded.isBlank()) {
+            int comma = forwarded.indexOf(',');
+            return (comma > 0 ? forwarded.substring(0, comma) : forwarded).trim();
+        }
+        return request.getRemoteAddr();
     }
 }

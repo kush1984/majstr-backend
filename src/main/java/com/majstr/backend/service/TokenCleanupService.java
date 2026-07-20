@@ -1,6 +1,7 @@
 package com.majstr.backend.service;
 
 import com.majstr.backend.repository.EmailVerificationTokenRepository;
+import com.majstr.backend.repository.PasswordResetTokenRepository;
 import com.majstr.backend.repository.RefreshTokenRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -23,6 +24,7 @@ public class TokenCleanupService {
 
     private final RefreshTokenRepository refreshTokenRepository;
     private final EmailVerificationTokenRepository verificationTokenRepository;
+    private final PasswordResetTokenRepository passwordResetTokenRepository;
 
     @Scheduled(cron = "${app.cleanup.tokens-cron:0 0 3 * * *}")
     @Transactional
@@ -30,8 +32,10 @@ public class TokenCleanupService {
         Instant now = Instant.now();
         int refresh = refreshTokenRepository.deleteExpiredOrRevoked(now);
         int verification = verificationTokenRepository.deleteExpired(now);
-        if (refresh > 0 || verification > 0) {
-            log.info("Token cleanup removed {} refresh + {} email-verification tokens", refresh, verification);
+        int reset = passwordResetTokenRepository.deleteExpired(now);
+        if (refresh > 0 || verification > 0 || reset > 0) {
+            log.info("Token cleanup removed {} refresh + {} email-verification + {} password-reset tokens",
+                    refresh, verification, reset);
         }
     }
 }

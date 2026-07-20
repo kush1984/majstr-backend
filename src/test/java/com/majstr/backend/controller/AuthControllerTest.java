@@ -9,6 +9,8 @@ import com.majstr.backend.exception.GlobalExceptionHandler;
 import com.majstr.backend.repository.UserRepository;
 import com.majstr.backend.service.AuthService;
 import com.majstr.backend.service.EmailVerificationService;
+import com.majstr.backend.service.ForgotPasswordRateLimiter;
+import com.majstr.backend.service.PasswordResetService;
 import com.majstr.backend.service.VerificationEmailRateLimiter;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -55,6 +57,12 @@ class AuthControllerTest {
 
     @Mock
     private VerificationEmailRateLimiter verificationEmailRateLimiter;
+
+    @Mock
+    private PasswordResetService passwordResetService;
+
+    @Mock
+    private ForgotPasswordRateLimiter forgotPasswordRateLimiter;
 
     @InjectMocks
     private AuthController controller;
