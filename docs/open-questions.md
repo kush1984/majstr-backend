@@ -1141,6 +1141,18 @@ one-line summary — keep the item in the file as a record.
   reload happens only on the master's click (`updateSW(true)`) — never silently. `onOfflineReady` stays
   quiet. Web push untouched. `UpdateBanner.test` covers show + apply.
 
+### Smart Sentry filter for client 4xx (mute external/bot, keep our own front-end)
+- **Status:** OPEN
+- **Since:** Multipart-415 fix (2026-07-19)
+- **Context:** Client 4xx look like noise, so the tempting move is to drop them from Sentry.
+  This fix is the counter-example: a 415 (`HttpMediaTypeNotSupportedException`) was a REAL
+  front-end bug — every file upload was sent as application/json and the new sketch feature
+  was dead in production for real masters. A blanket 4xx filter would have hidden it.
+- **Notes / options:** If a filter is ever added, mute only clearly external/bot traffic
+  (unknown paths, scanner probes, missing/invalid origin) and always keep 4xx that arrive
+  from our own PWA origin. Deliberately NOT done in the fix itself — the safer default is
+  noisy-but-honest reporting.
+
 ### Integration tests with Testcontainers
 - **Status:** OPEN
 - **Since:** step 1
