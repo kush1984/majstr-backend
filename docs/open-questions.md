@@ -1141,6 +1141,49 @@ one-line summary — keep the item in the file as a record.
   reload happens only on the master's click (`updateSW(true)`) — never silently. `onOfflineReady` stays
   quiet. Web push untouched. `UpdateBanner.test` covers show + apply.
 
+### Multi-sheet project PDFs: which page(s) to send for recognition
+- **Status:** OPEN
+- **Since:** Electrical-core iteration (2026-07-19)
+- **Context:** Real input is a whole project set (Belgradska_1405.pdf — tens of pages: plans,
+  sections, visualisations), not a single sheet. Sending the entire PDF to the model is
+  expensive and risky: it may count symbols across the wrong sheet (mixing floors, or reading
+  a furniture plan as an electrical one). The 4-sheet sample set was one plan per file, which
+  hid this.
+- **Notes / options:** Ask the master which page(s) (a page picker with thumbnails), or have a
+  cheap first pass classify pages and propose the electrical ones, or accept a page range in
+  the parse request. Until then the prompt must at least be told a set may contain several
+  plans and to report which sheet it counted (a warning).
+- **Update (2026-07-21):** the **page-range** option was built — `pdf-lib` reads the page count
+  client-side and a multi-page PDF prompts for pages («3» / «3-4» / «1,3,5»), extracting only those
+  before upload, so the model never counts across the wrong sheet. Closes the common case; a
+  thumbnail picker / auto-classify is a later nicety. Note: this rides on the electrical feature,
+  which is currently **UI-disabled** (see the item above), so it's dormant until that unparks.
+
+### Electricians ask LLMs for chase/cable METRES — the demand we deliberately refuse
+- **Status:** OPEN — **feature built but PARKED (UI-disabled) 2026-07-21, pending a design rethink**
+- **Since:** Electrical-core iteration (2026-07-19)
+- **Context:** A real electrician fed his project PDF to ChatGPT and Gemini asking for chase
+  lengths and how much cable he needs. Both answer confidently; the number cannot be trusted
+  (geometry at scale, silent error, straight into a quote). We answer the same need the safe
+  way: count points with the model, compute the run with visible arithmetic. But the DEMAND is
+  for the one-shot answer, so masters will keep trying the chatbots.
+- **Notes / options:** Make the refusal a feature, not a gap — show WHY (bus + drops, drawn),
+  and be fast enough that the honest path beats the confident-wrong one. Watch whether masters
+  accept entering points, or whether we need a rough estimate mode («points × coefficient»,
+  clearly labelled as an estimate) as a bridge. Decide from real usage, not theory.
+- **Update (2026-07-21):** the full flow was built after a real-plan test — points off a plan
+  (flat list, variant 2), **cable ≠ chase split** (two estimate entities: `CABLE` unit м / material,
+  `SHTROBA` м.пог / work, from one shared payload), an explicit bus length with per-drop «штробити»,
+  the plan seeding the calculator directly (no separate чернетка), and a **2D room plan editor**
+  (`PlanEditor`) where the master draws the bus and its length is measured off the drawing. All
+  green (backend + PWA + tests). **Then deliberately DISABLED in the UI** behind
+  `ELECTRICAL_MEASUREMENTS_ENABLED = false` (`MeasurementsSection.tsx`) — the plumbing is right, but
+  the **product shape isn't settled**: how points/rooms/cable/chase should combine for a real
+  electrician's workflow (per-room vs one bus, distribution, whether to persist the drawn plan)
+  needs more thought, and a higher-priority task came first. Re-enabling is a one-line flag flip.
+  The open decision is now **the shape, not the maths** — the deterministic calc + drawn-bus honesty
+  are proven; what's unresolved is the UX/model that makes it worth a master's time. Details:
+  [iteration-electrical-core.md](iteration-electrical-core.md).
 ### Smart Sentry filter for client 4xx (mute external/bot, keep our own front-end)
 - **Status:** OPEN
 - **Since:** Multipart-415 fix (2026-07-19)

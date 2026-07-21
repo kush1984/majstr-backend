@@ -336,7 +336,12 @@ POI text grid → `text` block; photo → base64 `image` block (vision). Config 
 `app.anthropic.*` (`ANTHROPIC_API_KEY` env only). **Not fire-and-forget:** unlike
 email/push, a blank key or a call/parse failure throws `AiExtractionException` →
 **503 `AI_UNAVAILABLE`** (the import is synchronous, the master is waiting), so the
-PWA can offer "enter manually". The uploaded file is parsed then **discarded**
+PWA can offer "enter manually". Before giving up, the shared call (`requestJson`)
+**retries transient failures** — HTTP 429, any 5xx incl. Anthropic's **529
+"Overloaded"**, or a dropped connection — up to 3 quick attempts with a short linear
+backoff (`isTransient` / `postForMap`); a permanent 4xx (bad request, bad key, 413) is
+not retried. So a momentary overload no longer drops the master to manual on the first
+blip; on exhaustion it's the same 503. The uploaded file is parsed then **discarded**
 (never stored). `parse` returns a review proposal (no auto-commit; units normalized
 via `UnitNormalizer`, unreadable values flagged in `issues`); `commit` creates the
 estimate through `EstimateService.createFromImport` (respects the FREE estimate cap

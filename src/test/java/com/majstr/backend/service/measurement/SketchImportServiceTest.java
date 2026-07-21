@@ -164,7 +164,7 @@ class SketchImportServiceTest {
     @Test
     void commitDelegatesToMeasurementServiceAndIsGated() {
         MeasurementsResponse tree = new MeasurementsResponse(List.of(),
-                java.math.BigDecimal.ZERO, java.math.BigDecimal.ZERO);
+                java.math.BigDecimal.ZERO, java.math.BigDecimal.ZERO, java.math.BigDecimal.ZERO);
         var rooms = List.of(new SketchCommitRequest.Room("Спальня",
                 List.of(new MeasurementItemRequest("Стеля", MeasurementType.SURFACE,
                         mapper.readTree("{\"unit\":\"M\",\"segments\":[{\"shape\":\"rect\",\"values\":{\"a\":3,\"b\":2.5}}],\"openings\":[]}"),

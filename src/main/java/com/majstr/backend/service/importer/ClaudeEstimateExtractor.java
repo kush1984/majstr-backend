@@ -5,7 +5,9 @@ import com.majstr.backend.exception.AiExtractionException;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
+import org.springframework.web.client.ResourceAccessException;
 import org.springframework.web.client.RestClient;
+import org.springframework.web.client.RestClientResponseException;
 import tools.jackson.databind.ObjectMapper;
 
 import java.math.BigDecimal;
@@ -36,6 +38,12 @@ public class ClaudeEstimateExtractor {
 
     private static final String MESSAGES_URL = "https://api.anthropic.com/v1/messages";
     private static final String ANTHROPIC_VERSION = "2023-06-01";
+
+    // Import is synchronous (the master is waiting), so retries are FEW and quick — just enough
+    // to ride out a transient Anthropic hiccup (529 "Overloaded", 429, a 5xx, or a dropped
+    // connection) instead of dropping the master to manual entry on the first blip.
+    private static final int MAX_ATTEMPTS = 3;
+    private static final long BACKOFF_BASE_MS = 400L;
 
     private static final String SYSTEM_PROMPT = """
             You extract line items from a Ukrainian building/renovation contractor's estimate.
@@ -133,6 +141,19 @@ public class ClaudeEstimateExtractor {
                 RECEIPT_SYSTEM_PROMPT);
     }
 
+    /**
+     * One PDF document block + an instruction. Anthropic accepts a PDF natively (it renders
+     * the pages itself), so an architect's plan needs no server-side rasterising — which
+     * matters here because the deploy has no poppler.
+     */
+    public static List<Map<String, Object>> pdfContent(byte[] bytes, String instruction) {
+        String base64 = Base64.getEncoder().encodeToString(bytes);
+        Map<String, Object> doc = Map.of(
+                "type", "document",
+                "source", Map.of("type", "base64", "media_type", "application/pdf", "data", base64));
+        return List.of(doc, Map.of("type", "text", "text", instruction));
+    }
+
     /** Build a user-message content list of one image block + one instruction — reusable by
      *  any caller that needs a vision round-trip (estimate, receipt, sketch). */
     public static List<Map<String, Object>> imageContent(String mediaType, byte[] bytes, String instruction) {
@@ -173,19 +194,61 @@ public class ClaudeEstimateExtractor {
 
         Map<String, Object> resp;
         try {
-            resp = restClient.post()
-                    .uri(MESSAGES_URL)
-                    .header("x-api-key", props.apiKey())
-                    .header("anthropic-version", ANTHROPIC_VERSION)
-                    .contentType(MediaType.APPLICATION_JSON)
-                    .body(body)
-                    .retrieve()
-                    .body(Map.class);
+            resp = postForMap(body);
         } catch (Exception e) {
             log.error("Anthropic extraction call failed: {}", e.getMessage());
             throw new AiExtractionException("error.ai.unavailable", e);
         }
         return firstTextBlock(resp);
+    }
+
+    /**
+     * POST the request, retrying up to {@link #MAX_ATTEMPTS} times on a TRANSIENT failure
+     * (see {@link #isTransient}) with a short linear backoff. A permanent 4xx (bad request,
+     * bad key, payload too large) is not retried. On exhaustion the last exception propagates
+     * and becomes a 503 {@code AI_UNAVAILABLE} upstream — same fallback as before, just after
+     * a couple of quick retries rather than on the first blip.
+     */
+    @SuppressWarnings("unchecked")
+    private Map<String, Object> postForMap(Map<String, Object> body) {
+        for (int attempt = 1; ; attempt++) {
+            try {
+                return restClient.post()
+                        .uri(MESSAGES_URL)
+                        .header("x-api-key", props.apiKey())
+                        .header("anthropic-version", ANTHROPIC_VERSION)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .body(body)
+                        .retrieve()
+                        .body(Map.class);
+            } catch (RestClientResponseException e) { // carries the HTTP status
+                if (attempt >= MAX_ATTEMPTS || !isTransient(e.getStatusCode().value())) {
+                    throw e;
+                }
+                backoff(attempt, e);
+            } catch (ResourceAccessException e) { // connection reset / read timeout
+                if (attempt >= MAX_ATTEMPTS) {
+                    throw e;
+                }
+                backoff(attempt, e);
+            }
+        }
+    }
+
+    /** Transient = worth retrying: 429 (rate limit), or any 5xx (incl. 529 "Overloaded"). */
+    static boolean isTransient(int status) {
+        return status == 429 || status >= 500;
+    }
+
+    private static void backoff(int attempt, RuntimeException cause) {
+        log.warn("Anthropic call transient failure (attempt {}/{}), retrying: {}",
+                attempt, MAX_ATTEMPTS, cause.getMessage());
+        try {
+            Thread.sleep(BACKOFF_BASE_MS * attempt); // 400ms, 800ms — the master is waiting
+        } catch (InterruptedException ie) {
+            Thread.currentThread().interrupt();
+            throw cause; // give up promptly if the request thread is interrupted
+        }
     }
 
     @SuppressWarnings("unchecked")

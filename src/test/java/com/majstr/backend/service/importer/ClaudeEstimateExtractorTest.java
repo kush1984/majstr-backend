@@ -68,4 +68,18 @@ class ClaudeEstimateExtractorTest {
         assertThat(line.unitPrice()).isEqualByComparingTo("0");
         assertThat(result.depositAmount()).isNull();          // 0 deposit → absent
     }
+
+    @Test
+    void retriesTransientStatusesButNotPermanentOnes() {
+        // Transient — a quick retry is worth it (the master is waiting on a synchronous import).
+        assertThat(ClaudeEstimateExtractor.isTransient(429)).isTrue(); // rate limit
+        assertThat(ClaudeEstimateExtractor.isTransient(500)).isTrue();
+        assertThat(ClaudeEstimateExtractor.isTransient(503)).isTrue();
+        assertThat(ClaudeEstimateExtractor.isTransient(529)).isTrue(); // Anthropic "Overloaded"
+        // Permanent — retrying can't help; fail fast to the manual-entry fallback.
+        assertThat(ClaudeEstimateExtractor.isTransient(400)).isFalse(); // bad request
+        assertThat(ClaudeEstimateExtractor.isTransient(401)).isFalse(); // bad key
+        assertThat(ClaudeEstimateExtractor.isTransient(413)).isFalse(); // payload too large
+        assertThat(ClaudeEstimateExtractor.isTransient(404)).isFalse();
+    }
 }

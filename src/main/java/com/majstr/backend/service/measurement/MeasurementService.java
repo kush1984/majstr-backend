@@ -195,7 +195,7 @@ public class MeasurementService {
     private MeasurementsResponse buildTree(UUID objectId) {
         List<MeasurementRoom> rooms = roomRepository.findByProjectIdOrderBySortOrderAscCreatedAtAsc(objectId);
         if (rooms.isEmpty()) {
-            return new MeasurementsResponse(List.of(), ZERO, ZERO);
+            return new MeasurementsResponse(List.of(), ZERO, ZERO, ZERO);
         }
         List<UUID> roomIds = rooms.stream().map(MeasurementRoom::getId).toList();
         // One grouped query for the whole tree (no N+1).
@@ -207,16 +207,21 @@ public class MeasurementService {
         List<MeasurementsResponse.Room> roomDtos = new java.util.ArrayList<>();
         BigDecimal objArea = ZERO;
         BigDecimal objLinear = ZERO;
+        BigDecimal objPieces = ZERO;
         for (MeasurementRoom room : rooms) {
             List<MeasurementItem> items = byRoom.getOrDefault(room.getId(), List.of());
             BigDecimal area = ZERO;
             BigDecimal linear = ZERO;
+            BigDecimal pieces = ZERO;
             List<MeasurementsResponse.Item> itemDtos = new java.util.ArrayList<>();
             for (MeasurementItem item : items) {
-                if (item.getUnit() == Unit.LINEAR_METER) {
-                    linear = linear.add(item.getResult());
-                } else {
-                    area = area.add(item.getResult());
+                // One bucket per unit — a count must never land in the m² figure, and cable
+                // (unit M) is an electrical figure surfaced separately, not part of the area.
+                switch (item.getUnit()) {
+                    case M2 -> area = area.add(item.getResult());
+                    case LINEAR_METER -> linear = linear.add(item.getResult());
+                    case PIECE -> pieces = pieces.add(item.getResult());
+                    default -> { } // M (cable) etc. — not an area/linear/piece total
                 }
                 itemDtos.add(new MeasurementsResponse.Item(
                         item.getId(), item.getName(), item.getType(), item.getUnit(),
@@ -224,10 +229,11 @@ public class MeasurementService {
             }
             objArea = objArea.add(area);
             objLinear = objLinear.add(linear);
+            objPieces = objPieces.add(pieces);
             roomDtos.add(new MeasurementsResponse.Room(
-                    room.getId(), room.getName(), room.getSortOrder(), itemDtos, area, linear));
+                    room.getId(), room.getName(), room.getSortOrder(), itemDtos, area, linear, pieces));
         }
-        return new MeasurementsResponse(roomDtos, objArea, objLinear);
+        return new MeasurementsResponse(roomDtos, objArea, objLinear, objPieces);
     }
 
     // ---- guards / loads -------------------------------------------------------

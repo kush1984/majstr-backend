@@ -165,6 +165,76 @@ class MeasurementCalcTest {
                 .isInstanceOf(MeasurementException.class);
     }
 
+    // ---- electrical -----------------------------------------------------------
+
+    @Test
+    void points_sumsTheCounts() {
+        JsonNode p = node("""
+                {"points":[{"type":"Розетка електрична","count":24,"heights":[300],"note":""},
+                           {"type":"Вимикач 1 клавішний","count":9,"heights":[900],"note":""}]}""");
+        assertThat(calc.compute(MeasurementType.ELECTRICAL_POINTS, p)).isEqualByComparingTo("33.000");
+    }
+
+    @Test
+    void chase_busFromTop_busPlusDrop() {
+        // Bus at 2600, a socket at h=300 → drop 2300 mm. Explicit bus 1200, both chased →
+        // chase 1200 + 2300 = 3500 mm = 3.5 m (a chase is cut to size — no reserve).
+        JsonNode p = node("""
+                {"busLevel":2600,"busFromTop":true,"busLength":1200,"busChase":true,"reservePct":0,
+                 "points":[{"kind":"socket","h":300,"qty":1,"chase":true}]}""");
+        assertThat(calc.compute(MeasurementType.SHTROBA, p)).isEqualByComparingTo("3.500");
+    }
+
+    @Test
+    void chase_busFromBottom_dropIsTheHeightItself() {
+        // Bus along the floor (level 0) → the drop is simply the point's height. 900 + bus 1200.
+        JsonNode p = node("""
+                {"busLevel":2600,"busFromTop":false,"busLength":1200,"busChase":true,"reservePct":0,
+                 "points":[{"kind":"switch","h":900,"qty":1,"chase":true}]}""");
+        assertThat(calc.compute(MeasurementType.SHTROBA, p)).isEqualByComparingTo("2.100");
+    }
+
+    @Test
+    void chase_excludesUnchasedBusAndDrops() {
+        // Ceiling bus (busChase=false) + one drop chased, one not. Only the flagged drop counts.
+        // chase = 0 (bus) + (2600−300)×1 (socket, chased) + 0 (outlet, not chased) = 2300 mm.
+        JsonNode p = node("""
+                {"busLevel":2600,"busFromTop":true,"busLength":1000,"busChase":false,"reservePct":0,
+                 "points":[{"kind":"socket","h":300,"qty":1,"chase":true},
+                           {"kind":"outlet","h":2600,"qty":1,"chase":false}]}""");
+        assertThat(calc.compute(MeasurementType.SHTROBA, p)).isEqualByComparingTo("2.300");
+    }
+
+    @Test
+    void cable_includesBusAllDropsAndReserve() {
+        // Same input: cable reaches EVERY point regardless of chasing, + 10% reserve.
+        // (1000 bus + 2300 socket + 0 A/C-drop) × 1.10 = 3630 mm = 3.63 m.
+        JsonNode p = node("""
+                {"busLevel":2600,"busFromTop":true,"busLength":1000,"busChase":false,"reservePct":10,
+                 "points":[{"kind":"socket","h":300,"qty":1,"chase":true},
+                           {"kind":"outlet","h":2600,"qty":1,"chase":false}]}""");
+        assertThat(calc.compute(MeasurementType.CABLE, p)).isEqualByComparingTo("3.630");
+    }
+
+    @Test
+    void chase_dropsMultipliedByQty() {
+        // Bus 3000, both chased. Drops: (2600−300)×4 = 9200, (2600−900)×1 = 1700 → total 13900 mm.
+        JsonNode p = node("""
+                {"busLevel":2600,"busFromTop":true,"busLength":3000,"busChase":true,"reservePct":0,
+                 "points":[{"kind":"socket","h":300,"qty":4,"chase":true},
+                           {"kind":"switch","h":900,"qty":1,"chase":true}]}""");
+        assertThat(calc.compute(MeasurementType.SHTROBA, p)).isEqualByComparingTo("13.900");
+    }
+
+    @Test
+    void chase_pointAboveTheBusStillGivesAPositiveDrop() {
+        // A/C outlet at 2600 with the bus at 2000 → |2000−2600| = 600, never negative.
+        JsonNode p = node("""
+                {"busLevel":2000,"busFromTop":true,"busLength":0,"busChase":true,"reservePct":0,
+                 "points":[{"kind":"outlet","h":2600,"qty":1,"chase":true}]}""");
+        assertThat(calc.compute(MeasurementType.SHTROBA, p)).isEqualByComparingTo("0.600");
+    }
+
     @Test
     void surface_unknownShapeOrUnitIsRejected() {
         JsonNode shape = node("""

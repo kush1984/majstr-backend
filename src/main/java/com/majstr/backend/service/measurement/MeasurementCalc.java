@@ -35,6 +35,9 @@ public class MeasurementCalc {
                 case SURFACE -> surface(objectMapper.treeToValue(payload, SurfacePayload.class));
                 case PARTITION -> partition(objectMapper.treeToValue(payload, PartitionPayload.class));
                 case LINEAR -> linear(objectMapper.treeToValue(payload, LinearPayload.class));
+                case ELECTRICAL_POINTS -> points(objectMapper.treeToValue(payload, PointsPayload.class));
+                case SHTROBA -> chase(objectMapper.treeToValue(payload, ShtrobaPayload.class));
+                case CABLE -> cable(objectMapper.treeToValue(payload, ShtrobaPayload.class));
             };
         } catch (MeasurementException e) {
             throw e;
@@ -114,6 +117,77 @@ public class MeasurementCalc {
         return clamp(per.multiply(BigDecimal.valueOf(qty)));
     }
 
+    /** Σ of the per-type counts — discrete points off a plan. Unit is шт, so no scaling. */
+    private static BigDecimal points(PointsPayload p) {
+        int total = 0;
+        if (p.points() != null) {
+            for (PointsPayload.Row r : p.points()) {
+                total += r.count() == null ? 0 : Math.max(0, r.count());
+            }
+        }
+        return clamp(BigDecimal.valueOf(total));
+    }
+
+    /**
+     * Two lengths from ONE input (a shared {@link ShtrobaPayload}), both in metres — millimetre
+     * inputs (h=300 socket, h=2600 A/C outlet) divided by 1000:
+     *
+     * <ul>
+     *   <li><b>CABLE</b> = bus length + Σ ALL drops, then + reserve % — the physical wire is pulled
+     *       to every point regardless of chasing, and needs slack.</li>
+     *   <li><b>SHTROBA</b> (chase) = only what is actually cut: the bus if {@code busChase}, plus the
+     *       drops whose point is flagged {@code chase}. No reserve — a chase is cut to size. A bus
+     *       running along the ceiling, or a room without plaster, is simply left unflagged.</li>
+     * </ul>
+     *
+     * <p>bus level = {@code busLevel} when it runs along the top, else 0 (floor); a point's drop
+     * = |bus level − its height| × qty. The bus length is explicit ({@code busLength}) — never
+     * guessed from the drawing.</p>
+     */
+    private static BigDecimal cable(ShtrobaPayload p) {
+        BigDecimal level = busLevel(p);
+        BigDecimal mm = nz(p.busLength());
+        if (p.points() != null) {
+            for (ShtrobaPayload.Point pt : p.points()) {
+                mm = mm.add(drop(pt, level)); // cable reaches every point
+            }
+        }
+        BigDecimal reserve = nz(p.reservePct());
+        mm = mm.multiply(BigDecimal.ONE.add(reserve.divide(BigDecimal.valueOf(100), 6, RoundingMode.HALF_UP)));
+        return mmToMetres(mm);
+    }
+
+    private static BigDecimal chase(ShtrobaPayload p) {
+        BigDecimal level = busLevel(p);
+        BigDecimal mm = BigDecimal.ZERO;
+        // Bus is chased only when flagged (null = yes, the common case; ceiling bus → false).
+        if (p.busChase() == null || p.busChase()) {
+            mm = mm.add(nz(p.busLength()));
+        }
+        if (p.points() != null) {
+            for (ShtrobaPayload.Point pt : p.points()) {
+                if (pt.chase() == null || pt.chase()) { // per-drop: an un-plastered wall isn't chased
+                    mm = mm.add(drop(pt, level));
+                }
+            }
+        }
+        return mmToMetres(mm);
+    }
+
+    private static BigDecimal busLevel(ShtrobaPayload p) {
+        boolean fromTop = p.busFromTop() == null || p.busFromTop();
+        return fromTop ? nz(p.busLevel()) : BigDecimal.ZERO;
+    }
+
+    private static BigDecimal drop(ShtrobaPayload.Point pt, BigDecimal level) {
+        int qty = pt.qty() == null ? 1 : Math.max(0, pt.qty());
+        return level.subtract(nz(pt.h())).abs().multiply(BigDecimal.valueOf(qty));
+    }
+
+    private static BigDecimal mmToMetres(BigDecimal mm) {
+        return clamp(mm.divide(BigDecimal.valueOf(1000), SCALE, RoundingMode.HALF_UP));
+    }
+
     // ---- helpers --------------------------------------------------------------
 
     private static final PartitionPayload.Faces DEFAULT_FACES =
@@ -160,5 +234,38 @@ public class MeasurementCalc {
 
     public record LinearPayload(BigDecimal height, BigDecimal width, Sides sides, Integer qty) {
         public record Sides(boolean left, boolean right, boolean top, boolean bottom) {}
+    }
+
+    /** Electrical points grouped by type, as read off a plan's legend. */
+    public record PointsPayload(List<Row> points) {
+        /**
+         * @param heights the h= annotations seen for this type (informational, kept for the
+         *                estimate/чорнова wiring — they do not affect the count)
+         */
+        public record Row(String type, Integer count, List<BigDecimal> heights, String note) {}
+    }
+
+    /**
+     * Chase/cable input — ONE payload drives both the CABLE and SHTROBA results. All lengths in
+     * MILLIMETRES (as annotated on plans).
+     *
+     * @param busLevel   height of the horizontal bus above the finished floor
+     * @param busFromTop true = bus runs along the top (level = busLevel); false = along the
+     *                   floor (level = 0). A per-room choice: ground floors are usually chased
+     *                   from the ceiling, upper floors from the floor.
+     * @param busLength  explicit length of the horizontal bus (магістраль), mm — set by the
+     *                   master, never guessed off the drawing.
+     * @param busChase   whether the bus itself is chased (false when it runs along the ceiling).
+     *                   Null = yes.
+     * @param reservePct slack added to the CABLE only (a chase is cut to size).
+     */
+    public record ShtrobaPayload(BigDecimal busLevel, Boolean busFromTop, BigDecimal busLength,
+                                 Boolean busChase, BigDecimal reservePct, List<Point> points) {
+        /**
+         * @param kind  label only (socket/switch/light/outlet) — does not affect the maths
+         * @param h     height above the finished floor
+         * @param chase whether THIS drop is chased (false for an un-plastered wall). Null = yes.
+         */
+        public record Point(String kind, String name, BigDecimal h, Integer qty, Boolean chase) {}
     }
 }
