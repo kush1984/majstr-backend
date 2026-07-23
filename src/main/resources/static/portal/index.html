@@ -289,6 +289,20 @@
             justify-content: flex-end;
             margin-top: 18px;
         }
+        /* One portal section per estimate — a strong divider so «Економ» and
+           «Преміум» read as separate documents on one page. */
+        .estimate-section { margin-top: 30px; }
+        .estimate-section:first-of-type { margin-top: 0; }
+        .estimate-title {
+            font-size: 1.15rem;
+            font-weight: 800;
+            letter-spacing: -0.01em;
+            margin: 0 0 10px;
+            padding: 10px 14px;
+            background: var(--ink);
+            color: var(--white);
+            border-radius: 12px;
+        }
         @media (max-width: 480px) {
             .container { padding: 14px 12px 32px; }
             .card { padding: 16px; }
@@ -345,15 +359,31 @@
 
 <script>
 (function () {
-    const token = new URLSearchParams(window.location.search).get('t');
+    // Two token families: ?p= is the object-level portal (a section per shared
+    // estimate); ?t= is the legacy per-estimate link (URLs already sent to
+    // clients keep working). One render path — the legacy response is adapted
+    // into the portal shape below.
+    const params = new URLSearchParams(window.location.search);
+    const portalToken = params.get('p');
+    const legacyToken = params.get('t');
     const root = document.getElementById('root');
 
-    if (!token) {
+    if (!portalToken && !legacyToken) {
         root.innerHTML = '<div class="error">Невірне посилання</div>';
         return;
     }
 
-    const apiBase = '/api/public/estimates/' + encodeURIComponent(token);
+    const apiBase = portalToken
+        ? '/api/public/portal/' + encodeURIComponent(portalToken)
+        : '/api/public/estimates/' + encodeURIComponent(legacyToken);
+
+    // Where a section's sign / question / pdf endpoints live. The portal
+    // addresses them per estimate; the legacy link has exactly one estimate.
+    function sectionApi(estimateId) {
+        return portalToken
+            ? apiBase + '/estimates/' + encodeURIComponent(estimateId)
+            : apiBase;
+    }
 
     const moneyFormat = new Intl.NumberFormat('uk-UA', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
     const dateFormat = new Intl.DateTimeFormat('uk-UA', { dateStyle: 'medium' });
@@ -428,11 +458,53 @@
         return `<section class="card"><h2>Фото об’єкта</h2><div class="photos">${tiles}</div></section>`;
     }
 
-    function render(data) {
-        const signed = data.signature != null;
+    // One estimate → one section: name band (multi-estimate portals), items,
+    // totals, terms and its own sign / PDF / question actions.
+    function renderSection(est, index, showTitle) {
+        const signed = est.signature != null;
         const signedBanner = signed
-            ? `<p class="signed">✓ Підписано клієнтом ${data.signature.signerName ? '(' + escapeHtml(data.signature.signerName) + ')' : ''} ${dateFormat.format(new Date(data.signature.signedAt))}</p>`
+            ? `<p class="signed">✓ Підписано клієнтом ${est.signature.signerName ? '(' + escapeHtml(est.signature.signerName) + ')' : ''} ${dateFormat.format(new Date(est.signature.signedAt))}</p>`
             : '';
+        const title = est.name ? est.name : 'Кошторис ' + (index + 1);
+        const api = sectionApi(est.id);
+
+        return `
+            <div class="estimate-section">
+                ${showTitle ? `<p class="estimate-title">${escapeHtml(title)}</p>` : ''}
+                ${est.validUntil ? `<p style="margin:4px 0 10px;color:var(--muted);">Дійсний до ${dateFormat.format(new Date(est.validUntil))}</p>` : ''}
+
+                ${renderItems(est.items, 'WORK')}
+                ${renderItems(est.items, 'MATERIAL')}
+
+                <section class="card">
+                    <div class="totals">
+                        <div class="row"><span>Сума робіт:</span><span>${money(est.worksSubtotal)}</span></div>
+                        <div class="row"><span>Сума матеріалів:</span><span>${money(est.materialsSubtotal)}</span></div>
+                        <div class="row grand"><span>РАЗОМ:</span><span>${money(est.total)}</span></div>
+                        ${est.depositAmount != null ? `
+                        <div class="row"><span>Завдаток:</span><span>${money(est.depositAmount)}</span></div>
+                        <div class="row grand"><span>ЗАЛИШОК:</span><span>${money(est.balance)}</span></div>` : ''}
+                    </div>
+                </section>
+
+                ${est.notes ? `<section class="card"><h2>Умови</h2><p>${escapeHtml(est.notes)}</p></section>` : ''}
+
+                <section class="card">
+                    ${signedBanner}
+                    <div class="actions">
+                        <button class="primary" data-sign="${escapeHtml(est.id ?? '')}" data-title="${escapeHtml(title)}" ${signed ? 'disabled' : ''}>Підписати</button>
+                        <a class="btn" href="${api}/pdf">Завантажити PDF</a>
+                        <button data-ask="${escapeHtml(est.id ?? '')}" data-title="${escapeHtml(title)}">Задати питання</button>
+                    </div>
+                </section>
+            </div>
+        `;
+    }
+
+    function render(data) {
+        // Section name bands only when there is something to tell apart
+        // (a multi-estimate portal, or an estimate the master named).
+        const showTitles = data.estimates.length > 1 || data.estimates.some(e => e.name);
 
         root.innerHTML = `
             <header class="card contractor">
@@ -448,42 +520,39 @@
                 <p style="margin:4px 0;"><strong>${escapeHtml(data.project.name)}</strong></p>
                 <p style="margin:4px 0;color:var(--muted);">${escapeHtml(data.project.address)}</p>
                 ${data.project.clientName ? `<p style="margin:4px 0;">Клієнт: ${escapeHtml(data.project.clientName)}</p>` : ''}
-                ${data.validUntil ? `<p style="margin:4px 0;color:var(--muted);">Дійсний до ${dateFormat.format(new Date(data.validUntil))}</p>` : ''}
             </section>
 
-            ${renderItems(data.items, 'WORK')}
-            ${renderItems(data.items, 'MATERIAL')}
-
-            <section class="card">
-                <div class="totals">
-                    <div class="row"><span>Сума робіт:</span><span>${money(data.worksSubtotal)}</span></div>
-                    <div class="row"><span>Сума матеріалів:</span><span>${money(data.materialsSubtotal)}</span></div>
-                    <div class="row grand"><span>РАЗОМ:</span><span>${money(data.total)}</span></div>
-                    ${data.depositAmount != null ? `
-                    <div class="row"><span>Завдаток:</span><span>${money(data.depositAmount)}</span></div>
-                    <div class="row grand"><span>ЗАЛИШОК:</span><span>${money(data.balance)}</span></div>` : ''}
-                </div>
-            </section>
-
-            ${data.notes ? `<section class="card"><h2>Умови</h2><p>${escapeHtml(data.notes)}</p></section>` : ''}
+            ${data.estimates.length
+                ? data.estimates.map((e, i) => renderSection(e, i, showTitles)).join('')
+                : '<section class="card"><p style="text-align:center;color:var(--muted);">Майстер ще не додав кошторисів на портал.</p></section>'}
 
             ${renderPhotos(data.sharedPhotos)}
-
-            <section class="card">
-                ${signedBanner}
-                <div class="actions">
-                    <button id="btnSign" class="primary" ${signed ? 'disabled' : ''}>Підписати</button>
-                    <a class="btn" href="${apiBase}/pdf">Завантажити PDF</a>
-                    <button id="btnAsk">Задати питання</button>
-                </div>
-            </section>
         `;
 
-        if (!signed) {
-            document.getElementById('btnSign').addEventListener('click', () => openDialog('signDialog'));
-        }
-        document.getElementById('btnAsk').addEventListener('click', () => openDialog('questionDialog'));
+        // Delegated per-section actions — ids can repeat across sections, so
+        // the buttons carry their estimate id in data attributes instead.
+        root.querySelectorAll('[data-sign]').forEach(b => {
+            if (b.disabled) return;
+            b.addEventListener('click', () => {
+                dialogTarget = b.getAttribute('data-sign') || null;
+                document.querySelector('#signDialog h3').textContent =
+                    showTitles ? 'Підписати: ' + b.getAttribute('data-title') : 'Підписати кошторис';
+                openDialog('signDialog');
+            });
+        });
+        root.querySelectorAll('[data-ask]').forEach(b => {
+            b.addEventListener('click', () => {
+                dialogTarget = b.getAttribute('data-ask') || null;
+                document.querySelector('#questionDialog h3').textContent =
+                    showTitles ? 'Питання: ' + b.getAttribute('data-title') : 'Задати питання';
+                openDialog('questionDialog');
+            });
+        });
     }
+
+    // The estimate the currently-open dialog acts on (null in legacy mode,
+    // where the token itself already names the one estimate).
+    let dialogTarget = null;
 
     function openDialog(id) { document.getElementById(id).showModal(); }
     function closeDialog(id) { document.getElementById(id).close(); }
@@ -527,7 +596,7 @@
         if (!clientName || !clientPhone) return;
         let resp;
         try {
-            resp = await fetch(apiBase + '/sign', {
+            resp = await fetch(sectionApi(dialogTarget) + '/sign', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ clientName, clientPhone })
@@ -559,7 +628,7 @@
         };
         let resp;
         try {
-            resp = await fetch(apiBase + '/question', {
+            resp = await fetch(sectionApi(dialogTarget) + '/question', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(body)
@@ -578,6 +647,31 @@
         }
     });
 
+    // Adapts the legacy single-estimate response into the portal shape so
+    // there is exactly one render path.
+    function adaptLegacy(data) {
+        return {
+            contractor: data.contractor,
+            project: data.project,
+            sharedPhotos: data.sharedPhotos,
+            estimates: [{
+                id: null,
+                name: null,
+                status: data.status,
+                validUntil: data.validUntil,
+                notes: data.notes,
+                createdAt: data.createdAt,
+                items: data.items,
+                worksSubtotal: data.worksSubtotal,
+                materialsSubtotal: data.materialsSubtotal,
+                total: data.total,
+                depositAmount: data.depositAmount,
+                balance: data.balance,
+                signature: data.signature
+            }]
+        };
+    }
+
     async function load() {
         try {
             const resp = await fetch(apiBase);
@@ -589,7 +683,8 @@
                 showError('Не вдалося завантажити кошторис. Спробуйте ще раз за хвилину.', true);
                 return;
             }
-            render(await resp.json());
+            const data = await resp.json();
+            render(portalToken ? data : adaptLegacy(data));
         } catch (e) {
             showError('Не вдалося завантажити кошторис. Перевірте інтернет-з\'єднання і спробуйте ще раз.', true);
         }

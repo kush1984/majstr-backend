@@ -1,6 +1,7 @@
 package com.majstr.backend.service;
 
 import com.majstr.backend.dto.PublicEstimateView;
+import com.majstr.backend.dto.PublicPortalView;
 import com.majstr.backend.dto.QuestionRequest;
 import com.majstr.backend.dto.QuestionResponse;
 import com.majstr.backend.dto.SignRequest;
@@ -12,6 +13,7 @@ import com.majstr.backend.entity.EstimateShareLink;
 import com.majstr.backend.entity.EstimateStatus;
 import com.majstr.backend.entity.ItemType;
 import com.majstr.backend.entity.Project;
+import com.majstr.backend.entity.ProjectShareLink;
 import com.majstr.backend.entity.ProjectStatus;
 import com.majstr.backend.entity.Trade;
 import com.majstr.backend.entity.Unit;
@@ -22,7 +24,9 @@ import com.majstr.backend.feature.FeatureGuard;
 import com.majstr.backend.push.PushService;
 import com.majstr.backend.repository.EstimateItemRepository;
 import com.majstr.backend.repository.EstimateQuestionRepository;
+import com.majstr.backend.repository.EstimateRepository;
 import com.majstr.backend.repository.EstimateShareLinkRepository;
+import com.majstr.backend.repository.ProjectShareLinkRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -49,6 +53,8 @@ import static org.mockito.Mockito.verify;
 class PublicEstimateServiceTest {
 
     @Mock private EstimateShareLinkRepository shareLinkRepository;
+    @Mock private ProjectShareLinkRepository projectShareLinkRepository;
+    @Mock private EstimateRepository estimateRepository;
     @Mock private EstimateItemRepository itemRepository;
     @Mock private EstimateQuestionRepository questionRepository;
     @Mock private EstimateService estimateService;
@@ -67,8 +73,9 @@ class PublicEstimateServiceTest {
         messages.setBasename("messages");
         messages.setDefaultEncoding("UTF-8");
         messages.setFallbackToSystemLocale(false);
-        publicService = new PublicEstimateService(shareLinkRepository, itemRepository,
-                questionRepository, estimateService, projectPhotoService, featureGuard, pushService, messages);
+        publicService = new PublicEstimateService(shareLinkRepository, projectShareLinkRepository,
+                estimateRepository, itemRepository, questionRepository, estimateService,
+                projectPhotoService, featureGuard, pushService, messages);
     }
 
     @Test
@@ -208,7 +215,122 @@ class PublicEstimateServiceTest {
                 contains("/projects/"));
     }
 
+    // ---- project portal (?p=) --------------------------------------------
+
+    @Test
+    void viewPortal_rendersOneSectionPerVisibleEstimate() {
+        Estimate first = sampleEstimate();
+        first.setName("Економ");
+        Estimate second = Estimate.builder()
+                .id(UUID.randomUUID())
+                .project(first.getProject())
+                .name("Преміум")
+                .status(EstimateStatus.SENT)
+                .createdAt(Instant.now())
+                .updatedAt(Instant.now())
+                .build();
+        given(projectShareLinkRepository.findByToken(token))
+                .willReturn(Optional.of(usablePortalLink(first.getProject())));
+        given(estimateRepository.findByProjectIdAndPortalVisibleTrueOrderByCreatedAtAsc(first.getProject().getId()))
+                .willReturn(List.of(first, second));
+        given(itemRepository.findByEstimateIdOrderBySortOrderAscIdAsc(first.getId()))
+                .willReturn(List.of(workItem(first)));
+        given(itemRepository.findByEstimateIdOrderBySortOrderAscIdAsc(second.getId()))
+                .willReturn(List.of(materialItem(second)));
+
+        PublicPortalView view = publicService.viewPortal(token);
+
+        assertThat(view.estimates()).hasSize(2);
+        assertThat(view.estimates().get(0).name()).isEqualTo("Економ");
+        assertThat(view.estimates().get(0).total()).isEqualByComparingTo("4590.00");
+        assertThat(view.estimates().get(1).name()).isEqualTo("Преміум");
+        assertThat(view.estimates().get(1).total()).isEqualByComparingTo("2220.00");
+        assertThat(view.contractor().companyName()).isEqualTo("Іван-Електрик ФОП");
+    }
+
+    @Test
+    void signPortal_rejectsEstimateHiddenFromThePortal() {
+        Estimate estimate = sampleEstimate();
+        estimate.setPortalVisible(false);
+        given(projectShareLinkRepository.findByToken(token))
+                .willReturn(Optional.of(usablePortalLink(estimate.getProject())));
+        given(estimateRepository.findById(estimate.getId())).willReturn(Optional.of(estimate));
+
+        assertThatThrownBy(() -> publicService.signPortal(
+                token, estimate.getId(), new SignRequest("Олена", "+380671234567"), "203.0.113.42"))
+                .isInstanceOf(ResourceNotFoundException.class);
+        assertThat(estimate.getStatus()).isEqualTo(EstimateStatus.DRAFT);
+    }
+
+    @Test
+    void signPortal_rejectsEstimateOfAnotherProject() {
+        Estimate foreign = sampleEstimate(); // belongs to a different project than the token's
+        foreign.setPortalVisible(true);
+        Project tokenProject = sampleEstimate().getProject();
+        given(projectShareLinkRepository.findByToken(token))
+                .willReturn(Optional.of(usablePortalLink(tokenProject)));
+        given(estimateRepository.findById(foreign.getId())).willReturn(Optional.of(foreign));
+
+        assertThatThrownBy(() -> publicService.signPortal(
+                token, foreign.getId(), new SignRequest("Олена", "+380671234567"), "203.0.113.42"))
+                .isInstanceOf(ResourceNotFoundException.class);
+    }
+
+    @Test
+    void signPortal_signsAVisibleEstimateOfTheTokensProject() {
+        Estimate estimate = sampleEstimate();
+        estimate.setPortalVisible(true);
+        given(projectShareLinkRepository.findByToken(token))
+                .willReturn(Optional.of(usablePortalLink(estimate.getProject())));
+        given(estimateRepository.findById(estimate.getId())).willReturn(Optional.of(estimate));
+        given(estimateRepository.findByProjectIdAndPortalVisibleTrueOrderByCreatedAtAsc(estimate.getProject().getId()))
+                .willReturn(List.of(estimate));
+        given(itemRepository.findByEstimateIdOrderBySortOrderAscIdAsc(estimate.getId()))
+                .willReturn(List.of(workItem(estimate)));
+
+        PublicPortalView view = publicService.signPortal(
+                token, estimate.getId(), new SignRequest("Олена Іваненко", "+380671234567"), "203.0.113.42");
+
+        assertThat(estimate.getStatus()).isEqualTo(EstimateStatus.SIGNED);
+        assertThat(view.estimates().get(0).signature().signerName()).isEqualTo("Олена Іваненко");
+    }
+
+    @Test
+    void askPortalQuestion_prefixesThePushWithTheEstimateName() {
+        Estimate estimate = sampleEstimate();
+        estimate.setName("Економ");
+        estimate.setPortalVisible(true);
+        given(projectShareLinkRepository.findByToken(token))
+                .willReturn(Optional.of(usablePortalLink(estimate.getProject())));
+        given(estimateRepository.findById(estimate.getId())).willReturn(Optional.of(estimate));
+        given(questionRepository.save(any(EstimateQuestion.class))).willAnswer(inv -> {
+            EstimateQuestion q = inv.getArgument(0);
+            q.setId(UUID.randomUUID());
+            q.setCreatedAt(Instant.now());
+            return q;
+        });
+
+        publicService.askPortalQuestion(token, estimate.getId(),
+                new QuestionRequest("Олена", null, "Скільки триватиме?"), "203.0.113.42");
+
+        verify(pushService).sendToUser(
+                eq(estimate.getProject().getOwner()),
+                eq("Нове питання від клієнта"),
+                eq("«Економ»: Скільки триватиме?"),
+                contains("/projects/"));
+    }
+
     // ---- fixtures ---------------------------------------------------------
+
+    private ProjectShareLink usablePortalLink(Project project) {
+        return ProjectShareLink.builder()
+                .id(UUID.randomUUID())
+                .project(project)
+                .token(token)
+                .createdAt(Instant.now())
+                .revoked(false)
+                .build();
+    }
 
     private EstimateShareLink usableLink(Estimate estimate) {
         return EstimateShareLink.builder()

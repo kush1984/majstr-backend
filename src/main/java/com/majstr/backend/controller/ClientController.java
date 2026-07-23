@@ -18,6 +18,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -33,11 +34,17 @@ public class ClientController {
 
     private final ClientService clientService;
 
-    @Operation(summary = "Create a client")
+    @Operation(summary = "Create a client",
+            description = "Offline-authored creates may send a client-generated UUID in the "
+                    + "X-Entity-Uuid header — the create is then idempotent (a replayed create "
+                    + "with the same id returns the existing client instead of duplicating).")
     @PostMapping
-    public ResponseEntity<ClientResponse> create(@Valid @RequestBody ClientRequest req,
-                                                 @AuthenticationPrincipal UserPrincipal principal) {
-        return ResponseEntity.status(HttpStatus.CREATED).body(clientService.create(req, principal.id()));
+    public ResponseEntity<ClientResponse> create(
+            @Valid @RequestBody ClientRequest req,
+            @RequestHeader(value = "X-Entity-Uuid", required = false) UUID entityId,
+            @AuthenticationPrincipal UserPrincipal principal) {
+        return ResponseEntity.status(HttpStatus.CREATED)
+                .body(clientService.create(req, principal.id(), entityId));
     }
 
     @Operation(summary = "List my clients")

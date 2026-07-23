@@ -18,6 +18,9 @@ public interface EstimateRepository extends JpaRepository<Estimate, UUID> {
 
     List<Estimate> findByProjectIdOrderByCreatedAtDesc(UUID projectId);
 
+    /** Portal sections, oldest first — so «Кошторис 1» stays first as new ones are added. */
+    List<Estimate> findByProjectIdAndPortalVisibleTrueOrderByCreatedAtAsc(UUID projectId);
+
     /** All estimates of a project, any status — the live count for the FREE
      *  per-project estimate limit (deleting one frees a slot). */
     long countByProjectId(UUID projectId);

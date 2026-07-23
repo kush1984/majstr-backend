@@ -165,4 +165,56 @@ class ProjectServiceTest {
         assertThatThrownBy(() -> projectService.updateStatus(projectId, ProjectStatus.COMPLETED, stranger))
                 .isInstanceOf(AccessDeniedException.class);
     }
+
+    // ---- offline authoring: client-provided UUID makes create idempotent -----------------------
+
+    @Test
+    void create_withRequestedId_persistsThatId() {
+        UUID requestedId = UUID.randomUUID();
+        given(projectRepository.findById(requestedId)).willReturn(Optional.empty());
+        given(userRepository.getReferenceById(ownerId)).willReturn(User.builder().id(ownerId).build());
+        given(projectRepository.save(any(Project.class))).willAnswer(inv -> inv.getArgument(0));
+
+        ProjectResponse r = projectService.create(
+                new ProjectRequest("Хата", "вул. 1", null, null), ownerId, requestedId);
+
+        assertThat(r.id()).isEqualTo(requestedId);
+    }
+
+    @Test
+    void create_withRequestedId_alreadyExistsAndOwned_isIdempotentAndSkipsLimit() {
+        UUID requestedId = UUID.randomUUID();
+        Project existing = Project.builder()
+                .id(requestedId)
+                .owner(User.builder().id(ownerId).build())
+                .name("Вже є").address("A").status(ProjectStatus.DRAFT)
+                .build();
+        given(projectRepository.findById(requestedId)).willReturn(Optional.of(existing));
+
+        ProjectResponse r = projectService.create(
+                new ProjectRequest("Дубль", "вул. 2", null, null), ownerId, requestedId);
+
+        assertThat(r.id()).isEqualTo(requestedId);
+        assertThat(r.name()).isEqualTo("Вже є");
+        // A replay must NOT insert again and must NOT re-hit the FREE limit.
+        org.mockito.Mockito.verify(projectRepository, org.mockito.Mockito.never()).save(any(Project.class));
+        org.mockito.Mockito.verify(limitService, org.mockito.Mockito.never())
+                .requireWithinLimit(any(), any());
+    }
+
+    @Test
+    void create_withRequestedId_belongsToAnotherUser_throwsAccessDenied() {
+        UUID requestedId = UUID.randomUUID();
+        UUID stranger = UUID.randomUUID();
+        Project existing = Project.builder()
+                .id(requestedId)
+                .owner(User.builder().id(stranger).build())
+                .name("Чужий").address("A").status(ProjectStatus.DRAFT)
+                .build();
+        given(projectRepository.findById(requestedId)).willReturn(Optional.of(existing));
+
+        assertThatThrownBy(() -> projectService.create(
+                new ProjectRequest("Викрадач", "вул. 3", null, null), ownerId, requestedId))
+                .isInstanceOf(AccessDeniedException.class);
+    }
 }

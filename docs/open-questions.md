@@ -24,6 +24,39 @@ one-line summary — keep the item in the file as a record.
 
 ## Architecture & operations
 
+### Offline-first follow-ups (Phase 1 shipped; these are the deferred pieces)
+- **Status:** OPEN
+- **Since:** Offline-first iteration (2026-07-22)
+- **Context:** Offline authoring shipped for **clients / objects / estimates / line items** (outbox +
+  client-UUID idempotent replay), plus read-offline (persisted query cache) and Slice 3 sync UX
+  (status indicator, over-limit **"PRO or delete"** gate, warn-before-logout). See
+  [iteration-offline-first.md](iteration-offline-first.md). The following were deliberately deferred:
+- **Notes / options (each its own future chunk):**
+  1. **Measurements offline.** Blocked on a **client-side `MeasurementCalc` mirror** — the item
+     `result` (m²/м.пог/шт, incl. the electrical chase/cable) is server-authoritative, so an
+     optimistic tree needs a pure `computeMeasurementResult(type, payload)` + room/object total
+     recompute (bucket by unit). The measurement mutations also return the whole tree (not per-entity),
+     so they need reshaping to optimistic tree editing. Backend: idempotent `addRoom`/`addItem`
+     (X-Entity-Uuid) + idempotent delete. The user WANTED measurements offline (decision #2); it was
+     deprioritised behind Slice 3 for its disproportionate complexity, not dropped.
+  2. **Owner-tagged re-sync on re-login.** Today the outbox is wiped on **every** auth transition
+     (logout / dead-session / login) — SAFE (no cross-account leak) but a master who logs out with
+     unsynced work, or whose session dies, loses the queue. The agreed design was to **retain** the
+     outbox tagged by owner and offer re-sync on the next login as the same user (feeding the same
+     over-limit gate). Needs an ownerId stamp on ops + a login-time "you have N unsynced changes — sync?"
+     prompt, and NOT wiping on dead-session.
+  3. **LWW conflict UI ("моє / серверне").** Decision #1 was LWW + conflict surfacing. The current
+     replay is plain LWW (last write wins) with no diff shown. Needs `updated_at`/version on **clients &
+     objects** (estimate already has `@Version`) and a small chooser when the server changed under an
+     offline edit. Rare for a solo master; low priority.
+  4. **Catalog-add / batch item adds offline.** `addItemFromCatalog` / `addItemsFromCatalogBatch` stay
+     online-only (they reference catalog items + run a server transaction). Manual add/update/remove IS
+     offline. Wire these through the outbox if masters build estimates from the catalog offline.
+  5. **Per-item blocked-op resolution.** `SyncReviewSheet` resolves blocked ops in bulk (retry all /
+     delete all). Per-item keep/delete would be nicer if a mix of over-limit + other rejections occurs.
+  6. **Photos offline** (progress + receipt photos) — a **blob outbox** + deferred multipart upload;
+     the heaviest piece (binary storage in IndexedDB, dedup, upload-on-reconnect). Explicitly last.
+
 ### Multi-instance support for in-memory state
 - **Status:** OPEN
 - **Since:** step 1 (login limiter), tightened in step 3 (portal limiter, lastActiveAt tracker)
@@ -262,7 +295,7 @@ one-line summary — keep the item in the file as a record.
 ### Share-link tokens stored raw vs hashed
 - **Status:** OPEN
 - **Since:** step 3
-- **Context:** `EstimateShareLink.token` stores the raw token so the contractor can re-copy the URL later. DB compromise reveals all live share URLs.
+- **Context:** `EstimateShareLink.token` stores the raw token so the contractor can re-copy the URL later. DB compromise reveals all live share URLs. Since the portal-multi-estimate iteration (2026-07-22) the same trade-off applies to `project_share_links.token`.
 - **Notes / options:** Hash like refresh tokens; lose the "show URL again" feature, gain breach safety. Decide once we have real users.
 
 ### Refresh-token reuse detection (session-family revocation)
@@ -285,6 +318,11 @@ one-line summary — keep the item in the file as a record.
 - **Notes / options:** Either reuse the existing usable link (idempotent
   share), or revoke older links on re-share. Decide together with the
   raw-vs-hashed share-token question above.
+- **Update (portal-multi-estimate iteration, 2026-07-22):** the PWA no longer mints
+  per-estimate links at all — sharing goes through the **project portal link**, which IS
+  idempotent (one live URL per object, reused on every publish). Legacy estimate links
+  stay valid for already-sent URLs but stop multiplying. Candidate for RESOLVED once the
+  iteration ships; the raw-vs-hashed question now covers `project_share_links` too.
 
 ### Public file serving needs auth once non-public assets exist
 - **Status:** IN_PROGRESS

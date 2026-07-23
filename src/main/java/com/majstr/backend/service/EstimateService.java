@@ -62,10 +62,32 @@ public class EstimateService {
 
     @Transactional
     public EstimateResponse createForProject(UUID projectId, EstimateCreateRequest req, UUID ownerId) {
+        return createForProject(projectId, req, ownerId, null);
+    }
+
+    /**
+     * Create an estimate, optionally with a CLIENT-PROVIDED id (offline authoring). The id makes it
+     * idempotent — a replayed offline create returns the existing estimate (no duplicate, no second
+     * hit on the FREE cap or the churn counter); a foreign id (another project) is rejected. The
+     * idempotency check runs BEFORE the limit check.
+     */
+    @Transactional
+    public EstimateResponse createForProject(UUID projectId, EstimateCreateRequest req, UUID ownerId, UUID requestedId) {
         Project project = projectService.loadOwned(projectId, ownerId);
+        if (requestedId != null) {
+            var existing = estimateRepository.findById(requestedId);
+            if (existing.isPresent()) {
+                Estimate e = existing.get();
+                if (!e.getProject().getId().equals(projectId)) {
+                    throw new AccessDeniedException("Estimate belongs to a different project");
+                }
+                return toResponse(e, itemRepository.findByEstimateIdOrderBySortOrderAscIdAsc(e.getId()));
+            }
+        }
         // FREE caps estimates per project (closes the unlimited-drafts hole).
         limitService.requireCanAddEstimate(ownerId, projectId);
         Estimate estimate = Estimate.builder()
+                .id(requestedId)
                 .project(project)
                 .name(normalize(req.name()))
                 .validUntil(req.validUntil())
@@ -284,10 +306,30 @@ public class EstimateService {
 
     @Transactional
     public EstimateItemResponse addItem(UUID estimateId, EstimateItemRequest req, UUID ownerId) {
+        return addItem(estimateId, req, ownerId, null);
+    }
+
+    /**
+     * Add a line item, optionally with a CLIENT-PROVIDED id (offline authoring). The id makes the
+     * add idempotent: a replayed offline add returns the existing item instead of duplicating. An
+     * id that already belongs to a DIFFERENT estimate is rejected (never cross-links).
+     */
+    @Transactional
+    public EstimateItemResponse addItem(UUID estimateId, EstimateItemRequest req, UUID ownerId, UUID requestedId) {
         Estimate estimate = loadOwned(estimateId, ownerId);
+        if (requestedId != null) {
+            var existing = itemRepository.findById(requestedId);
+            if (existing.isPresent()) {
+                if (!existing.get().getEstimate().getId().equals(estimateId)) {
+                    throw new AccessDeniedException("Item belongs to a different estimate");
+                }
+                return EstimateItemResponse.from(existing.get()); // idempotent replay
+            }
+        }
         requireNotSigned(estimate);
         Resolved r = resolveQuantity(estimate, req);
         EstimateItem item = EstimateItem.builder()
+                .id(requestedId)
                 .estimate(estimate)
                 .type(req.type())
                 .name(req.name().trim())
@@ -430,8 +472,10 @@ public class EstimateService {
     @Transactional
     public void deleteItem(UUID estimateId, UUID itemId, UUID ownerId) {
         requireNotSigned(loadOwned(estimateId, ownerId));
-        EstimateItem item = loadItemInEstimate(estimateId, itemId);
-        itemRepository.delete(item);
+        // Idempotent: a replayed offline delete of an already-gone item is a no-op, not a 404.
+        itemRepository.findById(itemId)
+                .filter(i -> i.getEstimate().getId().equals(estimateId))
+                .ifPresent(itemRepository::delete);
     }
 
     // ---- helpers -----------------------------------------------------------

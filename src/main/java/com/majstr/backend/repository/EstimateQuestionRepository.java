@@ -15,8 +15,15 @@ public interface EstimateQuestionRepository extends JpaRepository<EstimateQuesti
 
     List<EstimateQuestion> findByEstimateIdOrderByCreatedAtAsc(UUID estimateId);
 
-    /** All questions across every estimate of a project, newest first. */
-    List<EstimateQuestion> findByEstimateProjectIdOrderByCreatedAtDesc(UUID projectId);
+    /** All questions across every estimate of a project, newest first. The estimate is
+     *  fetch-joined because {@code QuestionView} now carries its name (no N+1). */
+    @Query("""
+            SELECT q FROM EstimateQuestion q
+            JOIN FETCH q.estimate
+            WHERE q.estimate.project.id = :projectId
+            ORDER BY q.createdAt DESC
+            """)
+    List<EstimateQuestion> findByEstimateProjectIdOrderByCreatedAtDesc(@Param("projectId") UUID projectId);
 
     /** Unread questions on a single project. */
     long countByEstimateProjectIdAndReadFalse(UUID projectId);

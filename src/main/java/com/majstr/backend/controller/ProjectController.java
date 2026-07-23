@@ -21,6 +21,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -37,11 +38,16 @@ public class ProjectController {
 
     private final ProjectService projectService;
 
-    @Operation(summary = "Create a project")
+    @Operation(summary = "Create a project",
+            description = "Offline-authored creates may send a client-generated UUID in the "
+                    + "X-Entity-Uuid header — the create is then idempotent on replay.")
     @PostMapping
-    public ResponseEntity<ProjectResponse> create(@Valid @RequestBody ProjectRequest req,
-                                                  @AuthenticationPrincipal UserPrincipal principal) {
-        return ResponseEntity.status(HttpStatus.CREATED).body(projectService.create(req, principal.id()));
+    public ResponseEntity<ProjectResponse> create(
+            @Valid @RequestBody ProjectRequest req,
+            @RequestHeader(value = "X-Entity-Uuid", required = false) UUID entityId,
+            @AuthenticationPrincipal UserPrincipal principal) {
+        return ResponseEntity.status(HttpStatus.CREATED)
+                .body(projectService.create(req, principal.id(), entityId));
     }
 
     @Operation(summary = "List my projects, optionally filtered by status")

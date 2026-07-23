@@ -24,8 +24,31 @@ public class ClientService {
 
     @Transactional
     public ClientResponse create(ClientRequest req, UUID ownerId) {
+        return create(req, ownerId, null);
+    }
+
+    /**
+     * Create a client, optionally with a CLIENT-PROVIDED id (offline authoring). The id makes the
+     * create idempotent: replaying a queued offline create must never duplicate — if a client with
+     * {@code requestedId} already exists we return it when the caller owns it, and reject (never
+     * leak) when it belongs to someone else. A null id keeps the online path unchanged (the
+     * entity's {@code @PrePersist} generates one).
+     */
+    @Transactional
+    public ClientResponse create(ClientRequest req, UUID ownerId, UUID requestedId) {
+        if (requestedId != null) {
+            var existing = clientRepository.findById(requestedId);
+            if (existing.isPresent()) {
+                Client c = existing.get();
+                if (!c.getOwner().getId().equals(ownerId)) {
+                    throw new AccessDeniedException("Client does not belong to the current user");
+                }
+                return ClientResponse.from(c); // idempotent replay
+            }
+        }
         User owner = userRepository.getReferenceById(ownerId);
         Client client = Client.builder()
+                .id(requestedId)
                 .owner(owner)
                 .fullName(req.fullName().trim())
                 .phone(req.phone().trim())

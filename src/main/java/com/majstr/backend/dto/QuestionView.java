@@ -15,6 +15,9 @@ public record QuestionView(
         String authorName,
         String authorPhone,
         String message,
+        /** Which estimate the client asked about (null = unnamed estimate) —
+         *  a multi-estimate portal makes this necessary context. */
+        String estimateName,
         boolean isRead,
         Instant createdAt
 ) {
@@ -24,6 +27,7 @@ public record QuestionView(
                 q.getAuthorName(),
                 q.getAuthorPhone(),
                 q.getMessage(),
+                q.getEstimate().getName(),
                 q.isRead(),
                 q.getCreatedAt());
     }

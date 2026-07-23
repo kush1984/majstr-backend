@@ -150,11 +150,28 @@ static block. **Note:** web-push adds transitive deps (BouncyCastle pinned to
 `aesgcm` encoding, which **current FCM rejects with HTTP 403** — `deliver()`
 must pass `Encoding.AES128GCM` explicitly (the modern `vapid t=,k=` header).
 
+### Client portal is project-level (estimate links are legacy)
+
+One portal per **object**: `project_share_links` holds the (idempotently-minted, single
+live) token, `estimates.portal_visible` says which estimates the portal shows — the master
+ticks them explicitly in the share sheet, nothing is shared by default. The page
+(`static/portal/index.html`) renders a section per visible estimate; sign / question / PDF
+are addressed per estimate under the project token
+(`/api/public/portal/{token}/estimates/{id}/...`), and an estimate is reachable only while
+`portal_visible` (else neutral 404). Legacy per-estimate links (`?t=`, `EstimateShareLink`)
+**stay valid** for URLs already sent — same page, one render path via a client-side adapter
+— but the PWA no longer creates them. Both token families share one core in
+`PublicEstimateService` (`doSign`/`doAsk`) so sign semantics exist once. See
+[docs/iteration-portal-multi-estimate.md](docs/iteration-portal-multi-estimate.md).
+
 ### Client questions are a read-only inbox
 
-Clients leave questions on the public portal (`PublicEstimateService.askQuestion`);
-the contractor reads them and marks them read, then follows up out-of-band — there
-is no in-app reply thread. `EstimateQuestion.read` (column `is_read`, V22, default
+Clients leave questions on the public portal (`PublicEstimateService.doAsk`, reached
+from both token families); the contractor reads them and marks them read, then follows
+up out-of-band — there is no in-app reply thread. Questions are estimate-linked
+(`estimate_id`), and since the multi-estimate portal `QuestionView` carries
+`estimateName` (fetch-joined — don't drop the `JOIN FETCH` or it N+1s) so the inbox
+shows which variant the client meant. `EstimateQuestion.read` (column `is_read`, V22, default
 false) tracks acknowledgement. The contractor side lives in `QuestionService` +
 `ProjectQuestionController` (`/api/projects/{id}/questions`, `PATCH .../{qid}/read`),
 scoped through `ProjectService.loadOwned`. `GET /api/projects` carries an
@@ -290,6 +307,22 @@ Status mapping:
   themselves, bypassing Spring MVC)
 - 500 — fallback, with a logged stack trace; also reported to Sentry
   (env-gated on `SENTRY_DSN`, endpoint tag + opaque user id, no PII)
+
+### Offline-first: client-UUID idempotent creates (`X-Entity-Uuid`)
+
+The PWA authors offline (an outbox replays queued writes on reconnect —
+[docs/iteration-offline-first.md](docs/iteration-offline-first.md)), so a replayed create must
+**not duplicate**. The convention: a create endpoint accepts an **optional client-generated UUID in
+the `X-Entity-Uuid` header** and the service makes the create **idempotent** — if an entity with
+that id already exists and the caller owns it, return it; if it belongs to someone else, `403`
+(`AccessDeniedException`); otherwise create with that id (the entity's `@PrePersist` only generates
+an id when null, so a supplied id is honoured). The idempotency check runs **before** any limit
+check / churn counter, so a replay can't spuriously trip the FREE cap. Already wired on `clients`,
+`projects`, `estimates` (`createForProject`), and estimate **items** (`addItem`); deletes are
+idempotent no-ops. A 2-arg overload keeps existing callers/tests. **When you add a new
+offline-authorable entity, follow this pattern** (header + `create(req, ownerId, requestedId)`
+overload + idempotency-first). The over-limit case surfaces to the PWA's "PRO or delete" screen via
+the normal `403 *_LIMIT_REACHED` code.
 
 ### Schema is owned by Flyway
 

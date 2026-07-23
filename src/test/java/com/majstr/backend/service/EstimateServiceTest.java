@@ -39,6 +39,7 @@ import java.util.Optional;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
@@ -717,6 +718,115 @@ class EstimateServiceTest {
         User owner = User.builder().id(userId).build();
         Project project = Project.builder().id(projectId).owner(owner).build();
         return project;
+    }
+
+    // ---- offline authoring: client-provided estimate UUID → idempotent createForProject ---------
+
+    @Test
+    void createForProject_withRequestedId_persistsThatId() {
+        UUID requestedId = UUID.randomUUID();
+        given(projectService.loadOwned(projectId, ownerId)).willReturn(ownedProject(ownerId));
+        given(estimateRepository.findById(requestedId)).willReturn(Optional.empty());
+        given(estimateRepository.save(any(Estimate.class))).willAnswer(inv -> inv.getArgument(0));
+
+        var resp = estimateService.createForProject(
+                projectId, new EstimateCreateRequest(null, null, null), ownerId, requestedId);
+
+        assertThat(resp.id()).isEqualTo(requestedId);
+    }
+
+    @Test
+    void createForProject_withRequestedId_existing_isIdempotentAndSkipsLimit() {
+        UUID requestedId = UUID.randomUUID();
+        Estimate existing = Estimate.builder()
+                .id(requestedId).project(ownedProject(ownerId)).status(EstimateStatus.DRAFT)
+                .createdAt(Instant.now()).updatedAt(Instant.now()).build();
+        given(projectService.loadOwned(projectId, ownerId)).willReturn(ownedProject(ownerId));
+        given(estimateRepository.findById(requestedId)).willReturn(Optional.of(existing));
+        given(itemRepository.findByEstimateIdOrderBySortOrderAscIdAsc(requestedId)).willReturn(List.of());
+
+        var resp = estimateService.createForProject(
+                projectId, new EstimateCreateRequest(null, null, null), ownerId, requestedId);
+
+        assertThat(resp.id()).isEqualTo(requestedId);
+        verify(estimateRepository, never()).save(any(Estimate.class));
+        verify(limitService, never()).requireCanAddEstimate(any(), any());
+    }
+
+    @Test
+    void createForProject_withRequestedId_belongsToAnotherProject_throwsAccessDenied() {
+        UUID requestedId = UUID.randomUUID();
+        Project otherProject = Project.builder().id(UUID.randomUUID())
+                .owner(User.builder().id(ownerId).build()).build();
+        Estimate foreign = Estimate.builder()
+                .id(requestedId).project(otherProject).status(EstimateStatus.DRAFT).build();
+        given(projectService.loadOwned(projectId, ownerId)).willReturn(ownedProject(ownerId));
+        given(estimateRepository.findById(requestedId)).willReturn(Optional.of(foreign));
+
+        assertThatThrownBy(() -> estimateService.createForProject(
+                projectId, new EstimateCreateRequest(null, null, null), ownerId, requestedId))
+                .isInstanceOf(AccessDeniedException.class);
+    }
+
+    // ---- offline authoring: client-provided item UUID → idempotent add; idempotent delete -------
+
+    @Test
+    void addItem_withRequestedId_persistsThatId() {
+        UUID requestedId = UUID.randomUUID();
+        given(estimateRepository.findById(estimateId)).willReturn(Optional.of(ownedEstimate(ownerId)));
+        given(itemRepository.findById(requestedId)).willReturn(Optional.empty());
+        given(itemRepository.save(any(EstimateItem.class))).willAnswer(inv -> inv.getArgument(0));
+
+        var resp = estimateService.addItem(estimateId, new EstimateItemRequest(
+                ItemType.WORK, "Робота", null, Unit.M2,
+                new BigDecimal("2"), new BigDecimal("100"), 0, null, false), ownerId, requestedId);
+
+        assertThat(resp.id()).isEqualTo(requestedId);
+    }
+
+    @Test
+    void addItem_withRequestedId_alreadyInThisEstimate_isIdempotentNoInsert() {
+        UUID requestedId = UUID.randomUUID();
+        Estimate estimate = ownedEstimate(ownerId);
+        given(estimateRepository.findById(estimateId)).willReturn(Optional.of(estimate));
+        EstimateItem existing = EstimateItem.builder()
+                .id(requestedId).estimate(estimate).type(ItemType.WORK).name("Вже є").unit(Unit.M2)
+                .quantity(new BigDecimal("1")).unitPrice(new BigDecimal("50")).sortOrder(0).build();
+        given(itemRepository.findById(requestedId)).willReturn(Optional.of(existing));
+
+        var resp = estimateService.addItem(estimateId, new EstimateItemRequest(
+                ItemType.WORK, "Дубль", null, Unit.M2,
+                new BigDecimal("9"), new BigDecimal("9"), 0, null, false), ownerId, requestedId);
+
+        assertThat(resp.id()).isEqualTo(requestedId);
+        assertThat(resp.name()).isEqualTo("Вже є");
+        verify(itemRepository, never()).save(any(EstimateItem.class));
+    }
+
+    @Test
+    void addItem_withRequestedId_belongsToAnotherEstimate_throwsAccessDenied() {
+        UUID requestedId = UUID.randomUUID();
+        given(estimateRepository.findById(estimateId)).willReturn(Optional.of(ownedEstimate(ownerId)));
+        Estimate other = Estimate.builder().id(UUID.randomUUID()).status(EstimateStatus.DRAFT).build();
+        EstimateItem foreign = EstimateItem.builder()
+                .id(requestedId).estimate(other).type(ItemType.WORK).name("Чужий").unit(Unit.M2)
+                .quantity(new BigDecimal("1")).unitPrice(new BigDecimal("1")).sortOrder(0).build();
+        given(itemRepository.findById(requestedId)).willReturn(Optional.of(foreign));
+
+        assertThatThrownBy(() -> estimateService.addItem(estimateId, new EstimateItemRequest(
+                ItemType.WORK, "X", null, Unit.M2,
+                new BigDecimal("1"), new BigDecimal("1"), 0, null, false), ownerId, requestedId))
+                .isInstanceOf(AccessDeniedException.class);
+    }
+
+    @Test
+    void deleteItem_absentItem_isIdempotentNoOp() {
+        UUID itemId = UUID.randomUUID();
+        given(estimateRepository.findById(estimateId)).willReturn(Optional.of(ownedEstimate(ownerId)));
+        given(itemRepository.findById(itemId)).willReturn(Optional.empty());
+
+        assertThatCode(() -> estimateService.deleteItem(estimateId, itemId, ownerId)).doesNotThrowAnyException();
+        verify(itemRepository, never()).delete(any(EstimateItem.class));
     }
 
     private Estimate ownedEstimate(UUID userId) {

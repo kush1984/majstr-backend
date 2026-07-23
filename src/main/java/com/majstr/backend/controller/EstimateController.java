@@ -34,6 +34,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -53,13 +54,17 @@ public class EstimateController {
 
     // ---- estimates under a project ----------------------------------------
 
-    @Operation(summary = "Create an estimate for a project")
+    @Operation(summary = "Create an estimate for a project",
+            description = "Offline-authored creates may send a client-generated UUID in the "
+                    + "X-Entity-Uuid header — the create is then idempotent on replay.")
     @PostMapping("/api/projects/{projectId}/estimates")
-    public ResponseEntity<EstimateResponse> create(@PathVariable UUID projectId,
-                                                   @Valid @RequestBody EstimateCreateRequest req,
-                                                   @AuthenticationPrincipal UserPrincipal principal) {
+    public ResponseEntity<EstimateResponse> create(
+            @PathVariable UUID projectId,
+            @Valid @RequestBody EstimateCreateRequest req,
+            @RequestHeader(value = "X-Entity-Uuid", required = false) UUID entityId,
+            @AuthenticationPrincipal UserPrincipal principal) {
         return ResponseEntity.status(HttpStatus.CREATED)
-                .body(estimateService.createForProject(projectId, req, principal.id()));
+                .body(estimateService.createForProject(projectId, req, principal.id(), entityId));
     }
 
     @Operation(summary = "List estimates of a project")
@@ -164,13 +169,17 @@ public class EstimateController {
 
     // ---- items -------------------------------------------------------------
 
-    @Operation(summary = "Add a line item to an estimate")
+    @Operation(summary = "Add a line item to an estimate",
+            description = "Offline-authored adds may send a client-generated UUID in the "
+                    + "X-Entity-Uuid header — the add is then idempotent on replay.")
     @PostMapping("/api/estimates/{estimateId}/items")
-    public ResponseEntity<EstimateItemResponse> addItem(@PathVariable UUID estimateId,
-                                                        @Valid @RequestBody EstimateItemRequest req,
-                                                        @AuthenticationPrincipal UserPrincipal principal) {
+    public ResponseEntity<EstimateItemResponse> addItem(
+            @PathVariable UUID estimateId,
+            @Valid @RequestBody EstimateItemRequest req,
+            @RequestHeader(value = "X-Entity-Uuid", required = false) UUID entityId,
+            @AuthenticationPrincipal UserPrincipal principal) {
         return ResponseEntity.status(HttpStatus.CREATED)
-                .body(estimateService.addItem(estimateId, req, principal.id()));
+                .body(estimateService.addItem(estimateId, req, principal.id(), entityId));
     }
 
     @Operation(summary = "Add a line item by copying from a catalog entry")

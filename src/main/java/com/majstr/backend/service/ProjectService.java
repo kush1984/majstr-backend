@@ -41,10 +41,32 @@ public class ProjectService {
 
     @Transactional
     public ProjectResponse create(ProjectRequest req, UUID ownerId) {
+        return create(req, ownerId, null);
+    }
+
+    /**
+     * Create a project, optionally with a CLIENT-PROVIDED id (offline authoring). The id makes the
+     * create idempotent: a replayed offline create returns the existing project (never a duplicate,
+     * and never a second hit on the FREE limit); a foreign id is rejected. The idempotency check
+     * runs BEFORE the limit check so a replay of an already-counted project can't spuriously fail.
+     */
+    @Transactional
+    public ProjectResponse create(ProjectRequest req, UUID ownerId, UUID requestedId) {
+        if (requestedId != null) {
+            var existing = projectRepository.findById(requestedId);
+            if (existing.isPresent()) {
+                Project p = existing.get();
+                if (!p.getOwner().getId().equals(ownerId)) {
+                    throw new AccessDeniedException("Project does not belong to the current user");
+                }
+                return ProjectResponse.from(p); // idempotent replay
+            }
+        }
         limitService.requireWithinLimit(ownerId, Limit.MAX_PROJECTS);
         User owner = userRepository.getReferenceById(ownerId);
         Client client = req.clientId() == null ? null : clientService.loadOwned(req.clientId(), ownerId);
         Project project = Project.builder()
+                .id(requestedId)
                 .owner(owner)
                 .client(client)
                 .name(req.name().trim())

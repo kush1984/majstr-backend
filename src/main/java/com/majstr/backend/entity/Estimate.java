@@ -71,6 +71,13 @@ public class Estimate {
     @Column(name = "count_in_economy", nullable = false)
     private boolean countInEconomy = true;
 
+    /** Whether this estimate shows on the object's client portal. The master
+     *  picks the set explicitly in the share sheet — nothing is shared by
+     *  default. Distinct from legacy per-estimate share links, which stay
+     *  usable for URLs already sent out. */
+    @Column(name = "portal_visible", nullable = false)
+    private boolean portalVisible;
+
     @Column(name = "signed_at")
     private Instant signedAt;
 

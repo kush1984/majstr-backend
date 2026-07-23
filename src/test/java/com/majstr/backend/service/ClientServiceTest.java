@@ -103,4 +103,57 @@ class ClientServiceTest {
         // Original data untouched.
         assertThat(existing.getFullName()).isEqualTo("X");
     }
+
+    // ---- offline authoring: client-provided UUID makes create idempotent -----------------------
+
+    @Test
+    void create_withRequestedId_persistsThatId() {
+        UUID ownerId = UUID.randomUUID();
+        UUID requestedId = UUID.randomUUID();
+        given(clientRepository.findById(requestedId)).willReturn(Optional.empty());
+        given(userRepository.getReferenceById(ownerId)).willReturn(User.builder().id(ownerId).build());
+        given(clientRepository.save(any(Client.class))).willAnswer(inv -> inv.getArgument(0));
+
+        var resp = clientService.create(
+                new ClientRequest("Офлайн", "+380670000000", null, null), ownerId, requestedId);
+
+        assertThat(resp.id()).isEqualTo(requestedId);
+    }
+
+    @Test
+    void create_withRequestedId_alreadyExistsAndOwned_isIdempotentNoInsert() {
+        UUID ownerId = UUID.randomUUID();
+        UUID requestedId = UUID.randomUUID();
+        Client existing = Client.builder()
+                .id(requestedId)
+                .owner(User.builder().id(ownerId).build())
+                .fullName("Вже є").phone("+380671111111")
+                .build();
+        given(clientRepository.findById(requestedId)).willReturn(Optional.of(existing));
+
+        var resp = clientService.create(
+                new ClientRequest("Дубль", "+380672222222", null, null), ownerId, requestedId);
+
+        // Replay returns the existing client and never inserts a duplicate.
+        assertThat(resp.id()).isEqualTo(requestedId);
+        assertThat(resp.fullName()).isEqualTo("Вже є");
+        org.mockito.Mockito.verify(clientRepository, org.mockito.Mockito.never()).save(any(Client.class));
+    }
+
+    @Test
+    void create_withRequestedId_belongsToAnotherUser_throwsAccessDenied() {
+        UUID ownerId = UUID.randomUUID();
+        UUID stranger = UUID.randomUUID();
+        UUID requestedId = UUID.randomUUID();
+        Client existing = Client.builder()
+                .id(requestedId)
+                .owner(User.builder().id(stranger).build())
+                .fullName("Чужий").phone("+1")
+                .build();
+        given(clientRepository.findById(requestedId)).willReturn(Optional.of(existing));
+
+        assertThatThrownBy(() -> clientService.create(
+                new ClientRequest("Викрадач", "+2", null, null), ownerId, requestedId))
+                .isInstanceOf(AccessDeniedException.class);
+    }
 }
