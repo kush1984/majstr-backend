@@ -67,11 +67,11 @@ management:
       enabled: true
 
 spring.servlet.multipart:
-  # 10 MB covers a phone photo of an estimate (estimate import). The logo upload
-  # still enforces its own ≤2 MB check in code, so this larger servlet ceiling
-  # doesn't weaken it.
-  max-file-size: 10MB
-  max-request-size: 12MB
+  # 15 MB covers a designer's PDF sheet (project import) and a phone photo
+  # (estimate/receipt/sketch import). Each import enforces its own tighter cap
+  # in code (logo ≤2 MB, photos ≤10 MB), so this ceiling doesn't weaken them.
+  max-file-size: 15MB
+  max-request-size: 18MB
 
 app:
   jwt:

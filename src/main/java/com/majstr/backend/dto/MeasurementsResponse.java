@@ -23,6 +23,8 @@ public record MeasurementsResponse(
     public record Room(
             java.util.UUID id,
             String name,
+            /** Free-text floor label; null = ungrouped. */
+            String floor,
             int sortOrder,
             List<Item> items,
             BigDecimal areaTotal,

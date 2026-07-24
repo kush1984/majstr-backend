@@ -6,6 +6,7 @@ import com.majstr.backend.dto.EstimateTemplateDetail;
 import com.majstr.backend.dto.EstimateTemplateSummary;
 import com.majstr.backend.dto.SaveAsTemplateRequest;
 import com.majstr.backend.dto.TemplateItemRequest;
+import com.majstr.backend.dto.TemplateTradeRequest;
 import com.majstr.backend.exception.ResourceNotFoundException;
 import com.majstr.backend.repository.UserRepository;
 import com.majstr.backend.security.UserPrincipal;
@@ -63,6 +64,15 @@ public class EstimateTemplateController {
         return templateService.rename(id, req.name(), principal.id());
     }
 
+    @Operation(summary = "File a template under a trade — my own filing; on a system default "
+            + "it is stored per-master and stays invisible to everyone else")
+    @PatchMapping("/api/estimate-templates/{id}/trade")
+    public EstimateTemplateSummary setTrade(@PathVariable UUID id,
+                                            @Valid @RequestBody TemplateTradeRequest req,
+                                            @AuthenticationPrincipal UserPrincipal principal) {
+        return templateService.setTrade(id, req.trade(), principal.id());
+    }
+
     @Operation(summary = "Delete my own template (system defaults are read-only)")
     @DeleteMapping("/api/estimate-templates/{id}")
     public ResponseEntity<Void> delete(@PathVariable UUID id,
@@ -94,7 +104,7 @@ public class EstimateTemplateController {
             @PathVariable UUID id,
             @Valid @RequestBody SaveAsTemplateRequest req,
             @AuthenticationPrincipal UserPrincipal principal) {
-        EstimateTemplateSummary saved = templateService.saveFromEstimate(id, req.name(), principal.id());
+        EstimateTemplateSummary saved = templateService.saveFromEstimate(id, req.name(), req.trade(), principal.id());
         return ResponseEntity.status(HttpStatus.CREATED).body(saved);
     }
 

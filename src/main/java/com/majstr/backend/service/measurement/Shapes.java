@@ -27,6 +27,13 @@ final class Shapes {
         String m = mode == null ? "d" : mode;
         return switch (shape == null ? "" : shape) {
             case "rect" -> rect(values);
+            // A known area entered directly (e.g. imported from a room schedule) — no geometry.
+            // `s` is in the payload unit squared, like every other shape's output.
+            case "direct" -> direct(values);
+            // L-shaped room: overall gabarits A×B with an a×b corner cut out. Area via the
+            // same shoelace as every shape; the PERIMETER equals the gabarits rectangle's
+            // 2×(A+B) — the cut removes segments a and b but adds two identical ones inside.
+            case "lshape" -> lshape(values);
             case "trap" -> trap(values);
             case "attic" -> "asym".equals(m) ? atticAsym(values) : atticSym(values);
             case "tri" -> "sss".equals(m) ? triSss(values) : triBh(values);
@@ -36,6 +43,22 @@ final class Shapes {
     }
 
     // ---- shapes ---------------------------------------------------------------
+
+    private static double direct(Map<String, Double> vals) {
+        double s = v(vals, "s");
+        require(s > 0);
+        return s;
+    }
+
+    private static double lshape(Map<String, Double> vals) {
+        double A = v(vals, "A");
+        double B = v(vals, "B");
+        double a = v(vals, "a");
+        double b = v(vals, "b");
+        require(A > 0 && B > 0 && a > 0 && b > 0 && a < A && b < B);
+        return shoelace(new double[][]{
+                {0, 0}, {A, 0}, {A, B - b}, {A - a, B - b}, {A - a, B}, {0, B}});
+    }
 
     private static double rect(Map<String, Double> vals) {
         double a = v(vals, "a");

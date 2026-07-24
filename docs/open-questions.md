@@ -423,6 +423,16 @@ one-line summary — keep the item in the file as a record.
 
 ## Business logic
 
+### Version 1.0.0 — ships with the first paying user
+- **Status:** OPEN
+- **Since:** 2026-07-23 (user decision)
+- **Context:** The product is functionally 1.0-ready (real masters on prod, self-serve PRO
+  checkout, portal signing, offline, imports), but the user chose a business milestone over a
+  technical one for the symbolic bump.
+- **Notes / options:** Stay on `0.x` until the FIRST real payment lands; the next release after
+  that becomes `1.0.0` (then minor = feature iteration, patch = fixes — same rhythm as now).
+  The open-questions skill carries the same rule so it isn't forgotten at bump time.
+
 ### Exact FREE limit numbers + monetization model
 - **Status:** OPEN
 - **Since:** FREE-limits iteration (2026-06-13)
@@ -1003,14 +1013,89 @@ one-line summary — keep the item in the file as a record.
   keep it as a PRIVATE object photo. See [iteration-sketch-import.md](iteration-sketch-import.md).
 
 ### Recognise ARCHITECTURAL drawings (PDF floor plans) into measurements
-- **Status:** OPEN
+- **Status:** RESOLVED (project-import iteration, 2026-07-23)
 - **Since:** Sketch-import iteration (2026-07-16)
 - **Context:** A step beyond hand sketches — a real architect's PDF/printed floor plan (labelled room
   areas, wall runs). Harder: scale bars, axes, wall thickness, section heights on separate views.
-- **Notes / options:** A different extractor prompt (and PDF→image rendering) targeting the same
-  `measurement_room`/`measurement_item` draft + review screen. The labelled-areas case ("extract the
-  m² printed in each room") is the tractable first cut. Build on demand; sketch import covers the
-  common field workflow.
+- **Resolution:** shipped as the **project-documentation import** (docs/iteration-project-import.md):
+  filename classification client-side, TEXT-LAYER extraction first (pdfbox — exact figures, no
+  vision) with the native document block as the scan fallback, rooms created as a PACKAGE
+  (підлога/стеля/стіни/плінтус/відкоси) with floors (`measurement_room.floor`, V63). No PDF→image
+  rendering was ever needed — Anthropic renders PDFs natively. Follow-ups tracked below
+  (sections/facades for heights, drawings-as-documents storage, 7z, wall accuracy).
+
+### Project import: sections/facades (розрізи) for ceiling heights
+- **Status:** OPEN
+- **Since:** Project-import iteration (2026-07-23)
+- **Context:** The real archive had NO absolute ceiling height (only relative drops «від нуля
+  стелі»), so the import asks the master per floor. Heights DO live on section/facade sheets —
+  recognising those could remove the question.
+- **Notes / options:** A SECTIONS kind in the classifier («розріз», «фасад») + a prompt reading
+  only absolute floor-to-ceiling figures. Low value until masters hit the height question often.
+
+### Project import: store the drawings on the object as documents
+- **Status:** OPEN
+- **Since:** Project-import iteration (2026-07-23)
+- **Context:** Files are parsed and discarded (policy). Masters may want the drawings kept on the
+  object («зберегти креслення до обʼєкта») for later reference.
+- **Notes / options:** PRIVATE `project_photo`-like storage or a new document type; needs caps and
+  a viewer. Decide when asked for — storage cost and viewer complexity are non-trivial.
+
+### Project import: 7z archives
+- **Status:** RESOLVED (0.26.1 fix pass, 2026-07-23)
+- **Since:** Project-import iteration (2026-07-23)
+- **Context:** Client-side unzip is fflate (zip only). A 7z from a designer got a
+  friendly «розпакуйте і надішліть zip» message — but designers send 7z as the norm.
+- **Resolution:** 7z-wasm in the browser, imported LAZILY only when a .7z is dropped
+  (~1.5 MB chunk), 100 MB input cap + the same entry filters as zip; extraction verified by a
+  real in-test round-trip. Unpack failure falls back to the clear «розпакуйте і надішліть PDF
+  або zip» message.
+
+### Project import: auto floor detection for documents with no floor markers at all
+- **Status:** OPEN
+- **Since:** Project-import fixes (2026-07-23)
+- **Context:** Floor now resolves room name → sheet stamp → filename. A document with NONE of
+  those (an unnamed scan, rooms without floor words) lands in «Без поверху» and the master
+  moves rooms by hand (the mass-move action helps, but it's still manual).
+- **Notes / options:** Heuristics (room-number ranges per floor: 1–10 vs 11–20), or asking the
+  LLM to infer the floor from context with low confidence, or simply a per-file «це який
+  поверх?» question when nothing was detected. Wait for real frequency data.
+
+### Project import: dimension chains with no room number to attach them to
+- **Status:** OPEN
+- **Since:** Project-import working version (2026-07-23)
+- **Context:** Gabarits are only accepted when the CHECKSUM proves them against the table
+  area. On a plan where a room's chains can't be tied to its number (dense drawing, chains
+  shared between rooms), the model returns 0 and the master types a width instead.
+- **Notes / options:** Could try a second pass asking only about the unresolved rooms with
+  the expected area as a hint («which chain pair multiplies to 17,69?»), or leave it to the
+  manual field. Measure how often it actually happens before adding a call.
+
+### Project import: wall thickness (90/195/320 mm) from the plan
+- **Status:** OPEN
+- **Since:** Project-import working version (2026-07-23)
+- **Context:** The prompt suggested extracting wall thickness for reveal DEPTH. Deliberately
+  skipped: reveals are computed in running metres, so depth takes no part in any formula —
+  an extra schema field would only add recognition noise.
+- **Notes / options:** Revisit if reveals ever become m² (depth × run) or if a price
+  depends on the depth.
+
+### Project import: coverings spec → estimate as a bill of quantities
+- **Status:** OPEN
+- **Since:** Project-import working version (2026-07-23)
+- **Context:** «Специфікація покриттів» (плитка 94,5 м², плінтус 60,4 м.п.) is now recognised
+  but creates NOTHING — it isn't per-room geometry, so it doesn't belong in Заміри.
+- **Notes / options:** Its natural home is the ESTIMATE: a bill of quantities that pre-fills
+  material lines. Would reuse the estimate-import commit path. Wait until masters ask.
+
+### Project import: wall accuracy — perimeter vs per-wall segments
+- **Status:** OPEN
+- **Since:** Project-import iteration (2026-07-23)
+- **Context:** Walls are computed as perimeter × height − openings; when no perimeter is printed
+  OUR code sums ≥3 printed wall segments (flagged `perimeterDerived`). Real rooms have niches/
+  ledges — a per-wall breakdown would be more precise (and could name each wall).
+- **Notes / options:** Keep per-segment data through review and create one SURFACE per wall on
+  demand; or leave to the master's manual edit. Revisit after field feedback on accuracy.
 
 ### Paper LIST of measurements (columns of numbers, not a drawing)
 - **Status:** OPEN

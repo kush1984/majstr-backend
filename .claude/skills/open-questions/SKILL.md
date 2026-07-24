@@ -103,7 +103,9 @@ PWA gate:
   entity/migration-backed feature): bump the **minor** — `0.2.0 → 0.3.0`.
 - **Small change** (a fix, polish, or follow-up on shipped work): bump the
   **patch** — `0.2.0 → 0.2.1`.
-- We're in `0.x`; do **not** bump to `1.0.0` without the user's explicit say-so.
+- We're in `0.x`; the agreed trigger (user decision, 2026-07-23) is: **`1.0.0` ships with
+  the FIRST PAYING user**. Until then keep bumping `0.x`; when the first real payment
+  lands, the next release becomes `1.0.0` (remind the user, don't bump silently).
 
 Do this even for backend-only iterations — the PWA version is the product's
 single visible version number, so it tracks the product, not just frontend work.

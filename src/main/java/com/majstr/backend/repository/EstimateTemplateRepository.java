@@ -23,6 +23,20 @@ public interface EstimateTemplateRepository extends JpaRepository<EstimateTempla
             """)
     List<EstimateTemplate> findDefaultsForTrades(@Param("trades") Collection<Trade> trades);
 
+    /**
+     * Defaults relevant to the master's trades, PLUS any the master re-filed themselves —
+     * a template moved into another trade must not vanish because its shipped trade is
+     * no longer one of theirs.
+     */
+    @Query("""
+            SELECT t FROM EstimateTemplate t
+            WHERE t.isDefault = true
+              AND (t.trade IS NULL OR t.trade IN :trades OR t.id IN :ids)
+            ORDER BY t.trade, t.name
+            """)
+    List<EstimateTemplate> findDefaultsForTradesOrIds(@Param("trades") Collection<Trade> trades,
+                                                      @Param("ids") Collection<UUID> ids);
+
     /** A master's own saved templates, newest first. */
     List<EstimateTemplate> findByOwnerIdOrderByCreatedAtDesc(UUID ownerId);
 

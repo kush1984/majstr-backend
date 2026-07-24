@@ -12,6 +12,7 @@ import com.majstr.backend.entity.EstimateTemplate;
 import com.majstr.backend.entity.EstimateTemplateItem;
 import com.majstr.backend.entity.ItemType;
 import com.majstr.backend.entity.Project;
+import com.majstr.backend.entity.TemplateTradeOverride;
 import com.majstr.backend.entity.Trade;
 import com.majstr.backend.entity.Unit;
 import com.majstr.backend.entity.User;
@@ -22,6 +23,7 @@ import com.majstr.backend.repository.EstimateTemplateItemRepository;
 import com.majstr.backend.repository.EstimateTemplateItemRepository.TemplateItemCount;
 import com.majstr.backend.repository.EstimateTemplateRepository;
 import com.majstr.backend.repository.ProjectRepository;
+import com.majstr.backend.repository.TemplateTradeOverrideRepository;
 import com.majstr.backend.feature.LimitService;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -59,6 +61,7 @@ class EstimateTemplateServiceTest {
     @Mock ProjectRepository projectRepository;
     @Mock LimitService limitService;
     @Mock EstimateService estimateService;
+    @Mock TemplateTradeOverrideRepository tradeOverrideRepository;
     @InjectMocks EstimateTemplateService service;
 
     private final UUID ownerId = UUID.randomUUID();
@@ -153,7 +156,7 @@ class EstimateTemplateServiceTest {
             return t;
         });
 
-        EstimateTemplateSummary summary = service.saveFromEstimate(estimateId, "  Санвузол Іванова  ", ownerId);
+        EstimateTemplateSummary summary = service.saveFromEstimate(estimateId, "  Санвузол Іванова  ", null, ownerId);
 
         ArgumentCaptor<EstimateTemplate> tplCaptor = ArgumentCaptor.forClass(EstimateTemplate.class);
         verify(templateRepository).save(tplCaptor.capture());
@@ -188,7 +191,8 @@ class EstimateTemplateServiceTest {
                 .id(UUID.randomUUID()).name("Санвузол повний").trade(Trade.TILING).isDefault(true).build();
         EstimateTemplate mine = EstimateTemplate.builder()
                 .id(UUID.randomUUID()).name("Моя ванна").isDefault(false).owner(user).build();
-        given(templateRepository.findDefaultsForTrades(user.getTrades())).willReturn(List.of(def));
+        given(tradeOverrideRepository.findByUserId(ownerId)).willReturn(List.of());
+        given(templateRepository.findDefaultsForTradesOrIds(any(), any())).willReturn(List.of(def));
         given(templateRepository.findByOwnerIdOrderByCreatedAtDesc(ownerId)).willReturn(List.of(mine));
         given(templateItemRepository.countByTemplateIds(anyList())).willReturn(List.of(
                 count(def.getId(), 8), count(mine.getId(), 3)));
@@ -201,6 +205,62 @@ class EstimateTemplateServiceTest {
                 .containsExactly(8, 3);
         assertThat(list).extracting(EstimateTemplateSummary::isDefault)
                 .containsExactly(true, false);
+    }
+
+    // ---- re-file into a trade ---------------------------------------------
+
+    @Test
+    void setTrade_onOwnTemplate_writesTheTradeOnItsOwnRow_noOverride() {
+        UUID id = UUID.randomUUID();
+        User owner = User.builder().id(ownerId).build();
+        EstimateTemplate mine = EstimateTemplate.builder()
+                .id(id).name("Моя ванна").isDefault(false).owner(owner).trade(null).build();
+        given(templateRepository.findById(id)).willReturn(Optional.of(mine));
+        given(tradeOverrideRepository.findByUserIdAndTemplateId(ownerId, id)).willReturn(Optional.empty());
+        given(templateItemRepository.findByTemplateIdOrderBySortOrderAscIdAsc(id)).willReturn(List.of());
+
+        EstimateTemplateSummary out = service.setTrade(id, Trade.TILING, ownerId);
+
+        assertThat(mine.getTrade()).isEqualTo(Trade.TILING);      // stored on the template itself
+        assertThat(out.trade()).isEqualTo(Trade.TILING);
+        verify(tradeOverrideRepository, never()).save(any());
+    }
+
+    @Test
+    void setTrade_onSystemDefault_storesAPerMasterOverride_leavingTheSharedRowUntouched() {
+        UUID id = UUID.randomUUID();
+        EstimateTemplate def = EstimateTemplate.builder()
+                .id(id).name("ГІПСОКАРТОН").isDefault(true).trade(Trade.DRYWALL).build();
+        given(templateRepository.findById(id)).willReturn(Optional.of(def));
+        given(tradeOverrideRepository.findByUserIdAndTemplateId(ownerId, id)).willReturn(Optional.empty());
+        given(templateItemRepository.findByTemplateIdOrderBySortOrderAscIdAsc(id)).willReturn(List.of());
+
+        EstimateTemplateSummary out = service.setTrade(id, Trade.PAINTER, ownerId);
+
+        assertThat(def.getTrade()).isEqualTo(Trade.DRYWALL);      // the shared default is NOT mutated
+        assertThat(out.trade()).isEqualTo(Trade.PAINTER);
+        ArgumentCaptor<TemplateTradeOverride> saved = ArgumentCaptor.forClass(TemplateTradeOverride.class);
+        verify(tradeOverrideRepository).save(saved.capture());
+        assertThat(saved.getValue().getUserId()).isEqualTo(ownerId);
+        assertThat(saved.getValue().getTrade()).isEqualTo(Trade.PAINTER);
+    }
+
+    @Test
+    void listForUser_appliesTheMastersOwnOverrideOverTheShippedTrade() {
+        User user = User.builder().id(ownerId).trades(new LinkedHashSet<>(Set.of(Trade.PAINTER))).build();
+        EstimateTemplate def = EstimateTemplate.builder()
+                .id(UUID.randomUUID()).name("ГІПСОКАРТОН").trade(Trade.DRYWALL).isDefault(true).build();
+        given(tradeOverrideRepository.findByUserId(ownerId)).willReturn(List.of(
+                TemplateTradeOverride.builder().userId(ownerId).templateId(def.getId()).trade(Trade.PAINTER).build()));
+        given(templateRepository.findDefaultsForTradesOrIds(any(), any())).willReturn(List.of(def));
+        given(templateRepository.findByOwnerIdOrderByCreatedAtDesc(ownerId)).willReturn(List.of());
+        given(templateItemRepository.countByTemplateIds(anyList())).willReturn(List.of(count(def.getId(), 5)));
+
+        List<EstimateTemplateSummary> list = service.listForUser(user);
+
+        // The master moved it to PAINTER — the list must show PAINTER, not the shipped DRYWALL.
+        assertThat(list).hasSize(1);
+        assertThat(list.get(0).trade()).isEqualTo(Trade.PAINTER);
     }
 
     // ---- access on read / preview -----------------------------------------

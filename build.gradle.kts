@@ -85,6 +85,9 @@ dependencies {
     // legacy .xls via HSSF). Deterministic parsing only — no AI. POI's log4j2-api
     // logging routes to logback via spring-boot-starter-logging's log4j-to-slf4j.
     implementation("org.apache.poi:poi-ooxml:5.3.0")
+    // Project-documentation import: text-layer extraction from design-project PDFs
+    // (the accurate, cheap path — vision is only the fallback for scans/photos).
+    implementation("org.apache.pdfbox:pdfbox:3.0.3")
 
     runtimeOnly("org.postgresql:postgresql")
 

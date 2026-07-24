@@ -28,5 +28,9 @@ public enum Feature {
     /** Recognise a hand-drawn room sketch photo into measurement rooms/elements via LLM
      *  vision (PRO+). Builds a draft the master verifies against our redrawn schema before
      *  it becomes real measurements — nothing is created without confirmation. */
-    SKETCH_IMPORT
+    SKETCH_IMPORT,
+    /** Import a designer's project documentation (PDF sheets / photos) into measurement
+     *  rooms with a package of elements (floor/ceiling/walls/skirting) per room (PRO+).
+     *  Text-layer extraction first, vision only for scans; the LLM never computes geometry. */
+    PROJECT_IMPORT
 }

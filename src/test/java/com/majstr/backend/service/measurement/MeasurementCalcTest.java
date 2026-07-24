@@ -71,6 +71,33 @@ class MeasurementCalcTest {
     // so a drift between the two geometry implementations fails a test on both sides.
 
     @Test
+    void surface_directArea() {
+        // Imported from a room schedule: the area IS the value — pinned to shapes.test.ts «direct».
+        JsonNode p = node("""
+                {"unit":"M","segments":[{"shape":"direct","mode":"","values":{"s":30.33}}],"openings":[]}""");
+        assertThat(calc.compute(MeasurementType.SURFACE, p)).isEqualByComparingTo("30.330");
+    }
+
+    @Test
+    void surface_lshape() {
+        // Г-подібна: 5×4 м gabarits with a 1,5×2 м corner cut → 20 − 3 = 17 m².
+        // Pinned to the SAME numbers as the PWA's shapes.test.ts «lshape».
+        JsonNode p = node("""
+                {"unit":"M","segments":[{"shape":"lshape","mode":"d",
+                 "values":{"A":5,"B":4,"a":1.5,"b":2}}],"openings":[]}""");
+        assertThat(calc.compute(MeasurementType.SURFACE, p)).isEqualByComparingTo("17.000");
+    }
+
+    @Test
+    void surface_lshapeRejectsCutBiggerThanTheRoom() {
+        JsonNode p = node("""
+                {"unit":"M","segments":[{"shape":"lshape","mode":"d",
+                 "values":{"A":5,"B":4,"a":6,"b":2}}],"openings":[]}""");
+        assertThatThrownBy(() -> calc.compute(MeasurementType.SURFACE, p))
+                .isInstanceOf(MeasurementException.class);
+    }
+
+    @Test
     void surface_shapedRectangleInCentimetres() {
         // 300 × 250 cm = 75000 cm² = 7.5 m²
         JsonNode p = node("""

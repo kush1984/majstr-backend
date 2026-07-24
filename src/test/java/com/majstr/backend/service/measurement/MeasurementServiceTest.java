@@ -84,7 +84,7 @@ class MeasurementServiceTest {
         willThrow(new FeatureNotAvailableException(Feature.MEASUREMENTS, Plan.FREE))
                 .given(featureGuard).requireFeature(any(User.class), eq(Feature.MEASUREMENTS));
 
-        assertThatThrownBy(() -> service.addRoom(objectId, ownerId, new MeasurementRoomRequest("Спальня", null)))
+        assertThatThrownBy(() -> service.addRoom(objectId, ownerId, new MeasurementRoomRequest("Спальня", null, null)))
                 .isInstanceOf(FeatureNotAvailableException.class);
 
         verify(roomRepository, never()).save(any());
@@ -96,9 +96,11 @@ class MeasurementServiceTest {
         given(roomRepository.findByProjectIdOrderBySortOrderAscCreatedAtAsc(objectId)).willReturn(List.of(room()));
         given(itemRepository.findByRoomIdInOrderBySortOrderAscIdAsc(anyList())).willReturn(List.of());
 
-        MeasurementsResponse tree = service.addRoom(objectId, ownerId, new MeasurementRoomRequest("Спальня", null));
+        MeasurementsResponse tree = service.addRoom(objectId, ownerId, new MeasurementRoomRequest("Спальня", "2", null));
 
-        verify(roomRepository).save(any(MeasurementRoom.class));
+        var saved = org.mockito.ArgumentCaptor.forClass(MeasurementRoom.class);
+        verify(roomRepository).save(saved.capture());
+        assertThat(saved.getValue().getFloor()).isEqualTo("2"); // the free-text floor label persists
         assertThat(tree.rooms()).hasSize(1);
         assertThat(tree.rooms().get(0).name()).isEqualTo("Спальня");
         assertThat(tree.areaTotal()).isEqualByComparingTo("0");

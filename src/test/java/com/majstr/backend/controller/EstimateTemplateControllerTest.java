@@ -106,12 +106,12 @@ class EstimateTemplateControllerTest {
     @Test
     void saveAsTemplate_returns201WithSummary() throws Exception {
         UUID estimateId = UUID.randomUUID();
-        given(templateService.saveFromEstimate(estimateId, "Санвузол Іванова", userId))
+        given(templateService.saveFromEstimate(estimateId, "Санвузол Іванова", null, userId))
                 .willReturn(new EstimateTemplateSummary(UUID.randomUUID(), "Санвузол Іванова", null, false, 5));
 
         mockMvc.perform(post("/api/estimates/{id}/save-as-template", estimateId)
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(json.writeValueAsString(new SaveAsTemplateRequest("Санвузол Іванова"))))
+                        .content(json.writeValueAsString(new SaveAsTemplateRequest("Санвузол Іванова", null))))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.itemCount", is(5)))
                 .andExpect(jsonPath("$.isDefault", is(false)));
@@ -122,7 +122,7 @@ class EstimateTemplateControllerTest {
         mockMvc.perform(post("/api/estimates/{id}/save-as-template", UUID.randomUUID())
                         .header("Accept-Language", "en")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(json.writeValueAsString(new SaveAsTemplateRequest("  "))))
+                        .content(json.writeValueAsString(new SaveAsTemplateRequest("  ", null))))
                 .andExpect(status().isBadRequest());
     }
 

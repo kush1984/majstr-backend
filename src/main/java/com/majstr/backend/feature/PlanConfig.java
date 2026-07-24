@@ -62,7 +62,8 @@ public final class PlanConfig {
                         Feature.ESTIMATE_IMPORT,
                         Feature.MEASUREMENTS,
                         Feature.RECEIPT_IMPORT,
-                        Feature.SKETCH_IMPORT
+                        Feature.SKETCH_IMPORT,
+                        Feature.PROJECT_IMPORT
                 )
         ));
 
@@ -83,7 +84,8 @@ public final class PlanConfig {
                         Feature.ESTIMATE_IMPORT,
                         Feature.MEASUREMENTS,
                         Feature.RECEIPT_IMPORT,
-                        Feature.SKETCH_IMPORT
+                        Feature.SKETCH_IMPORT,
+                        Feature.PROJECT_IMPORT
                 )
         ));
     }

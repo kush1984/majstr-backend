@@ -41,6 +41,11 @@ public class MeasurementRoom {
     @Column(name = "name", nullable = false, length = 255)
     private String name;
 
+    /** Free-text floor label («1», «2», «цоколь», «мансарда»), null = none. An attribute,
+     *  deliberately not a hierarchy level — the list groups by exact string match. */
+    @Column(name = "floor", length = 20)
+    private String floor;
+
     @Column(name = "sort_order", nullable = false)
     private int sortOrder;
 

@@ -89,6 +89,7 @@ public class MeasurementService {
         roomRepository.save(MeasurementRoom.builder()
                 .projectId(objectId)
                 .name(req.name().trim())
+                .floor(blankToNull(req.floor()))
                 .sortOrder(req.sortOrder() == null ? 0 : req.sortOrder())
                 .build());
         return buildTree(objectId);
@@ -99,10 +100,15 @@ public class MeasurementService {
         requireMeasurements(objectId, ownerId);
         MeasurementRoom room = loadRoom(objectId, roomId);
         room.setName(req.name().trim());
+        room.setFloor(blankToNull(req.floor()));
         if (req.sortOrder() != null) {
             room.setSortOrder(req.sortOrder());
         }
         return buildTree(objectId);
+    }
+
+    private static String blankToNull(String s) {
+        return (s == null || s.isBlank()) ? null : s.trim();
     }
 
     @Transactional
@@ -190,6 +196,38 @@ public class MeasurementService {
         return buildTree(objectId);
     }
 
+    /**
+     * Create the master-confirmed project-documentation import in one transaction —
+     * same contract as {@link #createFromSketch} plus the per-room floor label.
+     */
+    @Transactional
+    public MeasurementsResponse createImported(UUID objectId, UUID ownerId,
+                                               List<com.majstr.backend.dto.ProjectImportCommitRequest.Room> rooms) {
+        requireMeasurements(objectId, ownerId);
+        int roomOrder = 0;
+        for (var room : rooms) {
+            MeasurementRoom saved = roomRepository.save(MeasurementRoom.builder()
+                    .projectId(objectId)
+                    .name(room.name().trim())
+                    .floor(blankToNull(room.floor()))
+                    .sortOrder(roomOrder++)
+                    .build());
+            int itemOrder = 0;
+            for (var item : room.items()) {
+                itemRepository.save(MeasurementItem.builder()
+                        .roomId(saved.getId())
+                        .name(item.name().trim())
+                        .type(item.type())
+                        .unit(item.type().unit())
+                        .result(calc.compute(item.type(), item.payload()))
+                        .payload(item.payload().toString())
+                        .sortOrder(itemOrder++)
+                        .build());
+            }
+        }
+        return buildTree(objectId);
+    }
+
     // ---- tree + totals --------------------------------------------------------
 
     private MeasurementsResponse buildTree(UUID objectId) {
@@ -231,7 +269,8 @@ public class MeasurementService {
             objLinear = objLinear.add(linear);
             objPieces = objPieces.add(pieces);
             roomDtos.add(new MeasurementsResponse.Room(
-                    room.getId(), room.getName(), room.getSortOrder(), itemDtos, area, linear, pieces));
+                    room.getId(), room.getName(), room.getFloor(), room.getSortOrder(),
+                    itemDtos, area, linear, pieces));
         }
         return new MeasurementsResponse(roomDtos, objArea, objLinear, objPieces);
     }
