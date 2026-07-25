@@ -1089,13 +1089,55 @@ one-line summary — keep the item in the file as a record.
   material lines. Would reuse the estimate-import commit path. Wait until masters ask.
 
 ### Project import: wall accuracy — perimeter vs per-wall segments
-- **Status:** OPEN
+- **Status:** RESOLVED (measurement editor v2, 0.29.0 + surface-takeoff-merge, 0.30.0)
 - **Since:** Project-import iteration (2026-07-23)
-- **Context:** Walls are computed as perimeter × height − openings; when no perimeter is printed
-  OUR code sums ≥3 printed wall segments (flagged `perimeterDerived`). Real rooms have niches/
-  ledges — a per-wall breakdown would be more precise (and could name each wall).
+- **Context:** Walls were computed as one perimeter × height − openings figure; real rooms have
+  niches/ledges — a per-wall breakdown is more precise (and can name each wall).
 - **Notes / options:** Keep per-segment data through review and create one SURFACE per wall on
-  demand; or leave to the master's manual edit. Revisit after field feedback on accuracy.
+  demand; or leave to the master's manual edit.
+- **Resolution:** editor v2 ([iteration-measurement-editor-v2.md](iteration-measurement-editor-v2.md))
+  replaced the single «Стіни» with **FOUR named walls** (Стіна 1…4), each its own editable
+  width×height rect (gabarits seed 2×w, 2×l; else empty-to-measure). The 0.30.0 surface pass
+  ([iteration-surface-takeoff-merge.md](iteration-surface-takeoff-merge.md)) added `toFloor`
+  plinth interruption, a Підвіконня element, and shared interior doors deducted from both rooms.
+  A room with more/fewer than 4 walls is handled by the master enabling/adding elements in the
+  editor; a true per-segment contour is still out of scope (see «L-shaped / arbitrary contours»).
+
+### Album takeoff pipeline (from the archived second-agent electro-feature)
+- **Status:** OPEN
+- **Since:** Archive review (2026-07-24)
+- **Context:** A second agent delivered (in `C:\Users\AndriyKushka\Downloads\majstr.7z`) a whole
+  server-side "design-album → takeoff" feature: `ClaudeAlbumExtractor` (5-pass Opus, Files API,
+  prompt caching, structured outputs), `RoomSurfaceCalc` (площі) + `ElectroTakeoffCalc` (cable/
+  chase/back-box BOM), `AlbumExtraction` model, JSON schemas, prompts, 34 tests + 3 real-album
+  fixtures, and a validated methodology (`PROMPT-takeoff-electro.md`: coefficients, cable-journal
+  algorithm, UA drawing conventions). It's the *whole album, one expensive auto-run* model —
+  distinct from our cheap per-page pick + client-compute merge.
+- **Notes / options:** We took only the площі-relevant refinements into our flow (0.30.0:
+  `toFloor`, sills, shared doors, height conventions, honesty block — see
+  [iteration-surface-takeoff-merge.md](iteration-surface-takeoff-merge.md)). Still on the table
+  as a **separate big feature**: (a) an album auto-run mode (async job, merge multi-file PDFs,
+  cross-checks) over our existing editor; (b) the **cable journal** deliverable (not in the Java
+  `ElectroTakeoffCalc` yet) for electricians; (c) the `ElectroTakeoffCalc` coefficients/formulas as
+  the base when the parked electrical measurements are unfrozen. Open product question: album
+  auto-run as a PRO "dear auto mode" on top of the manual editor, or converge with the parked
+  electrical flow. The methodology + prompts are the durable IP to keep even if the Java is rewritten.
+
+### Code-quality audit backlog (from the archive)
+- **Status:** OPEN
+- **Since:** Archive review (2026-07-24)
+- **Context:** The same archive included a professional audit of both repos (at `a405e55` /
+  `7d4117c`, i.e. BEFORE the 0.24–0.30 work — some items may already be closed). Real findings
+  worth triaging into fixes, not one-offs.
+- **Notes / options:** Highest-signal: backend **H1/H2** (billing webhook check-then-act with no
+  lock → duplicate webhook double-extends PRO; amount check no-ops on missing/non-numeric amount),
+  **H3** (no connect/read timeouts on Claude/monobank/Resend clients — a hung upstream starves the
+  Tomcat pool; note the archived `ClaudeAlbumExtractor` already sets timeouts), **M1** (password-
+  reset + email-verification tokens stored raw — hash like refresh tokens), **M3** (private
+  receipt/progress photos servable unauth via `/api/files/**` — restrict to `logos/`); PWA **H1/H2**
+  (outbox op that exhausts MAX_ATTEMPTS becomes a permanent "syncing" phantom; dropping a blocked
+  parent orphans queued children). Verify each against current HEAD before acting — the audit
+  predates this session's work. Full text in the archive's `majstr-code-review/`.
 
 ### Paper LIST of measurements (columns of numbers, not a drawing)
 - **Status:** OPEN

@@ -103,12 +103,21 @@ public class MeasurementCalc {
         return clamp(r);
     }
 
-    /** (H·left + H·right + W·top + W·bottom) · qty — reveal/skirting perimeter × count. */
+    /**
+     * Running metres. Two shapes share the LINEAR type:
+     * - {@code mode == "length"} — a plain length: {@code width · qty}. Used for a skirting
+     *   run or an imported reveal total, where the master just enters metres (no sides).
+     * - otherwise (reveal) — {@code (H·left + H·right + W·top + W·bottom) · qty}, the
+     *   perimeter of an opening's chosen sides.
+     */
     private static BigDecimal linear(LinearPayload p) {
+        int qty = p.qty() == null ? 1 : Math.max(0, p.qty());
+        if ("length".equals(p.mode())) {
+            return clamp(nz(p.width()).multiply(BigDecimal.valueOf(qty)));
+        }
         BigDecimal h = nz(p.height());
         BigDecimal w = nz(p.width());
         LinearPayload.Sides s = p.sides() != null ? p.sides() : DEFAULT_SIDES;
-        int qty = p.qty() == null ? 1 : Math.max(0, p.qty());
         BigDecimal per = BigDecimal.ZERO;
         if (s.left()) per = per.add(h);
         if (s.right()) per = per.add(h);
@@ -232,7 +241,7 @@ public class MeasurementCalc {
         public record Faces(boolean left, boolean right, boolean end, boolean top) {}
     }
 
-    public record LinearPayload(BigDecimal height, BigDecimal width, Sides sides, Integer qty) {
+    public record LinearPayload(BigDecimal height, BigDecimal width, Sides sides, Integer qty, String mode) {
         public record Sides(boolean left, boolean right, boolean top, boolean bottom) {}
     }
 

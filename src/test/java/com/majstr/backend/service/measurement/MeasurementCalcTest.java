@@ -52,6 +52,17 @@ class MeasurementCalcTest {
     }
 
     @Test
+    void linear_lengthMode_isJustWidthTimesQty_noRevealSides() {
+        // A plain running length (skirting / imported reveal total): width × qty, sides ignored.
+        JsonNode p = node("""
+                {"mode":"length","width":8.535,"qty":1}""");
+        assertThat(calc.compute(MeasurementType.LINEAR, p)).isEqualByComparingTo("8.535");
+        JsonNode twice = node("""
+                {"mode":"length","width":3.2,"qty":2}""");
+        assertThat(calc.compute(MeasurementType.LINEAR, twice)).isEqualByComparingTo("6.400");
+    }
+
+    @Test
     void negativeDimensionIsRejected() {
         JsonNode p = node("""
                 {"height":-1,"width":1.0,"qty":1}""");

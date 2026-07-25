@@ -56,6 +56,10 @@ public record ProjectImportParseResponse(
             BigDecimal wMm,
             BigDecimal hMm,
             BigDecimal sillMm,
+            /** True when the opening reaches the floor (doors, open passages, panoramic
+             *  windows) — it interrupts the skirting board. Wrapper type so an older-shape
+             *  payload with no field deserializes as null, not a primitive-null failure. */
+            Boolean toFloor,
             String note
     ) {}
 

@@ -179,12 +179,14 @@ class ProjectImportServiceTest {
     @Test
     @SuppressWarnings("unchecked")
     void planRoom_carriesGabaritsCutAndCeilingHeight() {
-        // The real page-3 numbers: «Спальня 17,69 m²», 4990×3545, H=2850мм, Нпр/Нпд on a window.
+        // The real page-3 numbers: «Спальня 17,69 m²», 4990×3545, H=2850мм, Нпр/Нпд on a window
+        // + an interior door (toFloor absent in JSON — a door is floor-reaching regardless).
         String json = """
                 {"floors":[{"floor":"","roomsOnThisSheet":[],"rooms":[{"number":"2","name":"Спальня","areaM2":17.69,
                  "perimeterMm":0,"wallSegmentsMm":[],"widthMm":4990,"lengthMm":3545,
                  "cutWidthMm":0,"cutDepthMm":0,"ceilingHmm":2850,
-                 "openings":[{"kind":"вікно","wMm":1300,"hMm":1500,"sillMm":900,"note":""}],
+                 "openings":[{"kind":"вікно","wMm":1300,"hMm":1500,"sillMm":900,"toFloor":false,"note":""},
+                             {"kind":"двері","wMm":900,"hMm":2100,"sillMm":0,"note":""}],
                  "confidence":"high","note":""}]}],
                  "coverings":[],"totals":{"totalAreaM2":163.91},"ceilingHeights":[],"warnings":[]}""";
         given(extractor.requestJson(anyList(), anyString(), any(Map.class))).willReturn(json);
@@ -197,8 +199,10 @@ class ProjectImportServiceTest {
         assertThat(room.lengthMm()).isEqualByComparingTo("3545");
         assertThat(room.ceilingHmm()).isEqualByComparingTo("2850"); // «H=», never «Нпр»
         assertThat(room.cutWidthMm()).isNull();                     // 0 sentinel → not an L-shape
-        assertThat(room.openings()).hasSize(1);
+        assertThat(room.openings()).hasSize(2);
         assertThat(room.openings().get(0).sillMm()).isEqualByComparingTo("900");
+        assertThat(room.openings().get(0).toFloor()).isFalse();     // window on a sill
+        assertThat(room.openings().get(1).toFloor()).isTrue();      // a door always reaches the floor
         assertThat(resp.totalAreaM2()).isEqualByComparingTo("163.91");
     }
 

@@ -275,9 +275,12 @@ public class ProjectImportService {
             BigDecimal w = positive(om.get("wMm"));
             BigDecimal h = positive(om.get("hMm"));
             if (w == null || h == null) continue; // an opening without both sizes can't subtract
+            boolean door = "двері".equalsIgnoreCase(str(om.get("kind")));
+            // A door always reaches the floor; otherwise honour the model's flag.
+            boolean toFloor = door || bool(om.get("toFloor"));
             openings.add(new ProjectImportParseResponse.Opening(
-                    "двері".equalsIgnoreCase(str(om.get("kind"))) ? "двері" : "вікно",
-                    w, h, positive(om.get("sillMm")), str(om.get("note"))));
+                    door ? "двері" : "вікно",
+                    w, h, positive(om.get("sillMm")), toFloor, str(om.get("note"))));
         }
         List<BigDecimal> segments = new ArrayList<>();
         for (Object so : asList(rm.get("wallSegmentsMm"))) {
@@ -420,6 +423,7 @@ public class ProjectImportService {
             om.put("wMm", o.wMm());
             om.put("hMm", o.hMm());
             om.put("sillMm", o.sillMm() == null ? 0 : o.sillMm());
+            om.put("toFloor", Boolean.TRUE.equals(o.toFloor()));
             om.put("note", o.note() == null ? "" : o.note());
             openings.add(om);
         }
@@ -460,6 +464,12 @@ public class ProjectImportService {
         return null;
     }
 
+    /** Lenient boolean read from the parsed JSON (true / "true" → true; anything else false). */
+    private static boolean bool(Object o) {
+        if (o instanceof Boolean b) return b;
+        return "true".equalsIgnoreCase(String.valueOf(o));
+    }
+
     private static String conf(Object o) {
         String s = str(o);
         if ("high".equalsIgnoreCase(s)) return "high";
@@ -498,9 +508,26 @@ public class ProjectImportService {
 
             HARD RULES:
               - This is Ukrainian design-project documentation.
+              - READ THE DRAWING VISUALLY. Any embedded text layer may be garbled or absent
+                (Cyrillic CID fonts routinely fail to extract) — trust the pixels you SEE on the
+                page, never a raw text transcription of it.
+              - A PHOTOGRAPHED sheet (shot at an angle) — read ONLY the printed labels, tables and
+                symbols. NEVER take a dimension off a photo: perspective distorts distances. A size
+                with no printed figure beside it is unknown (0), never an estimate.
+              - NUMBERS — two different conventions, do not confuse them:
+                • a SPACE is a THOUSANDS group inside a dimension chain, in millimetres:
+                  «5 000» = 5000 mm, «1 385» = 1385 mm. NEVER read it as 5, nor as 5.000.
+                • a COMMA is the DECIMAL separator: «2,7» = 2.7 m, «12,53» = 12.53 m².
+                Ignore a stray superscript «²»/«2» after an area and «мм»/«mm»/«м» unit suffixes —
+                report just the number.
+              - The sheet's own TITLE / stamp outranks the file name. A file named «обмірний
+                план.pdf» may carry «Обмірний план ПІСЛЯ перепланування» on the sheet itself —
+                the sheet always wins.
               - Transcribe WHAT IS PRINTED. Never invent a missing value — put 0 (the "unknown"
                 sentinel) and set confidence "low" with a short Ukrainian note.
-              - Do NOT compute areas, perimeters or lengths yourself — the system computes geometry.
+              - Do NOT compute areas, perimeters or lengths INTO THE OUTPUT — the system computes
+                geometry from the figures you transcribe. (Multiplying privately to CHECK your own
+                reading is expected; just never report a computed number as if it were printed.)
               - Do NOT measure anything off the drawing by eye or scale; only read printed figures.
               - The floor is NOT determined from a table's contents (schedules repeat identically on
                 every sheet) — leave floor "" unless the sheet's own title/stamp names it
@@ -509,8 +536,11 @@ public class ProjectImportService {
                 numbered circles, or the numbers printed beside the stamp). This is what tells which
                 rooms belong to this floor when the table itself is identical on every sheet. If the
                 sheet has no plan or you can't tell, return an empty list — never guess.
-              - Ceiling height: only an explicitly printed ABSOLUTE height counts; relative drops
-                («опуск від нуля стелі») are NOT a ceiling height — leave 0.
+              - Ceiling height is written many ways: «H=2700», «H 2700», «H-2700», the Cyrillic
+                «Н=2700», with or without a space and an optional trailing «*» — all mean the room's
+                ceiling height in mm. BUT «Нпр=…» (opening height) and «Нпд=…» (window sill) are
+                NOT ceiling heights. Only an explicitly printed ABSOLUTE height counts; relative
+                drops («опуск від нуля стелі») are NOT a ceiling height — leave 0.
               - Designer remarks like «без запасу на порізку», «уточнити на місці» → add to warnings
                 verbatim.
               - Notation you can't be sure of (e.g. Нпд/Нпр next to windows) → transcribe as written
@@ -539,21 +569,41 @@ public class ProjectImportService {
             («Специфікація приміщень (обміри)» / «Експлікація приміщень»: № + name + area in m²,
             with a «Загальна площа» footer). Extract BOTH in one pass.
 
+            ⚠️ TWO SETS OF PLANS: a project often carries the existing layout («як є», «до
+            перепланування») AND the new one («після перепланування»), differing ONLY by the
+            sheet's title. The base geometry is the one AFTER remodelling — that is what will be
+            finished. State which one you read in the first room's note.
+
             1. THE TABLE — every row, all of them: number, name, areaM2. Put «Загальна площа»
                into totals.totalAreaM2 (0 if absent). The table is the room inventory — a room
                from the table must appear in the output even if you find no geometry for it.
             2. PER-ROOM GEOMETRY off the drawing, matched by the room's printed number:
                - widthMm × lengthMm: the room's OVERALL gabarits from the dimension chains along
-                 its contour (the two figures whose product should equal the table area). Unsure
-                 which chain belongs to the room → 0 for both, never a guess.
+                 its contour. SELF-CHECK BEFORE ANSWERING: widthMm × lengthMm ÷ 1000000 must equal
+                 that room's table area to within ±0.3 m². If it doesn't, you misread a chain (most
+                 often a «5 000» thousands group) — re-read it ONCE. If it still disagrees, report
+                 the figures you ACTUALLY SEE — never bend them to fit the area — set confidence
+                 "low" and give the reason in note. Unsure which chain belongs to the room → 0 for
+                 both, never a guess.
                - An L-shaped room (a rectangle with one cut-out corner): also cutWidthMm ×
                  cutDepthMm of the cut, read from the chains (0 when not applicable/unsure).
-               - ceilingHmm: the «H=…мм» printed INSIDE that room. ONLY «H=» is a ceiling
-                 height. «Нпр=…» is an OPENING's height and «Нпд=…» is a window SILL height —
-                 NEVER report them as the ceiling.
+               - ceilingHmm: the ceiling height printed INSIDE that room — «H=…», «H …», «H-…»
+                 or the Cyrillic «Н=…» (optional space, optional trailing «*»), in mm. «Нпр=…» is
+                 an OPENING's height and «Нпд=…» is a window SILL height — NEVER report them as the
+                 ceiling.
                - openings: every window/door on the room's walls: kind "вікно"/"двері",
-                 wMm = printed width, hMm = the «Нпр» opening height, sillMm = the «Нпд» sill
-                 (0 when absent), note for any other marking as written.
+                 wMm = printed width; hMm = the opening height from «Нпр», «Ндв» (door leaf) or
+                 «Нвк» (window) or a doors/windows spec (0 when nowhere printed); sillMm = the
+                 «Нпд» window sill height (0 when absent); toFloor = true for doors, open passages
+                 and floor-to-ceiling / panoramic windows (they reach the floor), false for an
+                 ordinary window on a sill. An interior door SHARED by two rooms belongs to BOTH:
+                 list it in each of the two rooms' openings (each room loses that hole from its
+                 walls). note = any other marking as written.
+                 A doors/windows SPECIFICATION table on the sheet OUTRANKS a figure read off the
+                 drawing: when one exists take the sizes from it (confidence "high"); sizes read
+                 from the chains alone are "medium".
+               - A sloped / mansard ceiling («скоси»), a niche or a ledge → describe it in that
+                 room's note. Walls there are approximate and the master must check on site.
                - wallSegmentsMm / perimeterMm: only figures PRINTED as such (never sum or
                  measure yourself; leave 0/empty otherwise).
             """ + COMMON_RULES;
@@ -570,6 +620,7 @@ public class ProjectImportService {
 
     private static final Map<String, Object> STRING = Map.of("type", "string");
     private static final Map<String, Object> NUMBER = Map.of("type", "number");
+    private static final Map<String, Object> BOOL = Map.of("type", "boolean");
 
     private static Map<String, Object> obj(List<String> required, Map<String, Object> properties) {
         return Map.of("type", "object", "additionalProperties", false,
@@ -581,8 +632,9 @@ public class ProjectImportService {
     }
 
     private static final Map<String, Object> OPENING = obj(
-            List.of("kind", "wMm", "hMm", "sillMm", "note"),
-            Map.of("kind", STRING, "wMm", NUMBER, "hMm", NUMBER, "sillMm", NUMBER, "note", STRING));
+            List.of("kind", "wMm", "hMm", "sillMm", "toFloor", "note"),
+            Map.of("kind", STRING, "wMm", NUMBER, "hMm", NUMBER, "sillMm", NUMBER,
+                    "toFloor", BOOL, "note", STRING));
 
     private static final Map<String, Object> ROOM = obj(
             List.of("number", "name", "areaM2", "perimeterMm", "wallSegmentsMm",
