@@ -297,6 +297,17 @@ Checked and found OK: every `enabled:`-gated query is behind a branch that can't
 redirects before it, the PRO teaser precedes the measurements tree); `EstimateEditorPage` /
 `ProjectDetailPage` / `MeasurementsSection` / `NotesSection` already used `isError || !data`.
 
+**Round 2 — two more from the master's screenshots (2026-07-22):**
+
+5. **The templates screen LIED offline.** The list was cached but each template's **composition** was
+   not, so tapping one rendered an empty list — which the UI showed as «У цьому шаблоні ще немає
+   позицій» about a template that has four. Two fixes: the prefetch now walks **every template's
+   composition**, and all three composition views distinguish *no cached data* (honest
+   «склад не завантажено, підключіться») from *genuinely empty*. Same lesson as the error-over-cache
+   fix: **absence of data must never render as a factual claim about the master's data.**
+6. **The prefetch skipped whole object tabs** — questions, photos and (PRO) economy were never
+   warmed, so those tabs were blank on site. Added.
+
 **Still open (logged in open-questions):** unsynced work is wiped when the session dies
 (`forceLogin` → `clearOutbox`) — the agreed fix is an owner-tagged outbox with re-sync on re-login.
 
