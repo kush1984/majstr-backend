@@ -182,6 +182,52 @@ network, then have it **sync when signal returns**.
   adds offline; per-item (vs bulk) blocked-op resolution; **photos offline** (a blob outbox — heaviest).
   Under the "tests + green build before push" gate.
 
+## Prod bug fix (2026-07-22): "offline doesn't work / it just spins"
+
+A master reported from production that offline was broken and, with no connection, the app hung on
+a spinner and **never even showed the login page**. Three independent root causes — all in the
+Phase 0 wiring, all now fixed with regression tests:
+
+1. **Queries PAUSED offline → infinite spinner (the hang).** TanStack's default
+   `networkMode: 'online'` does not run a query when the browser reports no network: it sits at
+   `status: 'pending'`, `fetchStatus: 'paused'` **forever** — it never errors. `ProtectedRoute`
+   (`if (me.isPending) return <FullPageSpinner/>`) and `PublicOnlyRoute` therefore spun forever, so
+   the login page never rendered. **Fix:** queries use `networkMode: 'offlineFirst'` (fire even with
+   no network) **and** `shouldRetryQuery` now returns `false` while offline — without that second
+   half a retry would be *paused* and the query would hang again. Now an offline query resolves
+   fast: cached data, or a real error the UI can render.
+2. **The offline cache was wiped on EVERY release.** `persistOptions.buster` was `__APP_VERSION__`,
+   so each version bump invalidated the whole persisted cache — a master who updated the app on the
+   way to a site arrived with an empty cache. **Fix:** `buster` is now a `CACHE_SCHEMA` constant
+   ('v1'), bumped only when cached DTO shapes change incompatibly.
+3. **Error screen shown instead of perfectly good cached data.** Pages branched on `isError` before
+   using `data`, so a failed refetch (offline / backend blip) replaced the master's own cached
+   objects with «Сервіс тимчасово недоступний» — exactly the reported screenshot. **Fix:** the
+   branch is now `isError && !data` on the dashboard (page-level + recent objects), objects list,
+   catalog, templates and the template picker; `ProtectedRoute` lets a **cached** user straight in
+   (checked before `isPending`/`isError`), and `PublicOnlyRoute` never blocks the login page while
+   offline.
+
+**Follow-up in the same pass — the other half of "nothing may hang offline":**
+
+4. **Mutations could still PAUSE.** Only the outbox-backed writes set `networkMode: 'always'`; every
+   other mutation (measurements, catalog, templates, photos, notes, economy, questions, profile —
+   ~50 of them) used the default and would silently park offline, so the save button spun forever.
+   **Fix:** `networkMode: 'always'` is now a **QueryClient-wide mutation default** — a write either
+   goes through or fails honestly; only the queued ones (clients / objects / estimates / items)
+   survive offline, and that's now a deliberate, visible difference rather than a hang.
+5. **Online-only actions now say so.** `useOnlineGuard()` (`src/hooks/useOnlineGuard.ts`) gives
+   `{ online, guard, offlineTitle }`: `guard(fn)` refuses offline with a plain
+   «Для цієї дії потрібен інтернет» toast instead of a cryptic network error. Applied to the
+   genuinely server-side actions: **PDF**, **share with a client** (estimate + object portal),
+   **LLM recognition** (receipt, sketch) and **photo upload**. Tested in `useOnlineGuard.test`.
+
+Tests: `queryRetry.test` (never retries offline), `ProtectedRoute.test` (cached user gets in
+offline; login page renders offline; a known logged-in user is still bounced off /login),
+`useOnlineGuard.test`.
+**Lesson for future offline work:** an offline query must always reach a terminal state — a paused
+query is indistinguishable from a hang, and any UI that gates on `isPending` will freeze.
+
 ## Backend implications (why this isn't purely frontend)
 
 - **Client-provided UUIDs + idempotency:** a create must be safe to replay (upsert-by-id / "create if
