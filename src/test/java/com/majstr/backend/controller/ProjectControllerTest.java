@@ -82,7 +82,9 @@ class ProjectControllerTest {
         ProjectResponse stubbed = new ProjectResponse(
                 projectId, "Apartment 5", "Khreshchatyk 1", ProjectStatus.DRAFT,
                 "Bathroom + kitchen", null, null, null, null, 0L, null, Instant.now(), Instant.now());
-        given(projectService.create(any(ProjectRequest.class), eq(userId))).willReturn(stubbed);
+        // The controller calls the 3-arg overload (offline replay sends X-Entity-Uuid);
+        // `any()` — not `any(UUID.class)` — because the header is absent here, so it is null.
+        given(projectService.create(any(ProjectRequest.class), eq(userId), any())).willReturn(stubbed);
 
         ProjectRequest req = new ProjectRequest("Apartment 5", "Khreshchatyk 1", "Bathroom + kitchen", null);
 

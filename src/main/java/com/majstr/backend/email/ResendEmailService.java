@@ -1,6 +1,7 @@
 package com.majstr.backend.email;
 
 import com.majstr.backend.config.EmailProperties;
+import com.majstr.backend.config.HttpClients;
 import com.majstr.backend.entity.User;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.MediaType;
@@ -36,7 +37,8 @@ public class ResendEmailService implements EmailService {
 
     public ResendEmailService(EmailProperties props) {
         this.props = props;
-        this.restClient = RestClient.create();
+        // Explicit timeouts — a stalled mail API must not hold an @Async worker forever.
+        this.restClient = HttpClients.forEmail();
     }
 
     @Override

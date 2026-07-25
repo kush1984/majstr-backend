@@ -1,6 +1,7 @@
 package com.majstr.backend.billing;
 
 import com.majstr.backend.config.BillingProperties;
+import com.majstr.backend.config.HttpClients;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
@@ -21,7 +22,9 @@ import java.util.Map;
 public class MonobankClient {
 
     private final BillingProperties props;
-    private final RestClient restClient = RestClient.create();
+    // Explicit timeouts: this client runs inside the webhook transaction, so a hung
+    // upstream would pin both a Tomcat thread and a DB connection (see HttpClients).
+    private final RestClient restClient = HttpClients.forPayments();
 
     /** Cached merchant public key (used to verify webhook signatures). */
     private volatile String cachedPublicKey;

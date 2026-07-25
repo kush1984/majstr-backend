@@ -198,6 +198,14 @@ public class SketchImportService {
         } catch (RuntimeException ex) {
             // Incomplete/invalid (an unreadable size) — leave the field blank, flag for a check.
         }
+        // A ZERO result is not a measurement of nothing — it means nothing in this element was
+        // readable (every plane dropped as an unknown shape, or a dimension left at 0). Only
+        // SURFACE used to be caught, because Shapes throws on a=0; a dropped-plane surface and
+        // an unreadable PARTITION/LINEAR both computed a clean 0.000 and kept the model's
+        // original "high" confidence — a silent, confident zero straight into the review.
+        if (result != null && result.signum() == 0) {
+            result = null;
+        }
         String confidence = result == null ? "low" : conf(im.get("confidence"));
         return new SketchParseResponse.Item(type, name, unit, confidence, str(im.get("note")), node, result);
     }

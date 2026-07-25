@@ -1,6 +1,7 @@
 package com.majstr.backend.service.importer;
 
 import com.majstr.backend.config.AnthropicProperties;
+import com.majstr.backend.config.HttpClients;
 import com.majstr.backend.exception.AiExtractionException;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.MediaType;
@@ -116,7 +117,10 @@ public class ClaudeEstimateExtractor {
 
     private final AnthropicProperties props;
     private final ObjectMapper objectMapper;
-    private final RestClient restClient = RestClient.create();
+    // Explicit timeouts. Six call sites now share this ONE client (estimate, receipt,
+    // sketch, electrical plan, project-import ×2 passes) — without a read timeout a single
+    // stalled Anthropic response would hold a Tomcat thread until the pool is gone.
+    private final RestClient restClient = HttpClients.forLlm();
 
     public ClaudeEstimateExtractor(AnthropicProperties props, ObjectMapper objectMapper) {
         this.props = props;
