@@ -27,18 +27,20 @@ one-line summary — keep the item in the file as a record.
 ### Offline-first follow-ups (Phase 1 shipped; these are the deferred pieces)
 - **Status:** OPEN
 - **Since:** Offline-first iteration (2026-07-22)
-- **Context:** Offline authoring shipped for **clients / objects / estimates / line items** (outbox +
-  client-UUID idempotent replay), plus read-offline (persisted query cache) and Slice 3 sync UX
-  (status indicator, over-limit **"PRO or delete"** gate, warn-before-logout). See
-  [iteration-offline-first.md](iteration-offline-first.md). The following were deliberately deferred:
+- **Context:** Offline authoring shipped for **clients / objects / estimates / line items /
+  measurements** (outbox + client-UUID idempotent replay), plus read-offline (persisted query cache),
+  a **prefetch** that downloads everything ahead ("Підготувати офлайн" + automatic background warming),
+  Slice 3 sync UX (status indicator, over-limit **"PRO or delete"** gate, warn-before-logout), and the
+  2026-07-22 prod fixes (no query/mutation may pause offline; cached data beats an error screen;
+  online-only actions say «потрібен інтернет»). See
+  [iteration-offline-first.md](iteration-offline-first.md). The following are still deferred:
 - **Notes / options (each its own future chunk):**
-  1. **Measurements offline.** Blocked on a **client-side `MeasurementCalc` mirror** — the item
-     `result` (m²/м.пог/шт, incl. the electrical chase/cable) is server-authoritative, so an
-     optimistic tree needs a pure `computeMeasurementResult(type, payload)` + room/object total
-     recompute (bucket by unit). The measurement mutations also return the whole tree (not per-entity),
-     so they need reshaping to optimistic tree editing. Backend: idempotent `addRoom`/`addItem`
-     (X-Entity-Uuid) + idempotent delete. The user WANTED measurements offline (decision #2); it was
-     deprioritised behind Slice 3 for its disproportionate complexity, not dropped.
+  1. **Measurements offline.** ✅ **RESOLVED (2026-07-22).** `src/lib/measurementCalc.ts` mirrors the
+     backend `MeasurementCalc` (all six types + `unitForType` + `recomputeTree` bucketed by unit);
+     all six measurement mutations are offline-first via `offlineMutate` with optimistic tree edits;
+     backend `addRoom`/`addItem` take `X-Entity-Uuid` (idempotent) and both deletes are idempotent
+     no-ops. Tests pin the mirror against the backend's own cases. The remaining nuance: the two
+     implementations must be changed together — a formula edit in Java has to be mirrored in TS.
   2. **Owner-tagged re-sync on re-login.** Today the outbox is wiped on **every** auth transition
      (logout / dead-session / login) — SAFE (no cross-account leak) but a master who logs out with
      unsynced work, or whose session dies, loses the queue. The agreed design was to **retain** the

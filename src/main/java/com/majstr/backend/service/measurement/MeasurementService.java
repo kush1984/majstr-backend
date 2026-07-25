@@ -15,6 +15,7 @@ import com.majstr.backend.repository.MeasurementRoomRepository;
 import com.majstr.backend.repository.UserRepository;
 import com.majstr.backend.service.ProjectService;
 import lombok.RequiredArgsConstructor;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import tools.jackson.databind.ObjectMapper;
@@ -85,8 +86,28 @@ public class MeasurementService {
 
     @Transactional
     public MeasurementsResponse addRoom(UUID objectId, UUID ownerId, MeasurementRoomRequest req) {
+        return addRoom(objectId, ownerId, req, null);
+    }
+
+    /**
+     * Add a room, optionally with a CLIENT-PROVIDED id (offline authoring). The id makes the create
+     * idempotent — a replayed offline create returns the tree unchanged instead of adding a second
+     * room; an id that already belongs to a DIFFERENT object is rejected.
+     */
+    @Transactional
+    public MeasurementsResponse addRoom(UUID objectId, UUID ownerId, MeasurementRoomRequest req, UUID requestedId) {
         requireMeasurements(objectId, ownerId);
+        if (requestedId != null) {
+            var existing = roomRepository.findById(requestedId);
+            if (existing.isPresent()) {
+                if (!existing.get().getProjectId().equals(objectId)) {
+                    throw new AccessDeniedException("Measurement room belongs to a different object");
+                }
+                return buildTree(objectId); // idempotent replay
+            }
+        }
         roomRepository.save(MeasurementRoom.builder()
+                .id(requestedId)
                 .projectId(objectId)
                 .name(req.name().trim())
                 .floor(blankToNull(req.floor()))
@@ -114,7 +135,9 @@ public class MeasurementService {
     @Transactional
     public MeasurementsResponse deleteRoom(UUID objectId, UUID roomId, UUID ownerId) {
         requireMeasurements(objectId, ownerId);
-        roomRepository.delete(loadRoom(objectId, roomId)); // items cascade (FK)
+        // Idempotent: a replayed offline delete of an already-gone room is a no-op, not a 404.
+        roomRepository.findByIdAndProjectId(roomId, objectId)
+                .ifPresent(roomRepository::delete); // items cascade (FK)
         return buildTree(objectId);
     }
 
@@ -122,10 +145,31 @@ public class MeasurementService {
 
     @Transactional
     public MeasurementsResponse addItem(UUID objectId, UUID roomId, UUID ownerId, MeasurementItemRequest req) {
+        return addItem(objectId, roomId, ownerId, req, null);
+    }
+
+    /**
+     * Add an element, optionally with a CLIENT-PROVIDED id (offline authoring) — idempotent on
+     * replay; an id already living in a DIFFERENT room is rejected. The {@code result} is always
+     * recomputed here: the client's optimistic number is a preview, never the source of truth.
+     */
+    @Transactional
+    public MeasurementsResponse addItem(UUID objectId, UUID roomId, UUID ownerId,
+                                        MeasurementItemRequest req, UUID requestedId) {
         requireMeasurements(objectId, ownerId);
         loadRoom(objectId, roomId); // authorize the room belongs to the object
+        if (requestedId != null) {
+            var existing = itemRepository.findById(requestedId);
+            if (existing.isPresent()) {
+                if (!existing.get().getRoomId().equals(roomId)) {
+                    throw new AccessDeniedException("Measurement element belongs to a different room");
+                }
+                return buildTree(objectId); // idempotent replay
+            }
+        }
         BigDecimal result = calc.compute(req.type(), req.payload());
         itemRepository.save(MeasurementItem.builder()
+                .id(requestedId)
                 .roomId(roomId)
                 .name(req.name().trim())
                 .type(req.type())
@@ -158,7 +202,8 @@ public class MeasurementService {
     public MeasurementsResponse deleteItem(UUID objectId, UUID roomId, UUID itemId, UUID ownerId) {
         requireMeasurements(objectId, ownerId);
         loadRoom(objectId, roomId);
-        itemRepository.delete(loadItem(roomId, itemId));
+        // Idempotent: a replayed offline delete of an already-gone element is a no-op, not a 404.
+        itemRepository.findByIdAndRoomId(itemId, roomId).ifPresent(itemRepository::delete);
         return buildTree(objectId);
     }
 

@@ -17,6 +17,7 @@ import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -45,12 +46,15 @@ public class MeasurementController {
         return measurementService.tree(id, principal.id());
     }
 
-    @Operation(summary = "Add a room")
+    @Operation(summary = "Add a room",
+            description = "Offline-authored creates may send a client-generated UUID in the "
+                    + "X-Entity-Uuid header — the create is then idempotent on replay.")
     @PostMapping("/rooms")
     public MeasurementsResponse addRoom(@PathVariable UUID id,
                                         @Valid @RequestBody MeasurementRoomRequest req,
+                                        @RequestHeader(value = "X-Entity-Uuid", required = false) UUID entityId,
                                         @AuthenticationPrincipal UserPrincipal principal) {
-        return measurementService.addRoom(id, principal.id(), req);
+        return measurementService.addRoom(id, principal.id(), req, entityId);
     }
 
     @Operation(summary = "Rename / reorder a room")
@@ -70,13 +74,16 @@ public class MeasurementController {
         return measurementService.deleteRoom(id, roomId, principal.id());
     }
 
-    @Operation(summary = "Add a measured element to a room")
+    @Operation(summary = "Add a measured element to a room",
+            description = "Offline-authored creates may send a client-generated UUID in the "
+                    + "X-Entity-Uuid header — the create is then idempotent on replay.")
     @PostMapping("/rooms/{roomId}/items")
     public MeasurementsResponse addItem(@PathVariable UUID id,
                                         @PathVariable UUID roomId,
                                         @Valid @RequestBody MeasurementItemRequest req,
+                                        @RequestHeader(value = "X-Entity-Uuid", required = false) UUID entityId,
                                         @AuthenticationPrincipal UserPrincipal principal) {
-        return measurementService.addItem(id, roomId, principal.id(), req);
+        return measurementService.addItem(id, roomId, principal.id(), req, entityId);
     }
 
     @Operation(summary = "Edit a measured element")

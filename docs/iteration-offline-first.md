@@ -228,6 +228,47 @@ offline; login page renders offline; a known logged-in user is still bounced off
 **Lesson for future offline work:** an offline query must always reach a terminal state — a paused
 query is indistinguishable from a hang, and any UI that gates on `isPending` will freeze.
 
+## Prefetch — "download it all ahead" (2026-07-22)
+
+The persisted cache only holds what was actually opened, so a screen the master never visited was
+blank in a basement. `src/lib/offlinePrefetch.ts` walks the real data and primes **the exact query
+keys the hooks read**: core (plan limits, clients, catalog + categories, templates, dashboard
+metrics, objects list) → per object (detail, its estimates, notes, and — PRO only — the measurement
+tree) → per estimate (full detail with items). Uses `prefetchQuery` (never throws, so one failed
+request can't abort the run), a concurrency cap of 4, and skips PRO-gated data on FREE.
+
+- **Automatic:** `useAutoPrefetch()` in `AppLayout` runs it in the background once logged in and
+  online, throttled to every 6h (`prefetchIsFresh`) and re-armed when the network returns.
+- **Manual:** a **«Підготувати офлайн»** row in the profile with live progress and the last-run
+  time — for a master who wants certainty before driving out.
+- Tests (`offlinePrefetch.test`): the walk fills the same keys the pages query (a key mismatch would
+  silently leave screens blank — the one real risk here), FREE skips measurements, one failing
+  request doesn't stop the rest, progress is reported.
+
+## Measurements offline (2026-07-22) — the last "everything works" gap
+
+Measurements were the one on-site flow still online-only, because the element's `result` (m² / м.пог
+/ шт / м) is **computed by the server**, so an optimistic tree had nothing to show.
+
+- **`src/lib/measurementCalc.ts` — a client mirror of the backend `MeasurementCalc`.** One place the
+  PWA computes a result: SURFACE (Σ shaped planes − openings, via the shared `shapes` module, with
+  legacy `{l,w}` segments read as metre rectangles), PARTITION, LINEAR, ELECTRICAL_POINTS, SHTROBA
+  (only what's actually cut) and CABLE (bus + every drop + reserve). Plus `unitForType` and
+  `recomputeTree`, which re-derives room/object totals **bucketed by unit exactly as the server
+  does** — м² → area, м.пог → linear, шт → pieces, and **м (cable) into none of them**.
+- **`useMeasurementActions` is offline-first:** online it still applies the server's fresh tree;
+  offline all six mutations (room add/rename/delete, element add/edit/delete) edit the cached tree
+  optimistically — with the local result + totals — and queue the write. Each still RETURNS the tree,
+  so existing callers (the sketch/electrical sheets that read the new room's id off it) are unchanged.
+  Ops: rooms depend on the object, elements on their room, so replay order holds.
+- **Backend:** `addRoom` / `addItem` accept `X-Entity-Uuid` and are idempotent (a foreign object/room
+  is rejected); `deleteRoom` / `deleteItem` are idempotent no-ops. The server **always recomputes
+  `result`** — the client's optimistic number is a preview, never trusted.
+- Tests (`measurementCalc.test`) pin the mirror against the same cases the backend's
+  `MeasurementCalcTest` pins — the two must agree or an offline element would show one figure and
+  sync as another. One caught a real bug while writing them: a NaN input flowed through
+  `Math.max(0, NaN)` into the result; `clamp` now returns 0 for anything non-finite.
+
 ## Backend implications (why this isn't purely frontend)
 
 - **Client-provided UUIDs + idempotency:** a create must be safe to replay (upsert-by-id / "create if
