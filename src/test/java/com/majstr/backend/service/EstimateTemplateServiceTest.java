@@ -358,6 +358,95 @@ class EstimateTemplateServiceTest {
         verify(templateItemRepository, never()).delete(any());
     }
 
+    // ---- offline authoring: client-provided id (X-Entity-Uuid) --------------
+
+    @Test
+    void addItem_withClientId_replayIsIdempotent() {
+        UUID templateId = UUID.randomUUID();
+        UUID itemId = UUID.randomUUID();
+        User owner = User.builder().id(ownerId).build();
+        EstimateTemplate template = EstimateTemplate.builder()
+                .id(templateId).isDefault(false).owner(owner).build();
+        given(templateRepository.findById(templateId)).willReturn(Optional.of(template));
+        EstimateTemplateItem already = templateItem(template, "Вже додана", Unit.M2, 0);
+        given(templateItemRepository.findByTemplateIdOrderBySortOrderAscIdAsc(templateId))
+                .willReturn(new ArrayList<>(List.of(already)));
+        given(templateItemRepository.findById(itemId)).willReturn(Optional.of(already));
+
+        var detail = service.addItem(
+                templateId, new TemplateItemRequest("Вже додана", ItemType.WORK, Unit.M2), ownerId, itemId);
+
+        assertThat(detail.items()).hasSize(1);
+        verify(templateItemRepository, never()).save(any());
+    }
+
+    @Test
+    void addItem_withClientId_rejectsAnIdFromAnotherTemplate() {
+        UUID templateId = UUID.randomUUID();
+        UUID itemId = UUID.randomUUID();
+        User owner = User.builder().id(ownerId).build();
+        EstimateTemplate template = EstimateTemplate.builder()
+                .id(templateId).isDefault(false).owner(owner).build();
+        EstimateTemplate other = EstimateTemplate.builder()
+                .id(UUID.randomUUID()).isDefault(false).owner(owner).build();
+        given(templateRepository.findById(templateId)).willReturn(Optional.of(template));
+        given(templateItemRepository.findByTemplateIdOrderBySortOrderAscIdAsc(templateId))
+                .willReturn(new ArrayList<>());
+        given(templateItemRepository.findById(itemId))
+                .willReturn(Optional.of(templateItem(other, "Чужа", Unit.M2, 0)));
+
+        assertThatThrownBy(() -> service.addItem(
+                templateId, new TemplateItemRequest("x", ItemType.WORK, Unit.M2), ownerId, itemId))
+                .isInstanceOf(AccessDeniedException.class);
+        verify(templateItemRepository, never()).save(any());
+    }
+
+    @Test
+    void addItem_withClientId_firstTimeKeepsTheSuppliedId() {
+        UUID templateId = UUID.randomUUID();
+        UUID itemId = UUID.randomUUID();
+        User owner = User.builder().id(ownerId).build();
+        EstimateTemplate template = EstimateTemplate.builder()
+                .id(templateId).isDefault(false).owner(owner).build();
+        given(templateRepository.findById(templateId)).willReturn(Optional.of(template));
+        given(templateItemRepository.findByTemplateIdOrderBySortOrderAscIdAsc(templateId))
+                .willReturn(new ArrayList<>());
+        given(templateItemRepository.findById(itemId)).willReturn(Optional.empty());
+        given(templateItemRepository.save(any())).willAnswer(inv -> inv.getArgument(0));
+
+        service.addItem(templateId, new TemplateItemRequest("Нова", ItemType.WORK, Unit.M2), ownerId, itemId);
+
+        ArgumentCaptor<EstimateTemplateItem> captor = ArgumentCaptor.forClass(EstimateTemplateItem.class);
+        verify(templateItemRepository).save(captor.capture());
+        assertThat(captor.getValue().getId()).isEqualTo(itemId);
+    }
+
+    @Test
+    void removeItem_alreadyGoneIsANoOp_notA404() {
+        UUID templateId = UUID.randomUUID();
+        UUID itemId = UUID.randomUUID();
+        User owner = User.builder().id(ownerId).build();
+        given(templateRepository.findById(templateId)).willReturn(Optional.of(
+                EstimateTemplate.builder().id(templateId).isDefault(false).owner(owner).build()));
+        given(templateItemRepository.findById(itemId)).willReturn(Optional.empty());
+        given(templateItemRepository.findByTemplateIdOrderBySortOrderAscIdAsc(templateId))
+                .willReturn(List.of());
+
+        service.removeItem(templateId, itemId, ownerId); // replayed offline delete
+
+        verify(templateItemRepository, never()).delete(any());
+    }
+
+    @Test
+    void delete_alreadyGoneIsANoOp_notA404() {
+        UUID templateId = UUID.randomUUID();
+        given(templateRepository.findById(templateId)).willReturn(Optional.empty());
+
+        service.delete(templateId, ownerId);
+
+        verify(templateRepository, never()).delete(any());
+    }
+
     // ---- helpers -----------------------------------------------------------
 
     private EstimateTemplateItem templateItem(EstimateTemplate t, String name, Unit unit, int sort) {

@@ -25,6 +25,7 @@ import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
@@ -81,12 +82,16 @@ public class EstimateTemplateController {
         return ResponseEntity.noContent().build();
     }
 
-    @Operation(summary = "Add a position to my own template (system defaults are read-only)")
+    @Operation(summary = "Add a position to my own template (system defaults are read-only)",
+            description = "Offline-authored adds may send a client-generated UUID in the "
+                    + "X-Entity-Uuid header — the add is then idempotent on replay.")
     @PostMapping("/api/estimate-templates/{id}/items")
-    public EstimateTemplateDetail addItem(@PathVariable UUID id,
-                                          @Valid @RequestBody TemplateItemRequest req,
-                                          @AuthenticationPrincipal UserPrincipal principal) {
-        return templateService.addItem(id, req, principal.id());
+    public EstimateTemplateDetail addItem(
+            @PathVariable UUID id,
+            @Valid @RequestBody TemplateItemRequest req,
+            @RequestHeader(value = "X-Entity-Uuid", required = false) UUID entityId,
+            @AuthenticationPrincipal UserPrincipal principal) {
+        return templateService.addItem(id, req, principal.id(), entityId);
     }
 
     @Operation(summary = "Remove a position from my own template (system defaults are read-only)")

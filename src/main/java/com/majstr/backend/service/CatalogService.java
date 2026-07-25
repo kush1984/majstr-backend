@@ -36,6 +36,27 @@ public class CatalogService {
 
     @Transactional
     public CatalogItemResponse create(CatalogItemRequest req, UUID ownerId) {
+        return create(req, ownerId, null);
+    }
+
+    /**
+     * Create a catalog position, optionally with a CLIENT-PROVIDED id (offline authoring). A
+     * replayed offline create is already safe thanks to the (name, type, unit) dedupe below, but
+     * honouring the id keeps the entity's identity STABLE — the row the master sees offline keeps
+     * the same id after syncing, instead of being swapped for a server-generated one.
+     */
+    @Transactional
+    public CatalogItemResponse create(CatalogItemRequest req, UUID ownerId, UUID requestedId) {
+        if (requestedId != null) {
+            var byId = catalogRepository.findById(requestedId);
+            if (byId.isPresent()) {
+                CatalogItem existingById = byId.get();
+                if (!existingById.getOwner().getId().equals(ownerId)) {
+                    throw new AccessDeniedException("Catalog item does not belong to the current user");
+                }
+                return CatalogItemResponse.from(existingById); // idempotent replay
+            }
+        }
         String name = req.name().trim();
         // No specific trade → the single "Інше" catch-all (never null, V33).
         Trade trade = req.trade() != null ? req.trade() : Trade.OTHER;
@@ -55,6 +76,7 @@ public class CatalogService {
             return CatalogItemResponse.from(existing); // managed entity → dirty-checked
         }
         CatalogItem item = CatalogItem.builder()
+                .id(requestedId)
                 .owner(userRepository.getReferenceById(ownerId))
                 .name(name)
                 .category(normalizeCategory(req.category()))
@@ -137,8 +159,13 @@ public class CatalogService {
 
     @Transactional
     public void delete(UUID id, UUID ownerId) {
-        CatalogItem item = loadOwned(id, ownerId);
-        catalogRepository.delete(item);
+        // Idempotent: a replayed offline delete of an already-gone item is a no-op, not a 404.
+        catalogRepository.findById(id).ifPresent(item -> {
+            if (!item.getOwner().getId().equals(ownerId)) {
+                throw new AccessDeniedException("Catalog item does not belong to the current user");
+            }
+            catalogRepository.delete(item);
+        });
     }
 
     CatalogItem loadOwned(UUID id, UUID ownerId) {

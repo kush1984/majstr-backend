@@ -181,18 +181,40 @@ public class EstimateTemplateService {
 
     @Transactional
     public void delete(UUID templateId, UUID ownerId) {
-        EstimateTemplate template = loadOwnTemplate(templateId, ownerId);
-        templateRepository.delete(template); // items cascade (FK ON DELETE CASCADE)
+        // Idempotent: a replayed offline delete of an already-gone template is a no-op, not a 404.
+        templateRepository.findById(templateId).ifPresent(t -> {
+            loadOwnTemplate(templateId, ownerId); // ownership + "not a read-only default" check
+            templateRepository.delete(t); // items cascade (FK ON DELETE CASCADE)
+        });
     }
 
     /** Add a position to my own template (appended last). Defaults are read-only. */
     @Transactional
     public EstimateTemplateDetail addItem(UUID templateId, TemplateItemRequest req, UUID ownerId) {
+        return addItem(templateId, req, ownerId, null);
+    }
+
+    /**
+     * Add a position, optionally with a CLIENT-PROVIDED id (offline authoring) — idempotent on
+     * replay; an id that already lives in a DIFFERENT template is rejected.
+     */
+    @Transactional
+    public EstimateTemplateDetail addItem(UUID templateId, TemplateItemRequest req, UUID ownerId, UUID requestedId) {
         EstimateTemplate template = loadOwnTemplate(templateId, ownerId);
         List<EstimateTemplateItem> items =
                 templateItemRepository.findByTemplateIdOrderBySortOrderAscIdAsc(templateId);
+        if (requestedId != null) {
+            var existing = templateItemRepository.findById(requestedId);
+            if (existing.isPresent()) {
+                if (!existing.get().getTemplate().getId().equals(templateId)) {
+                    throw new AccessDeniedException("Template item belongs to a different template");
+                }
+                return EstimateTemplateDetail.from(template, items); // idempotent replay
+            }
+        }
         int nextSort = items.isEmpty() ? 0 : items.get(items.size() - 1).getSortOrder() + 1;
         EstimateTemplateItem item = templateItemRepository.save(EstimateTemplateItem.builder()
+                .id(requestedId)
                 .template(template)
                 .name(req.name().trim())
                 .type(req.type())
@@ -207,12 +229,10 @@ public class EstimateTemplateService {
     @Transactional
     public EstimateTemplateDetail removeItem(UUID templateId, UUID itemId, UUID ownerId) {
         EstimateTemplate template = loadOwnTemplate(templateId, ownerId);
-        EstimateTemplateItem item = templateItemRepository.findById(itemId)
-                .orElseThrow(() -> new ResourceNotFoundException("Template item not found: " + itemId));
-        if (!item.getTemplate().getId().equals(templateId)) {
-            throw new ResourceNotFoundException("Template item not found in template " + templateId);
-        }
-        templateItemRepository.delete(item);
+        // Idempotent: a replayed offline removal of an already-gone position is a no-op, not a 404.
+        templateItemRepository.findById(itemId)
+                .filter(i -> i.getTemplate().getId().equals(templateId))
+                .ifPresent(templateItemRepository::delete);
         return EstimateTemplateDetail.from(
                 template,
                 templateItemRepository.findByTemplateIdOrderBySortOrderAscIdAsc(templateId));

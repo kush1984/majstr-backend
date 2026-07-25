@@ -507,6 +507,20 @@ a one-line note so the history is preserved.
   confirms green**, and only then does Claude push. If it's red, the user
   pastes the output and Claude fixes to green first. Never push on an
   unverified build.
+- **PWA gate: run `npm run build`, not `tsc --noEmit`.** The PWA's real type
+  check is `tsc -b` (project references, inside `npm run build`); a bare
+  `tsc --noEmit` against the root config checks a *different* (looser) program
+  and has already let two type errors through to a "green" report. `npx vite
+  build` alone is not enough either — it does not type-check at all. Gate =
+  `npm run build` + `npx vitest run`.
+- **Offline/service-worker changes need `npm run test:e2e:offline`.** The normal
+  e2e runs on the Vite dev server, where the service worker is DISABLED, so no
+  dev-based test can see an SW regression (that is how the "Ви не в мережі"
+  bug reached a master). `playwright.offline.config.ts` builds and serves the
+  real production bundle; `e2e-offline/shell.spec.ts` needs no backend,
+  `journey.spec.ts` does. When adding such a test, **verify it fails without the
+  fix** — check the SOURCE, not `dist/sw.js` (minification renames class names,
+  so grepping the bundle for `NavigationRoute` gives a false negative).
 
 ## Not implemented yet
 

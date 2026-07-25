@@ -92,6 +92,67 @@ class CatalogServiceTest {
         assertThat(resp.category()).isNull();
     }
 
+    // ---- offline authoring: client-provided id (X-Entity-Uuid) --------------
+
+    @Test
+    void create_withClientId_replayReturnsTheExistingItemInsteadOfDuplicating() {
+        UUID id = UUID.randomUUID();
+        CatalogItem existing = CatalogItem.builder()
+                .id(id).owner(User.builder().id(ownerId).build())
+                .name("Кабель ВВГнг").trade(Trade.OTHER)
+                .type(ItemType.MATERIAL).unit(Unit.M).defaultPrice(new BigDecimal("38.50"))
+                .build();
+        given(catalogRepository.findById(id)).willReturn(Optional.of(existing));
+
+        CatalogItemResponse resp = catalogService.create(
+                new CatalogItemRequest("Кабель ВВГнг", null, null,
+                        ItemType.MATERIAL, Unit.M, new BigDecimal("38.50")),
+                ownerId, id);
+
+        assertThat(resp.id()).isEqualTo(id);
+        verify(catalogRepository, never()).save(any());
+        // The id check short-circuits BEFORE the (name, type, unit) scan.
+        verify(catalogRepository, never()).findByOwnerIdOrderByNameAsc(any());
+    }
+
+    @Test
+    void create_withClientId_deniesAnIdOwnedByAnotherUser() {
+        UUID id = UUID.randomUUID();
+        given(catalogRepository.findById(id)).willReturn(Optional.of(foreignItem(id)));
+
+        assertThatThrownBy(() -> catalogService.create(
+                new CatalogItemRequest("Hijack", null, null,
+                        ItemType.WORK, Unit.PIECE, new BigDecimal("1.00")),
+                ownerId, id))
+                .isInstanceOf(AccessDeniedException.class);
+    }
+
+    @Test
+    void create_withClientId_firstTimeKeepsTheSuppliedId() {
+        UUID id = UUID.randomUUID();
+        given(catalogRepository.findById(id)).willReturn(Optional.empty());
+        given(catalogRepository.findByOwnerIdOrderByNameAsc(ownerId)).willReturn(List.of());
+        given(userRepository.getReferenceById(ownerId)).willReturn(User.builder().id(ownerId).build());
+        given(catalogRepository.save(any(CatalogItem.class))).willAnswer(inv -> inv.getArgument(0));
+
+        CatalogItemResponse resp = catalogService.create(
+                new CatalogItemRequest("Розетка", null, null,
+                        ItemType.WORK, Unit.PIECE, new BigDecimal("180.00")),
+                ownerId, id);
+
+        assertThat(resp.id()).isEqualTo(id);
+    }
+
+    @Test
+    void delete_alreadyGoneIsANoOp_notA404() {
+        UUID id = UUID.randomUUID();
+        given(catalogRepository.findById(id)).willReturn(Optional.empty());
+
+        catalogService.delete(id, ownerId); // replayed offline delete
+
+        verify(catalogRepository, never()).delete(any(CatalogItem.class));
+    }
+
     @Test
     void listForOwner_groupsByCategoryThenName_withUncategorizedLast() {
         given(catalogRepository.findByOwnerIdOrderByNameAsc(ownerId)).willReturn(List.of(

@@ -28,7 +28,8 @@ one-line summary — keep the item in the file as a record.
 - **Status:** OPEN
 - **Since:** Offline-first iteration (2026-07-22)
 - **Context:** Offline authoring shipped for **clients / objects / estimates / line items /
-  measurements** (outbox + client-UUID idempotent replay), plus read-offline (persisted query cache),
+  measurements / catalog / own templates** (outbox + client-UUID idempotent replay), plus
+  read-offline (persisted query cache),
   a **prefetch** that downloads everything ahead ("Підготувати офлайн" + automatic background warming),
   Slice 3 sync UX (status indicator, over-limit **"PRO or delete"** gate, warn-before-logout), and the
   2026-07-22 prod fixes (no query/mutation may pause offline; cached data beats an error screen;
@@ -59,6 +60,41 @@ one-line summary — keep the item in the file as a record.
      delete all). Per-item keep/delete would be nicer if a mix of over-limit + other rejections occurs.
   6. **Photos offline** (progress + receipt photos) — a **blob outbox** + deferred multipart upload;
      the heaviest piece (binary storage in IndexedDB, dedup, upload-on-reconnect). Explicitly last.
+  7. **Catalog + own templates offline.** ✅ **RESOLVED (2026-07-25, "O5").** Catalog create/update/
+     delete and template rename / re-file / delete / add-position / remove-position all author offline
+     through `offlineMutate` + `X-Entity-Uuid`; `CatalogService.create` checks the client id before its
+     `(name,type,unit)` dedupe, `EstimateTemplateService.addItem` rejects an id from another template,
+     and all deletes are idempotent no-ops. The genuinely server-side flows (starter set,
+     add-new-from-library, save-as-template, apply-a-template, import-from-file) are disabled offline
+     with a «потрібен інтернет» message rather than failing.
+  8. **Offline e2e coverage.** ✅ **RESOLVED (2026-07-25, "O1").** `npm run test:e2e:offline` runs
+     Playwright against a **production build** (the dev SW is disabled): a cold offline load renders
+     the login page, a deep route renders the shell (verified to fail without the SW navigation
+     fallback), and an offline authoring journey drains through the outbox on reconnect.
+  9. **REMAINING WORK — the offline programme, in the order agreed with the user (2026-07-25).**
+     Shipped so far: **O1** (offline e2e) and **O5** (catalog + templates). Left, each its own chunk:
+     - **O2 — statuses & estimate fields offline (frontend-only, smallest).** Estimate `status` /
+       `depositAmount` / `name` (`useUpdateEstimate`) and object `status` (`useUpdateProject` already
+       partly wired — verify) still go straight to the network. All are plain field writes: route them
+       through `offlineMutate` with an optimistic patch of the cached estimate/project, `deps` on the
+       parent entity, `networkMode: 'always'`. **No backend change** — the endpoints are already
+       idempotent updates. Watch out: `SIGNED` must stay unreachable from the client (the server
+       rejects it), and the FREE/PRO gates are already client-side off the cached plan.
+     - **O3 — owner-tagged re-sync on re-login (highest value: the last data-loss path).** See item 2
+       above for the full design. Today `forceLogin` → `clearOutbox` destroys unsynced work when a
+       session dies. Needs: an `ownerId` stamp on every op at enqueue time, NOT wiping on
+       dead-session/logout, a login-time prompt («у вас N незбережених змін — синхронізувати?») that
+       only offers ops whose `ownerId` matches the user who just logged in, and dropping ops belonging
+       to a *different* owner at that moment (no cross-account leak). Feeds the existing over-limit gate.
+     - **O4 — notes + economy expenses offline (frontend-only).** `NotesSection` (per-object notes) and
+       the economy expense list are ordinary CRUD; same `offlineMutate` + client-UUID pattern.
+       Economy is PRO-gated, so the prefetch already skips it on FREE — keep that alignment.
+       Backend: expenses/notes creates need the same `X-Entity-Uuid` idempotency overload.
+     - **O6 — photos offline (heaviest, explicitly last).** See item 6: a **blob outbox** (binary in
+       IndexedDB), deferred multipart upload on reconnect, dedup, and a quota story. Until then
+       `PhotosSection` stays `useOnlineGuard`-disabled offline, which is honest.
+     Also still open from the list above and NOT scheduled: **#3** (LWW conflict UI), **#4**
+     (catalog-add / batch item adds into an estimate), **#5** (per-item blocked-op resolution).
 
 ### Multi-instance support for in-memory state
 - **Status:** OPEN

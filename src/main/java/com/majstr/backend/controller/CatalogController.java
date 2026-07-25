@@ -25,6 +25,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -43,11 +44,16 @@ public class CatalogController {
     private final CatalogTemplateService catalogTemplateService;
     private final UserRepository userRepository;
 
-    @Operation(summary = "Create a catalog item")
+    @Operation(summary = "Create a catalog item",
+            description = "Offline-authored creates may send a client-generated UUID in the "
+                    + "X-Entity-Uuid header — the create is then idempotent on replay.")
     @PostMapping
-    public ResponseEntity<CatalogItemResponse> create(@Valid @RequestBody CatalogItemRequest req,
-                                                      @AuthenticationPrincipal UserPrincipal principal) {
-        return ResponseEntity.status(HttpStatus.CREATED).body(catalogService.create(req, principal.id()));
+    public ResponseEntity<CatalogItemResponse> create(
+            @Valid @RequestBody CatalogItemRequest req,
+            @RequestHeader(value = "X-Entity-Uuid", required = false) UUID entityId,
+            @AuthenticationPrincipal UserPrincipal principal) {
+        return ResponseEntity.status(HttpStatus.CREATED)
+                .body(catalogService.create(req, principal.id(), entityId));
     }
 
     @Operation(summary = "List my catalog items (sorted by category, then name), optionally filtered by type")

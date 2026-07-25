@@ -311,6 +311,68 @@ redirects before it, the PRO teaser precedes the measurements tree); `EstimateEd
 **Still open (logged in open-questions):** unsynced work is wiped when the session dies
 (`forceLogin` → `clearOutbox`) — the agreed fix is an owner-tagged outbox with re-sync on re-login.
 
+## O1 — offline e2e smoke (2026-07-25)
+
+Unit tests mock the network, so they structurally cannot catch the class of bug that actually
+reached production (a paused query, a missing SW navigation fallback). `playwright.offline.config.ts`
++ `e2e-offline/` run against a **production build** (`vite build && vite preview`) — the dev SW is
+disabled, so only the built `sw.js` proves anything:
+
+- `shell.spec.ts` — with `context.setOffline(true)`: a cold load renders the **login page** (not a
+  spinner), and a **deep route** (`/projects/<id>`) still renders the app shell rather than the
+  browser's offline page. That second assertion was verified to FAIL without the `NavigationRoute`
+  fix — a negative control, after two earlier attempts at one gave false negatives (a stale `dist/`
+  served by `reuseExistingServer`, and grepping minified `sw.js` for a symbol that gets mangled).
+- `journey.spec.ts` — log in online, go offline, author an object + estimate + line items, come back
+  online, and assert the outbox drained and the server has them.
+
+Run: `npm run test:e2e:offline`.
+
+## O5 — catalog + templates offline (2026-07-25)
+
+The last two *read-only-offline* screens that a master edits between objects. Both now author
+offline through the same `offlineMutate` + `X-Entity-Uuid` pattern:
+
+- **Catalog** — create / update (repricing on site is the common one) / delete.
+  `CatalogService.create(req, ownerId, requestedId)` checks the client id **before** its own
+  `(name, type, unit)` dedupe (so a replay returns the same row rather than creating a second one),
+  `delete` is an idempotent no-op. The optimistic patch writes into **every** cached list variant
+  (`all` + per-type), and a created item only lands in the lists it belongs to.
+- **Templates** — rename, re-file under a trade, delete, add/remove a position.
+  `EstimateTemplateService.addItem(..., requestedId)` is idempotent and rejects an id that already
+  lives in a different template; `delete`/`removeItem` are idempotent. The optimistic patch keeps the
+  list row's `itemCount` in step with the detail. Templates are never **created** offline
+  (save-as-template reads a server-side estimate), so the outbox handler has no create branch.
+- **Deliberately online-only** (each produces server-side state we can't reproduce locally), all now
+  disabled + explained via `useOnlineGuard` instead of failing cryptically: catalog
+  starter-set / add-new-from-library / check-updates, save-as-template, apply-a-template (offline the
+  master gets an empty estimate, which replays fine), and import-from-file.
+
+Tests: `useCatalog.test` (create lands only in matching lists; update patches all; delete + queued
+ops), `useEstimateTemplates.test` (rename patches row+detail, addItem appends & bumps the count,
+removeItem, delete), `CatalogServiceTest` / `EstimateTemplateServiceTest` (+9: replay is idempotent,
+a foreign / other-template id is rejected, a first-time id is honoured, deletes are no-ops).
+
+PWA gate green on 2026-07-25 (`npm run build` + `npx vitest run` → 57 files / 287 tests).
+**Backend gate NOT yet run** — Claude cannot run Gradle; `./gradlew build` is with the user.
+
+## Where the offline programme stands (2026-07-25)
+
+| | scope | state |
+|---|---|---|
+| Read offline | every screen, persisted query cache + prefetch | ✅ |
+| Authoring offline | clients, objects, estimates, line items, measurements, catalog, own templates | ✅ |
+| Sync UX | status banner, over-limit "PRO or delete", warn-before-logout | ✅ |
+| Regression net | offline e2e against a production build (O1) | ✅ |
+| **O2** | estimate status / deposit / name, object status | ⬜ frontend-only |
+| **O3** | owner-tagged re-sync on re-login — *the last data-loss path* | ⬜ |
+| **O4** | notes + economy expenses | ⬜ needs `X-Entity-Uuid` on those creates |
+| **O6** | photos (blob outbox) | ⬜ heaviest, last |
+
+Not scheduled: LWW conflict UI, catalog-add / batch item adds into an estimate, per-item blocked-op
+resolution. Full detail (design + gotchas per item) lives in
+[open-questions.md](open-questions.md) → "Offline-first follow-ups", item 9.
+
 ## Backend implications (why this isn't purely frontend)
 
 - **Client-provided UUIDs + idempotency:** a create must be safe to replay (upsert-by-id / "create if
