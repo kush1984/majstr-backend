@@ -160,9 +160,9 @@ public class User {
     private UUID referredByUserId;
 
     /** Period auto-renew recharges with — the one the master bought while opting in
-     *  ({@code MONTH} → 299/30d, {@code HALF_YEAR} → 1494/180d). NULL when auto-renew
-     *  is off. Set on the tokenizing checkout so a 6-month subscription renews for
-     *  6 months, not one. */
+     *  ({@code MONTH} → 299/30d, {@code HALF_YEAR} → 1494/180d, {@code YEAR} → 2748/360d).
+     *  NULL when auto-renew is off. Set on the tokenizing checkout so a 6-month or annual
+     *  subscription renews for the same span, not one month. */
     @Enumerated(EnumType.STRING)
     @Column(name = "renew_period", length = 20)
     private BillingPeriod renewPeriod;

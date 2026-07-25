@@ -7,5 +7,6 @@ package com.majstr.backend.entity;
  */
 public enum BillingPeriod {
     MONTH,
-    HALF_YEAR
+    HALF_YEAR,
+    YEAR
 }

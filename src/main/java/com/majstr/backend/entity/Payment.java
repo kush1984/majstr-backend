@@ -70,7 +70,7 @@ public class Payment {
     @Column(name = "days", nullable = false)
     private int days;
 
-    /** Subscription period this payment buys (MONTH | HALF_YEAR). Drives the
+    /** Subscription period this payment buys (MONTH | HALF_YEAR | YEAR). Drives the
      *  server-side amount/days; also read back so auto-renew recharges the same
      *  period. */
     @Enumerated(EnumType.STRING)

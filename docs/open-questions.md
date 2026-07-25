@@ -710,6 +710,12 @@ one-line summary — keep the item in the file as a record.
   subscription/recurring product (vs our merchant-initiated token charge) could remove the
   scheduled-job machinery entirely; low urgency now that period-matched auto-renew + half-year
   both exist. Ties into the auto-renew "card-update flow" and "offer clause" items.
+- **Update (annual tariff, 2026-07-26):** a **YEAR** tariff (2748 ₴ = 229 ₴/mo, V65) now sits
+  above the half-year one and is period-matched by the same `AutoRenewService` path — so a
+  no-auto-renew master can buy a full year of "forget to renew" safety. Urgency drops further;
+  the open part is unchanged (a real monobank subscription product vs our token charge). See
+  [iteration-annual-tariff.md](iteration-annual-tariff.md). **Note for the offer-clause item:**
+  the public offer must now state THREE recurring cadences (monthly / 6-month / annual), not two.
 
 ### Plan downgrade with over-limit data
 - **Status:** OPEN

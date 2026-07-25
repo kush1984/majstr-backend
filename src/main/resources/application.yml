@@ -166,6 +166,8 @@ app:
     pro-days: ${BILLING_PRO_DAYS:30}
     # Half-year tariff (6 months, discounted): 1494 = 249/mo (vs 299 monthly).
     pro-half-year-price: ${BILLING_PRO_HALF_YEAR_PRICE:1494}
+    # Year tariff (12 months, deepest discount): 2748 = 229/mo — saves 840 ₴ vs monthly.
+    pro-year-price: ${BILLING_PRO_YEAR_PRICE:2748}
     # PRO days awarded to a referrer when their invited master first pays.
     referral-reward-days: ${BILLING_REFERRAL_REWARD_DAYS:30}
     # Days after expiry before the daily job downgrades PRO → FREE (late-renew window).

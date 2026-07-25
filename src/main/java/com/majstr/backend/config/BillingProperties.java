@@ -30,6 +30,8 @@ public record BillingProperties(
         int proDays,
         // Half-year (6×proDays) price — the discounted "pay once for 6 months" tariff.
         BigDecimal proHalfYearPrice,
+        // Year (12×proDays) price — the deepest discount, the anti-churn tariff.
+        BigDecimal proYearPrice,
         int graceDays,
         String returnUrl,
         String webhookUrl,
@@ -47,11 +49,20 @@ public record BillingProperties(
 
     /** Server-side price for a period — the client never sends an amount. */
     public BigDecimal priceFor(BillingPeriod period) {
-        return period == BillingPeriod.HALF_YEAR ? proHalfYearPrice : proPrice;
+        // Exhaustive switch: adding a period is a compile error until it is priced here.
+        return switch (period) {
+            case MONTH -> proPrice;
+            case HALF_YEAR -> proHalfYearPrice;
+            case YEAR -> proYearPrice;
+        };
     }
 
-    /** Server-side day count for a period (half-year = 6 months). */
+    /** Server-side day count for a period (half-year = 6 months, year = 12). */
     public int daysFor(BillingPeriod period) {
-        return period == BillingPeriod.HALF_YEAR ? proDays * 6 : proDays;
+        return switch (period) {
+            case MONTH -> proDays;
+            case HALF_YEAR -> proDays * 6;
+            case YEAR -> proDays * 12;
+        };
     }
 }

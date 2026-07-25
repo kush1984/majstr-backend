@@ -56,7 +56,7 @@ class BillingServiceTest {
 
     private BillingProperties props(String token, boolean allowDevSim) {
         return new BillingProperties(token, "https://api.monobank.ua",
-                new BigDecimal("299"), 30, new BigDecimal("1494"), 3,
+                new BigDecimal("299"), 30, new BigDecimal("1494"), new BigDecimal("2748"), 3,
                 "http://ret", "http://hook", allowDevSim, 3, 30, 5);
     }
 
@@ -232,6 +232,27 @@ class BillingServiceTest {
                 Instant.now().plus(180, ChronoUnit.DAYS), within60s());
         // Auto-renew will recharge the SAME period.
         assertThat(user.getRenewPeriod()).isEqualTo(BillingPeriod.HALF_YEAR);
+        assertThat(user.isAutoRenew()).isTrue();
+    }
+
+    @Test
+    void checkout_year_grantsTwelveMonthsAndRemembersPeriodForAutoRenew() {
+        UUID uid = UUID.randomUUID();
+        User user = verifiedFreeUser(uid);
+        given(userRepository.findById(uid)).willReturn(Optional.of(user));
+        ArgumentCaptor<Payment> saved = ArgumentCaptor.forClass(Payment.class);
+        given(paymentRepository.save(saved.capture())).willAnswer(i -> i.getArgument(0));
+
+        service(props("")).checkout(uid, true, BillingPeriod.YEAR); // dev + opt-in auto-renew
+
+        // 229 ₴/mo paid once for 12 months — amount and days both server-derived.
+        assertThat(saved.getValue().getAmount()).isEqualByComparingTo("2748");
+        assertThat(saved.getValue().getDays()).isEqualTo(360);
+        assertThat(saved.getValue().getPeriod()).isEqualTo(BillingPeriod.YEAR);
+        assertThat(user.getPlanExpiresAt()).isCloseTo(
+                Instant.now().plus(360, ChronoUnit.DAYS), within60s());
+        // An annual subscription renews for a YEAR, not a month.
+        assertThat(user.getRenewPeriod()).isEqualTo(BillingPeriod.YEAR);
         assertThat(user.isAutoRenew()).isTrue();
     }
 
