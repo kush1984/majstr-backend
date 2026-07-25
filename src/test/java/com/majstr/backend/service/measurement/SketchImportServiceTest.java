@@ -96,7 +96,10 @@ class SketchImportServiceTest {
         Map<?, ?> seg = (Map<?, ?>) segments.get(0);
         assertThat(seg.get("shape")).isEqualTo("rect");
         // Unreadable (0) letters are omitted → the review field renders blank.
-        assertThat((Map<?, ?>) seg.get("values")).containsOnlyKeys("a", "b");
+        // Bound the wildcard: containsOnlyKeys(K...) can't take Strings against a capture-of-?.
+        @SuppressWarnings("unchecked")
+        Map<String, Object> values = (Map<String, Object>) seg.get("values");
+        assertThat(values).containsOnlyKeys("a", "b");
     }
 
     @Test
