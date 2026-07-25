@@ -269,6 +269,37 @@ Measurements were the one on-site flow still online-only, because the element's 
   sync as another. One caught a real bug while writing them: a NaN input flowed through
   `Math.max(0, NaN)` into the result; `clamp` now returns 0 for anything non-finite.
 
+## Offline audit (2026-07-22) — "so nothing else flies in from prod"
+
+A deliberate sweep for the same BUG CLASSES, not just the reported symptom. Findings, worst first:
+
+1. **🔴 The service worker had NO navigation fallback — deep routes were dead offline.** `sw.ts` uses
+   `injectManifest` and only called `precacheAndRoute`. Precaching matches URLs *in the manifest*:
+   `/` resolves (directoryIndex → index.html), but `/projects/123`, `/estimates/abc`, `/profile` do
+   NOT — they fell through to the network, so with no signal the master got the browser's "no
+   internet" page. Any refresh or deep link offline looked like a totally broken app. The
+   `navigateFallback` in `vite.config` is inside `devOptions`, which only configures the DEV service
+   worker (disabled). **Fixed:** an explicit `NavigationRoute(createHandlerBoundToURL('index.html'))`
+   with `/api/**` denylisted; `workbox-routing`/`workbox-precaching` are now DIRECT dependencies
+   (they had been resolving transitively through the plugin). Verified in the built `dist/sw.js`.
+2. **A 401/403 during replay was classified as a permanent rejection** → the op became `blocked` and
+   the master was shown the "PRO or delete your changes" screen over what is really an expired token.
+   **Fixed:** auth failures are retryable (only a `*_LIMIT_REACHED` code means "limit"). Nobody gets
+   told to delete their work because a token rotated.
+3. **The persisted cache could exceed the storage quota** now that the prefetch pulls everything —
+   the whole write would fail and the master would silently end up with NO offline data. **Fixed:**
+   the persister uses `retry: removeOldestQuery`, so the cache sheds its least-recently-used query
+   and retries instead of vanishing.
+4. **Two more "error over cached data" spots** (dashboard metrics strip, questions list) now use
+   `isError && !data`, like the rest.
+
+Checked and found OK: every `enabled:`-gated query is behind a branch that can't spin (the auth gate
+redirects before it, the PRO teaser precedes the measurements tree); `EstimateEditorPage` /
+`ProjectDetailPage` / `MeasurementsSection` / `NotesSection` already used `isError || !data`.
+
+**Still open (logged in open-questions):** unsynced work is wiped when the session dies
+(`forceLogin` → `clearOutbox`) — the agreed fix is an owner-tagged outbox with re-sync on re-login.
+
 ## Backend implications (why this isn't purely frontend)
 
 - **Client-provided UUIDs + idempotency:** a create must be safe to replay (upsert-by-id / "create if

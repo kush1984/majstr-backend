@@ -41,7 +41,8 @@ one-line summary — keep the item in the file as a record.
      backend `addRoom`/`addItem` take `X-Entity-Uuid` (idempotent) and both deletes are idempotent
      no-ops. Tests pin the mirror against the backend's own cases. The remaining nuance: the two
      implementations must be changed together — a formula edit in Java has to be mirrored in TS.
-  2. **Owner-tagged re-sync on re-login.** Today the outbox is wiped on **every** auth transition
+  2. **Owner-tagged re-sync on re-login** — *now the highest-value remaining offline item: it is the
+     only path left where a master's unsynced work is destroyed.* Today the outbox is wiped on **every** auth transition
      (logout / dead-session / login) — SAFE (no cross-account leak) but a master who logs out with
      unsynced work, or whose session dies, loses the queue. The agreed design was to **retain** the
      outbox tagged by owner and offer re-sync on the next login as the same user (feeding the same
