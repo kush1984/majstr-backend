@@ -4,6 +4,7 @@ import com.majstr.backend.email.EmailService;
 import com.majstr.backend.entity.EmailVerificationToken;
 import com.majstr.backend.entity.User;
 import com.majstr.backend.exception.InvalidVerificationTokenException;
+import com.majstr.backend.security.TokenHash;
 import com.majstr.backend.repository.EmailVerificationTokenRepository;
 import com.majstr.backend.repository.UserRepository;
 import org.junit.jupiter.api.Test;
@@ -40,9 +41,15 @@ class EmailVerificationServiceTest {
         ArgumentCaptor<EmailVerificationToken> cap = ArgumentCaptor.forClass(EmailVerificationToken.class);
         verify(tokenRepository).save(cap.capture());
         EmailVerificationToken saved = cap.getValue();
-        assertThat(saved.getToken()).isNotBlank();
         assertThat(saved.getExpiresAt()).isAfter(Instant.now());
-        verify(emailService).sendVerificationEmail(eq(user), eq(saved.getToken()));
+
+        // The email carries the RAW token; the row keeps only its hash. Capture what was
+        // actually sent and prove the two correspond — and that the raw never hit the DB.
+        ArgumentCaptor<String> emailed = ArgumentCaptor.forClass(String.class);
+        verify(emailService).sendVerificationEmail(eq(user), emailed.capture());
+        assertThat(emailed.getValue()).isNotBlank();
+        assertThat(saved.getTokenHash()).isEqualTo(TokenHash.of(emailed.getValue()));
+        assertThat(saved.getTokenHash()).isNotEqualTo(emailed.getValue());
     }
 
     @Test
@@ -54,15 +61,17 @@ class EmailVerificationServiceTest {
         verify(tokenRepository).deleteByUserId(user.getId());
         ArgumentCaptor<EmailVerificationToken> cap = ArgumentCaptor.forClass(EmailVerificationToken.class);
         verify(tokenRepository).save(cap.capture());
-        verify(emailService).sendVerificationEmail(eq(user), eq(cap.getValue().getToken()));
+        ArgumentCaptor<String> emailed = ArgumentCaptor.forClass(String.class);
+        verify(emailService).sendVerificationEmail(eq(user), emailed.capture());
+        assertThat(cap.getValue().getTokenHash()).isEqualTo(TokenHash.of(emailed.getValue()));
     }
 
     @Test
     void verify_validToken_marksUserVerified() {
         User user = User.builder().id(UUID.randomUUID()).emailVerified(false).build();
         EmailVerificationToken token = EmailVerificationToken.builder()
-                .user(user).token("tok").expiresAt(Instant.now().plusSeconds(3600)).build();
-        given(tokenRepository.findByToken("tok")).willReturn(Optional.of(token));
+                .user(user).tokenHash(TokenHash.of("tok")).expiresAt(Instant.now().plusSeconds(3600)).build();
+        given(tokenRepository.findByTokenHash(TokenHash.of("tok"))).willReturn(Optional.of(token));
 
         service.verify("tok");
 
@@ -74,8 +83,8 @@ class EmailVerificationServiceTest {
     void verify_expiredToken_throwsAndLeavesUserUnverified() {
         User user = User.builder().id(UUID.randomUUID()).emailVerified(false).build();
         EmailVerificationToken token = EmailVerificationToken.builder()
-                .user(user).token("old").expiresAt(Instant.now().minusSeconds(60)).build();
-        given(tokenRepository.findByToken("old")).willReturn(Optional.of(token));
+                .user(user).tokenHash(TokenHash.of("old")).expiresAt(Instant.now().minusSeconds(60)).build();
+        given(tokenRepository.findByTokenHash(TokenHash.of("old"))).willReturn(Optional.of(token));
 
         assertThatThrownBy(() -> service.verify("old"))
                 .isInstanceOf(InvalidVerificationTokenException.class);
@@ -86,9 +95,9 @@ class EmailVerificationServiceTest {
     void verify_alreadyUsedToken_throws() {
         User user = User.builder().id(UUID.randomUUID()).emailVerified(false).build();
         EmailVerificationToken token = EmailVerificationToken.builder()
-                .user(user).token("used").expiresAt(Instant.now().plusSeconds(3600))
+                .user(user).tokenHash(TokenHash.of("used")).expiresAt(Instant.now().plusSeconds(3600))
                 .usedAt(Instant.now().minusSeconds(10)).build();
-        given(tokenRepository.findByToken("used")).willReturn(Optional.of(token));
+        given(tokenRepository.findByTokenHash(TokenHash.of("used"))).willReturn(Optional.of(token));
 
         assertThatThrownBy(() -> service.verify("used"))
                 .isInstanceOf(InvalidVerificationTokenException.class);
@@ -96,7 +105,7 @@ class EmailVerificationServiceTest {
 
     @Test
     void verify_unknownToken_throws() {
-        given(tokenRepository.findByToken("nope")).willReturn(Optional.empty());
+        given(tokenRepository.findByTokenHash(TokenHash.of("nope"))).willReturn(Optional.empty());
         assertThatThrownBy(() -> service.verify("nope"))
                 .isInstanceOf(InvalidVerificationTokenException.class);
     }

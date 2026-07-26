@@ -14,7 +14,7 @@ import java.util.UUID;
 @Repository
 public interface EmailVerificationTokenRepository extends JpaRepository<EmailVerificationToken, UUID> {
 
-    Optional<EmailVerificationToken> findByToken(String token);
+    Optional<EmailVerificationToken> findByTokenHash(String tokenHash);
 
     /** Remove tokens past their expiry (used or not) so the table doesn't grow unbounded. */
     @Modifying

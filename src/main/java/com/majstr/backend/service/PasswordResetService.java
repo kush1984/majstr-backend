@@ -7,6 +7,7 @@ import com.majstr.backend.exception.InvalidPasswordResetTokenException;
 import com.majstr.backend.repository.PasswordResetTokenRepository;
 import com.majstr.backend.repository.RefreshTokenRepository;
 import com.majstr.backend.repository.UserRepository;
+import com.majstr.backend.security.TokenHash;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -52,12 +53,15 @@ public class PasswordResetService {
         userRepository.findByEmailIgnoreCase(email.trim()).ifPresent(user -> {
             // A fresh request supersedes any pending token for this user.
             tokenRepository.deleteByUserId(user.getId());
-            PasswordResetToken token = tokenRepository.save(PasswordResetToken.builder()
+            // The RAW token is emailed and then forgotten; only its hash is persisted, so a
+            // DB dump yields no usable reset link. Mirrors RefreshTokenService.
+            String raw = generateToken();
+            tokenRepository.save(PasswordResetToken.builder()
                     .user(user)
-                    .token(generateToken())
+                    .tokenHash(TokenHash.of(raw))
                     .expiresAt(Instant.now().plus(TTL))
                     .build());
-            emailService.sendPasswordResetEmail(user, token.getToken());
+            emailService.sendPasswordResetEmail(user, raw);
         });
     }
 
@@ -68,7 +72,7 @@ public class PasswordResetService {
      */
     @Transactional
     public void reset(String rawToken, String newPassword) {
-        PasswordResetToken token = tokenRepository.findByToken(rawToken)
+        PasswordResetToken token = tokenRepository.findByTokenHash(TokenHash.of(rawToken))
                 .orElseThrow(() -> new InvalidPasswordResetTokenException(INVALID_MSG));
         if (token.getUsedAt() != null || token.getExpiresAt().isBefore(Instant.now())) {
             throw new InvalidPasswordResetTokenException(INVALID_MSG);

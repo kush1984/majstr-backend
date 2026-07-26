@@ -14,7 +14,7 @@ import java.util.UUID;
 @Repository
 public interface PasswordResetTokenRepository extends JpaRepository<PasswordResetToken, UUID> {
 
-    Optional<PasswordResetToken> findByToken(String token);
+    Optional<PasswordResetToken> findByTokenHash(String tokenHash);
 
     /** Remove tokens past their expiry (used or not) so the table doesn't grow unbounded. */
     @Modifying

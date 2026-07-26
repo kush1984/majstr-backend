@@ -4,6 +4,7 @@ import com.majstr.backend.email.EmailService;
 import com.majstr.backend.entity.PasswordResetToken;
 import com.majstr.backend.entity.User;
 import com.majstr.backend.exception.InvalidPasswordResetTokenException;
+import com.majstr.backend.security.TokenHash;
 import com.majstr.backend.repository.PasswordResetTokenRepository;
 import com.majstr.backend.repository.RefreshTokenRepository;
 import com.majstr.backend.repository.UserRepository;
@@ -52,9 +53,16 @@ class PasswordResetServiceTest {
         ArgumentCaptor<PasswordResetToken> cap = ArgumentCaptor.forClass(PasswordResetToken.class);
         verify(tokenRepository).save(cap.capture());
         PasswordResetToken saved = cap.getValue();
-        assertThat(saved.getToken()).isNotBlank();
         assertThat(saved.getExpiresAt()).isAfter(Instant.now());
-        verify(emailService).sendPasswordResetEmail(eq(user), eq(saved.getToken()));
+
+        // A reset link is the strongest bearer credential we issue: holding it IS the
+        // account. The email gets the raw value; the row must hold only its hash, so a
+        // leaked dump grants nothing.
+        ArgumentCaptor<String> emailed = ArgumentCaptor.forClass(String.class);
+        verify(emailService).sendPasswordResetEmail(eq(user), emailed.capture());
+        assertThat(emailed.getValue()).isNotBlank();
+        assertThat(saved.getTokenHash()).isEqualTo(TokenHash.of(emailed.getValue()));
+        assertThat(saved.getTokenHash()).isNotEqualTo(emailed.getValue());
     }
 
     @Test
@@ -71,8 +79,8 @@ class PasswordResetServiceTest {
     void reset_validToken_setsHashConsumesTokenAndRevokesSessions() {
         User user = User.builder().id(UUID.randomUUID()).passwordHash("OLD").build();
         PasswordResetToken token = PasswordResetToken.builder()
-                .user(user).token("tok").expiresAt(Instant.now().plusSeconds(600)).build();
-        given(tokenRepository.findByToken("tok")).willReturn(Optional.of(token));
+                .user(user).tokenHash(TokenHash.of("tok")).expiresAt(Instant.now().plusSeconds(600)).build();
+        given(tokenRepository.findByTokenHash(TokenHash.of("tok"))).willReturn(Optional.of(token));
         given(passwordEncoder.encode("newPass123")).willReturn("HASHED");
 
         service().reset("tok", "newPass123");
@@ -84,7 +92,7 @@ class PasswordResetServiceTest {
 
     @Test
     void reset_unknownToken_throws() {
-        given(tokenRepository.findByToken("nope")).willReturn(Optional.empty());
+        given(tokenRepository.findByTokenHash(TokenHash.of("nope"))).willReturn(Optional.empty());
         assertThatThrownBy(() -> service().reset("nope", "newPass123"))
                 .isInstanceOf(InvalidPasswordResetTokenException.class);
         verify(refreshTokenRepository, never()).revokeAllForUser(any());
@@ -94,8 +102,8 @@ class PasswordResetServiceTest {
     void reset_expiredToken_throwsAndLeavesPasswordUnchanged() {
         User user = User.builder().id(UUID.randomUUID()).passwordHash("OLD").build();
         PasswordResetToken token = PasswordResetToken.builder()
-                .user(user).token("old").expiresAt(Instant.now().minusSeconds(60)).build();
-        given(tokenRepository.findByToken("old")).willReturn(Optional.of(token));
+                .user(user).tokenHash(TokenHash.of("old")).expiresAt(Instant.now().minusSeconds(60)).build();
+        given(tokenRepository.findByTokenHash(TokenHash.of("old"))).willReturn(Optional.of(token));
 
         assertThatThrownBy(() -> service().reset("old", "newPass123"))
                 .isInstanceOf(InvalidPasswordResetTokenException.class);
@@ -107,9 +115,9 @@ class PasswordResetServiceTest {
     void reset_alreadyUsedToken_throws() {
         User user = User.builder().id(UUID.randomUUID()).passwordHash("OLD").build();
         PasswordResetToken token = PasswordResetToken.builder()
-                .user(user).token("used").expiresAt(Instant.now().plusSeconds(600))
+                .user(user).tokenHash(TokenHash.of("used")).expiresAt(Instant.now().plusSeconds(600))
                 .usedAt(Instant.now().minusSeconds(10)).build();
-        given(tokenRepository.findByToken("used")).willReturn(Optional.of(token));
+        given(tokenRepository.findByTokenHash(TokenHash.of("used"))).willReturn(Optional.of(token));
 
         assertThatThrownBy(() -> service().reset("used", "newPass123"))
                 .isInstanceOf(InvalidPasswordResetTokenException.class);

@@ -7,6 +7,7 @@ import com.majstr.backend.exception.InvalidVerificationTokenException;
 import com.majstr.backend.exception.ResourceNotFoundException;
 import com.majstr.backend.repository.EmailVerificationTokenRepository;
 import com.majstr.backend.repository.UserRepository;
+import com.majstr.backend.security.TokenHash;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -35,13 +36,15 @@ public class EmailVerificationService {
     /** Mint a fresh token for the user and email it (async, fail-soft). Called on register. */
     @Transactional
     public void issueAndSend(User user) {
-        EmailVerificationToken token = EmailVerificationToken.builder()
+        // The RAW token goes out in the email and is not kept; the row stores only its
+        // hash, so a DB dump can't be replayed into a verified account.
+        String raw = generateToken();
+        tokenRepository.save(EmailVerificationToken.builder()
                 .user(user)
-                .token(generateToken())
+                .tokenHash(TokenHash.of(raw))
                 .expiresAt(Instant.now().plus(TTL))
-                .build();
-        tokenRepository.save(token);
-        emailService.sendVerificationEmail(user, token.getToken());
+                .build());
+        emailService.sendVerificationEmail(user, raw);
     }
 
     /**
@@ -67,7 +70,7 @@ public class EmailVerificationService {
     /** Consume a token and mark its user verified. Bad/expired/used → InvalidVerificationTokenException (400). */
     @Transactional
     public void verify(String rawToken) {
-        EmailVerificationToken token = tokenRepository.findByToken(rawToken)
+        EmailVerificationToken token = tokenRepository.findByTokenHash(TokenHash.of(rawToken))
                 .orElseThrow(() -> new InvalidVerificationTokenException(INVALID_MSG));
         if (token.getUsedAt() != null || token.getExpiresAt().isBefore(Instant.now())) {
             throw new InvalidVerificationTokenException(INVALID_MSG);

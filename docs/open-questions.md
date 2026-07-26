@@ -364,7 +364,13 @@ one-line summary — keep the item in the file as a record.
   iteration ships; the raw-vs-hashed question now covers `project_share_links` too.
 
 ### Public file serving needs auth once non-public assets exist
-- **Status:** IN_PROGRESS
+- **Status:** RESOLVED (audit batch B, 2026-07-26) — `FileController` is now locked to the
+  `logos/` prefix, the only class of object that is public by design. Until then it resolved
+  ANY key, so a private receipt photo was world-readable to anyone who learned it (the audit's
+  M3); UUID unguessability was the only protection. The 404 is decided from the key alone, so
+  timing can't reveal that a private object exists. Private assets keep their own authenticated
+  / portal-token-gated endpoints. Signed URLs remain an option if a future asset class needs
+  public-but-temporary access. See [iteration-audit-batch-b.md](iteration-audit-batch-b.md).
 - **Since:** Fix I code review (2026-06-10)
 - **Context:** `/api/files/**` is fully public. Today it only serves contractor
   logos, which are public by design (anonymous portal + PDF). The moment
