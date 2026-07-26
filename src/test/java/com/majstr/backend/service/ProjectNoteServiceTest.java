@@ -17,6 +17,7 @@ import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
+import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
@@ -103,6 +104,42 @@ class ProjectNoteServiceTest {
         given(noteRepository.findByIdAndProjectId(noteId, objectId)).willReturn(Optional.of(existing));
         service.delete(objectId, noteId, ownerId);
         verify(noteRepository).delete(existing);
+    }
+
+    @Test
+    void add_replayedWithTheSameClientId_returnsTheExistingNote() {
+        // Offline authoring: a note written on site replays when the signal returns. Without
+        // the id check a lost response would leave the master with the note twice.
+        ProjectNote already = ProjectNote.builder()
+                .id(noteId).projectId(objectId).body("Ключі в консьєржа").build();
+        given(noteRepository.findById(noteId)).willReturn(Optional.of(already));
+
+        var resp = service.add(objectId, ownerId, new NoteRequest(null, null, "Ключі в консьєржа"), noteId);
+
+        assertThat(resp.id()).isEqualTo(noteId);
+        verify(noteRepository, never()).save(any(ProjectNote.class)); // no duplicate
+    }
+
+    @Test
+    void add_clientIdBelongingToAnotherObject_isRefused() {
+        // A note is never silently re-homed onto a different object.
+        ProjectNote elsewhere = ProjectNote.builder()
+                .id(noteId).projectId(UUID.randomUUID()).body("Чужа").build();
+        given(noteRepository.findById(noteId)).willReturn(Optional.of(elsewhere));
+
+        assertThatThrownBy(() -> service.add(objectId, ownerId, new NoteRequest(null, null, "x"), noteId))
+                .isInstanceOf(AccessDeniedException.class);
+        verify(noteRepository, never()).save(any(ProjectNote.class));
+    }
+
+    @Test
+    void delete_alreadyGoneIsANoOp_notA404() {
+        // A replayed delete whose first response was lost must not surface as a rejection.
+        given(noteRepository.findByIdAndProjectId(noteId, objectId)).willReturn(Optional.empty());
+
+        assertThatCode(() -> service.delete(objectId, noteId, ownerId)).doesNotThrowAnyException();
+
+        verify(noteRepository, never()).delete(any(ProjectNote.class));
     }
 
     @Test

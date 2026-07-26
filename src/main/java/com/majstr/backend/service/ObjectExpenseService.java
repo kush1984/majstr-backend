@@ -15,6 +15,7 @@ import com.majstr.backend.repository.EstimateRepository;
 import com.majstr.backend.repository.ObjectExpenseRepository;
 import com.majstr.backend.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -46,8 +47,30 @@ public class ObjectExpenseService {
 
     @Transactional
     public ExpenseResponse add(UUID objectId, UUID ownerId, ExpenseRequest req) {
+        return add(objectId, ownerId, req, null);
+    }
+
+    /**
+     * Add an expense, optionally with a CLIENT-PROVIDED id (offline authoring) so a replayed
+     * add returns the existing row instead of duplicating it. Money must never double-count:
+     * a duplicated expense silently understates the object's profit.
+     *
+     * <p>An id already belonging to a DIFFERENT object is rejected, never re-homed.
+     */
+    @Transactional
+    public ExpenseResponse add(UUID objectId, UUID ownerId, ExpenseRequest req, UUID requestedId) {
         requireEconomy(objectId, ownerId);
+        if (requestedId != null) {
+            var existing = expenseRepository.findById(requestedId);
+            if (existing.isPresent()) {
+                if (!existing.get().getObjectId().equals(objectId)) {
+                    throw new AccessDeniedException("Expense belongs to a different object");
+                }
+                return ExpenseResponse.from(existing.get()); // idempotent replay
+            }
+        }
         ObjectExpense expense = ObjectExpense.builder()
+                .id(requestedId)
                 .objectId(objectId)
                 .amount(req.amount())
                 .category(req.category())
@@ -79,10 +102,11 @@ public class ObjectExpenseService {
         return ExpenseResponse.from(expense);
     }
 
+    /** Idempotent: a replayed offline delete of an already-gone expense is a no-op, not a 404. */
     @Transactional
     public void delete(UUID objectId, UUID expenseId, UUID ownerId) {
         requireEconomy(objectId, ownerId);
-        expenseRepository.delete(loadExpense(objectId, expenseId));
+        expenseRepository.findByIdAndObjectId(expenseId, objectId).ifPresent(expenseRepository::delete);
     }
 
     @Transactional(readOnly = true)

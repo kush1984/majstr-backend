@@ -25,6 +25,7 @@ import java.time.LocalDate;
 import java.util.Optional;
 import java.util.UUID;
 
+import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
@@ -152,5 +153,42 @@ class ObjectExpenseServiceTest {
         assertThat(eco.cashBalance()).isEqualByComparingTo("1000.00");   // 4000 − 3000 leftover
         // Completed → profit = works − manual + leftover = 10000 − 200 + 1000.
         assertThat(eco.profit()).isEqualByComparingTo("10800.00");
+    }
+
+    // ---- offline authoring (client-supplied ids) ---------------------------
+
+    @Test
+    void add_replayedWithTheSameClientId_doesNotDoubleCountTheMoney() {
+        // Money must never duplicate: a second copy of an expense silently understates the
+        // object's profit, and the master would be reading a wrong number about their own cash.
+        UUID ownerId = UUID.randomUUID();
+        UUID objectId = UUID.randomUUID();
+        UUID clientId = UUID.randomUUID();
+        user(ownerId, Plan.PRO);
+        given(projectService.loadOwned(objectId, ownerId)).willReturn(object(ProjectStatus.IN_PROGRESS));
+        given(expenseRepository.findById(clientId)).willReturn(Optional.of(ObjectExpense.builder()
+                .id(clientId).objectId(objectId).amount(new BigDecimal("450.00"))
+                .category(ExpenseCategory.MATERIALS).source(ExpenseSource.MANUAL).build()));
+
+        var resp = service().add(objectId, ownerId,
+                new ExpenseRequest(new BigDecimal("450.00"), ExpenseCategory.MATERIALS, null, null, null),
+                clientId);
+
+        assertThat(resp.id()).isEqualTo(clientId);
+        verify(expenseRepository, never()).save(any(ObjectExpense.class));
+    }
+
+    @Test
+    void delete_alreadyGoneIsANoOp_notA404() {
+        UUID ownerId = UUID.randomUUID();
+        UUID objectId = UUID.randomUUID();
+        UUID expenseId = UUID.randomUUID();
+        user(ownerId, Plan.PRO);
+        given(projectService.loadOwned(objectId, ownerId)).willReturn(object(ProjectStatus.IN_PROGRESS));
+        given(expenseRepository.findByIdAndObjectId(expenseId, objectId)).willReturn(Optional.empty());
+
+        assertThatCode(() -> service().delete(objectId, expenseId, ownerId)).doesNotThrowAnyException();
+
+        verify(expenseRepository, never()).delete(any(ObjectExpense.class));
     }
 }

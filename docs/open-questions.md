@@ -104,13 +104,18 @@ one-line summary — keep the item in the file as a record.
        dead-session/logout, a login-time prompt («у вас N незбережених змін — синхронізувати?») that
        only offers ops whose `ownerId` matches the user who just logged in, and dropping ops belonging
        to a *different* owner at that moment (no cross-account leak). Feeds the existing over-limit gate.
-     - **O4 — notes + economy expenses offline (frontend-only).** `NotesSection` (per-object notes) and
-       the economy expense list are ordinary CRUD; same `offlineMutate` + client-UUID pattern.
-       Economy is PRO-gated, so the prefetch already skips it on FREE — keep that alignment.
-       Backend: expenses/notes creates need the same `X-Entity-Uuid` idempotency overload.
-     - **O6 — photos offline (heaviest, explicitly last).** See item 6: a **blob outbox** (binary in
-       IndexedDB), deferred multipart upload on reconnect, dedup, and a quota story. Until then
-       `PhotosSection` stays `useOnlineGuard`-disabled offline, which is honest.
+     - **O4 — SHIPPED 2026-07-26.** Notes and economy expenses author offline (all six
+       mutations), with `X-Entity-Uuid` idempotency and idempotent deletes on the backend. The
+       expense LIST is patched optimistically but the **profit summary deliberately is not** —
+       it mixes estimate income, deposits and a completed-object settlement rule owned by the
+       server, and a locally re-derived figure could disagree with the real one; a wrong number
+       about the master's own money is worse than a stale one. A test pins that.
+       See [iteration-offline-step4-notes-expenses.md](iteration-offline-step4-notes-expenses.md).
+     - **O6 — photos offline. BACKLOG** (user's call, 2026-07-26; previously "explicitly last").
+       A **blob outbox** (binary in IndexedDB), deferred multipart upload on reconnect, dedup
+       and a storage-quota story — by far the heaviest piece, and the only part of the daily
+       loop still online-only. `PhotosSection` stays `useOnlineGuard`-disabled offline, which is
+       honest rather than broken. Pick this up when photos become a real complaint.
      - **#4 — SHIPPED 2026-07-26** (offline step 3). Catalog single + batch adds now author
        offline, replaying through the FROM-CATALOG endpoint with client ids (the plain item add
        could not be reused: it validates `unitPrice >= 0.01`, while a catalog position may
