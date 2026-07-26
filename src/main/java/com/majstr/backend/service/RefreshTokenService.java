@@ -7,6 +7,7 @@ import com.majstr.backend.exception.InvalidTokenException;
 import com.majstr.backend.repository.RefreshTokenRepository;
 import com.majstr.backend.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -19,6 +20,7 @@ import java.time.Instant;
 import java.util.Base64;
 
 @Service
+@Slf4j
 @RequiredArgsConstructor
 public class RefreshTokenService {
 
@@ -59,21 +61,48 @@ public class RefreshTokenService {
         });
     }
 
+    /**
+     * Exchanges a refresh token for a new pair, revoking the old one (rotation).
+     *
+     * <p><b>Grace window.</b> The client only stores the replacement once the response lands,
+     * so a reply lost in transit leaves it holding a token the server already revoked — and
+     * the next attempt would end the session and, in the PWA, discard the master's unsynced
+     * offline queue. A token rotated within {@code app.jwt.refresh-rotation-grace-seconds} is
+     * therefore accepted once more and issues a fresh pair. Any replacement already handed out
+     * stays valid: re-revoking it would just move the logout to whichever tab held it.
+     *
+     * <p>Logout is deliberately NOT covered — {@link #revoke} leaves {@code rotatedAt} null, so
+     * a token the user logged out of dies immediately.
+     */
     @Transactional
     public RotationResult rotate(String rawToken) {
         String hash = hash(rawToken);
         RefreshToken stored = repository.findByTokenHash(hash)
                 .orElseThrow(() -> new InvalidTokenException("Refresh token is invalid or revoked"));
 
-        if (!stored.isUsable(Instant.now())) {
-            throw new InvalidTokenException("Refresh token is invalid or expired");
+        Instant now = Instant.now();
+        boolean replayedWithinGrace = false;
+        if (!stored.isUsable(now)) {
+            // Expiry is absolute; only a recent ROTATION earns a second chance.
+            if (!stored.getExpiresAt().isAfter(now)
+                    || !stored.isWithinRotationGrace(now, Duration.ofSeconds(jwtProperties.refreshRotationGraceSeconds()))) {
+                throw new InvalidTokenException("Refresh token is invalid or expired");
+            }
+            replayedWithinGrace = true;
         }
 
         User user = userRepository.findById(stored.getUserId())
                 .orElseThrow(() -> new InvalidTokenException("Refresh token owner not found"));
 
-        stored.setRevoked(true);
-        repository.save(stored);
+        if (replayedWithinGrace) {
+            // Already revoked and stamped by the first rotation — leave both as they are so the
+            // window stays anchored to the ORIGINAL rotation and cannot be extended by replays.
+            log.debug("Refresh token replayed within the rotation grace window for user {}", user.getId());
+        } else {
+            stored.setRevoked(true);
+            stored.setRotatedAt(now);
+            repository.save(stored);
+        }
 
         String newRaw = issue(user);
         return new RotationResult(user, newRaw);

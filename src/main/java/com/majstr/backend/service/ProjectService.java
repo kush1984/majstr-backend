@@ -128,9 +128,21 @@ public class ProjectService {
         return withSummary(project);
     }
 
+    /**
+     * Deletes an object and everything under it. <b>Idempotent</b> — an object that is already
+     * gone is a no-op, not a 404, so a replayed offline delete (one whose response was lost)
+     * does not come back to the master as "not saved to cloud". Ownership is still enforced
+     * whenever the row exists.
+     */
     @Transactional
     public void delete(UUID id, UUID ownerId) {
-        Project project = loadOwned(id, ownerId);
+        Project project = projectRepository.findById(id).orElse(null);
+        if (project == null) {
+            return;
+        }
+        if (!project.getOwner().getId().equals(ownerId)) {
+            throw new AccessDeniedException("Project does not belong to the current user");
+        }
         // The photo ROWS cascade with the FK, but the stored objects behind them do not:
         // every project delete used to leak all its files on R2/local storage forever. That
         // is cost creep, and — since receipt photos are financial personal data — a deletion

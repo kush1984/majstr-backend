@@ -24,6 +24,18 @@ public record AddCatalogItemsBatchRequest(
             @NotNull UUID catalogItemId,
             @NotNull @DecimalMin(value = "0.001", message = "quantity must be greater than 0")
             @Digits(integer = 12, fraction = 3) BigDecimal quantity,
-            @PositiveOrZero Integer sortOrder
-    ) {}
+            @PositiveOrZero Integer sortOrder,
+            /**
+             * Optional CLIENT-generated id for the line this entry creates — the batch
+             * equivalent of the {@code X-Entity-Uuid} header, which cannot carry N ids.
+             * Makes a replayed offline batch idempotent per line instead of duplicating the
+             * whole selection. Null for an ordinary online add.
+             */
+            UUID id
+    ) {
+        /** Online callers that don't author offline. */
+        public Entry(UUID catalogItemId, BigDecimal quantity, Integer sortOrder) {
+            this(catalogItemId, quantity, sortOrder, null);
+        }
+    }
 }

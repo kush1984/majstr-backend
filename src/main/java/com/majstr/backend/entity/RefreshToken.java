@@ -12,6 +12,7 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
 
+import java.time.Duration;
 import java.time.Instant;
 import java.util.UUID;
 
@@ -44,6 +45,17 @@ public class RefreshToken {
     @Column(name = "revoked", nullable = false)
     private boolean revoked;
 
+    /**
+     * When this token was exchanged for a new one. {@code null} means it was never rotated —
+     * either still live, or revoked by an explicit logout.
+     *
+     * <p>The distinction is the whole point: a token rotated seconds ago may be replayed once
+     * more (the client never received the replacement), but a token the user logged out of
+     * must die immediately. Only rotation stamps this, so only rotation is forgiving.
+     */
+    @Column(name = "rotated_at")
+    private Instant rotatedAt;
+
     @PrePersist
     void onCreate() {
         if (id == null) {
@@ -56,5 +68,18 @@ public class RefreshToken {
 
     public boolean isUsable(Instant now) {
         return !revoked && expiresAt.isAfter(now);
+    }
+
+    /**
+     * True when this token is revoked, but only because it was rotated within {@code grace} of
+     * {@code now} — i.e. the holder plausibly never received the replacement.
+     *
+     * <p>Expiry is still enforced by the caller: a genuinely expired token gets no grace, and
+     * neither does one revoked by logout ({@code rotatedAt} stays null there).
+     */
+    public boolean isWithinRotationGrace(Instant now, Duration grace) {
+        return revoked
+                && rotatedAt != null
+                && rotatedAt.isAfter(now.minus(grace));
     }
 }

@@ -2,6 +2,7 @@ package com.majstr.backend.service;
 
 import com.majstr.backend.dto.AddCatalogItemsBatchRequest;
 import com.majstr.backend.dto.EstimateCreateRequest;
+import com.majstr.backend.dto.EstimateItemFromCatalogRequest;
 import com.majstr.backend.dto.EstimateItemRequest;
 import com.majstr.backend.dto.EstimateResponse;
 import com.majstr.backend.dto.EstimateUpdateRequest;
@@ -371,6 +372,20 @@ class EstimateServiceTest {
     }
 
     @Test
+    void delete_alreadyGoneIsANoOp_notA404() {
+        // Idempotent on purpose. The offline outbox replays a delete whose RESPONSE was lost —
+        // the row is already gone, the master's phone never heard so. A 404 there is classified
+        // as a permanent rejection, and they would be shown "not saved to cloud" for something
+        // that saved perfectly.
+        given(estimateRepository.findById(estimateId)).willReturn(Optional.empty());
+
+        assertThatCode(() -> estimateService.delete(estimateId, ownerId)).doesNotThrowAnyException();
+
+        verify(estimateRepository, never()).delete(any(Estimate.class));
+        verify(projectRepository, never()).incrementEstimatesDeleted(any()); // no phantom churn
+    }
+
+    @Test
     void delete_rejectsSignedEstimate_doesNotDelete() {
         given(estimateRepository.findById(estimateId)).willReturn(Optional.of(signedEstimate()));
 
@@ -476,6 +491,52 @@ class EstimateServiceTest {
                 new AddCatalogItemsBatchRequest.Entry(UUID.randomUUID(), new BigDecimal("1"), 0)), ownerId))
                 .isInstanceOf(EstimateSignedException.class);
         verify(itemRepository, never()).saveAll(anyList());
+    }
+
+    @Test
+    void addItemFromCatalog_replayedWithTheSameClientId_returnsTheExistingLine() {
+        // Offline authoring: picking from the catalog is how estimates are built, so it must
+        // survive a replay. Without the id check a lost response would duplicate the line.
+        UUID clientId = UUID.randomUUID();
+        EstimateItem already = EstimateItem.builder()
+                .id(clientId).estimate(ownedEstimate(ownerId)).type(ItemType.WORK)
+                .name("Розетка").unit(Unit.PIECE).quantity(new BigDecimal("3"))
+                .unitPrice(new BigDecimal("180.00")).sortOrder(0).build();
+        given(estimateRepository.findById(estimateId)).willReturn(Optional.of(ownedEstimate(ownerId)));
+        given(itemRepository.findById(clientId)).willReturn(Optional.of(already));
+
+        var resp = estimateService.addItemFromCatalog(
+                estimateId, UUID.randomUUID(), new EstimateItemFromCatalogRequest(new BigDecimal("3"), 0),
+                ownerId, clientId);
+
+        assertThat(resp.id()).isEqualTo(clientId);
+        verify(itemRepository, never()).save(any(EstimateItem.class)); // no duplicate
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void addItemsFromCatalogBatch_partiallyAppliedReplay_addsOnlyTheMissingLines() {
+        // A batch whose response was lost may be replayed after some lines already landed.
+        // Per-entry client ids let it resume instead of duplicating the whole selection.
+        UUID landed = UUID.randomUUID();
+        UUID missing = UUID.randomUUID();
+        UUID c2 = UUID.randomUUID();
+        given(estimateRepository.findById(estimateId)).willReturn(Optional.of(ownedEstimate(ownerId)));
+        given(itemRepository.findById(landed)).willReturn(Optional.of(EstimateItem.builder()
+                .id(landed).estimate(ownedEstimate(ownerId)).build()));
+        given(itemRepository.findById(missing)).willReturn(Optional.empty());
+        given(catalogService.loadOwned(c2, ownerId))
+                .willReturn(catalogItem("Кабель", ItemType.MATERIAL, Unit.M, "38.50", null));
+        given(itemRepository.findByEstimateIdOrderBySortOrderAscIdAsc(estimateId)).willReturn(List.of());
+
+        estimateService.addItemsFromCatalogBatch(estimateId, List.of(
+                new AddCatalogItemsBatchRequest.Entry(UUID.randomUUID(), new BigDecimal("3"), 0, landed),
+                new AddCatalogItemsBatchRequest.Entry(c2, new BigDecimal("10"), 1, missing)), ownerId);
+
+        ArgumentCaptor<List<EstimateItem>> captor = ArgumentCaptor.forClass(List.class);
+        verify(itemRepository).saveAll(captor.capture());
+        assertThat(captor.getValue()).extracting(EstimateItem::getName).containsExactly("Кабель");
+        assertThat(captor.getValue().get(0).getId()).isEqualTo(missing); // keeps the client id
     }
 
     // ---- consolidate -------------------------------------------------------

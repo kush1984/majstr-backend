@@ -25,7 +25,17 @@ one-line summary — keep the item in the file as a record.
 ## Architecture & operations
 
 ### Offline-first follow-ups (Phase 1 shipped; these are the deferred pieces)
-- **Status:** OPEN
+- **Status:** IN_PROGRESS (2026-07-26) — the offline programme resumed. **O3 shipped** (see
+  below and [iteration-offline-step1-nothing-is-lost.md](iteration-offline-step1-nothing-is-lost.md)):
+  the outbox is owner-stamped and now survives a logout or a dead session, and the refresh
+  rotation that was killing sessions got a grace window. Next, in order: the core-loop gaps
+  found by reading the code rather than the docs — **estimate status/name/deposit and object
+  status offline**, **deleting an object or estimate offline** (today these have no
+  `networkMode: 'always'`, so they silently PAUSE and are lost on reload — and this strands a
+  master who is over the FREE limit, since the gate tells them to delete something they cannot
+  delete), then **adding catalog positions into an estimate offline** (item #4 below — reclassified
+  as core, since it is how estimates are actually built), then **notes + economy expenses**
+  (O4), then **photos** (O6).
 - **Since:** Offline-first iteration (2026-07-22)
 - **Context:** Offline authoring shipped for **clients / objects / estimates / line items /
   measurements / catalog / own templates** (outbox + client-UUID idempotent replay), plus
@@ -80,7 +90,15 @@ one-line summary — keep the item in the file as a record.
        parent entity, `networkMode: 'always'`. **No backend change** — the endpoints are already
        idempotent updates. Watch out: `SIGNED` must stay unreachable from the client (the server
        rejects it), and the FREE/PRO gates are already client-side off the cached plan.
-     - **O3 — owner-tagged re-sync on re-login (highest value: the last data-loss path).** See item 2
+     - **O3 — SHIPPED 2026-07-26.** Owner-stamped ops; the outbox survives logout AND a dead
+       session; `discardForeignOps` runs at login so another account can never replay it. Paired
+       with the server-side rotation grace window that was causing the logouts in the first place.
+       **One deviation from the design above:** the agreed «у вас N незбережених змін —
+       синхронізувати?» modal was built as a non-blocking TOAST instead. Re-syncing a master's
+       OWN work is what they already expect, so a modal asks a question with one sensible answer
+       and adds friction at login; the toast still makes it visible, and anything the server
+       refuses lands in the existing `SyncReviewSheet`. Say the word and it becomes a modal.
+     - ~~**O3 (original note)**~~  See item 2
        above for the full design. Today `forceLogin` → `clearOutbox` destroys unsynced work when a
        session dies. Needs: an `ownerId` stamp on every op at enqueue time, NOT wiping on
        dead-session/logout, a login-time prompt («у вас N незбережених змін — синхронізувати?») that
@@ -93,8 +111,14 @@ one-line summary — keep the item in the file as a record.
      - **O6 — photos offline (heaviest, explicitly last).** See item 6: a **blob outbox** (binary in
        IndexedDB), deferred multipart upload on reconnect, dedup, and a quota story. Until then
        `PhotosSection` stays `useOnlineGuard`-disabled offline, which is honest.
-     Also still open from the list above and NOT scheduled: **#3** (LWW conflict UI), **#4**
-     (catalog-add / batch item adds into an estimate), **#5** (per-item blocked-op resolution).
+     - **#4 — SHIPPED 2026-07-26** (offline step 3). Catalog single + batch adds now author
+       offline, replaying through the FROM-CATALOG endpoint with client ids (the plain item add
+       could not be reused: it validates `unitPrice >= 0.01`, while a catalog position may
+       legally cost 0, so those lines would have queued and then been rejected on replay).
+       Reclassified from "not scheduled" to core along the way — it is how estimates are
+       actually built. See [iteration-offline-step3-catalog.md](iteration-offline-step3-catalog.md).
+     Also still open from the list above and NOT scheduled: **#3** (LWW conflict UI),
+     **#5** (per-item blocked-op resolution).
 
 ### Multi-instance support for in-memory state
 - **Status:** OPEN
@@ -338,8 +362,19 @@ one-line summary — keep the item in the file as a record.
 - **Notes / options:** Hash like refresh tokens; lose the "show URL again" feature, gain breach safety. Decide once we have real users.
 
 ### Refresh-token reuse detection (session-family revocation)
-- **Status:** OPEN
+- **Status:** OPEN — but see the note below; the *first* half shipped 2026-07-26
 - **Since:** Fix I code review (2026-06-10)
+- **2026-07-26 — the other half of this item shipped first, deliberately.** This item's own
+  note warned "needs care not to punish the PWA's legitimate single-flight races". That risk
+  turned out to be a live production bug already: strict single-use rotation logged masters
+  out whenever a rotation's RESPONSE was lost (bad signal) or two contexts raced — and the PWA
+  then wiped their unsynced outbox. A **rotation grace window** (V69 `rotated_at`,
+  `app.jwt.refresh-rotation-grace-seconds`, default 60s) now accepts a token replayed shortly
+  after it was rotated. Logout is excluded from the grace. See
+  [iteration-offline-step1-nothing-is-lost.md](iteration-offline-step1-nothing-is-lost.md).
+  **What remains OPEN is the theft response:** presenting a token revoked *outside* the grace
+  still just 401s instead of calling `revokeAllForUser`. Add that only on top of the grace —
+  doing it without would have turned every lost packet into a full account logout.
 - **Context:** Rotation revokes the old token on use, but presenting an
   *already-revoked* token (the classic stolen-token signal) just returns 401 —
   it doesn't revoke the user's other sessions. `revokeAllForUser` exists and is
@@ -1413,7 +1448,13 @@ one-line summary — keep the item in the file as a record.
   noisy-but-honest reporting.
 
 ### Integration tests with Testcontainers
-- **Status:** OPEN
+- **Status:** RESOLVED (audit M12, 2026-07-26) — a `@SpringBootTest` + `PostgreSQLContainer`
+  slice now runs the real Flyway chain, the native money queries, and the security URL matrix
+  through the actual filter chain. It found two real bugs on its first run: the untested
+  `AND e.status <> 'REJECTED'` income guard, and every unauthenticated request answering 403
+  instead of 401 (no `AuthenticationEntryPoint` was ever wired), which had been silently
+  breaking the PWA's refresh-on-401. See
+  [iteration-integration-slice.md](iteration-integration-slice.md).
 - **Since:** step 1
 - **Context:** All current tests are pure-Mockito unit tests. Nothing covers Flyway migrations actually running, real Hibernate mapping, or the security filter chain end-to-end. **Concrete miss:** Fix J — a `LazyInitializationException` on `User.trades` (open-in-view off, detached entity) shipped to prod because no test exercises a real Hibernate session/lazy-loading; the Mockito test could only pin the load-method choice, not the actual lazy behaviour. **Second concrete miss:** Fix K — admin user search 500'd in prod (`function lower(bytea) does not exist`) because no test executes the `@Query` SQL against a real Postgres; the unit test can only check the Java-side pattern building, not the generated `lower()/LIKE`.
 - **Notes / options:** Spring Boot 4 removed `@DataJpaTest` etc — see CLAUDE.md *Testing* section. Use `@SpringBootTest` + Testcontainers `PostgreSQLContainer`. A lazy-loading regression slice (load user, detach, map to DTO) would catch the Fix-J class of bug; a repository slice that runs `searchAdmin` against Postgres would catch the Fix-K class.

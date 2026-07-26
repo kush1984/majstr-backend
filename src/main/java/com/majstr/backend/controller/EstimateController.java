@@ -182,15 +182,18 @@ public class EstimateController {
                 .body(estimateService.addItem(estimateId, req, principal.id(), entityId));
     }
 
-    @Operation(summary = "Add a line item by copying from a catalog entry")
+    @Operation(summary = "Add a line item by copying from a catalog entry",
+            description = "Offline-authored adds may send a client-generated UUID in the "
+                    + "X-Entity-Uuid header — the add is then idempotent on replay.")
     @PostMapping("/api/estimates/{estimateId}/items/from-catalog/{catalogItemId}")
     public ResponseEntity<EstimateItemResponse> addItemFromCatalog(
             @PathVariable UUID estimateId,
             @PathVariable UUID catalogItemId,
             @Valid @RequestBody EstimateItemFromCatalogRequest req,
+            @RequestHeader(value = "X-Entity-Uuid", required = false) UUID entityId,
             @AuthenticationPrincipal UserPrincipal principal) {
         return ResponseEntity.status(HttpStatus.CREATED)
-                .body(estimateService.addItemFromCatalog(estimateId, catalogItemId, req, principal.id()));
+                .body(estimateService.addItemFromCatalog(estimateId, catalogItemId, req, principal.id(), entityId));
     }
 
     @Operation(summary = "Add several catalog items at once (multi-select picker) — one "

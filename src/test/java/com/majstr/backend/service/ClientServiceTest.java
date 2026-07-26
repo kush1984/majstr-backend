@@ -156,4 +156,34 @@ class ClientServiceTest {
                 new ClientRequest("Викрадач", "+2", null, null), ownerId, requestedId))
                 .isInstanceOf(AccessDeniedException.class);
     }
+
+    @Test
+    void delete_alreadyGoneIsANoOp_notA404() {
+        // Client deletes have been offline-replayable for a while, so this gap was already
+        // live: a replayed delete whose first response was lost hit a 404, which the outbox
+        // classifies as a permanent rejection and shows as "not saved to cloud".
+        UUID ownerId = UUID.randomUUID();
+        UUID id = UUID.randomUUID();
+        given(clientRepository.findById(id)).willReturn(Optional.empty());
+
+        assertThatCode(() -> clientService.delete(id, ownerId)).doesNotThrowAnyException();
+
+        org.mockito.Mockito.verify(clientRepository, org.mockito.Mockito.never()).delete(any(Client.class));
+    }
+
+    @Test
+    void delete_somebodyElsesClientIsStill403() {
+        // Idempotency must not slide into "anyone may delete anything that exists".
+        UUID ownerId = UUID.randomUUID();
+        UUID id = UUID.randomUUID();
+        Client theirs = Client.builder().id(id)
+                .owner(User.builder().id(UUID.randomUUID()).build())
+                .fullName("Чужий").phone("+1").build();
+        given(clientRepository.findById(id)).willReturn(Optional.of(theirs));
+
+        assertThatThrownBy(() -> clientService.delete(id, ownerId))
+                .isInstanceOf(AccessDeniedException.class);
+
+        org.mockito.Mockito.verify(clientRepository, org.mockito.Mockito.never()).delete(any(Client.class));
+    }
 }

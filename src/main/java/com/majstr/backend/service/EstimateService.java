@@ -239,8 +239,19 @@ public class EstimateService {
      * DRAFT/SENT delete freely.
      */
     @Transactional
+    /**
+     * Deletes an estimate. <b>Idempotent</b> — one that is already gone is a no-op, not a 404,
+     * so a replayed offline delete isn't reported back to the master as a failure. A SIGNED
+     * estimate is still refused (409), and ownership is still enforced, whenever the row exists.
+     */
     public void delete(UUID estimateId, UUID ownerId) {
-        Estimate estimate = loadOwned(estimateId, ownerId);
+        Estimate estimate = estimateRepository.findById(estimateId).orElse(null);
+        if (estimate == null) {
+            return;
+        }
+        if (!estimate.getProject().getOwner().getId().equals(ownerId)) {
+            throw new AccessDeniedException("Estimate does not belong to the current user");
+        }
         if (estimate.getStatus() == EstimateStatus.SIGNED) {
             throw new EstimateSignedException();
         }
@@ -381,11 +392,40 @@ public class EstimateService {
                                                    UUID catalogItemId,
                                                    EstimateItemFromCatalogRequest req,
                                                    UUID ownerId) {
+        return addItemFromCatalog(estimateId, catalogItemId, req, ownerId, null);
+    }
+
+    /**
+     * Add a line copied from a catalog position, optionally with a CLIENT-PROVIDED id so the
+     * add is idempotent on replay — the offline path.
+     *
+     * <p>Picking from the catalog is how estimates are actually built, so it has to work on
+     * site. It cannot simply be routed through {@link #addItem} offline: that endpoint's
+     * validated form requires {@code unitPrice >= 0.01}, while a catalog position may legally
+     * cost 0 (V27/V29 relaxed both CHECKs precisely for this), so every 0-price position would
+     * queue happily and then be rejected on replay.
+     */
+    @Transactional
+    public EstimateItemResponse addItemFromCatalog(UUID estimateId,
+                                                   UUID catalogItemId,
+                                                   EstimateItemFromCatalogRequest req,
+                                                   UUID ownerId,
+                                                   UUID requestedId) {
         Estimate estimate = loadOwned(estimateId, ownerId);
+        if (requestedId != null) {
+            var existing = itemRepository.findById(requestedId);
+            if (existing.isPresent()) {
+                if (!existing.get().getEstimate().getId().equals(estimateId)) {
+                    throw new AccessDeniedException("Item belongs to a different estimate");
+                }
+                return EstimateItemResponse.from(existing.get()); // idempotent replay
+            }
+        }
         requireNotSigned(estimate);
         CatalogItem source = catalogService.loadOwned(catalogItemId, ownerId);
         // Copy the category from the catalog item so the estimate can group too.
         EstimateItem item = EstimateItem.builder()
+                .id(requestedId)
                 .estimate(estimate)
                 .type(source.getType())
                 .name(source.getName())
@@ -409,11 +449,31 @@ public class EstimateService {
                                                      List<AddCatalogItemsBatchRequest.Entry> entries,
                                                      UUID ownerId) {
         Estimate estimate = loadOwned(estimateId, ownerId);
+        // Idempotency BEFORE the signed check, like every other replayable write: a replay of a
+        // batch that already landed must return quietly, not 409 because the client signed the
+        // estimate in the meantime.
+        List<AddCatalogItemsBatchRequest.Entry> fresh = new ArrayList<>();
+        for (AddCatalogItemsBatchRequest.Entry e : entries) {
+            if (e.id() != null) {
+                var existing = itemRepository.findById(e.id());
+                if (existing.isPresent()) {
+                    if (!existing.get().getEstimate().getId().equals(estimateId)) {
+                        throw new AccessDeniedException("Item belongs to a different estimate");
+                    }
+                    continue; // already added by an earlier attempt of this same batch
+                }
+            }
+            fresh.add(e);
+        }
+        if (fresh.isEmpty()) {
+            return toResponse(estimate, itemRepository.findByEstimateIdOrderBySortOrderAscIdAsc(estimateId));
+        }
         requireNotSigned(estimate);
         List<EstimateItem> toSave = new ArrayList<>();
-        for (AddCatalogItemsBatchRequest.Entry e : entries) {
+        for (AddCatalogItemsBatchRequest.Entry e : fresh) {
             CatalogItem source = catalogService.loadOwned(e.catalogItemId(), ownerId);
             toSave.add(EstimateItem.builder()
+                    .id(e.id())
                     .estimate(estimate)
                     .type(source.getType())
                     .name(source.getName())

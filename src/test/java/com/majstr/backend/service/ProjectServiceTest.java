@@ -22,8 +22,8 @@ import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
-
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyCollection;
@@ -221,6 +221,19 @@ class ProjectServiceTest {
         assertThatThrownBy(() -> projectService.create(
                 new ProjectRequest("Викрадач", "вул. 3", null, null), ownerId, requestedId))
                 .isInstanceOf(AccessDeniedException.class);
+    }
+
+    @Test
+    void delete_alreadyGoneIsANoOp_notA404() {
+        // Idempotent: the outbox replays a delete whose response was lost, and a 404 on replay
+        // is classified as a permanent rejection — the master would be told their delete
+        // "wasn't saved to the cloud" when it had been.
+        UUID projectId = UUID.randomUUID();
+        given(projectRepository.findById(projectId)).willReturn(Optional.empty());
+
+        assertThatCode(() -> projectService.delete(projectId, ownerId)).doesNotThrowAnyException();
+
+        org.mockito.Mockito.verify(projectRepository, org.mockito.Mockito.never()).delete(any(Project.class));
     }
 
     @Test

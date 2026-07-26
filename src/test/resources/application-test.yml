@@ -3,6 +3,7 @@ app:
     secret: test-secret-test-secret-test-secret-test-secret-32bytes
     access-token-expiration-minutes: 15
     refresh-token-expiration-days: 7
+    refresh-rotation-grace-seconds: 60
     issuer: majstr-backend-test
   cors:
     allowed-origins: http://localhost:3000

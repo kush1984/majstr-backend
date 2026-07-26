@@ -81,9 +81,25 @@ public class ClientService {
     }
 
     @Transactional
+    /**
+     * Deletes a client. <b>Idempotent</b> — deleting one that is already gone is a no-op, not a
+     * 404, matching {@code MeasurementService.deleteRoom} and what the offline convention in
+     * CLAUDE.md promises.
+     *
+     * <p>It has to be: the outbox replays a delete whose RESPONSE was lost (the row is gone,
+     * the client never heard so), and a 404 there is classified as a permanent rejection — the
+     * master would be shown "not saved to cloud" for something that saved perfectly.
+     *
+     * <p>Ownership is still enforced when the row DOES exist, so a delete aimed at someone
+     * else's client is a 403, never a silent success.
+     */
     public void delete(UUID id, UUID ownerId) {
-        Client client = loadOwned(id, ownerId);
-        clientRepository.delete(client);
+        clientRepository.findById(id).ifPresent(client -> {
+            if (!client.getOwner().getId().equals(ownerId)) {
+                throw new AccessDeniedException("Client does not belong to the current user");
+            }
+            clientRepository.delete(client);
+        });
     }
 
     /**

@@ -90,6 +90,10 @@ app:
     # Session length for the contractor (a daily work tool). Safe to keep long
     # because refresh tokens rotate on every use. Override with REFRESH_TOKEN_TTL_DAYS.
     refresh-token-expiration-days: ${REFRESH_TOKEN_TTL_DAYS:30}
+    # A just-rotated refresh token stays redeemable this long, so a rotation whose RESPONSE
+    # was lost (bad signal on site, or a second tab racing) doesn't end the session and take
+    # the master's unsynced offline queue with it. Set to 0 for strict single-use rotation.
+    refresh-rotation-grace-seconds: ${REFRESH_ROTATION_GRACE_SECONDS:60}
     issuer: majstr-backend
   cors:
     allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:3000,http://localhost:5173}
