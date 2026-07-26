@@ -40,9 +40,10 @@ jobs:
         uses: gradle/actions/setup-gradle@v4   # dependency + build caching
 
       - name: Build and test
-        # No env needed today: the suite is pure Mockito (0 @SpringBootTest), so no
-        # Spring context starts and JWT_SECRET is never read. A future integration
-        # slice will need both a `services: postgres` block and JWT_SECRET here.
+        # The integration slice starts its own PostgreSQL via Testcontainers, so no
+        # `services:` block is needed — ubuntu-latest runners ship a working Docker
+        # daemon. Its Spring context reads app.jwt.secret from application-test.yml,
+        # so no secrets are needed either.
         run: ./gradlew build --no-daemon
 
       - name: Upload test report on failure

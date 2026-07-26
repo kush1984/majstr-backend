@@ -42,6 +42,15 @@ server:
   # Railway (and most PaaS) inject the listen port via $PORT — bind it so the
   # platform's health/router reaches the app. Falls back to 8080 locally.
   port: ${PORT:8080}
+  # Let in-flight requests finish on redeploy instead of being cut mid-response.
+  # This app has genuinely slow endpoints — PDF rendering and the LLM imports run
+  # for seconds — so an abrupt kill lands on a master as a failed import they have
+  # to redo, and (for a payment webhook) as a delivery we never answered.
+  shutdown: graceful
+
+spring.lifecycle:
+  # Cap on that drain window; past it the remaining requests are dropped anyway.
+  timeout-per-shutdown-phase: 20s
 
 management:
   endpoints:

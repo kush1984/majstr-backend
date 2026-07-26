@@ -295,8 +295,17 @@ Status mapping:
 - 400 — `MethodArgumentNotValidException`, `ConstraintViolationException`,
   `HttpMessageNotReadableException`, `InvalidEstimateStatusException`
 - 401 — `BadCredentialsException`, `UsernameNotFoundException`,
-  `InvalidTokenException`, any other `AuthenticationException`
-- 403 — `AccessDeniedException`
+  `InvalidTokenException`, any other `AuthenticationException`; **also every
+  request that never reaches a controller** because it carries no usable token
+  — `RestAuthenticationEntryPoint`. Without that bean Spring defaults to
+  `Http403ForbiddenEntryPoint` and answers **403**, which silently broke this
+  contract: the PWA refreshes on 401 only, and 403 is already spoken for by
+  plan limits / `EMAIL_NOT_VERIFIED` / ownership, so the two were
+  indistinguishable. **Keep 401 and 403 disjoint** — 401 means "re-authenticate",
+  403 means "this account may not".
+- 403 — `AccessDeniedException` (from a service/controller, via the advice) and
+  authenticated-but-unauthorized requests (`RestAccessDeniedHandler`, e.g. a
+  non-admin on `/api/admin/**`)
 - 404 — `ResourceNotFoundException`; `NoResourceFoundException` (unknown
   path / bot-scanner probes like `/admin/phpinfo.php`) — handled explicitly so
   it's a quiet 404, **not** the 500 fallback, and is **not** reported to Sentry
@@ -434,9 +443,22 @@ Three related capabilities added together (docs/iteration-consolidated-receipts-
     Already declared in `build.gradle.kts`; don't remove it.
   - Test-slice annotations (`@WebMvcTest` etc.) are also gone — see
     *Testing* below.
+  - **`spring-boot-testcontainers`** — required for `@ServiceConnection`; the
+    starter does not pull it. Declared for the integration slice.
+  - **`TestRestTemplate` is gone entirely** (not just moved). Spring 7 offers
+    `org.springframework.test.web.servlet.client.RestTestClient`, but the
+    integration slice deliberately uses the plain JDK `HttpClient` plus the
+    `local.server.port` property instead — core API that survives the next
+    reshuffle. `@LocalServerPort` moved packages too; `Environment` avoids it.
   Expect similar surprises for other auto-configs (`spring-boot-liquibase`,
   `spring-boot-jpa-test`, `spring-boot-jdbc-test`, ...). Symptom is
   usually "feature X silently doesn't run" or a NoClassDefFound.
+- **Testcontainers 2.x renamed every module** to a `testcontainers-` prefix:
+  `org.testcontainers:postgresql` → `org.testcontainers:testcontainers-postgresql`.
+  The old coordinates resolve to *no version at all* under Boot 4's BOM (the
+  error shows an empty version, e.g. `Could not find …:junit-jupiter:`). The
+  authoritative list is `testcontainers-bom` — read it from the Gradle cache
+  rather than guessing.
 - **Jackson 3 package**: Spring Boot 4 ships Jackson 3, whose package is
   `tools.jackson.*` (not `com.fasterxml.jackson.*`). When injecting
   `ObjectMapper`, use `import tools.jackson.databind.ObjectMapper;`. The

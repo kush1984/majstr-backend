@@ -38,6 +38,10 @@ import java.util.Set;
 public class CatalogImportParser {
 
     static final int MAX_ROWS = 500;
+    /** Headroom read beyond {@link #MAX_ROWS} so the downstream "too many rows" check still
+     *  sees an over-limit sheet and can refuse it. Shared by the reader and {@code capGrid}
+     *  so the two can never drift apart. */
+    private static final int GRID_READ_MARGIN = 50;
     private static final int MAX_COLS = 40;
     private static final BigDecimal MAX_PRICE = new BigDecimal("100000000"); // 100M — sanity ceiling
 
@@ -84,6 +88,15 @@ public class CatalogImportParser {
                 return grid;
             }
             for (Row row : sheet) {
+                // Stop READING at the cap instead of building the whole grid and rejecting it
+                // afterwards: a zip-compressed .xlsx expanding to hundreds of thousands of rows
+                // was fully materialised into memory first (any registered account can upload
+                // one). The margin keeps the "too many rows" check downstream meaningful — it
+                // still sees more than MAX_ROWS and refuses. Mirrors the sibling
+                // EstimateImportService.spreadsheetToText, which already did this.
+                if (grid.size() >= MAX_ROWS + GRID_READ_MARGIN) {
+                    break;
+                }
                 List<String> cells = new ArrayList<>();
                 short last = row.getLastCellNum();
                 for (int c = 0; c < Math.min(last, MAX_COLS); c++) {
@@ -264,7 +277,9 @@ public class CatalogImportParser {
     // ---- small helpers ----------------------------------------------------
 
     private static List<List<String>> capGrid(List<List<String>> grid) {
-        return grid.size() <= MAX_ROWS + 50 ? grid : grid.subList(0, MAX_ROWS + 50);
+        return grid.size() <= MAX_ROWS + GRID_READ_MARGIN
+                ? grid
+                : grid.subList(0, MAX_ROWS + GRID_READ_MARGIN);
     }
 
     private static String cell(List<String> row, Integer col) {

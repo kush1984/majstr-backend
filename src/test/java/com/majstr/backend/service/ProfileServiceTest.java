@@ -22,6 +22,7 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -157,5 +158,25 @@ class ProfileServiceTest {
 
         assertThat(u.getAcknowledgedClientDataAt()).isNotNull();
         assertThat(resp.acknowledgedClientDataAt()).isNotNull();
+    }
+
+    @Test
+    void uploadLogo_rejectsAnOversizedFile_andStoresNothing() throws Exception {
+        // The old code only checked `length < 4` and trusted a stale comment claiming Spring
+        // capped multipart at 2 MB. It never did — and the global cap has since grown to
+        // 15 MB for photo imports, so a 15 MB "logo" was accepted, stored, and then read
+        // whole into EVERY rendered PDF.
+        UUID userId = UUID.randomUUID();
+        given(userRepository.findById(userId))
+                .willReturn(Optional.of(User.builder().id(userId).build())); // loaded before the check
+        byte[] huge = new byte[3 * 1024 * 1024];
+        huge[0] = (byte) 0x89; huge[1] = 'P'; huge[2] = 'N'; huge[3] = 'G'; // a valid PNG header
+        var file = new org.springframework.mock.web.MockMultipartFile(
+                "file", "logo.png", "image/png", huge);
+
+        assertThatThrownBy(() -> profileService.uploadLogo(userId, file))
+                .isInstanceOf(com.majstr.backend.storage.UnsupportedMediaTypeException.class);
+
+        verify(storage, never()).store(any(), anyLong(), any(), any(), any());
     }
 }

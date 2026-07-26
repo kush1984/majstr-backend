@@ -56,7 +56,11 @@ dependencies {
     // call it. Promote them onto the compile classpath; versions match what
     // web-push pulls transitively at runtime.
     implementation("org.apache.httpcomponents:httpcore:4.4.16")
-    implementation("org.bitbucket.b_c:jose4j:0.7.9")
+    // 0.9.x, not the 0.7.9 web-push pulls: that build is from 2021 and carries
+    // CVE-2023-31582. We call no jose4j API ourselves — it is on the compile classpath only
+    // because PushService.send() declares JoseException — so the bump is low-risk for our
+    // code; the class it needs (org.jose4j.lang.JoseException) is unchanged.
+    implementation("org.bitbucket.b_c:jose4j:0.9.6")
     // web-push 5.1.2 ships BouncyCastle 1.71 (2022); pin to a newer build that
     // is tested on current JDKs so the security provider registers cleanly on
     // Java 21+. The provider classes used (EC key handling) are stable across
@@ -84,7 +88,10 @@ dependencies {
     // Spreadsheet parsing for the "import my price list" flow (.xlsx via XSSF,
     // legacy .xls via HSSF). Deterministic parsing only — no AI. POI's log4j2-api
     // logging routes to logback via spring-boot-starter-logging's log4j-to-slf4j.
-    implementation("org.apache.poi:poi-ooxml:5.3.0")
+    // 5.4.1+: POI parses ATTACKER-SUPPLIED .xlsx/.xls here (any registered account can hit
+    // the price-list and estimate import endpoints), so its OOXML-parsing fix from the 5.4.x
+    // line (CVE-2025-31672) is not optional. 5.3.0 predates it.
+    implementation("org.apache.poi:poi-ooxml:5.4.1")
     // Project-documentation import: text-layer extraction from design-project PDFs
     // (the accurate, cheap path — vision is only the fallback for scans/photos).
     implementation("org.apache.pdfbox:pdfbox:3.0.3")
@@ -101,6 +108,23 @@ dependencies {
     testImplementation("org.springframework.boot:spring-boot-starter-test")
     testImplementation("org.springframework.security:spring-security-test")
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
+
+    // Integration slice against a REAL PostgreSQL (never H2 — the Flyway migrations are
+    // PostgreSQL-specific). Until this existed, migrations, native queries, CHECK
+    // constraints and the security URL matrix were never executed by any test: a bad
+    // migration or a query typo shipped with the whole suite green and only failed at
+    // prod startup or first request.
+    //
+    // `spring-boot-testcontainers` is what provides @ServiceConnection — Spring Boot 4
+    // splits these per-feature modules out of the starters, so it must be declared.
+    testImplementation("org.springframework.boot:spring-boot-testcontainers")
+    // Testcontainers 2.x renamed EVERY module to a `testcontainers-` prefix
+    // (`org.testcontainers:postgresql` → `…:testcontainers-postgresql`); the old
+    // coordinates resolve to no version at all under Boot 4's BOM. The core module comes
+    // in transitively. No `testcontainers-junit-jupiter`: that module only provides
+    // @Testcontainers/@Container lifecycle, and the container here is a manually started
+    // static singleton, so the annotation would be inert weight.
+    testImplementation("org.testcontainers:testcontainers-postgresql")
 }
 
 tasks.withType<Test> {

@@ -4,6 +4,8 @@ import com.majstr.backend.security.JwtAuthenticationFilter;
 import com.majstr.backend.security.LoginRateLimitFilter;
 import com.majstr.backend.security.PublicPortalRateLimitFilter;
 import com.majstr.backend.security.RegisterRateLimitFilter;
+import com.majstr.backend.security.RestAccessDeniedHandler;
+import com.majstr.backend.security.RestAuthenticationEntryPoint;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -63,6 +65,8 @@ public class SecurityConfig {
     private final LoginRateLimitFilter loginRateLimitFilter;
     private final RegisterRateLimitFilter registerRateLimitFilter;
     private final PublicPortalRateLimitFilter publicPortalRateLimitFilter;
+    private final RestAuthenticationEntryPoint restAuthenticationEntryPoint;
+    private final RestAccessDeniedHandler restAccessDeniedHandler;
     private final CorsProperties corsProperties;
 
     @Bean
@@ -87,6 +91,13 @@ public class SecurityConfig {
                         .requestMatchers("/admin/**").permitAll()
                         .requestMatchers(ADMIN_PATHS).hasRole("ADMIN")
                         .anyRequest().authenticated())
+                // Without these, Spring falls back to Http403ForbiddenEntryPoint (the default
+                // when no form/basic login is configured): an absent or expired token answered
+                // 403, indistinguishable from a plan-limit or ownership refusal — and the PWA
+                // only refreshes on 401. Anonymous → 401, authenticated-but-denied → 403.
+                .exceptionHandling(ex -> ex
+                        .authenticationEntryPoint(restAuthenticationEntryPoint)
+                        .accessDeniedHandler(restAccessDeniedHandler))
                 .addFilterBefore(loginRateLimitFilter, UsernamePasswordAuthenticationFilter.class)
                 .addFilterBefore(registerRateLimitFilter, UsernamePasswordAuthenticationFilter.class)
                 .addFilterBefore(publicPortalRateLimitFilter, UsernamePasswordAuthenticationFilter.class)

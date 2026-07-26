@@ -30,6 +30,9 @@ public class ProfileService {
 
     private static final String LOGO_PREFIX = "logos";
     private static final int HEADER_PEEK_BYTES = 16;
+    /** A logo is embedded into every rendered PDF, so it must stay small — and the global
+     *  multipart cap (15 MB, sized for photo imports) is nowhere near a sane logo. */
+    private static final long MAX_LOGO_BYTES = 2L * 1024 * 1024;
 
     private final UserRepository userRepository;
     private final StorageService storage;
@@ -124,13 +127,19 @@ public class ProfileService {
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new ResourceNotFoundException("User not found: " + userId));
 
-        // Read the upload once. Spring caps multipart at 2 MB, so an in-memory
-        // copy is bounded. Earlier versions peeked the stream and tried to
-        // re-open it — MultipartFile gives a fresh stream on every call, so
-        // the file ended up with a duplicated 16-byte header on disk.
+        // Read the upload once. Earlier versions peeked the stream and tried to re-open it —
+        // MultipartFile gives a fresh stream on every call, so the file ended up with a
+        // duplicated 16-byte header on disk.
         byte[] content = file.getBytes();
         if (content.length < 4) {
             throw new UnsupportedMediaTypeException("error.upload.empty");
+        }
+        // The comment here used to claim "Spring caps multipart at 2 MB" — it never did, and
+        // the global cap has since grown to 15 MB for photo imports. So a 15 MB "logo" was
+        // accepted, stored, and then read whole into EVERY rendered PDF. Mirror the explicit
+        // check ProjectPhotoService already does.
+        if (content.length > MAX_LOGO_BYTES) {
+            throw new UnsupportedMediaTypeException("error.upload.too-large");
         }
         byte[] header = Arrays.copyOf(content, Math.min(HEADER_PEEK_BYTES, content.length));
         ImageKind kind = ImageContentTypeDetector.detect(header);
