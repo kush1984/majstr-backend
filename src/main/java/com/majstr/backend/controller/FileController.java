@@ -27,9 +27,24 @@ public class FileController {
     private final StorageService storage;
 
     /**
-     * Serves any object stored via {@link StorageService}. The full path
-     * after {@code /api/files/} is treated as the object key — for example
-     * {@code GET /api/files/logos/abc.png} resolves the key {@code logos/abc.png}.
+     * The ONLY storage prefix this public endpoint may serve. Contractor logos are
+     * public by design — they are embedded in client-facing PDFs and the anonymous
+     * portal page. Everything else in the bucket is private.
+     */
+    private static final String PUBLIC_PREFIX = "logos/";
+
+    /**
+     * Serves a PUBLIC object stored via {@link StorageService}. The path after
+     * {@code /api/files/} is the object key — {@code GET /api/files/logos/abc.png}
+     * resolves the key {@code logos/abc.png}.
+     *
+     * <p><b>Prefix-locked deliberately.</b> This route is in {@code PUBLIC_PATHS}, so it
+     * answers with no authentication and no ownership check. It used to resolve ANY key,
+     * which meant a private receipt photo (`photos/&lt;uuid&gt;.jpg`) was world-readable to
+     * anyone who learned its key — from a log line, a proxy log, a backup or a bucket
+     * listing — despite {@code ProjectPhotoService} promising the opposite. Private
+     * objects are served only by their own authenticated / portal-token-gated endpoints;
+     * anything outside {@link #PUBLIC_PREFIX} is a 404 here, never a stream.</p>
      *
      * <p>Body comes back as {@code byte[]} so Spring sets a real
      * {@code Content-Length}. Earlier we returned an {@code InputStreamResource}
@@ -40,7 +55,9 @@ public class FileController {
     public ResponseEntity<byte[]> get(HttpServletRequest request) throws IOException {
         String full = (String) request.getAttribute(HandlerMapping.PATH_WITHIN_HANDLER_MAPPING_ATTRIBUTE);
         String key = full.startsWith("/api/files/") ? full.substring("/api/files/".length()) : full;
-        if (key.isBlank() || key.contains("..")) {
+        if (key.isBlank() || key.contains("..") || !key.startsWith(PUBLIC_PREFIX)) {
+            // Same 404 for "missing" and "not public" — the response must not reveal
+            // that a private key exists.
             throw new ResourceNotFoundException("File not found");
         }
         byte[] body;

@@ -141,6 +141,7 @@ class BillingServiceTest {
         given(signatureVerifier.verify(any(), any(), any())).willReturn(true);
         given(monobankClient.publicKey()).willReturn("pk");
         given(paymentRepository.findByInvoiceId("inv1")).willReturn(Optional.of(payment));
+        given(paymentRepository.claimForGrant(any(), any())).willReturn(1); // won the race
         given(userRepository.findById(uid)).willReturn(Optional.of(user));
 
         service(props("tok")).handleWebhook(body("inv1", "success", 29900), "sig");
@@ -164,6 +165,7 @@ class BillingServiceTest {
         given(signatureVerifier.verify(any(), any(), any())).willReturn(true);
         given(monobankClient.publicKey()).willReturn("pk");
         given(paymentRepository.findByInvoiceId("inv1")).willReturn(Optional.of(payment));
+        given(paymentRepository.claimForGrant(any(), any())).willReturn(1); // won the race
         given(userRepository.findById(uid)).willReturn(Optional.of(user));
 
         service(props("tok")).handleWebhook(body("inv1", "success", 29900), "sig");
@@ -186,6 +188,49 @@ class BillingServiceTest {
 
         assertThat(payment.getStatus()).isEqualTo(PaymentStatus.PENDING);
         assertThat(user.getPlan()).isEqualTo(Plan.FREE);
+        verify(userRepository, never()).save(any());
+        verify(paymentRepository, never()).claimForGrant(any(), any()); // never even claimed
+    }
+
+    @Test
+    void webhook_amountMissing_doesNotGrant() {
+        // The old guard only fired when `amount` WAS a number, so a payload that omitted it
+        // skipped the check and granted PRO on a malformed-but-signed webhook.
+        UUID uid = UUID.randomUUID();
+        User user = freeUser(uid);
+        Payment payment = pending(uid, "inv1");
+        given(signatureVerifier.verify(any(), any(), any())).willReturn(true);
+        given(monobankClient.publicKey()).willReturn("pk");
+        given(paymentRepository.findByInvoiceId("inv1")).willReturn(Optional.of(payment));
+
+        byte[] noAmount = "{\"invoiceId\":\"inv1\",\"status\":\"success\",\"ccy\":980}"
+                .getBytes(StandardCharsets.UTF_8);
+        service(props("tok")).handleWebhook(noAmount, "sig");
+
+        assertThat(payment.getStatus()).isEqualTo(PaymentStatus.PENDING);
+        assertThat(user.getPlan()).isEqualTo(Plan.FREE);
+        verify(paymentRepository, never()).claimForGrant(any(), any());
+        verify(userRepository, never()).save(any());
+    }
+
+    @Test
+    void webhook_concurrentDelivery_losesTheClaimAndGrantsNothing() {
+        // Two deliveries in flight: both pass the status read at the top, so the atomic
+        // claim is what decides. The loser (0 rows updated) must not extend PRO — that
+        // race is how one month's payment used to buy two.
+        UUID uid = UUID.randomUUID();
+        User user = freeUser(uid);
+        Payment payment = pending(uid, "inv1");
+        given(signatureVerifier.verify(any(), any(), any())).willReturn(true);
+        given(monobankClient.publicKey()).willReturn("pk");
+        given(paymentRepository.findByInvoiceId("inv1")).willReturn(Optional.of(payment));
+        given(userRepository.findById(uid)).willReturn(Optional.of(user));
+        given(paymentRepository.claimForGrant(any(), any())).willReturn(0); // lost the race
+
+        service(props("tok")).handleWebhook(body("inv1", "success", 29900), "sig");
+
+        assertThat(user.getPlan()).isEqualTo(Plan.FREE);
+        assertThat(user.getPlanExpiresAt()).isNull();
         verify(userRepository, never()).save(any());
     }
 
@@ -267,6 +312,7 @@ class BillingServiceTest {
         given(signatureVerifier.verify(any(), any(), any())).willReturn(true);
         given(monobankClient.publicKey()).willReturn("pk");
         given(paymentRepository.findByInvoiceId("inv1")).willReturn(Optional.of(payment));
+        given(paymentRepository.claimForGrant(any(), any())).willReturn(1); // won the race
         given(userRepository.findById(payerId)).willReturn(Optional.of(payer));
         given(referralRewardRepository.existsByReferredUserId(payerId)).willReturn(false);
         given(userRepository.findById(referrerId)).willReturn(Optional.of(referrer));
@@ -295,6 +341,7 @@ class BillingServiceTest {
         given(signatureVerifier.verify(any(), any(), any())).willReturn(true);
         given(monobankClient.publicKey()).willReturn("pk");
         given(paymentRepository.findByInvoiceId("inv2")).willReturn(Optional.of(payment));
+        given(paymentRepository.claimForGrant(any(), any())).willReturn(1); // won the race
         given(userRepository.findById(payerId)).willReturn(Optional.of(payer));
         given(referralRewardRepository.existsByReferredUserId(payerId)).willReturn(true); // already rewarded
 

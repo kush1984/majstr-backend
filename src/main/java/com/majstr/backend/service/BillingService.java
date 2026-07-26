@@ -261,10 +261,13 @@ public class BillingService {
 
     private void onSuccess(Payment payment, Map<String, Object> payload) {
         long expected = toKopiykas(payment.getAmount());
-        Object amount = payload.get("amount");
-        if (amount instanceof Number n && n.longValue() != expected) {
+        // The amount must MATCH — an absent or non-numeric field is a mismatch, not a pass.
+        // The old guard only fired when the value was a Number, so a payload that simply
+        // omitted `amount` skipped the check entirely and went on to grant PRO.
+        Long paid = kopiykas(payload.get("amount"));
+        if (paid == null || paid != expected) {
             log.error("Billing webhook amount {} != expected {} for invoice {} — not granting",
-                    n.longValue(), expected, payment.getInvoiceId());
+                    paid, expected, payment.getInvoiceId());
             return;
         }
         User user = userRepository.findById(payment.getUserId()).orElse(null);
@@ -273,8 +276,20 @@ public class BillingService {
                     payment.getUserId(), payment.getInvoiceId());
             return;
         }
+        // CLAIM the payment atomically before granting anything. The status read at the top
+        // of handleWebhook is only an early-out; two concurrent deliveries both pass it. The
+        // conditional UPDATE is what actually decides the winner — the loser sees 0 rows and
+        // stops here, so one payment can never extend PRO twice.
+        Instant paidAt = Instant.now();
+        if (paymentRepository.claimForGrant(payment.getId(), paidAt) == 0) {
+            log.info("Billing webhook for invoice {} lost the race — already granted, skipping",
+                    payment.getInvoiceId());
+            return;
+        }
+        // Mirror BOTH written columns onto the managed entity: a later flush of a stale
+        // copy would otherwise write paidAt back to null and undo the claim's timestamp.
         payment.setStatus(PaymentStatus.SUCCESS);
-        payment.setPaidAt(Instant.now());
+        payment.setPaidAt(paidAt);
         extendPro(user, payment.getDays());
         grantReferralReward(user, payment);
 
@@ -366,6 +381,25 @@ public class BillingService {
 
     private static long toKopiykas(BigDecimal uah) {
         return uah.movePointRight(2).setScale(0, java.math.RoundingMode.HALF_UP).longValueExact();
+    }
+
+    /**
+     * The webhook's {@code amount} in kopiykas, or null when it is absent or not a number.
+     * A JSON-string amount is accepted (some gateways quote numerics); anything else —
+     * including a missing field — returns null so the caller refuses to grant.
+     */
+    private static Long kopiykas(Object raw) {
+        if (raw instanceof Number n) {
+            return n.longValue();
+        }
+        if (raw instanceof String s && !s.isBlank()) {
+            try {
+                return Long.parseLong(s.trim());
+            } catch (NumberFormatException ignored) {
+                return null;
+            }
+        }
+        return null;
     }
 
     private static String str(Object o) {
