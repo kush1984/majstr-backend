@@ -124,11 +124,17 @@ public interface EstimateRepository extends JpaRepository<Estimate, UUID> {
     BigDecimal sumIncomeSigned(@Param("projectId") UUID projectId);
 
     /** Object income = the sum of line totals of estimates FLAGGED to count in the
-     *  economy (the accepted deal(s)) — replaces the sum-of-all figure. */
+     *  economy (the accepted deal(s)) — replaces the sum-of-all figure.
+     *
+     *  <p>REJECTED is excluded regardless of the flag: a rejected estimate is a deal the
+     *  client turned down, so it is never income. The flag alone was not enough — V57
+     *  blanket-set it TRUE on every existing estimate, which silently counted rejected
+     *  variants as earnings until the owner unticked them by hand (V67 patches the data;
+     *  this guard makes it impossible to re-introduce).</p> */
     @Query(value = """
             SELECT COALESCE(SUM(ROUND(i.quantity * i.unit_price, 2)), 0)
             FROM estimates e JOIN estimate_items i ON i.estimate_id = e.id
-            WHERE e.project_id = :projectId AND e.count_in_economy = true
+            WHERE e.project_id = :projectId AND e.count_in_economy = true AND e.status <> 'REJECTED'
             """, nativeQuery = true)
     BigDecimal sumIncomeCounted(@Param("projectId") UUID projectId);
 
@@ -136,7 +142,7 @@ public interface EstimateRepository extends JpaRepository<Estimate, UUID> {
     @Query(value = """
             SELECT COALESCE(SUM(ROUND(i.quantity * i.unit_price, 2)), 0)
             FROM estimates e JOIN estimate_items i ON i.estimate_id = e.id
-            WHERE e.project_id = :projectId AND e.count_in_economy = true AND i.type = 'WORK'
+            WHERE e.project_id = :projectId AND e.count_in_economy = true AND e.status <> 'REJECTED' AND i.type = 'WORK'
             """, nativeQuery = true)
     BigDecimal sumWorksCounted(@Param("projectId") UUID projectId);
 
@@ -144,7 +150,7 @@ public interface EstimateRepository extends JpaRepository<Estimate, UUID> {
     @Query(value = """
             SELECT COALESCE(SUM(ROUND(i.quantity * i.unit_price, 2)), 0)
             FROM estimates e JOIN estimate_items i ON i.estimate_id = e.id
-            WHERE e.project_id = :projectId AND e.count_in_economy = true AND i.type = 'MATERIAL'
+            WHERE e.project_id = :projectId AND e.count_in_economy = true AND e.status <> 'REJECTED' AND i.type = 'MATERIAL'
             """, nativeQuery = true)
     BigDecimal sumMaterialsCounted(@Param("projectId") UUID projectId);
 

@@ -210,6 +210,13 @@ public class EstimateService {
             throw new InvalidEstimateStatusException("error.estimate.manual-sign");
         }
         estimate.setStatus(req.status());
+        // Marking it REJECTED means the client turned the deal down, so it stops being
+        // income — clear the flag with the status. The income queries already exclude
+        // REJECTED, and leaving the flag set would show a ticked "count in economy" box
+        // for an estimate that is not, in fact, counted.
+        if (req.status() == EstimateStatus.REJECTED) {
+            estimate.setCountInEconomy(false);
+        }
         estimate.setName(normalize(req.name()));
         estimate.setValidUntil(req.validUntil());
         estimate.setNotes(normalize(req.notes()));

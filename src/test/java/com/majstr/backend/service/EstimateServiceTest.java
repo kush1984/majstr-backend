@@ -261,6 +261,23 @@ class EstimateServiceTest {
     }
 
     @Test
+    void update_toRejected_stopsCountingItAsIncome() {
+        // A rejected estimate is a deal the client turned down. The income queries exclude
+        // REJECTED, so leaving the flag set would show a ticked "count in economy" box on an
+        // estimate that is not counted — the flag and the number must agree.
+        Estimate sent = ownedEstimate(ownerId);
+        sent.setStatus(EstimateStatus.SENT);
+        sent.setCountInEconomy(true);
+        given(estimateRepository.findById(estimateId)).willReturn(Optional.of(sent));
+        given(itemRepository.findByEstimateIdOrderBySortOrderAscIdAsc(estimateId)).willReturn(List.of());
+
+        estimateService.update(
+                estimateId, new EstimateUpdateRequest(EstimateStatus.REJECTED, null, null, null, null), ownerId);
+
+        assertThat(sent.isCountInEconomy()).isFalse();
+    }
+
+    @Test
     void update_setsDepositAndComputesBalance() {
         Estimate sent = ownedEstimate(ownerId);
         sent.setStatus(EstimateStatus.SENT);

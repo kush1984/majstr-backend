@@ -5,6 +5,7 @@ import com.majstr.backend.dto.ProjectResponse;
 import com.majstr.backend.entity.Client;
 import com.majstr.backend.entity.EstimateStatus;
 import com.majstr.backend.entity.Project;
+import com.majstr.backend.entity.ProjectPhoto;
 import com.majstr.backend.entity.ProjectStatus;
 import com.majstr.backend.entity.User;
 import com.majstr.backend.exception.ResourceNotFoundException;
@@ -12,13 +13,17 @@ import com.majstr.backend.feature.Limit;
 import com.majstr.backend.feature.LimitService;
 import com.majstr.backend.repository.EstimateQuestionRepository;
 import com.majstr.backend.repository.EstimateRepository;
+import com.majstr.backend.repository.ProjectPhotoRepository;
 import com.majstr.backend.repository.ProjectRepository;
 import com.majstr.backend.repository.UserRepository;
+import com.majstr.backend.storage.StorageService;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.io.IOException;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.Instant;
@@ -28,6 +33,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class ProjectService {
@@ -38,6 +44,8 @@ public class ProjectService {
     private final UserRepository userRepository;
     private final ClientService clientService;
     private final LimitService limitService;
+    private final ProjectPhotoRepository photoRepository;
+    private final StorageService storage;
 
     @Transactional
     public ProjectResponse create(ProjectRequest req, UUID ownerId) {
@@ -123,8 +131,28 @@ public class ProjectService {
     @Transactional
     public void delete(UUID id, UUID ownerId) {
         Project project = loadOwned(id, ownerId);
+        // The photo ROWS cascade with the FK, but the stored objects behind them do not:
+        // every project delete used to leak all its files on R2/local storage forever. That
+        // is cost creep, and — since receipt photos are financial personal data — a deletion
+        // that quietly keeps the data. Collect the keys BEFORE the rows disappear.
+        List<String> photoKeys = photoRepository.findByProjectIdOrderByCreatedAtDesc(id).stream()
+                .map(ProjectPhoto::getStorageKey)
+                .filter(k -> k != null && !k.isBlank())
+                .toList();
+
         projectRepository.delete(project);
         // Estimates and items are cascaded by the FK ON DELETE CASCADE.
+
+        // Fail-soft, same as the single-photo path: a storage hiccup must not roll back a
+        // delete the master already confirmed — a leftover object is recoverable, a
+        // half-deleted project is not.
+        for (String key : photoKeys) {
+            try {
+                storage.delete(key);
+            } catch (IOException e) {
+                log.warn("Could not delete stored photo {} of project {}: {}", key, id, e.getMessage());
+            }
+        }
     }
 
     /** Load a project or throw — existence (404) + ownership (403). Public so
