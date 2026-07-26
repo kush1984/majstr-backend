@@ -11,6 +11,7 @@ import com.lowagie.text.Phrase;
 import com.lowagie.text.pdf.PdfPCell;
 import com.lowagie.text.pdf.PdfPTable;
 import com.lowagie.text.pdf.PdfWriter;
+import com.majstr.backend.config.LocalizationConfig;
 import com.majstr.backend.entity.Client;
 import com.majstr.backend.entity.Estimate;
 import com.majstr.backend.entity.EstimateItem;
@@ -113,7 +114,10 @@ public class EstimatePdfService {
         if (client != null) {
             addInfoRow(info, "Клієнт:", client.getFullName() + ", " + client.getPhone());
         }
-        addInfoRow(info, "Дата:", DATE_FORMAT.format(estimate.getCreatedAt().atZone(java.time.ZoneOffset.UTC).toLocalDate()));
+        // Kyiv, not UTC: an estimate created after midnight local time would otherwise be
+        // dated to the previous day on the document the client keeps.
+        addInfoRow(info, "Дата:", DATE_FORMAT.format(
+                estimate.getCreatedAt().atZone(LocalizationConfig.ZONE).toLocalDate()));
         if (estimate.getValidUntil() != null) {
             addInfoRow(info, "Дійсний до:", DATE_FORMAT.format(estimate.getValidUntil()));
         }

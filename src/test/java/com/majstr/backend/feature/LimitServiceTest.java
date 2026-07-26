@@ -142,7 +142,7 @@ class LimitServiceTest {
 
     @Test
     void limitsFor_freeReturnsAllCaps() {
-        givenUserOnPlan(Plan.FREE);
+        givenUserOnPlanUnlocked(Plan.FREE);
 
         PlanLimitsResponse limits = limitService.limitsFor(userId);
 
@@ -155,7 +155,7 @@ class LimitServiceTest {
 
     @Test
     void limitsFor_proReturnsNullsForUnlimitedButRealPhotoCaps() {
-        givenUserOnPlan(Plan.PRO);
+        givenUserOnPlanUnlocked(Plan.PRO);
 
         PlanLimitsResponse limits = limitService.limitsFor(userId);
 
@@ -166,7 +166,18 @@ class LimitServiceTest {
         assertThat(limits.maxReceiptPhotosPerObject()).isEqualTo(50);
     }
 
+    /**
+     * The require* checks load the user FOR UPDATE — the row lock is what makes
+     * "count, then insert" atomic, so stubbing the plain finder here would let the guard
+     * silently stop locking and every test still pass.
+     */
     private void givenUserOnPlan(Plan plan) {
+        User user = User.builder().id(userId).plan(plan).build();
+        given(userRepository.findByIdForUpdate(userId)).willReturn(Optional.of(user));
+    }
+
+    /** limitsFor is a pure read — no lock, hence the plain finder. */
+    private void givenUserOnPlanUnlocked(Plan plan) {
         User user = User.builder().id(userId).plan(plan).build();
         given(userRepository.findById(userId)).willReturn(Optional.of(user));
     }

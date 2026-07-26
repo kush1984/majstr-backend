@@ -62,7 +62,30 @@ class EstimatePdfServiceTest {
         assertThat(new String(pdf, 0, 5, java.nio.charset.StandardCharsets.US_ASCII)).isEqualTo("%PDF-");
     }
 
+    @Test
+    void render_datesTheEstimateInKyivTime_notUTC() throws Exception {
+        // 2026-03-10T23:30Z is already 01:30 on the 11th in Kyiv. Formatting the instant in
+        // UTC — as this did — printed «10.03.2026» on the document the client keeps and
+        // signs. Any estimate finished late in the evening was dated to the day before.
+        given(featureGuard.isEnabled(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.eq(Feature.BRANDED_PDF)))
+                .willReturn(false);
+        EstimatePdfService.PdfModel model = sampleModel(Instant.parse("2026-03-10T23:30:00Z"));
+
+        byte[] pdf = pdfService.render(model);
+
+        String text;
+        try (var doc = org.apache.pdfbox.Loader.loadPDF(pdf)) {
+            text = new org.apache.pdfbox.text.PDFTextStripper().getText(doc);
+        }
+        assertThat(text).contains("11.03.2026");
+        assertThat(text).doesNotContain("10.03.2026");
+    }
+
     private EstimatePdfService.PdfModel sampleModel() {
+        return sampleModel(Instant.now());
+    }
+
+    private EstimatePdfService.PdfModel sampleModel(Instant createdAt) {
         User contractor = User.builder()
                 .id(UUID.randomUUID())
                 .email("ivan@example.com")
@@ -91,8 +114,8 @@ class EstimatePdfServiceTest {
                 .status(EstimateStatus.DRAFT)
                 .validUntil(LocalDate.of(2026, 6, 30))
                 .notes("Передоплата 30%, гарантія 12 місяців")
-                .createdAt(Instant.now())
-                .updatedAt(Instant.now())
+                .createdAt(createdAt)
+                .updatedAt(createdAt)
                 .build();
 
         EstimateItem work = EstimateItem.builder()

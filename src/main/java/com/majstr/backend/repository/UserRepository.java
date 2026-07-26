@@ -3,10 +3,12 @@ package com.majstr.backend.repository;
 import com.majstr.backend.entity.Plan;
 import com.majstr.backend.entity.Role;
 import com.majstr.backend.entity.User;
+import jakarta.persistence.LockModeType;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -22,6 +24,48 @@ import java.util.UUID;
 public interface UserRepository extends JpaRepository<User, UUID> {
 
     Optional<User> findByEmailIgnoreCase(String email);
+
+    /**
+     * Loads the user row under a row-level write lock ({@code SELECT … FOR UPDATE}).
+     *
+     * <p>Used only by {@link com.majstr.backend.feature.LimitService} to close the
+     * check-then-act race on plan quotas: counting rows and then inserting is not atomic, so
+     * two concurrent creates could both see "2 of 3 used" and both succeed, leaving a FREE
+     * account over its cap. Taking this lock first serialises a single user's creates — the
+     * second waits for the first to COMMIT, then counts the row it just inserted and refuses
+     * correctly.
+     *
+     * <p>The lock is held to the end of the caller's transaction, so it MUST be called from
+     * inside the same transaction as the insert. Contention is per user (one master racing
+     * themselves — realistically the offline outbox replaying a queue), never global.
+     */
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select u from User u where u.id = :id")
+    Optional<User> findByIdForUpdate(@Param("id") UUID id);
+
+    /**
+     * Takes a transaction-scoped Postgres advisory lock keyed by a canonical email, so two
+     * concurrent registrations for the same canonical address cannot both pass the duplicate
+     * pre-check.
+     *
+     * <p>Why a lock and not a UNIQUE index: V55 made {@code idx_users_email_canonical}
+     * non-unique <i>deliberately</i>, to grandfather legacy duplicates that predate the
+     * column — adding the constraint now would fail on that existing data and block the
+     * deploy. This closes the actual hole (the check-then-insert race) without disturbing
+     * that decision.
+     *
+     * <p>It matters because the canonical column is anti-abuse: without it, firing several
+     * parallel registrations for {@code j.o.hn+1@gmail.com}, {@code jo.hn+2@gmail.com} … all
+     * pass the check together and farm one free plan per alias. Serialised, the first commits
+     * and the rest see it and get a 409.
+     *
+     * <p>Released automatically at COMMIT or ROLLBACK — nothing to unlock by hand, and a
+     * crashed request cannot leave a stuck lock. The subquery alias is required by Postgres;
+     * the function itself returns void, hence the constant projection.
+     */
+    @Query(value = "SELECT 1 FROM (SELECT pg_advisory_xact_lock(hashtext(:canonical))) locked",
+            nativeQuery = true)
+    Integer lockCanonicalEmail(@Param("canonical") String canonical);
 
     /**
      * Loads a user with the lazy {@code trades} collection eager-fetched in the

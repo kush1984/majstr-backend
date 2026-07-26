@@ -2,6 +2,7 @@ package com.majstr.backend.email;
 
 import com.majstr.backend.config.EmailProperties;
 import com.majstr.backend.config.HttpClients;
+import com.majstr.backend.config.LocalizationConfig;
 import com.majstr.backend.entity.User;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.MediaType;
@@ -13,7 +14,6 @@ import java.math.BigDecimal;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
-import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
 import java.util.Locale;
@@ -116,7 +116,7 @@ public class ResendEmailService implements EmailService {
     }
 
     private static String fmt(Instant instant) {
-        return instant == null ? "—" : DATE.format(instant.atZone(ZoneId.of("Europe/Kyiv")).toLocalDate());
+        return instant == null ? "—" : DATE.format(instant.atZone(LocalizationConfig.ZONE).toLocalDate());
     }
 
     private static String money(BigDecimal amount) {

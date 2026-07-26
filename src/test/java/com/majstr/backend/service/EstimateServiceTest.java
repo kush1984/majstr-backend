@@ -524,6 +524,41 @@ class EstimateServiceTest {
     }
 
     @Test
+    @SuppressWarnings("unchecked")
+    void consolidate_theSameSourceListedTwiceIsCopiedOnce() {
+        // A double tap in the picker (or a retried request) used to copy that estimate's
+        // items TWICE, silently doubling the rollup the master then shows a client. This is
+        // NOT item-level dedup — equal positions from DIFFERENT estimates still concat.
+        UUID srcA = UUID.randomUUID();
+        UUID consolidatedId = UUID.randomUUID();
+        given(projectService.loadOwned(projectId, ownerId)).willReturn(ownedProject(ownerId));
+        given(estimateRepository.save(any(Estimate.class))).willAnswer(inv -> {
+            Estimate e = inv.getArgument(0);
+            e.setId(consolidatedId);
+            e.setStatus(EstimateStatus.DRAFT);
+            e.setCreatedAt(Instant.now());
+            e.setUpdatedAt(Instant.now());
+            return e;
+        });
+        given(estimateRepository.findById(srcA)).willReturn(Optional.of(sourceEstimate(srcA, ownerId)));
+        given(itemRepository.findByEstimateIdOrderBySortOrderAscIdAsc(srcA))
+                .willReturn(List.of(item(ItemType.WORK, "Малярка", "2", "100")));
+        List<EstimateItem>[] saved = new List[1];
+        given(itemRepository.saveAll(anyList())).willAnswer(inv -> {
+            saved[0] = inv.getArgument(0);
+            return saved[0];
+        });
+        given(itemRepository.findByEstimateIdOrderBySortOrderAscIdAsc(consolidatedId))
+                .willAnswer(inv -> saved[0]);
+
+        EstimateResponse resp = estimateService.consolidate(
+                projectId, "Зведений", List.of(srcA, srcA), ownerId);
+
+        assertThat(resp.items()).hasSize(1);
+        assertThat(resp.total()).isEqualByComparingTo("200.00"); // not 400 — copied once
+    }
+
+    @Test
     void consolidate_defaultsNameWhenBlank() {
         UUID src = UUID.randomUUID();
         UUID consolidatedId = UUID.randomUUID();

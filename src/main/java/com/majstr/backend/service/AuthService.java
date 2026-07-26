@@ -37,6 +37,10 @@ public class AuthService {
         // on the canonical form so gmail aliases can't spawn parallel accounts.
         emailPolicyService.assertAcceptable(email);
         String canonical = emailPolicyService.canonicalize(email);
+        // Serialise same-canonical registrations before the check: otherwise a burst of
+        // gmail aliases all read "not taken" together and every one of them gets an account,
+        // which is precisely the abuse the canonical column exists to stop.
+        userRepository.lockCanonicalEmail(canonical);
         if (userRepository.existsByEmailIgnoreCase(email) || userRepository.existsByEmailCanonical(canonical)) {
             throw new EmailAlreadyExistsException(email);
         }

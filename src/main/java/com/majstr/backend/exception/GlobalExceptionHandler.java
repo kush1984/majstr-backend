@@ -58,7 +58,14 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(ConstraintViolationException.class)
     public ResponseEntity<ErrorResponse> handleConstraint(ConstraintViolationException ex, HttpServletRequest req) {
-        return build(HttpStatus.BAD_REQUEST, ex.getMessage(), req);
+        // The raw message names the Java method and parameter that failed
+        // ("listPhotos.projectId: must not be null") — internals, in English, shown to a
+        // Ukrainian master. Keep the detail in the log and answer with the same localized
+        // text body validation already uses. (Per-FIELD messages stay un-localized by
+        // design — the PWA validates client-side with its own texts; this is the
+        // parameter-level path, which has no such counterpart.)
+        log.debug("Constraint violation on {}: {}", req.getRequestURI(), ex.getMessage());
+        return build(HttpStatus.BAD_REQUEST, msg("error.validation-failed"), req);
     }
 
     @ExceptionHandler(HttpMessageNotReadableException.class)

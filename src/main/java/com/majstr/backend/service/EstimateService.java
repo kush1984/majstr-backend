@@ -36,6 +36,7 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.UUID;
 
@@ -163,7 +164,11 @@ public class EstimateService {
 
         List<EstimateItem> copies = new ArrayList<>();
         int sortOrder = 0;
-        for (UUID sourceId : estimateIds) {
+        // Distinct sources, original order. Listing one estimate twice (a double tap in the
+        // picker, a retried request) would otherwise copy its items twice and silently
+        // inflate the rollup's total. Note this is NOT item-level dedup — merging equal
+        // POSITIONS from different estimates stays deliberate plain concat.
+        for (UUID sourceId : new LinkedHashSet<>(estimateIds)) {
             Estimate source = loadOwned(sourceId, ownerId);
             if (!source.getProject().getId().equals(projectId)) {
                 throw new AccessDeniedException("Estimate does not belong to project " + projectId);

@@ -9,6 +9,7 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.web.servlet.LocaleResolver;
 import org.springframework.web.servlet.i18n.AcceptHeaderLocaleResolver;
 
+import java.time.ZoneId;
 import java.util.Locale;
 
 /**
@@ -31,6 +32,16 @@ import java.util.Locale;
 public class LocalizationConfig {
 
     public static final Locale UKRAINIAN = Locale.of("uk");
+
+    /**
+     * The product's wall-clock zone. Every date a MASTER or CLIENT reads — the PDF's «Дата:»,
+     * the estimate email — must be rendered in it, never in UTC or the server's default.
+     *
+     * <p>The server stores {@code Instant}s and runs in UTC, so formatting one without a zone
+     * silently dates anything created between midnight and 02:00–03:00 Kyiv to the PREVIOUS
+     * day. On a signed estimate that is a wrong date on a document the client keeps.
+     */
+    public static final ZoneId ZONE = ZoneId.of("Europe/Kyiv");
 
     @Bean
     public MessageSource messageSource() {
