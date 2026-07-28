@@ -191,19 +191,28 @@ public class EstimatePdfService {
         doc.add(table);
     }
 
-    /** Full-width row naming a section, lighter than the column header so that still reads as one. */
+    /**
+     * Full-width row naming a section, lighter than the column header so that still reads as one.
+     *
+     * Centred, per the owner: with the whole row spanning the table, a left-aligned heading sits under
+     * the «Назва» column and reads as another line rather than as a divider. Measured — the title
+     * lands at x≈276 of a 595pt page against x=44 for a line — because it is the CELL's alignment that
+     * governs here, not the phrase's.
+     */
     private void addSectionHeader(PdfPTable table, String name) {
         PdfPCell cell = new PdfPCell(new Phrase(name, fonts.bold(10)));
         cell.setColspan(5);
         cell.setBackgroundColor(SECTION_BG);
-        cell.setHorizontalAlignment(Element.ALIGN_LEFT);
+        cell.setHorizontalAlignment(Element.ALIGN_CENTER);
         cell.setPadding(5);
         table.addCell(cell);
     }
 
     /** What this stage costs — what a master is actually asked on site, and what a client compares. */
     private void addSectionSubtotal(PdfPTable table, BigDecimal total) {
-        PdfPCell label = new PdfPCell(new Phrase("Разом по розділу", fonts.regular(9)));
+        // Bold, same weight as the figure beside it: this is the number a master is asked on site,
+        // so it should read as a total rather than as a caption.
+        PdfPCell label = new PdfPCell(new Phrase("Разом по розділу", fonts.bold(10)));
         label.setColspan(4);
         label.setHorizontalAlignment(Element.ALIGN_RIGHT);
         label.setPadding(4);

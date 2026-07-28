@@ -214,4 +214,45 @@ class EstimatePdfServiceTest {
                 .sortOrder(sortOrder)
                 .build();
     }
+
+    @Test
+    void render_centresTheSectionTitleAndBoldsTheSubtotal() throws Exception {
+        // Setting the alignment on the CELL alone did not take: a cell built from a Phrase renders in
+        // text mode, where the column layout decides, and the title came out against the right edge.
+        // So this measures where the glyphs actually landed rather than trusting the property.
+        given(featureGuard.isEnabled(org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.eq(Feature.BRANDED_PDF))).willReturn(false);
+
+        byte[] pdf = pdfService.render(sectionedModel());
+        float titleX = firstXOf(pdf, "Плитка");
+        float lineX = firstXOf(pdf, "Укладання плитки");   // left-aligned in the first column
+        float subtotalX = firstXOf(pdf, "Разом по розділу");
+
+        // Centred: well to the right of a left-aligned cell, and well to the left of the
+        // right-aligned subtotal label. Relative, so it does not depend on page geometry.
+        // Measured, not asserted off a property: a left-aligned heading lands at x=45, the same
+        // margin as a line, and this used to pass by accident when only the phrase's alignment was
+        // changed — it is the cell's that governs.
+        assertThat(titleX).as("назва розділу мусить бути по центру, а не по лівому краю").isGreaterThan(lineX + 50);
+        assertThat(titleX).isLessThan(subtotalX);
+    }
+
+    /** X of the first glyph of `needle`, measured off the rendered page. */
+    private static float firstXOf(byte[] pdf, String needle) throws Exception {
+        try (var doc = org.apache.pdfbox.Loader.loadPDF(pdf)) {
+            final float[] found = { -1f };
+            var stripper = new org.apache.pdfbox.text.PDFTextStripper() {
+                @Override
+                protected void writeString(String text, java.util.List<org.apache.pdfbox.text.TextPosition> positions) {
+                    int at = text.indexOf(needle);
+                    if (found[0] < 0 && at >= 0 && at < positions.size()) {
+                        found[0] = positions.get(at).getXDirAdj();
+                    }
+                }
+            };
+            stripper.getText(doc);
+            assertThat(found[0]).as("«" + needle + "» не знайдено на сторінці").isGreaterThanOrEqualTo(0f);
+            return found[0];
+        }
+    }
 }
