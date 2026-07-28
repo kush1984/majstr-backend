@@ -4,6 +4,7 @@ import com.majstr.backend.dto.AddCatalogItemsBatchRequest;
 import com.majstr.backend.dto.EstimateCreateRequest;
 import com.majstr.backend.dto.EstimateItemFromCatalogRequest;
 import com.majstr.backend.dto.EstimateItemRequest;
+import com.majstr.backend.dto.EstimateItemsOrderRequest;
 import com.majstr.backend.dto.EstimateResponse;
 import com.majstr.backend.dto.EstimateUpdateRequest;
 import com.majstr.backend.entity.CatalogItem;
@@ -963,5 +964,112 @@ class EstimateServiceTest {
                 .unitPrice(new BigDecimal(price))
                 .sortOrder(0)
                 .build();
+    }
+
+    // ---- reordering after a drag ----------------------------------------------------------------
+    //
+    // Sections are not rows: a section IS the lines sharing a category, ordered by the first of them.
+    // So dragging a line, and dragging a whole section, are the same operation — renumbering
+    // sortOrder — and the request states the WHOLE arrangement rather than a move, which is what
+    // makes it safe for the offline queue to replay.
+
+    @Test
+    void reorderItems_takesSortOrderFromThePositionInTheList() {
+        EstimateItem a = item(ItemType.WORK, "A", "1", "10");
+        EstimateItem b = item(ItemType.WORK, "B", "1", "10");
+        EstimateItem c = item(ItemType.WORK, "C", "1", "10");
+        givenItems(a, b, c);
+
+        estimateService.reorderItems(estimateId, order(c, a, b), ownerId);
+
+        assertThat(c.getSortOrder()).isZero();
+        assertThat(a.getSortOrder()).isEqualTo(1);
+        assertThat(b.getSortOrder()).isEqualTo(2);
+    }
+
+    @Test
+    void reorderItems_movesALineIntoAnotherSectionInTheSameOperation() {
+        // Dragging across sections changes the category AND the position. Two requests could
+        // half-apply and leave a line sorted into a section it is not in.
+        EstimateItem tiling = item(ItemType.WORK, "Укладання", "1", "10");
+        tiling.setCategory("Плитка");
+        EstimateItem prep = item(ItemType.WORK, "Грунтування", "1", "10");
+        prep.setCategory("Підготовка");
+        givenItems(prep, tiling);
+
+        estimateService.reorderItems(estimateId, new EstimateItemsOrderRequest(List.of(
+                new EstimateItemsOrderRequest.Line(prep.getId(), "Підготовка"),
+                new EstimateItemsOrderRequest.Line(tiling.getId(), "Підготовка"))), ownerId);
+
+        assertThat(tiling.getCategory()).isEqualTo("Підготовка");
+        assertThat(tiling.getSortOrder()).isEqualTo(1);
+    }
+
+    @Test
+    void reorderItems_keepsALineTheRequestNeverMentioned() {
+        // Added on another device after this arrangement was captured. Dropping it would lose work
+        // the master can see on the other screen; leaving its sortOrder alone would collide.
+        EstimateItem a = item(ItemType.WORK, "A", "1", "10");
+        EstimateItem b = item(ItemType.WORK, "B", "1", "10");
+        EstimateItem unseen = item(ItemType.WORK, "Додана на телефоні", "1", "10");
+        givenItems(a, b, unseen);
+
+        estimateService.reorderItems(estimateId, order(b, a), ownerId);
+
+        assertThat(b.getSortOrder()).isZero();
+        assertThat(a.getSortOrder()).isEqualTo(1);
+        assertThat(unseen.getSortOrder()).as("лишається, після перелічених").isEqualTo(2);
+    }
+
+    @Test
+    void reorderItems_skipsAnIdThatIsAlreadyGone() {
+        // The queue may replay an arrangement naming a line deleted since. Failing forever over it
+        // would wedge every later operation behind it.
+        EstimateItem a = item(ItemType.WORK, "A", "1", "10");
+        givenItems(a);
+
+        assertThatCode(() -> estimateService.reorderItems(estimateId, new EstimateItemsOrderRequest(List.of(
+                new EstimateItemsOrderRequest.Line(UUID.randomUUID(), null),
+                new EstimateItemsOrderRequest.Line(a.getId(), null))), ownerId))
+                .doesNotThrowAnyException();
+        assertThat(a.getSortOrder()).isZero();
+    }
+
+    @Test
+    void reorderItems_isIdempotent() {
+        EstimateItem a = item(ItemType.WORK, "A", "1", "10");
+        EstimateItem b = item(ItemType.WORK, "B", "1", "10");
+        givenItems(a, b);
+
+        estimateService.reorderItems(estimateId, order(b, a), ownerId);
+        estimateService.reorderItems(estimateId, order(b, a), ownerId);
+
+        assertThat(b.getSortOrder()).isZero();
+        assertThat(a.getSortOrder()).isEqualTo(1);
+    }
+
+    @Test
+    void reorderItems_refusesOnASignedEstimate() {
+        Estimate signed = ownedEstimate(ownerId);
+        signed.setStatus(EstimateStatus.SIGNED);
+        given(estimateRepository.findById(estimateId)).willReturn(Optional.of(signed));
+
+        assertThatThrownBy(() -> estimateService.reorderItems(
+                estimateId, new EstimateItemsOrderRequest(List.of(
+                        new EstimateItemsOrderRequest.Line(UUID.randomUUID(), null))), ownerId))
+                .isInstanceOf(EstimateSignedException.class);
+    }
+
+    /** Both reads of the item list in reorderItems see the same (mutated in place) objects. */
+    private void givenItems(EstimateItem... items) {
+        given(estimateRepository.findById(estimateId)).willReturn(Optional.of(ownedEstimate(ownerId)));
+        given(itemRepository.findByEstimateIdOrderBySortOrderAscIdAsc(estimateId))
+                .willReturn(new ArrayList<>(List.of(items)));
+    }
+
+    private EstimateItemsOrderRequest order(EstimateItem... items) {
+        return new EstimateItemsOrderRequest(java.util.Arrays.stream(items)
+                .map(i -> new EstimateItemsOrderRequest.Line(i.getId(), i.getCategory()))
+                .toList());
     }
 }

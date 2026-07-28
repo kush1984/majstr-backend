@@ -33,6 +33,9 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.Map;
 import java.util.Locale;
 import java.util.Optional;
 
@@ -46,6 +49,10 @@ public class EstimatePdfService {
     private static final DateTimeFormatter DATE_FORMAT = DateTimeFormatter.ofPattern("dd.MM.yyyy");
     private static final Locale UA = Locale.forLanguageTag("uk-UA");
     private static final Color HEADER_BG = new Color(230, 230, 230);
+    /** Section rows sit between the column header and the lines, so a shade lighter. */
+    private static final Color SECTION_BG = new Color(245, 245, 245);
+    /** Matches the label the editor shows for unfiled lines. */
+    private static final String NO_CATEGORY = "Без категорії";
 
     private final PdfFontProvider fonts;
     private final FeatureGuard featureGuard;
@@ -124,6 +131,18 @@ public class EstimatePdfService {
         doc.add(info);
     }
 
+    /**
+     * One type's table — «РОБОТИ» or «МАТЕРІАЛИ» — split into the sections the master arranged.
+     *
+     * <p>A section is the run of lines sharing a category. The caller passes them already ordered by
+     * {@code sortOrder}, so grouping in first-appearance order reproduces exactly what the master
+     * dragged into place on screen, without the PDF needing to know anything about ordering.</p>
+     *
+     * <p>An estimate whose lines carry no category at all renders exactly as it did before sections
+     * existed: no headers, no subtotals. A master who does not file their lines should not be shown a
+     * «Без категорії» heading over the whole document, and a subtotal identical to the grand total
+     * would be noise on a client-facing page.</p>
+     */
     private void addItemsTable(Document doc, String title, List<EstimateItem> items) throws DocumentException {
         if (items.isEmpty()) {
             return;
@@ -143,16 +162,57 @@ public class EstimatePdfService {
         addColumnHeader(table, "Ціна");
         addColumnHeader(table, "Сума");
 
+        Map<String, List<EstimateItem>> sections = new LinkedHashMap<>();
         for (EstimateItem item : items) {
-            BigDecimal lineTotal = item.getQuantity().multiply(item.getUnitPrice())
-                    .setScale(MONEY_SCALE, MONEY_ROUNDING);
-            table.addCell(textCell(item.getName(), Element.ALIGN_LEFT));
-            table.addCell(textCell(UnitLabel.ua(item.getUnit()), Element.ALIGN_CENTER));
-            table.addCell(textCell(formatQuantity(item.getQuantity()), Element.ALIGN_RIGHT));
-            table.addCell(textCell(formatMoney(item.getUnitPrice()), Element.ALIGN_RIGHT));
-            table.addCell(textCell(formatMoney(lineTotal), Element.ALIGN_RIGHT));
+            String category = item.getCategory() == null ? "" : item.getCategory().trim();
+            sections.computeIfAbsent(category, k -> new ArrayList<>()).add(item);
+        }
+        boolean sectioned = sections.size() > 1 || !sections.containsKey("");
+
+        for (Map.Entry<String, List<EstimateItem>> section : sections.entrySet()) {
+            if (sectioned) {
+                addSectionHeader(table, section.getKey().isEmpty() ? NO_CATEGORY : section.getKey());
+            }
+            BigDecimal sectionTotal = BigDecimal.ZERO;
+            for (EstimateItem item : section.getValue()) {
+                BigDecimal lineTotal = item.getQuantity().multiply(item.getUnitPrice())
+                        .setScale(MONEY_SCALE, MONEY_ROUNDING);
+                sectionTotal = sectionTotal.add(lineTotal);
+                table.addCell(textCell(item.getName(), Element.ALIGN_LEFT));
+                table.addCell(textCell(UnitLabel.ua(item.getUnit()), Element.ALIGN_CENTER));
+                table.addCell(textCell(formatQuantity(item.getQuantity()), Element.ALIGN_RIGHT));
+                table.addCell(textCell(formatMoney(item.getUnitPrice()), Element.ALIGN_RIGHT));
+                table.addCell(textCell(formatMoney(lineTotal), Element.ALIGN_RIGHT));
+            }
+            if (sectioned) {
+                addSectionSubtotal(table, sectionTotal);
+            }
         }
         doc.add(table);
+    }
+
+    /** Full-width row naming a section, lighter than the column header so that still reads as one. */
+    private void addSectionHeader(PdfPTable table, String name) {
+        PdfPCell cell = new PdfPCell(new Phrase(name, fonts.bold(10)));
+        cell.setColspan(5);
+        cell.setBackgroundColor(SECTION_BG);
+        cell.setHorizontalAlignment(Element.ALIGN_LEFT);
+        cell.setPadding(5);
+        table.addCell(cell);
+    }
+
+    /** What this stage costs — what a master is actually asked on site, and what a client compares. */
+    private void addSectionSubtotal(PdfPTable table, BigDecimal total) {
+        PdfPCell label = new PdfPCell(new Phrase("Разом по розділу", fonts.regular(9)));
+        label.setColspan(4);
+        label.setHorizontalAlignment(Element.ALIGN_RIGHT);
+        label.setPadding(4);
+        table.addCell(label);
+
+        PdfPCell value = new PdfPCell(new Phrase(formatMoney(total), fonts.bold(10)));
+        value.setHorizontalAlignment(Element.ALIGN_RIGHT);
+        value.setPadding(4);
+        table.addCell(value);
     }
 
     private void addTotals(Document doc, PdfModel model) throws DocumentException {

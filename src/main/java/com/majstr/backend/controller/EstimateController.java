@@ -6,6 +6,7 @@ import com.majstr.backend.dto.EstimateConsolidateRequest;
 import com.majstr.backend.dto.EstimateCreateRequest;
 import com.majstr.backend.dto.EstimateItemFromCatalogRequest;
 import com.majstr.backend.dto.EstimateItemRequest;
+import com.majstr.backend.dto.EstimateItemsOrderRequest;
 import com.majstr.backend.dto.EstimateItemResponse;
 import com.majstr.backend.dto.EstimateResponse;
 import com.majstr.backend.dto.EstimateSummary;
@@ -214,6 +215,14 @@ public class EstimateController {
                                            @Valid @RequestBody EstimateItemRequest req,
                                            @AuthenticationPrincipal UserPrincipal principal) {
         return estimateService.updateItem(estimateId, itemId, req, principal.id());
+    }
+
+    @Operation(summary = "Reorder the lines, and re-section them, after a drag")
+    @PutMapping("/api/estimates/{estimateId}/items/order")
+    public EstimateResponse reorderItems(@PathVariable UUID estimateId,
+                                         @Valid @RequestBody EstimateItemsOrderRequest req,
+                                         @AuthenticationPrincipal UserPrincipal principal) {
+        return estimateService.reorderItems(estimateId, req, principal.id());
     }
 
     @Operation(summary = "Delete a line item")

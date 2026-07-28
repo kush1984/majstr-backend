@@ -141,4 +141,77 @@ class EstimatePdfServiceTest {
 
         return new EstimatePdfService.PdfModel(contractor, project, client, estimate, List.of(work, material));
     }
+
+    // ---- sections -------------------------------------------------------------------------------
+
+    @Test
+    void render_showsSectionsInTheOrderTheMasterArranged() throws Exception {
+        // Sections are not stored anywhere: a section IS the run of lines sharing a category, and
+        // the order follows sortOrder. So this asserts the one thing that can break — that the PDF
+        // preserves the arrangement instead of re-sorting by name or by category alphabetically.
+        given(featureGuard.isEnabled(org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.eq(Feature.BRANDED_PDF))).willReturn(false);
+
+        String text = textOf(pdfService.render(sectionedModel()));
+
+        assertThat(text).contains("Плитка").contains("Підготовка");
+        // «Плитка» is dragged ABOVE «Підготовка» (sortOrder 0,1 vs 2), and alphabetical order would
+        // put Підготовка first — so index order is what proves the arrangement survived.
+        assertThat(text.indexOf("Плитка")).isLessThan(text.indexOf("Підготовка"));
+
+        // A subtotal per section: 20 × 850 = 17 000 for Плитка, 10 × 40 = 400 for Підготовка.
+        assertThat(digitsOnly(text)).contains("1700000").contains("40000");
+        assertThat(text).contains("Разом по розділу");
+    }
+
+    @Test
+    void render_leavesAnEstimateWithoutCategoriesExactlyAsItWas() throws Exception {
+        // A master who never files their lines must not be shown a «Без категорії» heading over the
+        // whole document, nor a subtotal that just repeats the grand total.
+        given(featureGuard.isEnabled(org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.eq(Feature.BRANDED_PDF))).willReturn(false);
+
+        String text = textOf(pdfService.render(sampleModel()));
+
+        assertThat(text).doesNotContain("Без категорії").doesNotContain("Разом по розділу");
+        assertThat(text).contains("Штукатурка стін");   // the lines themselves still render
+    }
+
+    private static String textOf(byte[] pdf) throws Exception {
+        try (var doc = org.apache.pdfbox.Loader.loadPDF(pdf)) {
+            return new org.apache.pdfbox.text.PDFTextStripper().getText(doc);
+        }
+    }
+
+    /** Money is formatted with locale separators the text extractor may not preserve verbatim. */
+    private static String digitsOnly(String text) {
+        return text.replaceAll("[^0-9]", "");
+    }
+
+    private EstimatePdfService.PdfModel sectionedModel() {
+        EstimatePdfService.PdfModel base = sampleModel();
+        Estimate estimate = base.estimate();
+        List<EstimateItem> items = List.of(
+                sectionItem(estimate, ItemType.WORK, "Укладання плитки", "Плитка", "20", "850.00", 0),
+                sectionItem(estimate, ItemType.WORK, "Затирка швів", "Плитка", "20", "0.01", 1),
+                sectionItem(estimate, ItemType.WORK, "Грунтування", "Підготовка", "10", "40.00", 2),
+                sectionItem(estimate, ItemType.MATERIAL, "Клей", "Плитка", "10", "25.00", 3));
+        return new EstimatePdfService.PdfModel(
+                base.contractor(), base.project(), base.client(), estimate, items);
+    }
+
+    private EstimateItem sectionItem(Estimate estimate, ItemType type, String name, String category,
+                                     String qty, String price, int sortOrder) {
+        return EstimateItem.builder()
+                .id(UUID.randomUUID())
+                .estimate(estimate)
+                .type(type)
+                .name(name)
+                .category(category)
+                .unit(Unit.M2)
+                .quantity(new BigDecimal(qty))
+                .unitPrice(new BigDecimal(price))
+                .sortOrder(sortOrder)
+                .build();
+    }
 }

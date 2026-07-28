@@ -5,6 +5,7 @@ import com.majstr.backend.dto.EstimateCreateRequest;
 import com.majstr.backend.dto.EstimateItemFromCatalogRequest;
 import com.majstr.backend.dto.EstimateItemRequest;
 import com.majstr.backend.dto.EstimateItemResponse;
+import com.majstr.backend.dto.EstimateItemsOrderRequest;
 import com.majstr.backend.dto.EstimateResponse;
 import com.majstr.backend.dto.EstimateSummary;
 import com.majstr.backend.dto.EstimateUpdateRequest;
@@ -38,7 +39,10 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
@@ -539,6 +543,56 @@ public class EstimateService {
             item.setSortOrder(req.sortOrder());
         }
         return EstimateItemResponse.from(item);
+    }
+
+    /**
+     * Apply the arrangement the master dragged into place: {@code sortOrder} becomes the index in the
+     * list and the category comes along with each line, so moving a line into another section is one
+     * atomic change rather than a reorder plus an edit that could half-apply.
+     *
+     * <p>Sections are not rows — a section IS the lines sharing a category, ordered by the first of
+     * them — so dragging a whole section needs nothing here beyond what dragging a line needs.</p>
+     *
+     * <p>Two things this is deliberately lenient about, because the caller may be an offline queue
+     * replaying an arrangement built minutes or days ago:</p>
+     * <ul>
+     *   <li>an id that no longer exists is skipped, not a 404 — the line was deleted in the meantime
+     *       and failing forever over it would wedge the queue (same reasoning as
+     *       {@link #deleteItem});</li>
+     *   <li>a line the request does NOT mention is kept and appended after the listed ones, in its
+     *       existing relative order. It was almost certainly added on another device after this
+     *       arrangement was captured; dropping it, or leaving it with a colliding sortOrder, would
+     *       lose or scramble work the master can see on the other screen.</li>
+     * </ul>
+     */
+    @Transactional
+    public EstimateResponse reorderItems(UUID estimateId,
+                                         EstimateItemsOrderRequest req,
+                                         UUID ownerId) {
+        Estimate estimate = loadOwned(estimateId, ownerId);
+        requireNotSigned(estimate);
+
+        List<EstimateItem> existing = itemRepository.findByEstimateIdOrderBySortOrderAscIdAsc(estimateId);
+        Map<UUID, EstimateItem> byId = existing.stream()
+                .collect(Collectors.toMap(EstimateItem::getId, i -> i));
+
+        int position = 0;
+        Set<UUID> placed = new LinkedHashSet<>();
+        for (EstimateItemsOrderRequest.Line line : req.items()) {
+            EstimateItem item = byId.get(line.id());
+            if (item == null || !placed.add(line.id())) {
+                continue;   // gone since the arrangement was captured, or listed twice
+            }
+            item.setSortOrder(position++);
+            item.setCategory(CatalogService.normalizeCategory(line.category()));
+        }
+        // Whatever the request never mentioned keeps its relative order, after the rest.
+        for (EstimateItem item : existing) {
+            if (!placed.contains(item.getId())) {
+                item.setSortOrder(position++);
+            }
+        }
+        return toResponse(estimate, itemRepository.findByEstimateIdOrderBySortOrderAscIdAsc(estimateId));
     }
 
     @Transactional
