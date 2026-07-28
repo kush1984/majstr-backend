@@ -99,6 +99,21 @@
             border-collapse: collapse;
             table-layout: fixed;
         }
+        /* A section band inside the table: centred, as in the PDF. Left-aligned it sits under
+           «Назва» and reads as one more line rather than as a divider between stages. */
+        tr.section td {
+            background: var(--paper-2);
+            font-weight: 700;
+            text-align: center;
+            letter-spacing: .02em;
+        }
+        /* What this stage costs — the figure a client compares, so it carries the same weight as
+           the number beside it rather than looking like a caption. */
+        tr.section-total td {
+            font-weight: 700;
+            border-bottom: 1px solid var(--line);
+        }
+        tr.section-total td:first-child { text-align: right; }
         /* Stable column widths so headers and numbers line up regardless
            of the longest line. First column (Назва) takes the remainder and
            ellipsizes; the numeric columns get the room because prices/sums are
@@ -412,19 +427,56 @@
         }[c]));
     }
 
+    // Group into the sections the master arranged: a section IS the lines sharing a category, and
+    // its place follows the first of them, which is what sortOrder already encodes. Same rule as
+    // the PDF, so the page a client reads and the document they keep never disagree.
+    //
+    // An estimate whose lines carry no category renders exactly as it did before sections existed:
+    // no headings, no subtotals. A master who does not file their lines should not be shown a
+    // «Без категорії» band over everything, nor a subtotal that just repeats the table's own total.
+    function toSections(items) {
+        const sections = [];
+        const byCategory = new Map();
+        [...items].sort((a, b) => a.sortOrder - b.sortOrder).forEach(item => {
+            const category = (item.category || '').trim();
+            let section = byCategory.get(category);
+            if (!section) {
+                section = { category, items: [] };
+                byCategory.set(category, section);
+                sections.push(section);
+            }
+            section.items.push(item);
+        });
+        return sections;
+    }
+
     function renderItems(items, kind) {
         const subset = items.filter(i => i.type === kind);
         if (!subset.length) return '';
         const title = kind === 'WORK' ? 'Роботи' : 'Матеріали';
-        const rows = subset.map(i => `
+        const sections = toSections(subset);
+        const sectioned = sections.length > 1 || sections[0].category !== '';
+        const rows = sections.map(section => {
+            const head = sectioned ? `
+            <tr class="section">
+                <td colspan="5">${escapeHtml(section.category || 'Без категорії')}</td>
+            </tr>` : '';
+            const lines = section.items.map(i => `
             <tr>
                 <td>${escapeHtml(i.name)}</td>
                 <td class="center">${escapeHtml(unit(i.unit))}</td>
                 <td class="num">${escapeHtml(i.quantity)}</td>
                 <td class="num">${amount(i.unitPrice)}</td>
                 <td class="num">${amount(i.lineTotal)}</td>
-            </tr>
-        `).join('');
+            </tr>`).join('');
+            const sum = section.items.reduce((acc, i) => acc + Number(i.lineTotal || 0), 0);
+            const foot = sectioned ? `
+            <tr class="section-total">
+                <td colspan="4">Разом по розділу</td>
+                <td class="num">${amount(sum)}</td>
+            </tr>` : '';
+            return head + lines + foot;
+        }).join('');
         return `
             <section class="card">
                 <h2>${title}</h2>

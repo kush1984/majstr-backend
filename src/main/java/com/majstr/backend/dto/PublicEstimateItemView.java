@@ -12,5 +12,11 @@ public record PublicEstimateItemView(
         BigDecimal quantity,
         BigDecimal unitPrice,
         BigDecimal lineTotal,
-        int sortOrder
+        int sortOrder,
+        /**
+         * The section this line sits in, or null for none. The client page groups by it, in the
+         * order sortOrder puts the lines — the same arrangement the master dragged into place and
+         * the same one the PDF shows, so the three never disagree.
+         */
+        String category
 ) {}

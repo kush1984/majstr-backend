@@ -96,6 +96,10 @@ class PublicEstimateServiceTest {
         assertThat(view.worksSubtotal()).isEqualByComparingTo("4590.00");
         assertThat(view.materialsSubtotal()).isEqualByComparingTo("2220.00");
         assertThat(view.total()).isEqualByComparingTo("6810.00");
+        // The client page groups by this, so losing it from the public view would silently flatten
+        // the portal back into one long list while every test still passed.
+        assertThat(view.items().getFirst().category()).isEqualTo("Штукатурка стін");
+        assertThat(view.items().getFirst().sortOrder()).isZero();
     }
 
     @Test
@@ -380,6 +384,7 @@ class PublicEstimateServiceTest {
                 .estimate(estimate)
                 .type(ItemType.WORK)
                 .name("Штукатурка")
+                .category("Штукатурка стін")
                 .unit(Unit.M2)
                 .quantity(new BigDecimal("25.500"))
                 .unitPrice(new BigDecimal("180.00"))

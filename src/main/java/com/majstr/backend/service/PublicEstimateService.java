@@ -352,7 +352,8 @@ public class PublicEstimateService {
                 item.getQuantity(),
                 item.getUnitPrice(),
                 line,
-                item.getSortOrder()
+                item.getSortOrder(),
+                item.getCategory()
         );
     }
 
