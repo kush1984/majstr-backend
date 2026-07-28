@@ -176,12 +176,30 @@ public interface UserRepository extends JpaRepository<User, UUID> {
     int touchLastActiveAndDevice(@Param("id") UUID id, @Param("now") Instant now,
                                  @Param("deviceType") String deviceType, @Param("os") String os);
 
-    /** Billing-granted subscriptions whose expiry (+ grace, folded into the
-     *  cutoff by the caller) has passed — the daily job downgrades these to FREE.
-     *  Only rows with a non-null {@code planExpiresAt} qualify, so admin-granted
-     *  plans (no expiry) are never touched. */
-    @Query("SELECT u FROM User u WHERE u.planExpiresAt IS NOT NULL AND u.planExpiresAt < :cutoff")
-    List<User> findExpiredSubscriptions(@Param("cutoff") Instant cutoff);
+    /**
+     * Billing-granted subscriptions the daily job should downgrade to FREE. Only rows with a
+     * non-null {@code planExpiresAt} qualify, so admin-granted plans (no expiry) are never touched.
+     *
+     * <p>The grace window applies ONLY where a charge could still land — auto-renew on, with a card
+     * token. That is what grace is for: a late charge should not interrupt PRO. Everything else,
+     * a trial above all, has nothing pending and expires the moment {@code planExpiresAt} passes.
+     *
+     * <p>This used to fold grace into a single cutoff for everyone, which quietly turned a 5-day
+     * trial into nearly nine days: five of trial, three of grace meant for a charge that could
+     * never arrive, plus the wait for the next nightly run.
+     *
+     * <p>The renewable branch matches {@code idx_users_auto_renew} exactly.
+     */
+    @Query("""
+            SELECT u FROM User u
+            WHERE u.planExpiresAt IS NOT NULL
+              AND (
+                    (u.autoRenew = true AND u.cardToken IS NOT NULL AND u.planExpiresAt < :graceCutoff)
+                 OR ((u.autoRenew = false OR u.cardToken IS NULL) AND u.planExpiresAt < :now)
+              )
+            """)
+    List<User> findExpiredSubscriptions(@Param("now") Instant now,
+                                        @Param("graceCutoff") Instant graceCutoff);
 
     /** Auto-renew subscriptions due a T-N warning email: opted in, tokenized, no
      *  reminder yet this cycle, expiring within the reminder window. */

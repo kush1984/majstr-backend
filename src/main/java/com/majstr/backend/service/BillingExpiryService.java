@@ -15,9 +15,12 @@ import java.time.temporal.ChronoUnit;
 import java.util.List;
 
 /**
- * Daily downgrade of lapsed PRO subscriptions to FREE. A subscription is
- * downgraded only once its {@code planExpiresAt} plus a grace window has passed,
- * so a late renewal within grace keeps PRO uninterrupted. Downgrade is <b>soft</b>
+ * Daily downgrade of lapsed PRO subscriptions to FREE.
+ *
+ * <p>A RENEWABLE subscription — auto-renew on, card on file — is downgraded only once its
+ * {@code planExpiresAt} plus a grace window has passed, so a late charge keeps PRO uninterrupted.
+ * Anything else expires on time: a trial has no card, so waiting for a charge that cannot arrive
+ * just handed out three extra days. Downgrade is <b>soft</b>
  * (matches the product's downgrade principle): the plan flips to FREE — everything
  * the master created stays visible/downloadable, only creating <i>new</i> over the
  * FREE limits is blocked (enforced on create, as today). Single-node like the token
@@ -34,8 +37,10 @@ public class BillingExpiryService {
     @Scheduled(cron = "${app.billing.expiry-cron:0 30 3 * * *}")
     @Transactional
     public void downgradeExpired() {
-        Instant cutoff = Instant.now().minus(props.graceDays(), ChronoUnit.DAYS);
-        List<User> expired = userRepository.findExpiredSubscriptions(cutoff);
+        Instant now = Instant.now();
+        // Grace only where a charge could still land; a trial has no card and nothing pending.
+        Instant graceCutoff = now.minus(props.graceDays(), ChronoUnit.DAYS);
+        List<User> expired = userRepository.findExpiredSubscriptions(now, graceCutoff);
         for (User user : expired) {
             user.setPlan(Plan.FREE);
             user.setPlanExpiresAt(null);

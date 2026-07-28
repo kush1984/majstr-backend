@@ -6,16 +6,19 @@ import com.majstr.backend.entity.User;
 import com.majstr.backend.repository.UserRepository;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.math.BigDecimal;
+import java.time.Duration;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.verify;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.BDDMockito.given;
 
@@ -37,7 +40,7 @@ class BillingExpiryServiceTest {
                 .id(UUID.randomUUID()).email("m@x").plan(Plan.PRO)
                 .planExpiresAt(Instant.now().minus(5, ChronoUnit.DAYS))
                 .build();
-        given(userRepository.findExpiredSubscriptions(any())).willReturn(List.of(lapsed));
+        given(userRepository.findExpiredSubscriptions(any(), any())).willReturn(List.of(lapsed));
 
         service().downgradeExpired();
 
@@ -47,8 +50,23 @@ class BillingExpiryServiceTest {
 
     @Test
     void downgradeExpired_noExpiredSubscriptionsIsANoOp() {
-        given(userRepository.findExpiredSubscriptions(any())).willReturn(List.of());
+        given(userRepository.findExpiredSubscriptions(any(), any())).willReturn(List.of());
 
         service().downgradeExpired(); // must not throw
+    }
+
+    @Test
+    void downgradeExpired_passesTwoThresholds_nowAndNowMinusGrace() {
+        // The fix lives in HOW the window is applied: `now` for anything with no charge pending, and
+        // `now - grace` only for a renewable subscription. Folding them into one cutoff is what gave
+        // a 5-day trial nearly nine days of PRO.
+        ArgumentCaptor<Instant> nowArg = ArgumentCaptor.forClass(Instant.class);
+        ArgumentCaptor<Instant> graceArg = ArgumentCaptor.forClass(Instant.class);
+        given(userRepository.findExpiredSubscriptions(any(), any())).willReturn(List.of());
+
+        service().downgradeExpired();
+
+        verify(userRepository).findExpiredSubscriptions(nowArg.capture(), graceArg.capture());
+        assertThat(Duration.between(graceArg.getValue(), nowArg.getValue()).toDays()).isEqualTo(3);
     }
 }
