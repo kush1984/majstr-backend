@@ -150,9 +150,10 @@ app:
   anthropic:
     # Claude API for the estimate-import LLM extraction (Excel/photo → estimate).
     # The key is env only and blank in local dev — then the import feature reports
+    # "unavailable" (503) instead of running, since the call is synchronous. Opus 4.8
     # is chosen for table/number OCR accuracy; the uploaded file is never persisted.
     api-key: ${ANTHROPIC_API_KEY:}
-    model: ${ANTHROPIC_MODEL:claude-sonnet-5}
+    model: ${ANTHROPIC_MODEL:claude-opus-4-8}
     max-tokens: ${ANTHROPIC_MAX_TOKENS:8000}
   sentry:
     # Error monitoring. DSN is env only and blank in local dev (then Sentry is
