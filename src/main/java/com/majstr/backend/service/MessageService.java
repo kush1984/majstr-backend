@@ -5,6 +5,7 @@ import com.majstr.backend.entity.ProjectMessage;
 import com.majstr.backend.exception.ResourceNotFoundException;
 import com.majstr.backend.repository.ProjectMessageRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -23,12 +24,20 @@ public class MessageService {
 
     private final ProjectMessageRepository messageRepository;
     private final ProjectService projectService;
+    private final MessageFileService messageFileService;
+
+    /**
+     * Mirrors the retention service's grace period. Read here because the view turns a warning into the
+     * date shown in the app, and the client must not have to know the server's schedule.
+     */
+    @Value("${app.message-files.grace-days:14}")
+    private int graceDays;
 
     @Transactional(readOnly = true)
     public List<MessageView> listForProject(UUID projectId, UUID ownerId) {
         projectService.loadOwned(projectId, ownerId); // 404 unknown / 403 foreign
         return messageRepository.findByProjectIdOrderByCreatedAtDesc(projectId).stream()
-                .map(MessageView::from)
+                .map(m -> MessageView.from(m, graceDays))
                 .toList();
     }
 
@@ -42,7 +51,7 @@ public class MessageService {
             throw new ResourceNotFoundException("Question not found: " + questionId);
         }
         question.setRead(true);
-        return MessageView.from(question);
+        return MessageView.from(question, graceDays);
     }
 
     /**
@@ -51,11 +60,30 @@ public class MessageService {
      *
      * <p>Files attached to it go with it — that arrives in a later step, through the FK.</p>
      */
+    /**
+     * Read one attachment. Ownership of the OBJECT is what grants access; the file is then resolved
+     * only through its message, so nothing here can reach another master's upload.
+     */
+    @Transactional
+    public MessageFileService.MessageFileContent openFile(UUID projectId, UUID messageId, UUID fileId,
+                                                         UUID ownerId) {
+        projectService.loadOwned(projectId, ownerId); // 404 unknown / 403 foreign
+        ProjectMessage message = messageRepository.findById(messageId)
+                .filter(m -> m.getProject().getId().equals(projectId))
+                .orElseThrow(() -> new ResourceNotFoundException("Message not found: " + messageId));
+        return messageFileService.open(message.getId(), fileId);
+    }
+
     @Transactional
     public void delete(UUID projectId, UUID messageId, UUID ownerId) {
         projectService.loadOwned(projectId, ownerId); // 404 unknown / 403 foreign
         messageRepository.findById(messageId)
                 .filter(m -> m.getProject().getId().equals(projectId))
-                .ifPresent(messageRepository::delete);
+                .ifPresent(m -> {
+                    // The rows CASCADE with the message; the stored bytes do not, and nothing else
+                    // would ever come back for them.
+                    messageFileService.deleteStoredFiles(m);
+                    messageRepository.delete(m);
+                });
     }
 }

@@ -12,7 +12,8 @@ public record RateLimitProperties(
         Forgot forgot,
         Portal portal,
         Verification verification,
-        EstimateEmail estimateEmail
+        EstimateEmail estimateEmail,
+        MessageLink messageLink
 ) {
     public record Login(
             @Positive int maxAttempts,
@@ -44,5 +45,17 @@ public record RateLimitProperties(
     /** Cap on estimate-share emails per account per hour. */
     public record EstimateEmail(
             @Positive int maxPerHour
+    ) {}
+
+    /**
+     * Cap on messages sent through a master's message link, per IP AND per link.
+     *
+     * <p>Tighter than the blanket 30/min on /api/public/**, because this one WRITES — and, from the
+     * next step, writes files. Keyed on the pair so one address cannot spray every link a master has,
+     * and one leaked link cannot be filled from a hundred addresses either.</p>
+     */
+    public record MessageLink(
+            @Positive int maxAttempts,
+            @Positive int windowMinutes
     ) {}
 }

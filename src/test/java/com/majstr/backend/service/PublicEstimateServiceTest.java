@@ -13,6 +13,7 @@ import com.majstr.backend.entity.EstimateShareLink;
 import com.majstr.backend.entity.EstimateStatus;
 import com.majstr.backend.entity.ItemType;
 import com.majstr.backend.entity.Project;
+import com.majstr.backend.entity.ShareLinkKind;
 import com.majstr.backend.entity.ProjectShareLink;
 import com.majstr.backend.entity.ProjectStatus;
 import com.majstr.backend.entity.Trade;
@@ -233,7 +234,7 @@ class PublicEstimateServiceTest {
                 .createdAt(Instant.now())
                 .updatedAt(Instant.now())
                 .build();
-        given(projectShareLinkRepository.findByToken(token))
+        given(projectShareLinkRepository.findByTokenAndKind(token, ShareLinkKind.PORTAL))
                 .willReturn(Optional.of(usablePortalLink(first.getProject())));
         given(estimateRepository.findByProjectIdAndPortalVisibleTrueOrderByCreatedAtAsc(first.getProject().getId()))
                 .willReturn(List.of(first, second));
@@ -256,7 +257,7 @@ class PublicEstimateServiceTest {
     void signPortal_rejectsEstimateHiddenFromThePortal() {
         Estimate estimate = sampleEstimate();
         estimate.setPortalVisible(false);
-        given(projectShareLinkRepository.findByToken(token))
+        given(projectShareLinkRepository.findByTokenAndKind(token, ShareLinkKind.PORTAL))
                 .willReturn(Optional.of(usablePortalLink(estimate.getProject())));
         given(estimateRepository.findById(estimate.getId())).willReturn(Optional.of(estimate));
 
@@ -271,7 +272,7 @@ class PublicEstimateServiceTest {
         Estimate foreign = sampleEstimate(); // belongs to a different project than the token's
         foreign.setPortalVisible(true);
         Project tokenProject = sampleEstimate().getProject();
-        given(projectShareLinkRepository.findByToken(token))
+        given(projectShareLinkRepository.findByTokenAndKind(token, ShareLinkKind.PORTAL))
                 .willReturn(Optional.of(usablePortalLink(tokenProject)));
         given(estimateRepository.findById(foreign.getId())).willReturn(Optional.of(foreign));
 
@@ -284,7 +285,7 @@ class PublicEstimateServiceTest {
     void signPortal_signsAVisibleEstimateOfTheTokensProject() {
         Estimate estimate = sampleEstimate();
         estimate.setPortalVisible(true);
-        given(projectShareLinkRepository.findByToken(token))
+        given(projectShareLinkRepository.findByTokenAndKind(token, ShareLinkKind.PORTAL))
                 .willReturn(Optional.of(usablePortalLink(estimate.getProject())));
         given(estimateRepository.findById(estimate.getId())).willReturn(Optional.of(estimate));
         given(estimateRepository.findByProjectIdAndPortalVisibleTrueOrderByCreatedAtAsc(estimate.getProject().getId()))
@@ -304,7 +305,7 @@ class PublicEstimateServiceTest {
         Estimate estimate = sampleEstimate();
         estimate.setName("Економ");
         estimate.setPortalVisible(true);
-        given(projectShareLinkRepository.findByToken(token))
+        given(projectShareLinkRepository.findByTokenAndKind(token, ShareLinkKind.PORTAL))
                 .willReturn(Optional.of(usablePortalLink(estimate.getProject())));
         given(estimateRepository.findById(estimate.getId())).willReturn(Optional.of(estimate));
         given(messageRepository.save(any(ProjectMessage.class))).willAnswer(inv -> {

@@ -15,6 +15,7 @@ import com.majstr.backend.entity.EstimateShareLink;
 import com.majstr.backend.entity.EstimateStatus;
 import com.majstr.backend.entity.ItemType;
 import com.majstr.backend.entity.Project;
+import com.majstr.backend.entity.ShareLinkKind;
 import com.majstr.backend.entity.ProjectShareLink;
 import com.majstr.backend.entity.ProjectStatus;
 import com.majstr.backend.config.LocalizationConfig;
@@ -236,7 +237,10 @@ public class PublicEstimateService {
         if (token == null || token.isBlank()) {
             throw new ResourceNotFoundException("Share link not found");
         }
-        ProjectShareLink link = projectShareLinkRepository.findByToken(token).orElse(null);
+        // Kind matters here, not just the token: a MESSAGE link must never open the portal, or a
+        // supplier sent the form URL would be shown the client's prices instead.
+        ProjectShareLink link = projectShareLinkRepository
+                .findByTokenAndKind(token, ShareLinkKind.PORTAL).orElse(null);
         if (link == null || !link.isUsable(Instant.now())) {
             throw new ResourceNotFoundException("Share link not found");
         }

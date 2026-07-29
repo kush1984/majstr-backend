@@ -80,9 +80,23 @@ spring.servlet.multipart:
   # (estimate/receipt/sketch import). Each import enforces its own tighter cap
   # in code (logo ≤2 MB, photos ≤10 MB), so this ceiling doesn't weaken them.
   max-file-size: 15MB
-  max-request-size: 18MB
+  # The request ceiling has to clear the largest legitimate one, which is now a message with five
+  # 10 MB attachments. Per-file and per-message caps still live in code; this only decides how big a
+  # request may be before the servlet refuses to read it at all. The public form is additionally
+  # capped at 5 submissions per 10 minutes per address+link, which is the real throttle.
+  max-request-size: 52MB
 
 app:
+  # Retention on message attachments. A file nobody has opened in `retention-days` earns a warning;
+  # `grace-days` later it is deleted. Opening it cancels that, which is the whole deal offered to the
+  # master. Both passes work in batches so a year's backlog drains over several nights instead of one
+  # transaction over thousands of rows and a burst of notifications.
+  message-files:
+    retention-days: 180
+    grace-days: 14
+    batch-size: 200
+    warn-cron: "0 30 3 * * *"
+    delete-cron: "0 45 3 * * *"
   jwt:
     # HS256 requires >= 32 bytes (256 bits). Set via env in all environments.
     secret: ${JWT_SECRET}
@@ -119,6 +133,11 @@ app:
       cooldown-seconds: 60
     estimate-email:
       max-per-hour: 20
+    # Per IP + link. A real sender writes one message and maybe a follow-up; five in ten minutes is
+    # already generous, and the point is that a leaked link cannot be used as a firehose.
+    message-link:
+      max-attempts: ${MESSAGE_LINK_MAX_ATTEMPTS:5}
+      window-minutes: ${MESSAGE_LINK_WINDOW_MINUTES:10}
   storage:
     # local = filesystem (dev default); s3 = any S3-compatible store (Cloudflare R2).
     kind: ${STORAGE_KIND:local}

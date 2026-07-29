@@ -33,6 +33,7 @@ class MessageServiceTest {
 
     @Mock ProjectMessageRepository messageRepository;
     @Mock ProjectService projectService;
+    @Mock MessageFileService messageFileService;
     @InjectMocks MessageService messageService;
 
     private final UUID ownerId = UUID.randomUUID();

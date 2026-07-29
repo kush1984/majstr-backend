@@ -2,6 +2,8 @@ package com.majstr.backend.service;
 
 import com.majstr.backend.storage.UnsupportedMediaTypeException;
 
+import java.util.Optional;
+
 /**
  * Sniffs image bytes by their magic header — defending against a renamed
  * .exe.png and friends. Caller passes the first ~16 bytes of the upload.
@@ -28,9 +30,19 @@ public final class ImageContentTypeDetector {
         if (header == null || header.length < 4) {
             throw new UnsupportedMediaTypeException("error.upload.empty");
         }
-        if (isPng(header)) return ImageKind.PNG;
-        if (isJpeg(header)) return ImageKind.JPEG;
-        throw new UnsupportedMediaTypeException("error.upload.type");
+        return tryDetect(header)
+                .orElseThrow(() -> new UnsupportedMediaTypeException("error.upload.type"));
+    }
+
+    /**
+     * The same sniff without the exception, for callers that accept more than images and need to try
+     * another format before giving up — message attachments also take PDF.
+     */
+    public static Optional<ImageKind> tryDetect(byte[] header) {
+        if (header == null) return Optional.empty();
+        if (isPng(header)) return Optional.of(ImageKind.PNG);
+        if (isJpeg(header)) return Optional.of(ImageKind.JPEG);
+        return Optional.empty();
     }
 
     private static boolean isPng(byte[] h) {

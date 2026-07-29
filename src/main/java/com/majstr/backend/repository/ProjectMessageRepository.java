@@ -21,10 +21,14 @@ public interface ProjectMessageRepository extends JpaRepository<ProjectMessage, 
      * <p>LEFT join on the estimate, not an inner one: a message sent through the master's link has no
      * estimate, and an inner join would hide exactly the messages this feature exists for. Fetched
      * rather than lazy because {@link com.majstr.backend.dto.MessageView} reads its name.</p>
+     *
+     * <p>Attachments are fetch-joined too, so a screen of messages is one query rather than one per
+     * message. DISTINCT because joining a collection multiplies the root rows.</p>
      */
     @Query("""
-            SELECT m FROM ProjectMessage m
+            SELECT DISTINCT m FROM ProjectMessage m
             LEFT JOIN FETCH m.estimate
+            LEFT JOIN FETCH m.files
             WHERE m.project.id = :projectId
             ORDER BY m.createdAt DESC
             """)

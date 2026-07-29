@@ -16,7 +16,8 @@ class EstimateEmailRateLimiterTest {
                 new RateLimitProperties.Forgot(5, 60),
                 new RateLimitProperties.Portal(30, 1),
                 new RateLimitProperties.Verification(60),
-                new RateLimitProperties.EstimateEmail(maxPerHour));
+                new RateLimitProperties.EstimateEmail(maxPerHour),
+                new RateLimitProperties.MessageLink(5, 10));
         return new EstimateEmailRateLimiter(props);
     }
 

@@ -8,6 +8,7 @@ import com.majstr.backend.entity.Estimate;
 import com.majstr.backend.entity.EstimateStatus;
 import com.majstr.backend.entity.Plan;
 import com.majstr.backend.entity.Project;
+import com.majstr.backend.entity.ShareLinkKind;
 import com.majstr.backend.entity.ProjectShareLink;
 import com.majstr.backend.entity.User;
 import com.majstr.backend.exception.ClientEmailMissingException;
@@ -79,7 +80,8 @@ class ProjectPortalServiceTest {
         given(projectService.loadOwned(projectId, ownerId)).willReturn(p);
         given(estimateRepository.findByProjectIdOrderByCreatedAtDesc(projectId))
                 .willReturn(List.of(wanted, other));
-        given(linkRepository.findFirstByProjectIdAndRevokedFalseOrderByCreatedAtDesc(projectId))
+        given(linkRepository.findFirstByProjectIdAndKindAndRevokedFalseOrderByCreatedAtDesc(
+                projectId, ShareLinkKind.PORTAL))
                 .willReturn(Optional.empty());
         given(linkRepository.save(any(ProjectShareLink.class))).willAnswer(inv -> inv.getArgument(0));
         given(portalProperties.publicBaseUrl()).willReturn("https://majstr.pro");
@@ -98,7 +100,8 @@ class ProjectPortalServiceTest {
         Project p = project(true, null);
         given(projectService.loadOwned(projectId, ownerId)).willReturn(p);
         given(estimateRepository.findByProjectIdOrderByCreatedAtDesc(projectId)).willReturn(List.of());
-        given(linkRepository.findFirstByProjectIdAndRevokedFalseOrderByCreatedAtDesc(projectId))
+        given(linkRepository.findFirstByProjectIdAndKindAndRevokedFalseOrderByCreatedAtDesc(
+                projectId, ShareLinkKind.PORTAL))
                 .willReturn(Optional.of(ProjectShareLink.builder()
                         .id(UUID.randomUUID()).project(p).token("existing-token")
                         .createdAt(Instant.now()).revoked(false).build()));
@@ -142,7 +145,8 @@ class ProjectPortalServiceTest {
     void sendEmail_sendsThePortalUrlToTheClient() {
         Project p = project(true, "olena@x.ua");
         given(projectService.loadOwned(projectId, ownerId)).willReturn(p);
-        given(linkRepository.findFirstByProjectIdAndRevokedFalseOrderByCreatedAtDesc(projectId))
+        given(linkRepository.findFirstByProjectIdAndKindAndRevokedFalseOrderByCreatedAtDesc(
+                projectId, ShareLinkKind.PORTAL))
                 .willReturn(Optional.of(ProjectShareLink.builder()
                         .id(UUID.randomUUID()).project(p).token("tok")
                         .createdAt(Instant.now()).revoked(false).build()));
@@ -160,7 +164,8 @@ class ProjectPortalServiceTest {
     void state_returnsNullUrlUntilPublished() {
         Project p = project(true, null);
         given(projectService.loadOwned(projectId, ownerId)).willReturn(p);
-        given(linkRepository.findFirstByProjectIdAndRevokedFalseOrderByCreatedAtDesc(projectId))
+        given(linkRepository.findFirstByProjectIdAndKindAndRevokedFalseOrderByCreatedAtDesc(
+                projectId, ShareLinkKind.PORTAL))
                 .willReturn(Optional.empty());
         Estimate e = estimate(p, EstimateStatus.DRAFT, false);
         given(estimateRepository.findByProjectIdOrderByCreatedAtDesc(projectId)).willReturn(List.of(e));

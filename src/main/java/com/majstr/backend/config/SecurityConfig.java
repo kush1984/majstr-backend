@@ -44,6 +44,9 @@ public class SecurityConfig {
             "/api/public/**",
             "/api/files/**",
             "/portal/**",
+            // The message form. A separate page from the portal on purpose: it carries no prices, so a
+            // master can send it to a supplier without handing over the client's quote.
+            "/message/**",
             "/robots.txt",
             // Browsers auto-probe /favicon.ico on every page. Without an explicit
             // permit it falls to anyRequest().authenticated() and Security answers

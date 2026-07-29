@@ -6,6 +6,8 @@ import jakarta.persistence.FetchType;
 import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
+import jakarta.persistence.OneToMany;
+import jakarta.persistence.OrderBy;
 import jakarta.persistence.PrePersist;
 import jakarta.persistence.Table;
 import lombok.AllArgsConstructor;
@@ -16,6 +18,8 @@ import lombok.NoArgsConstructor;
 import lombok.Setter;
 
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.UUID;
 
 @Entity
@@ -63,6 +67,22 @@ public class ProjectMessage {
 
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
+
+    /**
+     * Attachments, oldest first — the order they were picked in the form.
+     *
+     * <p>Mapped here rather than fetched separately so {@link com.majstr.backend.dto.MessageView} can
+     * simply read them: a view assembled from a list passed in alongside would silently show no
+     * attachments wherever a caller forgot to pass one. The list query fetch-joins this; a single
+     * message loaded by id pays one extra query, which is correct either way.</p>
+     *
+     * <p>No cascade: the stored bytes have to be deleted before the row goes, so removal runs through
+     * the service. The database CASCADEs the rows themselves.</p>
+     */
+    @OneToMany(mappedBy = "message", fetch = FetchType.LAZY)
+    @OrderBy("createdAt ASC")
+    @Builder.Default
+    private List<ProjectMessageFile> files = new ArrayList<>();
 
     @PrePersist
     void onCreate() {

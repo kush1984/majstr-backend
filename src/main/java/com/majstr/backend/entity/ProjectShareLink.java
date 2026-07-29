@@ -2,6 +2,8 @@ package com.majstr.backend.entity;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
 import jakarta.persistence.FetchType;
 import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
@@ -53,6 +55,12 @@ public class ProjectShareLink {
 
     @Column(name = "revoked", nullable = false)
     private boolean revoked;
+
+    /** What this link opens — see {@link ShareLinkKind}. A privacy boundary, so never inferred. */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "kind", nullable = false, length = 20)
+    @Builder.Default
+    private ShareLinkKind kind = ShareLinkKind.PORTAL;
 
     @PrePersist
     void onCreate() {

@@ -2,12 +2,15 @@ package com.majstr.backend.controller;
 
 import com.majstr.backend.dto.MessageView;
 import com.majstr.backend.security.UserPrincipal;
+import com.majstr.backend.service.MessageFileService;
 import com.majstr.backend.service.MessageService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.http.ContentDisposition;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -16,6 +19,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.UUID;
 
@@ -53,5 +57,35 @@ public class ProjectMessageController {
                                        @AuthenticationPrincipal UserPrincipal principal) {
         messageService.delete(projectId, messageId, principal.id());
         return ResponseEntity.noContent().build();
+    }
+
+    /**
+     * One attachment, for the master who owns the object.
+     *
+     * <p>Always {@code attachment}, never {@code inline}. These bytes came from a stranger, and a
+     * browser asked to render them inside the app's own origin is the difference between a file being
+     * downloaded and a file running against the master's session. The sniffed type is sent so the
+     * download is useful, and {@code nosniff} stops the browser second-guessing it.</p>
+     *
+     * <p>Ownership is checked on the object, then the file is looked up by id AND message — so a file
+     * belonging to somebody else is indistinguishable from one that does not exist.</p>
+     */
+    @Operation(summary = "Download an attachment of a message")
+    @GetMapping("/{messageId}/files/{fileId}")
+    public ResponseEntity<byte[]> file(@PathVariable UUID projectId,
+                                       @PathVariable UUID messageId,
+                                       @PathVariable UUID fileId,
+                                       @AuthenticationPrincipal UserPrincipal principal) {
+        MessageFileService.MessageFileContent content =
+                messageService.openFile(projectId, messageId, fileId, principal.id());
+        ContentDisposition disposition = ContentDisposition.attachment()
+                .filename(content.downloadName(), StandardCharsets.UTF_8)
+                .build();
+        return ResponseEntity.ok()
+                .header(HttpHeaders.CONTENT_TYPE, content.contentType())
+                .header(HttpHeaders.CONTENT_DISPOSITION, disposition.toString())
+                .header("X-Content-Type-Options", "nosniff")
+                .header(HttpHeaders.CACHE_CONTROL, "private, max-age=0, no-store")
+                .body(content.bytes());
     }
 }

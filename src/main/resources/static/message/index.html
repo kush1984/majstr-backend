@@ -1,0 +1,328 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="theme-color" content="#3a2519">
+    <!-- Token-addressed page — must never be indexed. -->
+    <meta name="robots" content="noindex, nofollow">
+    <!-- The token is in the URL — never leak it via the Referer header. -->
+    <meta name="referrer" content="no-referrer">
+    <link rel="icon" type="image/svg+xml" href="/logo.svg">
+    <title>Написати майстру</title>
+    <style>
+        /* Same palette as the portal and the app. Kept as its own small stylesheet rather than shared
+           with the portal: this page must stay loadable when the portal's is not, and there is no build
+           step here to share one from. */
+        :root {
+            --ink: #3a2519;
+            --paper: #f7f1e7;
+            --paper-2: #ede2d1;
+            --line: #d9ccb5;
+            --amber: #f5821f;
+            --amber-deep: #e06c00;
+            --muted: #705c47;
+            --white: #ffffff;
+            --success: #2f7a3f;
+            --danger: #b3402a;
+            --sans: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            --mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+        }
+        * { box-sizing: border-box; }
+        body {
+            margin: 0;
+            font-family: var(--sans);
+            background: var(--paper);
+            color: var(--ink);
+            line-height: 1.5;
+            -webkit-font-smoothing: antialiased;
+        }
+        .container { max-width: 520px; margin: 0 auto; padding: 24px 16px 48px; }
+        .card {
+            background: var(--white);
+            border: 1px solid var(--line);
+            border-radius: 14px;
+            padding: 20px;
+            margin-bottom: 14px;
+            box-shadow: 0 1px 2px rgba(58, 37, 25, 0.05), 0 6px 18px rgba(58, 37, 25, 0.04);
+        }
+        .card.contractor {
+            background: var(--ink);
+            border-color: var(--ink);
+            color: var(--white);
+        }
+        .contractor .name { font-size: 1.2rem; font-weight: 800; letter-spacing: -0.01em; margin: 0; }
+        .contractor .object { color: #e7d8c4; font-size: 0.95rem; margin: 4px 0 0; }
+        h2 {
+            font-family: var(--mono);
+            font-size: 0.72rem;
+            letter-spacing: 0.12em;
+            text-transform: uppercase;
+            color: var(--amber);
+            margin: 0 0 12px;
+        }
+        label { display: block; font-size: 0.85rem; font-weight: 600; margin: 14px 0 5px; }
+        label .opt { font-weight: 400; color: var(--muted); }
+        input, textarea {
+            width: 100%;
+            font-family: var(--sans);
+            font-size: 1rem;
+            padding: 11px 12px;
+            border: 1px solid var(--line);
+            border-radius: 10px;
+            background: var(--paper);
+            color: var(--ink);
+        }
+        input:focus, textarea:focus {
+            outline: none;
+            border-color: var(--amber);
+            box-shadow: 0 0 0 3px rgba(245, 130, 31, 0.15);
+        }
+        textarea { min-height: 130px; resize: vertical; }
+        .counter { font-size: 0.78rem; color: var(--muted); text-align: right; margin-top: 4px; }
+        input[type="file"] { padding: 9px 12px; font-size: 0.9rem; }
+        .picked { list-style: none; margin: 8px 0 0; padding: 0; }
+        .picked li {
+            display: flex; gap: 8px; align-items: baseline;
+            font-size: 0.85rem; padding: 5px 0;
+            border-bottom: 1px solid var(--line);
+        }
+        .picked li:last-child { border-bottom: none; }
+        .picked .nm { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+        .picked .sz { color: var(--muted); font-family: var(--mono); font-size: 0.78rem; }
+        .picked li.bad .nm { color: var(--danger); }
+        button {
+            width: 100%;
+            margin-top: 20px;
+            padding: 13px 16px;
+            font-family: var(--sans);
+            font-size: 1rem;
+            font-weight: 700;
+            color: var(--white);
+            background: var(--amber);
+            border: none;
+            border-radius: 10px;
+            cursor: pointer;
+        }
+        button:hover:not(:disabled) { background: var(--amber-deep); }
+        button:disabled { opacity: 0.55; cursor: default; }
+        .msg { margin-top: 14px; padding: 11px 13px; border-radius: 10px; font-size: 0.92rem; }
+        .msg.error { background: #f7e3de; color: var(--danger); border: 1px solid #e6c3ba; }
+        .note { color: var(--muted); font-size: 0.85rem; margin: 10px 0 0; }
+        .done { text-align: center; padding: 28px 20px; }
+        .done .tick {
+            width: 52px; height: 52px; margin: 0 auto 14px;
+            border-radius: 50%; background: var(--success); color: var(--white);
+            font-size: 1.7rem; line-height: 52px;
+        }
+        .done h1 { font-size: 1.25rem; margin: 0 0 6px; }
+        .done p { color: var(--muted); margin: 0; }
+        .center { text-align: center; color: var(--muted); padding: 40px 16px; }
+        [hidden] { display: none !important; }
+    </style>
+</head>
+<body>
+<div class="container">
+    <div id="loading" class="center">Завантаження…</div>
+
+    <div id="gone" class="center" hidden>
+        <p style="font-weight:600;color:var(--ink)">Посилання недійсне</p>
+        <p>Можливо, майстер його відкликав. Попросіть надіслати нове.</p>
+    </div>
+
+    <div id="app" hidden>
+        <div class="card contractor">
+            <p class="name" id="contractor"></p>
+            <p class="object" id="object"></p>
+        </div>
+
+        <form id="form" class="card" novalidate>
+            <h2>Повідомлення майстру</h2>
+            <label for="name">Ваше ім'я</label>
+            <input id="name" name="name" type="text" maxlength="100" autocomplete="name" required>
+
+            <label for="phone">Телефон <span class="opt">— не обов'язково</span></label>
+            <input id="phone" name="phone" type="tel" maxlength="30" autocomplete="tel"
+                   inputmode="tel" placeholder="+380">
+
+            <label for="message">Повідомлення</label>
+            <textarea id="message" name="message" maxlength="2000" required></textarea>
+            <div class="counter"><span id="count">0</span> / 2000</div>
+
+            <label for="files">Файли <span class="opt">— фото або PDF, до 5 шт, до 10 МБ кожен</span></label>
+            <input id="files" name="files" type="file" multiple
+                   accept="image/png,image/jpeg,application/pdf">
+            <ul id="picked" class="picked"></ul>
+
+            <button type="submit" id="submit">Надіслати</button>
+            <div id="error" class="msg error" hidden></div>
+            <p class="note">Майстер отримає повідомлення і файли у застосунку.</p>
+        </form>
+    </div>
+
+    <div id="sent" class="card done" hidden>
+        <div class="tick">✓</div>
+        <h1>Надіслано</h1>
+        <p>Майстер отримає повідомлення у застосунку.</p>
+    </div>
+</div>
+
+<script>
+    'use strict';
+
+    // The token is a query parameter, not a path segment, so this page is one static file that any
+    // token loads — the same shape the portal already uses.
+    const token = new URLSearchParams(location.search).get('m') || '';
+    const API = '/api/public/message-link/' + encodeURIComponent(token);
+
+    const el = (id) => document.getElementById(id);
+
+    function show(id) {
+        for (const s of ['loading', 'gone', 'app', 'sent']) el(s).hidden = s !== id;
+    }
+
+    async function load() {
+        if (!token) return show('gone');
+        try {
+            const res = await fetch(API);
+            if (!res.ok) return show('gone');
+            const info = await res.json();
+            // textContent, never innerHTML: both of these are values the master typed.
+            el('contractor').textContent = info.contractorName || '';
+            el('object').textContent = info.projectName || '';
+            show('app');
+        } catch {
+            // Offline or the server is down. Distinct from a revoked link, and retryable.
+            el('gone').firstElementChild.textContent = 'Не вдалося завантажити';
+            el('gone').lastElementChild.textContent = 'Перевірте зв\'язок і оновіть сторінку.';
+            show('gone');
+        }
+    }
+
+    el('message').addEventListener('input', () => {
+        el('count').textContent = String(el('message').value.length);
+    });
+
+    // Mirrors the server's limits. Checked here so a supplier on a phone hears about a 40 MB photo
+    // before uploading it over mobile data, not after — the server still enforces all of it.
+    const MAX_FILES = 5;
+    const MAX_BYTES = 10 * 1024 * 1024;
+    const ALLOWED = ['image/png', 'image/jpeg', 'application/pdf'];
+
+    function humanSize(bytes) {
+        return bytes >= 1024 * 1024
+            ? (bytes / 1024 / 1024).toFixed(1) + ' МБ'
+            : Math.max(1, Math.round(bytes / 1024)) + ' КБ';
+    }
+
+    /** Returns a reason the picked files are unusable, or '' when they are fine. */
+    function filesProblem() {
+        const files = [...el('files').files];
+        if (files.length > MAX_FILES) return 'Не більше ' + MAX_FILES + ' файлів.';
+        for (const f of files) {
+            if (f.size > MAX_BYTES) return 'Файл «' + f.name + '» більший за 10 МБ.';
+            // The type comes from the browser and can be empty or wrong; the server sniffs the bytes.
+            // This only spares an obvious mistake, so an unknown type is allowed through to it.
+            if (f.type && !ALLOWED.includes(f.type)) {
+                return 'Файл «' + f.name + '» не фото і не PDF.';
+            }
+        }
+        return '';
+    }
+
+    el('files').addEventListener('change', () => {
+        const list = el('picked');
+        list.textContent = '';
+        for (const f of el('files').files) {
+            const li = document.createElement('li');
+            const nm = document.createElement('span');
+            nm.className = 'nm';
+            // textContent: the filename is the sender's own string, but this page must not start
+            // rendering markup from a text field either.
+            nm.textContent = f.name;
+            const sz = document.createElement('span');
+            sz.className = 'sz';
+            sz.textContent = humanSize(f.size);
+            if (f.size > MAX_BYTES) li.className = 'bad';
+            li.append(nm, sz);
+            list.append(li);
+        }
+        const problem = filesProblem();
+        if (problem) fail(problem); else el('error').hidden = true;
+    });
+
+    function fail(text) {
+        const box = el('error');
+        box.textContent = text;
+        box.hidden = false;
+    }
+
+    el('form').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        el('error').hidden = true;
+
+        const authorName = el('name').value.trim();
+        const message = el('message').value.trim();
+        // Checked here as well as on the server: a blank-but-not-empty name would otherwise come back
+        // as a 400 with nothing pointing at which field is wrong.
+        if (!authorName) return fail('Вкажіть, будь ласка, ваше ім\'я.');
+        if (!message) return fail('Напишіть повідомлення.');
+        const problem = filesProblem();
+        if (problem) return fail(problem);
+
+        const btn = el('submit');
+        btn.disabled = true;
+        btn.textContent = 'Надсилаємо…';
+        try {
+            // Multipart, with the fields as a JSON part named `data`: that keeps the server-side
+            // validation on one object instead of spreading it across form fields.
+            const form = new FormData();
+            form.append('data', new Blob([JSON.stringify({
+                authorName,
+                authorPhone: el('phone').value.trim() || null,
+                message,
+            })], {type: 'application/json'}));
+            for (const f of el('files').files) form.append('files', f, f.name);
+
+            // No Content-Type header on purpose — the browser has to set it with the boundary.
+            const res = await fetch(API, {method: 'POST', body: form});
+            if (res.ok) return show('sent');
+
+            if (res.status === 429) {
+                // The limiter answers with retryAfterSeconds; say it in minutes, which is the unit the
+                // window is configured in.
+                let mins = 10;
+                try {
+                    const body = await res.json();
+                    if (body && body.retryAfterSeconds) mins = Math.ceil(body.retryAfterSeconds / 60);
+                } catch { /* keep the default */ }
+                fail('Занадто багато спроб. Спробуйте за ' + mins + ' хв.');
+            } else if (res.status === 404) {
+                show('gone');
+            } else if (res.status === 413) {
+                // The servlet refused the whole request before any handler saw it, so there is no
+                // message body to read — this is the only place that can explain it.
+                fail('Файли завеликі. Приберіть частину і спробуйте ще раз.');
+            } else if (res.status === 415 || res.status === 400) {
+                // The server sniffs the bytes, so this is where a renamed file lands.
+                let text = 'Не вдалося надіслати. Перевірте файли.';
+                try {
+                    const body = await res.json();
+                    if (body && body.message) text = body.message;
+                } catch { /* keep the default */ }
+                fail(text);
+            } else {
+                fail('Не вдалося надіслати. Спробуйте ще раз.');
+            }
+        } catch {
+            fail('Немає зв\'язку. Спробуйте ще раз.');
+        } finally {
+            btn.disabled = false;
+            btn.textContent = 'Надіслати';
+        }
+    });
+
+    load();
+</script>
+</body>
+</html>

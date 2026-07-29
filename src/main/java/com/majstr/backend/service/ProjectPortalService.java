@@ -7,6 +7,7 @@ import com.majstr.backend.entity.Client;
 import com.majstr.backend.entity.Estimate;
 import com.majstr.backend.entity.EstimateStatus;
 import com.majstr.backend.entity.Project;
+import com.majstr.backend.entity.ShareLinkKind;
 import com.majstr.backend.entity.ProjectShareLink;
 import com.majstr.backend.entity.User;
 import com.majstr.backend.exception.ClientEmailMissingException;
@@ -53,7 +54,8 @@ public class ProjectPortalService {
     @Transactional(readOnly = true)
     public PortalStateResponse state(UUID projectId, UUID ownerId) {
         Project project = projectService.loadOwned(projectId, ownerId);
-        String url = linkRepository.findFirstByProjectIdAndRevokedFalseOrderByCreatedAtDesc(projectId)
+        String url = linkRepository.findFirstByProjectIdAndKindAndRevokedFalseOrderByCreatedAtDesc(
+                projectId, ShareLinkKind.PORTAL)
                 .filter(link -> link.isUsable(Instant.now()))
                 .map(link -> buildUrl(link.getToken()))
                 .orElse(null);
@@ -85,7 +87,8 @@ public class ProjectPortalService {
             throw new ResourceNotFoundException("Estimate not found in project " + projectId + ": " + wanted.iterator().next());
         }
 
-        ProjectShareLink link = linkRepository.findFirstByProjectIdAndRevokedFalseOrderByCreatedAtDesc(projectId)
+        ProjectShareLink link = linkRepository.findFirstByProjectIdAndKindAndRevokedFalseOrderByCreatedAtDesc(
+                projectId, ShareLinkKind.PORTAL)
                 .filter(l -> l.isUsable(Instant.now()))
                 .orElseGet(() -> linkRepository.save(ProjectShareLink.builder()
                         .project(project)
@@ -109,7 +112,8 @@ public class ProjectPortalService {
         if (client == null || client.getEmail() == null || client.getEmail().isBlank()) {
             throw new ClientEmailMissingException("error.client-email-missing");
         }
-        ProjectShareLink link = linkRepository.findFirstByProjectIdAndRevokedFalseOrderByCreatedAtDesc(projectId)
+        ProjectShareLink link = linkRepository.findFirstByProjectIdAndKindAndRevokedFalseOrderByCreatedAtDesc(
+                projectId, ShareLinkKind.PORTAL)
                 .filter(l -> l.isUsable(Instant.now()))
                 .orElseThrow(() -> new ResourceNotFoundException("Portal link not found for project " + projectId));
 
