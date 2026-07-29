@@ -10,7 +10,7 @@ import com.majstr.backend.dto.SignRequest;
 import com.majstr.backend.entity.Client;
 import com.majstr.backend.entity.Estimate;
 import com.majstr.backend.entity.EstimateItem;
-import com.majstr.backend.entity.EstimateQuestion;
+import com.majstr.backend.entity.ProjectMessage;
 import com.majstr.backend.entity.EstimateShareLink;
 import com.majstr.backend.entity.EstimateStatus;
 import com.majstr.backend.entity.ItemType;
@@ -25,7 +25,7 @@ import com.majstr.backend.feature.Feature;
 import com.majstr.backend.feature.FeatureGuard;
 import com.majstr.backend.push.PushService;
 import com.majstr.backend.repository.EstimateItemRepository;
-import com.majstr.backend.repository.EstimateQuestionRepository;
+import com.majstr.backend.repository.ProjectMessageRepository;
 import com.majstr.backend.repository.EstimateRepository;
 import com.majstr.backend.repository.EstimateShareLinkRepository;
 import com.majstr.backend.repository.ProjectShareLinkRepository;
@@ -61,7 +61,7 @@ public class PublicEstimateService {
     private final ProjectShareLinkRepository projectShareLinkRepository;
     private final EstimateRepository estimateRepository;
     private final EstimateItemRepository itemRepository;
-    private final EstimateQuestionRepository questionRepository;
+    private final ProjectMessageRepository messageRepository;
     private final EstimateService estimateService;
     private final ProjectPhotoService projectPhotoService;
     private final FeatureGuard featureGuard;
@@ -188,14 +188,18 @@ public class PublicEstimateService {
     }
 
     private QuestionResponse doAsk(Estimate estimate, QuestionRequest req, String clientIp) {
-        EstimateQuestion question = EstimateQuestion.builder()
+        ProjectMessage question = ProjectMessage.builder()
+                // The object is what a message belongs to now; the estimate rides along as context.
+                // Builders let a missing field compile, so this one is only caught by the NOT NULL —
+                // i.e. on a real client asking a real question. Covered by a test below.
+                .project(estimate.getProject())
                 .estimate(estimate)
                 .authorName(blankToNull(req.authorName()))
                 .authorPhone(blankToNull(req.authorPhone()))
                 .message(req.message().trim())
                 .authorIp(clientIp)
                 .build();
-        QuestionResponse saved = QuestionResponse.from(questionRepository.save(question));
+        QuestionResponse saved = QuestionResponse.from(messageRepository.save(question));
         // Notify the contractor in real time (fail-soft — never breaks the question).
         // The body carries the estimate name so the master knows which variant it's about.
         User contractor = estimate.getProject().getOwner();

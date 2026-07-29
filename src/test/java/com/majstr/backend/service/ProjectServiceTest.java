@@ -6,7 +6,7 @@ import com.majstr.backend.entity.EstimateStatus;
 import com.majstr.backend.entity.Project;
 import com.majstr.backend.entity.ProjectStatus;
 import com.majstr.backend.entity.User;
-import com.majstr.backend.repository.EstimateQuestionRepository;
+import com.majstr.backend.repository.ProjectMessageRepository;
 import com.majstr.backend.repository.EstimateRepository;
 import com.majstr.backend.repository.ProjectRepository;
 import com.majstr.backend.repository.UserRepository;
@@ -34,7 +34,7 @@ class ProjectServiceTest {
 
     @Mock ProjectRepository projectRepository;
     @Mock EstimateRepository estimateRepository;
-    @Mock EstimateQuestionRepository questionRepository;
+    @Mock ProjectMessageRepository messageRepository;
     @Mock UserRepository userRepository;
     @Mock ClientService clientService;
     @Mock com.majstr.backend.feature.LimitService limitService;
@@ -139,7 +139,7 @@ class ProjectServiceTest {
         Project p = owned(ProjectStatus.IN_PROGRESS, null);
         given(projectRepository.findByOwnerIdOrderByCreatedAtDesc(ownerId)).willReturn(List.of(p));
         given(estimateRepository.findLatestEstimateSummaries(anyCollection())).willReturn(List.of());
-        given(questionRepository.countUnreadByProjectIds(anyCollection())).willReturn(List.<Object[]>of(
+        given(messageRepository.countUnreadByProjectIds(anyCollection())).willReturn(List.<Object[]>of(
                 new Object[]{projectId, 3L}
         ));
 
@@ -154,7 +154,7 @@ class ProjectServiceTest {
         Project p = owned(ProjectStatus.IN_PROGRESS, null);
         given(projectRepository.findByOwnerIdOrderByCreatedAtDesc(ownerId)).willReturn(List.of(p));
         given(estimateRepository.findLatestEstimateSummaries(anyCollection())).willReturn(List.of());
-        given(questionRepository.countUnreadByProjectIds(anyCollection())).willReturn(List.of());
+        given(messageRepository.countUnreadByProjectIds(anyCollection())).willReturn(List.of());
 
         List<ProjectResponse> list = projectService.listForOwner(ownerId, null);
 

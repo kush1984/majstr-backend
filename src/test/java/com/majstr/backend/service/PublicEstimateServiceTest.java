@@ -8,7 +8,7 @@ import com.majstr.backend.dto.SignRequest;
 import com.majstr.backend.entity.Client;
 import com.majstr.backend.entity.Estimate;
 import com.majstr.backend.entity.EstimateItem;
-import com.majstr.backend.entity.EstimateQuestion;
+import com.majstr.backend.entity.ProjectMessage;
 import com.majstr.backend.entity.EstimateShareLink;
 import com.majstr.backend.entity.EstimateStatus;
 import com.majstr.backend.entity.ItemType;
@@ -23,7 +23,7 @@ import com.majstr.backend.exception.ResourceNotFoundException;
 import com.majstr.backend.feature.FeatureGuard;
 import com.majstr.backend.push.PushService;
 import com.majstr.backend.repository.EstimateItemRepository;
-import com.majstr.backend.repository.EstimateQuestionRepository;
+import com.majstr.backend.repository.ProjectMessageRepository;
 import com.majstr.backend.repository.EstimateRepository;
 import com.majstr.backend.repository.EstimateShareLinkRepository;
 import com.majstr.backend.repository.ProjectShareLinkRepository;
@@ -56,7 +56,7 @@ class PublicEstimateServiceTest {
     @Mock private ProjectShareLinkRepository projectShareLinkRepository;
     @Mock private EstimateRepository estimateRepository;
     @Mock private EstimateItemRepository itemRepository;
-    @Mock private EstimateQuestionRepository questionRepository;
+    @Mock private ProjectMessageRepository messageRepository;
     @Mock private EstimateService estimateService;
     @Mock private ProjectPhotoService projectPhotoService;
     @Mock private FeatureGuard featureGuard;
@@ -74,7 +74,7 @@ class PublicEstimateServiceTest {
         messages.setDefaultEncoding("UTF-8");
         messages.setFallbackToSystemLocale(false);
         publicService = new PublicEstimateService(shareLinkRepository, projectShareLinkRepository,
-                estimateRepository, itemRepository, questionRepository, estimateService,
+                estimateRepository, itemRepository, messageRepository, estimateService,
                 projectPhotoService, featureGuard, pushService, messages);
     }
 
@@ -197,8 +197,8 @@ class PublicEstimateServiceTest {
     void askQuestion_persistsAndReturnsSummary() {
         Estimate estimate = sampleEstimate();
         given(shareLinkRepository.findByToken(token)).willReturn(Optional.of(usableLink(estimate)));
-        given(questionRepository.save(any(EstimateQuestion.class))).willAnswer(inv -> {
-            EstimateQuestion q = inv.getArgument(0);
+        given(messageRepository.save(any(ProjectMessage.class))).willAnswer(inv -> {
+            ProjectMessage q = inv.getArgument(0);
             q.setId(UUID.randomUUID());
             q.setCreatedAt(Instant.now());
             return q;
@@ -307,8 +307,8 @@ class PublicEstimateServiceTest {
         given(projectShareLinkRepository.findByToken(token))
                 .willReturn(Optional.of(usablePortalLink(estimate.getProject())));
         given(estimateRepository.findById(estimate.getId())).willReturn(Optional.of(estimate));
-        given(questionRepository.save(any(EstimateQuestion.class))).willAnswer(inv -> {
-            EstimateQuestion q = inv.getArgument(0);
+        given(messageRepository.save(any(ProjectMessage.class))).willAnswer(inv -> {
+            ProjectMessage q = inv.getArgument(0);
             q.setId(UUID.randomUUID());
             q.setCreatedAt(Instant.now());
             return q;

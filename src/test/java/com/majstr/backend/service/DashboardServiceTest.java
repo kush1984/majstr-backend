@@ -3,7 +3,7 @@ package com.majstr.backend.service;
 import com.majstr.backend.dto.DashboardMetricsResponse;
 import com.majstr.backend.entity.EstimateStatus;
 import com.majstr.backend.entity.ProjectStatus;
-import com.majstr.backend.repository.EstimateQuestionRepository;
+import com.majstr.backend.repository.ProjectMessageRepository;
 import com.majstr.backend.repository.EstimateRepository;
 import com.majstr.backend.repository.ProjectRepository;
 import org.junit.jupiter.api.Test;
@@ -31,7 +31,7 @@ class DashboardServiceTest {
 
     @Mock ProjectRepository projectRepository;
     @Mock EstimateRepository estimateRepository;
-    @Mock EstimateQuestionRepository questionRepository;
+    @Mock ProjectMessageRepository messageRepository;
     @InjectMocks DashboardService dashboardService;
 
     private final UUID ownerId = UUID.randomUUID();
@@ -44,7 +44,7 @@ class DashboardServiceTest {
                 eq(ownerId), eq(ProjectStatus.COMPLETED), any(Instant.class))).willReturn(2L);
         given(estimateRepository.sumLatestEstimateTotalForCompletedSince(eq(ownerId), any(Instant.class)))
                 .willReturn(new BigDecimal("12345.5"));
-        given(questionRepository.countByEstimateProjectOwnerIdAndReadFalse(ownerId)).willReturn(4L);
+        given(messageRepository.countByProjectOwnerIdAndReadFalse(ownerId)).willReturn(4L);
 
         DashboardMetricsResponse r = dashboardService.metrics(ownerId);
 

@@ -19,21 +19,30 @@ import java.time.Instant;
 import java.util.UUID;
 
 @Entity
-@Table(name = "estimate_questions")
+@Table(name = "project_messages")
 @Getter
 @Setter
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
 @EqualsAndHashCode(of = "id")
-public class EstimateQuestion {
+public class ProjectMessage {
+    // Pinned to the OBJECT, not to an estimate: the master's message link can be sent to anyone, and
+    // what comes back has no estimate at all. The estimate stays as optional context — which quote
+    // was being discussed — and its FK is ON DELETE SET NULL, so removing one estimate forgets that
+    // context without deleting the conversation about the job.
 
     @Id
     @Column(name = "id", nullable = false, updatable = false)
     private UUID id;
 
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
-    @JoinColumn(name = "estimate_id", nullable = false, updatable = false)
+    @JoinColumn(name = "project_id", nullable = false, updatable = false)
+    private Project project;
+
+    /** Which quote was being discussed, when there was one. Null for a message sent through the link. */
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "estimate_id")
     private Estimate estimate;
 
     @Column(name = "author_name", length = 255)

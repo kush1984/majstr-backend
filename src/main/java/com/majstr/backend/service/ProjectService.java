@@ -11,7 +11,7 @@ import com.majstr.backend.entity.User;
 import com.majstr.backend.exception.ResourceNotFoundException;
 import com.majstr.backend.feature.Limit;
 import com.majstr.backend.feature.LimitService;
-import com.majstr.backend.repository.EstimateQuestionRepository;
+import com.majstr.backend.repository.ProjectMessageRepository;
 import com.majstr.backend.repository.EstimateRepository;
 import com.majstr.backend.repository.ProjectPhotoRepository;
 import com.majstr.backend.repository.ProjectRepository;
@@ -40,7 +40,7 @@ public class ProjectService {
 
     private final ProjectRepository projectRepository;
     private final EstimateRepository estimateRepository;
-    private final EstimateQuestionRepository questionRepository;
+    private final ProjectMessageRepository messageRepository;
     private final UserRepository userRepository;
     private final ClientService clientService;
     private final LimitService limitService;
@@ -191,7 +191,7 @@ public class ProjectService {
 
     private ProjectResponse withSummary(Project project) {
         EstimateSummary summary = loadLatestEstimateSummaries(List.of(project.getId())).get(project.getId());
-        long unread = questionRepository.countByEstimateProjectIdAndReadFalse(project.getId());
+        long unread = messageRepository.countByProjectIdAndReadFalse(project.getId());
         return toResponse(project, summary, unread);
     }
 
@@ -206,7 +206,7 @@ public class ProjectService {
             return Map.of();
         }
         Map<UUID, Long> result = new HashMap<>();
-        for (Object[] row : questionRepository.countUnreadByProjectIds(projectIds)) {
+        for (Object[] row : messageRepository.countUnreadByProjectIds(projectIds)) {
             result.put((UUID) row[0], (Long) row[1]);
         }
         return result;
