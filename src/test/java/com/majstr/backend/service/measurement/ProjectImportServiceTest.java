@@ -1,5 +1,6 @@
 package com.majstr.backend.service.measurement;
 
+import com.majstr.backend.service.ai.AiInput;
 import com.majstr.backend.dto.MeasurementItemRequest;
 import com.majstr.backend.dto.MeasurementsResponse;
 import com.majstr.backend.dto.ProjectImportCommitRequest;
@@ -82,12 +83,12 @@ class ProjectImportServiceTest {
         service.parse(ownerId, objectId, ProjectImportService.Kind.COVERINGS,
                 "специфікація покриттів.pdf", "application/pdf", textPdf());
 
-        ArgumentCaptor<List<Map<String, Object>>> content = ArgumentCaptor.forClass(List.class);
+        ArgumentCaptor<List<AiInput>> content = ArgumentCaptor.forClass(List.class);
         verify(extractor).requestJson(content.capture(), anyString(), any(Map.class));
         // One text block carrying the extracted table — no "document"/"image" vision block.
         assertThat(content.getValue()).hasSize(1);
-        assertThat(content.getValue().get(0).get("type")).isEqualTo("text");
-        assertThat((String) content.getValue().get(0).get("text")).contains("Room schedule table");
+        assertThat(content.getValue().get(0)).isInstanceOf(AiInput.Text.class);
+        assertThat(((AiInput.Text) content.getValue().get(0)).text()).contains("Room schedule table");
     }
 
     @Test
@@ -100,9 +101,9 @@ class ProjectImportServiceTest {
         service.parse(ownerId, objectId, ProjectImportService.Kind.ROOM_SCHEDULE,
                 "експлікація 1п.pdf", "application/pdf", textPdf());
 
-        ArgumentCaptor<List<Map<String, Object>>> content = ArgumentCaptor.forClass(List.class);
+        ArgumentCaptor<List<AiInput>> content = ArgumentCaptor.forClass(List.class);
         verify(extractor).requestJson(content.capture(), anyString(), any(Map.class));
-        assertThat(content.getValue().get(0).get("type")).isEqualTo("document");
+        assertThat(content.getValue().get(0)).isInstanceOf(AiInput.Pdf.class);
     }
 
     @Test
@@ -113,9 +114,9 @@ class ProjectImportServiceTest {
         service.parse(ownerId, objectId, ProjectImportService.Kind.COVERINGS,
                 "скан.pdf", "application/pdf", blankPdf());
 
-        ArgumentCaptor<List<Map<String, Object>>> content = ArgumentCaptor.forClass(List.class);
+        ArgumentCaptor<List<AiInput>> content = ArgumentCaptor.forClass(List.class);
         verify(extractor).requestJson(content.capture(), anyString(), any(Map.class));
-        assertThat(content.getValue().get(0).get("type")).isEqualTo("document");
+        assertThat(content.getValue().get(0)).isInstanceOf(AiInput.Pdf.class);
     }
 
     @Test
@@ -147,9 +148,9 @@ class ProjectImportServiceTest {
         service.parse(ownerId, objectId, ProjectImportService.Kind.PLAN_MEASURE,
                 "обмірний план.pdf", "application/pdf", textPdf());
 
-        ArgumentCaptor<List<Map<String, Object>>> content = ArgumentCaptor.forClass(List.class);
+        ArgumentCaptor<List<AiInput>> content = ArgumentCaptor.forClass(List.class);
         verify(extractor).requestJson(content.capture(), anyString(), any(Map.class));
-        assertThat(content.getValue().get(0).get("type")).isEqualTo("document");
+        assertThat(content.getValue().get(0)).isInstanceOf(AiInput.Pdf.class);
     }
 
     @Test
@@ -167,10 +168,10 @@ class ProjectImportServiceTest {
         service.parse(ownerId, objectId, ProjectImportService.Kind.PLAN_MEASURE,
                 "план.jpg", "image/jpeg", new byte[]{1, 2, 3});
 
-        ArgumentCaptor<List<Map<String, Object>>> content = ArgumentCaptor.forClass(List.class);
+        ArgumentCaptor<List<AiInput>> content = ArgumentCaptor.forClass(List.class);
         verify(extractor, times(2)).requestJson(content.capture(), anyString(), any(Map.class));
-        String pass1 = (String) content.getAllValues().get(0).get(1).get("text");
-        String pass2 = (String) content.getAllValues().get(1).get(1).get("text");
+        String pass1 = ((AiInput.Text) content.getAllValues().get(0).get(1)).text();
+        String pass2 = ((AiInput.Text) content.getAllValues().get(1).get(1)).text();
         assertThat(pass1).contains("INVENTORY");
         // Pass 2 is anchored to the inventory's room list.
         assertThat(pass2).contains("№4 Спальня");
@@ -214,9 +215,9 @@ class ProjectImportServiceTest {
         service.parse(ownerId, objectId, ProjectImportService.Kind.COVERINGS,
                 "фото специфікації.jpg", null, new byte[]{1, 2, 3});
 
-        ArgumentCaptor<List<Map<String, Object>>> content = ArgumentCaptor.forClass(List.class);
+        ArgumentCaptor<List<AiInput>> content = ArgumentCaptor.forClass(List.class);
         verify(extractor).requestJson(content.capture(), anyString(), any(Map.class));
-        assertThat(content.getValue().get(0).get("type")).isEqualTo("image");
+        assertThat(content.getValue().get(0)).isInstanceOf(AiInput.Image.class);
     }
 
     @Test

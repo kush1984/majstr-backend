@@ -11,7 +11,8 @@ import com.majstr.backend.repository.UserRepository;
 import com.majstr.backend.entity.User;
 import com.majstr.backend.exception.ResourceNotFoundException;
 import com.majstr.backend.service.ProjectService;
-import com.majstr.backend.service.importer.ClaudeEstimateExtractor;
+import com.majstr.backend.service.ai.AiInput;
+import com.majstr.backend.service.ai.JsonExtractor;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.pdfbox.Loader;
@@ -61,7 +62,8 @@ public class ProjectImportService {
 
     private final FeatureGuard featureGuard;
     private final ProjectService projectService;
-    private final ClaudeEstimateExtractor extractor;
+    /** Whichever provider `app.ai.provider` selected — this flow does not care which. */
+    private final JsonExtractor extractor;
     private final MeasurementService measurementService;
     private final UserRepository userRepository;
     private final ObjectMapper objectMapper;
@@ -91,7 +93,7 @@ public class ProjectImportService {
             if (kind == Kind.PLAN_MEASURE || kind == Kind.ROOM_SCHEDULE) {
                 pageGuard(bytes);
                 json = extractor.requestJson(
-                        ClaudeEstimateExtractor.pdfContent(bytes, instruction(kind)),
+                        AiInput.pdf(bytes, instruction(kind)),
                         systemPrompt(kind), SCHEMA);
             } else {
                 String text = pdfText(bytes);
@@ -129,18 +131,18 @@ public class ProjectImportService {
         // Only non-plan scans reach here (a plan PDF short-circuits to the document
         // block above) — a single call suffices.
         return extractor.requestJson(
-                ClaudeEstimateExtractor.pdfContent(bytes, instruction(kind)),
+                AiInput.pdf(bytes, instruction(kind)),
                 systemPrompt(kind), SCHEMA);
     }
 
     private String visionImage(Kind kind, String mediaType, byte[] bytes) {
         if (kind != Kind.PLAN_MEASURE) {
             return extractor.requestJson(
-                    ClaudeEstimateExtractor.imageContent(mediaType, bytes, instruction(kind)),
+                    AiInput.image(mediaType, bytes, instruction(kind)),
                     systemPrompt(kind), SCHEMA);
         }
         return twoPass(instr -> extractor.requestJson(
-                ClaudeEstimateExtractor.imageContent(mediaType, bytes, instr), systemPrompt(kind), SCHEMA));
+                AiInput.image(mediaType, bytes, instr), systemPrompt(kind), SCHEMA));
     }
 
     /**
@@ -162,9 +164,8 @@ public class ProjectImportService {
         return mergeInventoryIntoDetails(inventoryJson, detailJson);
     }
 
-    private List<Map<String, Object>> textContent(Kind kind, String text) {
-        return List.of(Map.of("type", "text", "text",
-                instruction(kind) + "\n\n--- EXTRACTED PDF TEXT ---\n" + text));
+    private List<AiInput> textContent(Kind kind, String text) {
+        return AiInput.text(instruction(kind) + "\n\n--- EXTRACTED PDF TEXT ---\n" + text);
     }
 
     // ---- pdf helpers -----------------------------------------------------------

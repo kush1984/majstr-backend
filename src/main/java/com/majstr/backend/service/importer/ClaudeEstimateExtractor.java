@@ -3,6 +3,9 @@ package com.majstr.backend.service.importer;
 import com.majstr.backend.config.AnthropicProperties;
 import com.majstr.backend.config.HttpClients;
 import com.majstr.backend.exception.AiExtractionException;
+import com.majstr.backend.service.ai.AiHttp;
+import com.majstr.backend.service.ai.AiInput;
+import com.majstr.backend.service.ai.JsonExtractor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
@@ -35,7 +38,7 @@ import java.util.Map;
  */
 @Slf4j
 @Component
-public class ClaudeEstimateExtractor {
+public class ClaudeEstimateExtractor implements JsonExtractor {
 
     private static final String MESSAGES_URL = "https://api.anthropic.com/v1/messages";
     private static final String ANTHROPIC_VERSION = "2023-06-01";
@@ -122,6 +125,11 @@ public class ClaudeEstimateExtractor {
     // stalled Anthropic response would hold a Tomcat thread until the pool is gone.
     private final RestClient restClient = HttpClients.forLlm();
 
+    @Override
+    public String providerName() {
+        return "anthropic:" + props.model();
+    }
+
     public ClaudeEstimateExtractor(AnthropicProperties props, ObjectMapper objectMapper) {
         this.props = props;
         this.objectMapper = objectMapper;
@@ -130,48 +138,49 @@ public class ClaudeEstimateExtractor {
     /** Extract from a spreadsheet/CSV already rendered to a plain text grid. */
     public Extracted extractFromText(String grid) {
         String instruction = "Extract the estimate positions from this spreadsheet grid:\n\n" + grid;
-        return call(List.of(Map.of("type", "text", "text", instruction)), SYSTEM_PROMPT);
+        return call(AiInput.text(instruction), SYSTEM_PROMPT);
     }
 
     /** Extract from a photo (printed or hand-written). {@code mediaType} e.g. image/jpeg. */
     public Extracted extractFromImage(String mediaType, byte[] bytes) {
-        return call(imageContent(mediaType, bytes, "Extract the estimate positions from this photo."),
+        return call(AiInput.image(mediaType, bytes, "Extract the estimate positions from this photo."),
                 SYSTEM_PROMPT);
     }
 
     /** Extract purchased items from a receipt photo (store / terminal / hand-written). */
     public Extracted extractReceiptFromImage(String mediaType, byte[] bytes) {
-        return call(imageContent(mediaType, bytes, "Extract the purchased items from this receipt photo."),
+        return call(AiInput.image(mediaType, bytes, "Extract the purchased items from this receipt photo."),
                 RECEIPT_SYSTEM_PROMPT);
     }
 
     /**
-     * One PDF document block + an instruction. Anthropic accepts a PDF natively (it renders
-     * the pages itself), so an architect's plan needs no server-side rasterising — which
-     * matters here because the deploy has no poppler.
+     * Our neutral input rendered into Anthropic's content blocks. A PDF goes as a native
+     * {@code document} block — Anthropic renders the pages itself, which is why the deploy needs no
+     * poppler for an architect's plan.
      */
-    public static List<Map<String, Object>> pdfContent(byte[] bytes, String instruction) {
-        String base64 = Base64.getEncoder().encodeToString(bytes);
-        Map<String, Object> doc = Map.of(
-                "type", "document",
-                "source", Map.of("type", "base64", "media_type", "application/pdf", "data", base64));
-        return List.of(doc, Map.of("type", "text", "text", instruction));
+    static List<Map<String, Object>> blocks(List<AiInput> input) {
+        List<Map<String, Object>> out = new ArrayList<>(input.size());
+        for (AiInput in : input) {
+            out.add(switch (in) {
+                case AiInput.Text t -> Map.<String, Object>of("type", "text", "text", t.text());
+                case AiInput.Image i -> Map.<String, Object>of("type", "image", "source",
+                        Map.of("type", "base64", "media_type", i.mediaType(),
+                                "data", base64(i.bytes())));
+                case AiInput.Pdf pdf -> Map.<String, Object>of("type", "document", "source",
+                        Map.of("type", "base64", "media_type", "application/pdf",
+                                "data", base64(pdf.bytes())));
+            });
+        }
+        return out;
     }
 
-    /** Build a user-message content list of one image block + one instruction — reusable by
-     *  any caller that needs a vision round-trip (estimate, receipt, sketch). */
-    public static List<Map<String, Object>> imageContent(String mediaType, byte[] bytes, String instruction) {
-        String base64 = Base64.getEncoder().encodeToString(bytes);
-        Map<String, Object> image = Map.of(
-                "type", "image",
-                "source", Map.of("type", "base64", "media_type", mediaType, "data", base64));
-        Map<String, Object> text = Map.of("type", "text", "text", instruction);
-        return List.of(image, text);
+    private static String base64(byte[] bytes) {
+        return Base64.getEncoder().encodeToString(bytes);
     }
 
     // ---- Anthropic round-trip --------------------------------------------------
 
-    private Extracted call(List<Map<String, Object>> content, String systemPrompt) {
+    private Extracted call(List<AiInput> content, String systemPrompt) {
         return parse(requestJson(content, systemPrompt, SCHEMA));
     }
 
@@ -182,8 +191,9 @@ public class ClaudeEstimateExtractor {
      * reuses the ONE client/error handling with its own prompt + schema. Any failure →
      * {@link AiExtractionException} (surfaced synchronously, not logged-and-skipped).
      */
+    @Override
     @SuppressWarnings("unchecked")
-    public String requestJson(List<Map<String, Object>> content, String systemPrompt,
+    public String requestJson(List<AiInput> content, String systemPrompt,
                               Map<String, Object> schema) {
         if (!props.isConfigured()) {
             throw new AiExtractionException("error.ai.unavailable");
@@ -192,7 +202,7 @@ public class ClaudeEstimateExtractor {
         body.put("model", props.model());
         body.put("max_tokens", props.maxTokens());
         body.put("system", systemPrompt);
-        body.put("messages", List.of(Map.of("role", "user", "content", content)));
+        body.put("messages", List.of(Map.of("role", "user", "content", blocks(content))));
         body.put("output_config", Map.of("format",
                 Map.of("type", "json_schema", "schema", schema)));
 
@@ -239,9 +249,9 @@ public class ClaudeEstimateExtractor {
         }
     }
 
-    /** Transient = worth retrying: 429 (rate limit), or any 5xx (incl. 529 "Overloaded"). */
+    /** Delegates so the rule has ONE definition shared with the other provider. */
     static boolean isTransient(int status) {
-        return status == 429 || status >= 500;
+        return AiHttp.isTransient(status);
     }
 
     private static void backoff(int attempt, RuntimeException cause) {

@@ -166,13 +166,23 @@ app:
       public-key: ${VAPID_PUBLIC_KEY:}
       private-key: ${VAPID_PRIVATE_KEY:}
       subject: ${VAPID_SUBJECT:mailto:admin@majstr.app}
+  ai:
+    # Which provider reads a drawing: anthropic (shipped) or openai (for comparing the two on real
+    # sheets). One switch for every recognition flow — chosen at startup, not per request, so a whole
+    # run's results are comparable instead of silently mixed.
+    provider: ${AI_PROVIDER:}
+  openai:
+    # Inert unless `provider` above selects it. Key is env only, same rule as the Anthropic one.
+    api-key: ${OPENAI_API_KEY:}
+    model: ${OPENAI_MODEL:gpt-5.6}
+    max-tokens: ${OPENAI_MAX_TOKENS:8000}
   anthropic:
     # Claude API for the estimate-import LLM extraction (Excel/photo → estimate).
     # The key is env only and blank in local dev — then the import feature reports
     # "unavailable" (503) instead of running, since the call is synchronous. Opus 4.8
     # is chosen for table/number OCR accuracy; the uploaded file is never persisted.
     api-key: ${ANTHROPIC_API_KEY:}
-    model: ${ANTHROPIC_MODEL:claude-opus-4-8}
+    model: ${ANTHROPIC_MODEL:claude-sonnet-5}
     max-tokens: ${ANTHROPIC_MAX_TOKENS:8000}
   sentry:
     # Error monitoring. DSN is env only and blank in local dev (then Sentry is

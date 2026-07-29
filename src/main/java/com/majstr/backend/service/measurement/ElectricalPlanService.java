@@ -9,7 +9,8 @@ import com.majstr.backend.feature.Feature;
 import com.majstr.backend.feature.FeatureGuard;
 import com.majstr.backend.repository.UserRepository;
 import com.majstr.backend.service.ProjectService;
-import com.majstr.backend.service.importer.ClaudeEstimateExtractor;
+import com.majstr.backend.service.ai.AiInput;
+import com.majstr.backend.service.ai.JsonExtractor;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -47,7 +48,8 @@ public class ElectricalPlanService {
     private final FeatureGuard featureGuard;
     private final UserRepository userRepository;
     private final ProjectService projectService;
-    private final ClaudeEstimateExtractor extractor;
+    /** Whichever provider `app.ai.provider` selected — this flow does not care which. */
+    private final JsonExtractor extractor;
     private final ObjectMapper objectMapper;
 
     public ElectricalPlanParseResponse parse(UUID ownerId, UUID objectId,
@@ -56,15 +58,15 @@ public class ElectricalPlanService {
         projectService.loadOwned(objectId, ownerId); // existence + ownership (404 / 403)
 
         String instruction = "Порахуй електричні точки на цьому плані за його легендою.";
-        List<Map<String, Object>> content;
+        List<AiInput> content;
         if (isPdf(filename, contentType)) {
-            content = ClaudeEstimateExtractor.pdfContent(bytes, instruction);
+            content = AiInput.pdf(bytes, instruction);
         } else {
             String mediaType = imageMediaType(filename, contentType);
             if (mediaType == null) {
                 throw new CatalogImportException("error.import.unsupported");
             }
-            content = ClaudeEstimateExtractor.imageContent(mediaType, bytes, instruction);
+            content = AiInput.image(mediaType, bytes, instruction);
         }
         return toReview(extractor.requestJson(content, PLAN_PROMPT, SCHEMA));
     }
