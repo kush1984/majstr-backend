@@ -11,3 +11,14 @@ app:
     login:
       max-attempts: 5
       window-minutes: 15
+  ai:
+    # PINNED, and not inherited from the environment on purpose.
+    #
+    # The main application.yml reads `${AI_PROVIDER:anthropic}`, and AiProviderConfig refuses to
+    # boot when a provider is selected without its key — right for a deploy, where the alternative
+    # is every recognition reporting "unavailable" one master at a time with nothing tying it to a
+    # config change. In a test run it is wrong twice over: no test here makes an LLM call, and the
+    # failure surfaces as 25 broken Spring contexts in Flyway, billing and retention tests, which
+    # point nowhere near the cause. A CI runner with AI_PROVIDER=openai and no OPENAI_API_KEY did
+    # exactly that. Written literally, so no value in anyone's environment can reach these tests.
+    provider: anthropic
