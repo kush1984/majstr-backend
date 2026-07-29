@@ -3,7 +3,6 @@ package com.majstr.backend.controller;
 import com.majstr.backend.dto.MeasurementsResponse;
 import com.majstr.backend.dto.ProjectImportCommitRequest;
 import com.majstr.backend.dto.ProjectImportParseResponse;
-import com.majstr.backend.exception.CatalogImportException;
 import com.majstr.backend.security.UserPrincipal;
 import com.majstr.backend.service.measurement.ProjectImportService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -57,11 +56,22 @@ public class ProjectImportController {
         return importService.commit(principal.id(), projectId, req);
     }
 
+    /**
+     * A label we do not recognise is {@code UNKNOWN} — not a rejection.
+     *
+     * <p>The kind is the client's GUESS at what a sheet is, and the client has kinds of its own that
+     * the server never needed («OTHER», «ELECTRICAL») plus pages it cannot classify at all.
+     * Refusing those with «unsupported» punished the master for our classifier being wrong about his
+     * own drawing; the sheet reads either way, and the prompt is told the label is unreliable.</p>
+     */
     private static ProjectImportService.Kind parseKind(String raw) {
+        if (raw == null || raw.isBlank()) {
+            return ProjectImportService.Kind.UNKNOWN;
+        }
         try {
             return ProjectImportService.Kind.valueOf(raw.trim().toUpperCase(Locale.ROOT));
-        } catch (Exception e) {
-            throw new CatalogImportException("error.import.unsupported");
+        } catch (IllegalArgumentException e) {
+            return ProjectImportService.Kind.UNKNOWN;
         }
     }
 }

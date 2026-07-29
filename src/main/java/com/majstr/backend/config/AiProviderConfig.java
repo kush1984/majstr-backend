@@ -24,6 +24,9 @@ import org.springframework.context.annotation.Primary;
 @Configuration
 public class AiProviderConfig {
 
+    private static final String ANTHROPIC = "anthropic";
+    private static final String OPENAI = "openai";
+
     @Bean
     @Primary
     public JsonExtractor jsonExtractor(
@@ -31,7 +34,14 @@ public class AiProviderConfig {
             OpenAiProperties openAiProperties,
             @Value("${app.ai.provider:anthropic}") String provider) {
 
-        if ("openai".equalsIgnoreCase(provider)) {
+        // "Set to nothing" has to mean "not set". The `:anthropic` default only fires when the key is
+        // ABSENT, and an environment variable that exists but is empty — `AI_PROVIDER=` in a .env, a CI
+        // variable expanded from an undefined secret — is present with an empty value. Left unhandled
+        // that empty string falls through to the unknown-provider check below and fails the context,
+        // which is how an unconfigured CI runner came to fail every integration test in the suite.
+        String chosen = provider == null || provider.isBlank() ? ANTHROPIC : provider.trim();
+
+        if (OPENAI.equalsIgnoreCase(chosen)) {
             if (!openAiProperties.isConfigured()) {
                 // Fail loudly at boot rather than at the first import: a missing key here means every
                 // recognition would report "unavailable", and the master would have no way to know why.
@@ -41,9 +51,11 @@ public class AiProviderConfig {
             log.info("AI recognition provider: OpenAI ({})", openAiProperties.model());
             return new OpenAiJsonExtractor(openAiProperties);
         }
-        if (!"anthropic".equalsIgnoreCase(provider)) {
+        // A typo must not fall back to Anthropic: a comparison run silently attributed to the wrong
+        // model is worse than a boot failure. The value is quoted because it is the whole diagnosis.
+        if (!ANTHROPIC.equalsIgnoreCase(chosen)) {
             throw new IllegalStateException(
-                    "Unknown app.ai.provider '" + provider + "' — expected anthropic or openai");
+                    "Unknown app.ai.provider '" + chosen + "' — expected anthropic or openai");
         }
         log.info("AI recognition provider: {}", anthropic.providerName());
         return anthropic;

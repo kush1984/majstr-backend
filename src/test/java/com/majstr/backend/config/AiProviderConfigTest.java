@@ -54,6 +54,24 @@ class AiProviderConfigTest {
     }
 
     @Test
+    void anEmptyOrMissingValueIsTreatedAsUnset() {
+        // The regression this exists for: `AI_PROVIDER=` with nothing after it is a property that
+        // EXISTS, so @Value's `:anthropic` default never fires and an empty string reached the
+        // unknown-provider check — failing the Spring context, and with it every integration test in
+        // the suite, on a runner that had simply never configured a provider.
+        assertThat(config.jsonExtractor(anthropic, NO_KEY, "")).isSameAs(anthropic);
+        assertThat(config.jsonExtractor(anthropic, NO_KEY, "   ")).isSameAs(anthropic);
+        assertThat(config.jsonExtractor(anthropic, NO_KEY, null)).isSameAs(anthropic);
+    }
+
+    @Test
+    void surroundingWhitespaceDoesNotChangeTheChoice() {
+        // A trailing space in a .env line is invisible in a diff and would otherwise read as a typo.
+        assertThat(config.jsonExtractor(anthropic, WITH_KEY, " openai "))
+                .isInstanceOf(OpenAiJsonExtractor.class);
+    }
+
+    @Test
     void aTypoInTheProviderNameRefusesToBoot() {
         // Silently falling back to Anthropic would make a comparison run look like it used OpenAI —
         // the results would be attributed to the wrong model.

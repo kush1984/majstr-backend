@@ -9,7 +9,12 @@ import java.util.Map;
  * persisted; the PWA merges several files' drafts (room schedule + measure
  * plan + coverings) by room number/name before the review screen. The LLM
  * only transcribes what is printed — every geometric result is computed by
- * our code, and a missing value is {@code null}, never a guess.
+ * our code, and a value nowhere printed is {@code null}, never a guess.
+ *
+ * <p>A figure that WAS read but could not be reconciled is a THIRD case, and it must not be
+ * thrown away: it comes through with its field named in {@link Room#uncertain()}, so the review
+ * screen can show the number and ask the master to check it. Discarding those taught nobody
+ * anything — a sheet whose dimensions only half-reconcile is the normal case, not the exception.</p>
  */
 public record ProjectImportParseResponse(
         List<Floor> floors,
@@ -18,7 +23,13 @@ public record ProjectImportParseResponse(
         BigDecimal totalAreaM2,
         /** Absolute ceiling height per floor label, mm; relative drops are never counted. */
         Map<String, BigDecimal> ceilingHeightsMm,
-        List<String> warnings
+        List<String> warnings,
+        /**
+         * What the MODEL says this sheet is, read off the sheet's own stamp («ОБМІРНИЙ ПЛАН»,
+         * «ПЛАН ПІДЛОГ»). Our own label is a filename guess made before anything was read, and on
+         * real sets it is wrong often enough that the sheet's own answer has to be visible.
+         */
+        String sheetTitle
 ) {
     public record Floor(
             String floor,
@@ -48,7 +59,15 @@ public record ProjectImportParseResponse(
             BigDecimal ceilingHmm,
             List<Opening> openings,
             String confidence,
-            String note
+            String note,
+            /**
+             * Field names of this room whose figures were READ but not confirmed —
+             * {@code ["widthMm","ceilingHmm"]}. The value stays; the review screen marks it
+             * «перепровірити». This is the alternative to the old sentinel discipline, where an
+             * unreconciled chain became 0 and the master got an empty field with no hint that
+             * anything had been read at all.
+             */
+            List<String> uncertain
     ) {}
 
     public record Opening(

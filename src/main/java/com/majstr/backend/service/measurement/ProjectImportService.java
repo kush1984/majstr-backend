@@ -23,6 +23,7 @@ import tools.jackson.databind.ObjectMapper;
 
 import java.math.BigDecimal;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
@@ -50,8 +51,17 @@ import java.util.UUID;
 @Slf4j
 public class ProjectImportService {
 
-    /** What the (client-side) classifier decided this file is — picks the prompt. */
-    public enum Kind { ROOM_SCHEDULE, PLAN_MEASURE, COVERINGS }
+    /**
+     * What the client-side classifier GUESSED this sheet is, from a filename or a stamp. It picks
+     * the prompt's emphasis and nothing more: every prompt asks for everything the sheet carries,
+     * and each one is told the label may be wrong.
+     *
+     * <p>{@code UNKNOWN} is not a failure — it is the honest answer for a page whose stamp we do
+     * not recognise (a raster export with no text layer, Russian wording, a designer's own
+     * naming). Those pages used to be dropped before upload; on one real 19-sheet set that meant
+     * the entire import did nothing, because not one page matched a known pattern.</p>
+     */
+    public enum Kind { ROOM_SCHEDULE, PLAN_MEASURE, COVERINGS, UNKNOWN }
 
     static final int MAX_BYTES = 15 * 1024 * 1024;
     /** The PWA splits a bound set page-by-page before upload, so this only guards direct
@@ -90,11 +100,14 @@ public class ProjectImportService {
             // designer's table often typesets a room's NAME away from its row, so text order
             // silently mis-pairs names with numbers. Coverings stay on the cheap text path —
             // a plain table that creates nothing anyway.
-            if (kind == Kind.PLAN_MEASURE || kind == Kind.ROOM_SCHEDULE) {
+            // UNKNOWN goes down the vision path with them, never down the text one: a sheet we
+            // could not name is far more likely to be a drawing than a plain table, and a drawing
+            // read as flattened text loses the very thing it was sent for.
+            if (kind == Kind.PLAN_MEASURE || kind == Kind.ROOM_SCHEDULE || kind == Kind.UNKNOWN) {
                 pageGuard(bytes);
-                json = extractor.requestJson(
+                json = withFragmentsIfNeeded(kind, bytes, extractor.requestJson(
                         AiInput.pdf(bytes, instruction(kind)),
-                        systemPrompt(kind), SCHEMA);
+                        systemPrompt(kind), SCHEMA));
             } else {
                 String text = pdfText(bytes);
                 if (text != null && text.trim().length() >= MIN_TEXT_CHARS) {
@@ -127,6 +140,83 @@ public class ProjectImportService {
 
     // ---- recognition paths -----------------------------------------------------
 
+    /**
+     * A second look at the same sheet, in four overlapping fragments at a resolution we control —
+     * but ONLY when the first look came back without geometry.
+     *
+     * <p>The reason it is conditional is cost: fragments are four more vision calls on the same
+     * page. When the whole-page pass already produced gabarits for its rooms, they were legible and
+     * there is nothing to gain. When it produced rooms with no dimensions at all — the exact failure
+     * the master reported, and the predictable one for 8 pt chains on an A3 sheet squeezed into
+     * 1568 px — the fragments are the only way those figures are ever read.</p>
+     *
+     * <p>Every failure here degrades to the whole-page answer rather than losing it: a broken render
+     * returns no fragments, and a fragment call that throws is skipped with a warning.</p>
+     */
+    private String withFragmentsIfNeeded(Kind kind, byte[] bytes, String wholePageJson) {
+        List<String> inventory;
+        try {
+            if (!needsFragments(wholePageJson)) {
+                return wholePageJson;
+            }
+            inventory = inventoryRoomNames(wholePageJson);
+        } catch (Exception e) {
+            log.warn("Could not judge whether fragments are needed ({}) — keeping the whole-page pass",
+                    e.getMessage());
+            return wholePageJson;
+        }
+        String instruction = instruction(kind) + "\n\nThe whole sheet has already been read at low "
+                + "resolution and its rooms are: " + String.join("; ", inventory) + ".\n"
+                + "You are now looking at ONE FRAGMENT of that same sheet, enlarged, so that the "
+                + "dimension chains are legible. Extract the GEOMETRY that was unreadable before — "
+                + "gabarits, ceiling heights, openings — for the rooms visible in this fragment. "
+                + "Do not re-list rooms you cannot see here, and do not invent new ones.";
+        List<List<AiInput>> fragments = SheetTiler.tiles(bytes, instruction);
+        if (fragments.isEmpty()) {
+            return wholePageJson;
+        }
+        List<Map<String, Object>> readings = new ArrayList<>(fragments.size());
+        for (List<AiInput> fragment : fragments) {
+            try {
+                readings.add(readMap(extractor.requestJson(fragment, systemPrompt(kind), SCHEMA)));
+            } catch (Exception e) {
+                // One unreadable quarter must not cost the other three.
+                log.warn("Fragment pass failed ({}) — continuing with the rest", e.getMessage());
+            }
+        }
+        if (readings.isEmpty()) {
+            return wholePageJson;
+        }
+        try {
+            Map<String, Object> merged = SheetMerge.mergeGeometry(readMap(wholePageJson), readings);
+            log.info("Project import read {} fragments of one sheet to recover geometry",
+                    readings.size());
+            return objectMapper.writeValueAsString(merged);
+        } catch (Exception e) {
+            log.warn("Fragment merge failed ({}) — keeping the whole-page pass", e.getMessage());
+            return wholePageJson;
+        }
+    }
+
+    /**
+     * True when the sheet gave us rooms but no usable geometry for them.
+     *
+     * <p>Deliberately "no room has both gabarits" rather than "some room is missing one": a plan
+     * where the model read half the chains is a different situation from one where it read none,
+     * and only the second is worth four more calls.</p>
+     */
+    private boolean needsFragments(String wholePageJson) {
+        ProjectImportParseResponse review = toReview(wholePageJson);
+        int rooms = 0;
+        for (var floor : review.floors()) {
+            for (var room : floor.rooms()) {
+                rooms++;
+                if (room.widthMm() != null && room.lengthMm() != null) return false;
+            }
+        }
+        return rooms > 0;
+    }
+
     private String visionPdf(Kind kind, byte[] bytes) {
         // Only non-plan scans reach here (a plan PDF short-circuits to the document
         // block above) — a single call suffices.
@@ -136,7 +226,7 @@ public class ProjectImportService {
     }
 
     private String visionImage(Kind kind, String mediaType, byte[] bytes) {
-        if (kind != Kind.PLAN_MEASURE) {
+        if (kind != Kind.PLAN_MEASURE && kind != Kind.UNKNOWN) {
             return extractor.requestJson(
                     AiInput.image(mediaType, bytes, instruction(kind)),
                     systemPrompt(kind), SCHEMA);
@@ -194,13 +284,75 @@ public class ProjectImportService {
             if (doc.getNumberOfPages() > MAX_PDF_PAGES) {
                 throw new CatalogImportException("error.import.too-many-pages");
             }
-            return new PDFTextStripper().getText(doc);
+            return dedupeDoubledText(new PDFTextStripper().getText(doc));
         } catch (CatalogImportException e) {
             throw e;
         } catch (Exception e) {
             log.warn("PDF text extraction failed ({}), falling back to vision", e.getMessage());
             return null;
         }
+    }
+
+    /**
+     * Collapses text that a PDF painted twice over itself, line by line.
+     *
+     * <p>One studio's files draw every string on top of itself: «02_обмірний план 02_обмірний план»,
+     * «ТВ ТВ духовка духовка». On paper it is invisible — the second copy lands exactly on the first
+     * — but through the text path it doubles every figure in a specification table, which would
+     * double a quantity the master then buys.</p>
+     *
+     * <p>The repeated unit is a whole text ITEM, so it can be several tokens long — «ТВ ТВ духовка
+     * духовка» is three items doubled, not one — and the longest run is collapsed first so a
+     * three-word item is not mistaken for three doubled words.</p>
+     *
+     * <p>This DOES collapse two genuinely equal adjacent figures («800 800» → «800»), and that is
+     * acceptable only because of where it runs: the text path serves specification tables, whose
+     * rows are name + quantity + unit. Dimension chains, where repeated figures are normal and
+     * meaningful, are read on the vision path and never pass through here. Move this call and that
+     * reasoning stops holding.</p>
+     */
+    static String dedupeDoubledText(String text) {
+        if (text == null || text.isBlank()) {
+            return text;
+        }
+        StringBuilder out = new StringBuilder(text.length());
+        for (String line : text.split("\n", -1)) {
+            if (out.length() > 0) out.append('\n');
+            out.append(dedupeLine(line));
+        }
+        return out.toString();
+    }
+
+    private static String dedupeLine(String line) {
+        String[] tokens = line.trim().split("\\s+");
+        if (tokens.length < 2) {
+            return line;
+        }
+        // The whole line drawn twice — the common case, and the only one that is unambiguous.
+        if (tokens.length % 2 == 0 && halvesMatch(tokens)) {
+            return String.join(" ", Arrays.copyOfRange(tokens, 0, tokens.length / 2));
+        }
+        // Otherwise collapse adjacent repeats of a run, longest run first: an item of three words
+        // drawn twice must not be mistaken for three separate doubled words.
+        List<String> kept = new ArrayList<>(List.of(tokens));
+        for (int size = Math.min(6, kept.size() / 2); size >= 1; size--) {
+            for (int i = 0; i + 2 * size <= kept.size(); ) {
+                if (kept.subList(i, i + size).equals(kept.subList(i + size, i + 2 * size))) {
+                    kept.subList(i + size, i + 2 * size).clear();
+                } else {
+                    i++;
+                }
+            }
+        }
+        return String.join(" ", kept);
+    }
+
+    private static boolean halvesMatch(String[] tokens) {
+        int half = tokens.length / 2;
+        for (int i = 0; i < half; i++) {
+            if (!tokens[i].equals(tokens[half + i])) return false;
+        }
+        return true;
     }
 
     private static String imageMediaType(String filename, String contentType) {
@@ -265,7 +417,8 @@ public class ProjectImportService {
             String s = str(w);
             if (s != null) warnings.add(s);
         }
-        return new ProjectImportParseResponse(floors, coverings, totalArea, heights, warnings);
+        return new ProjectImportParseResponse(floors, coverings, totalArea, heights, warnings,
+                str(root.get("sheetTitle")));
     }
 
     @SuppressWarnings("unchecked")
@@ -290,17 +443,28 @@ public class ProjectImportService {
         }
         BigDecimal area = positive(rm.get("areaM2"));
         BigDecimal perimeter = positive(rm.get("perimeterMm"));
-        // Sentinel discipline: a zeroed/absent value means "not printed" — force the row
-        // to low confidence so the review screen highlights it instead of trusting it.
+        List<String> uncertain = new ArrayList<>();
+        for (Object uo : asList(rm.get("uncertain"))) {
+            String s = str(uo);
+            if (s != null && !uncertain.contains(s)) uncertain.add(s);
+        }
+        BigDecimal width = positive(rm.get("widthMm"));
+        BigDecimal length = positive(rm.get("lengthMm"));
+        // An area nowhere on the sheet is ordinary (a bare measure plan prints none), so it no
+        // longer damns the whole row — it is one unconfirmed FIELD. It only means "check this"
+        // when there are also no gabarits to compute it from.
+        if (area == null && !uncertain.contains("areaM2")) uncertain.add("areaM2");
         String confidence = conf(rm.get("confidence"));
-        if (area == null) confidence = "low";
+        if (area == null && (width == null || length == null)) confidence = "low";
+        else if (!uncertain.isEmpty() && "high".equals(confidence)) confidence = "medium";
         return new ProjectImportParseResponse.Room(
                 str(rm.get("number")), str(rm.get("name")), area, perimeter,
                 segments.isEmpty() ? null : segments,
-                positive(rm.get("widthMm")), positive(rm.get("lengthMm")),
+                width, length,
                 positive(rm.get("cutWidthMm")), positive(rm.get("cutDepthMm")),
                 positive(rm.get("ceilingHmm")),
-                openings, confidence, str(rm.get("note")));
+                openings, confidence, str(rm.get("note")),
+                uncertain);
     }
 
     // ---- two-pass merge --------------------------------------------------------
@@ -369,7 +533,8 @@ public class ProjectImportService {
                     .map(r -> new ProjectImportParseResponse.Room(
                             r.number(), r.name(), r.areaM2(), r.perimeterMm(), r.wallSegmentsMm(),
                             r.widthMm(), r.lengthMm(), r.cutWidthMm(), r.cutDepthMm(), r.ceilingHmm(),
-                            r.openings(), "low", "відновлено з інвентарного проходу"))
+                            r.openings(), "low", "відновлено з інвентарного проходу",
+                            r.uncertain()))
                     .toList();
             if (lost.isEmpty()) continue;
             Map<String, Object> target = floors.stream()
@@ -431,6 +596,7 @@ public class ProjectImportService {
         m.put("openings", openings);
         m.put("confidence", r.confidence());
         m.put("note", r.note() == null ? "" : r.note());
+        m.put("uncertain", r.uncertain() == null ? List.of() : r.uncertain());
         return m;
     }
 
@@ -490,15 +656,28 @@ public class ProjectImportService {
             case ROOM_SCHEDULE -> SCHEDULE_PROMPT;
             case PLAN_MEASURE -> PLAN_PROMPT;
             case COVERINGS -> COVERINGS_PROMPT;
+            case UNKNOWN -> GENERIC_PROMPT;
         };
     }
 
+    /**
+     * The label travels as a HINT, never as a contract. Measured on four real sets: one 19-sheet
+     * project has no measure plan at all, another's areas sit on the floor-finish sheets, a third
+     * marks heights only as level marks. A prompt that assumes its label is right extracts nothing
+     * from any of them, and the master sees an empty screen with no reason given.
+     */
     private static String instruction(Kind kind) {
-        return switch (kind) {
-            case ROOM_SCHEDULE -> "Extract the room schedule (експлікація приміщень) from this sheet.";
-            case PLAN_MEASURE -> "Extract the printed room dimensions from this measure plan (обмірний план).";
-            case COVERINGS -> "Extract the coverings specification (специфікація покриттів) from this sheet.";
+        String hint = switch (kind) {
+            case ROOM_SCHEDULE -> "a room schedule (експлікація приміщень)";
+            case PLAN_MEASURE -> "a measure plan (обмірний план)";
+            case COVERINGS -> "a coverings specification (специфікація покриттів)";
+            case UNKNOWN -> "unclassified — we could not tell from its name or stamp";
         };
+        return "This sheet was labelled " + hint + " from its file name — A GUESS, made before "
+                + "anything on it was read, and wrong often enough that you must not rely on it. "
+                + "Read the sheet's own stamp, report it in sheetTitle, and extract EVERYTHING it "
+                + "carries of what the system prompt asks for — whatever kind of sheet it turns "
+                + "out to be.";
     }
 
     private static final String INVENTORY_INSTRUCTION =
@@ -515,20 +694,35 @@ public class ProjectImportService {
               - A PHOTOGRAPHED sheet (shot at an angle) — read ONLY the printed labels, tables and
                 symbols. NEVER take a dimension off a photo: perspective distorts distances. A size
                 with no printed figure beside it is unknown (0), never an estimate.
-              - NUMBERS — two different conventions, do not confuse them:
+              - NUMBERS — different conventions, do not confuse them:
                 • a SPACE is a THOUSANDS group inside a dimension chain, in millimetres:
                   «5 000» = 5000 mm, «1 385» = 1385 mm. NEVER read it as 5, nor as 5.000.
-                • a COMMA is the DECIMAL separator: «2,7» = 2.7 m, «12,53» = 12.53 m².
+                • a COMMA **or a DOT** is the DECIMAL separator — studios differ and both appear:
+                  «2,7» and «2.7» are both 2.7 m; «12,53 м²» and «12.63 m²» are both an area.
                 Ignore a stray superscript «²»/«2» after an area and «мм»/«mm»/«м» unit suffixes —
                 report just the number.
+              - READ THE SHEET'S OWN UNIT LEGEND when it has one («розміри вказані в міліметрах,
+                відмітки в метрах») — it tells you which figures are mm and which are metres.
               - The sheet's own TITLE / stamp outranks the file name. A file named «обмірний
                 план.pdf» may carry «Обмірний план ПІСЛЯ перепланування» on the sheet itself —
                 the sheet always wins.
-              - Transcribe WHAT IS PRINTED. Never invent a missing value — put 0 (the "unknown"
-                sentinel) and set confidence "low" with a short Ukrainian note.
+              - Transcribe WHAT IS PRINTED. Never invent a value that is not on the sheet.
+              - THREE CASES, and only the first is 0:
+                • nothing printed anywhere for it → 0, and name the field in "uncertain";
+                • printed and you are confident → the figure, "uncertain" stays empty for it;
+                • printed but you cannot CONFIRM it (a chain you had to interpret, an area that
+                  doesn't reconcile, a symbol you had to read through) → STILL REPORT THE FIGURE
+                  YOU READ, name the field in "uncertain", say why in note. Do NOT zero it and do
+                  NOT bend it to fit. A number the master can check beats an empty field: he is
+                  standing in the flat and can measure it in ten seconds — but only if he knows
+                  which one to check.
+              - "uncertain" holds FIELD NAMES of that room: "areaM2", "widthMm", "lengthMm",
+                "perimeterMm", "ceilingHmm", "openings". Empty list = everything reported is solid.
               - Do NOT compute areas, perimeters or lengths INTO THE OUTPUT — the system computes
                 geometry from the figures you transcribe. (Multiplying privately to CHECK your own
                 reading is expected; just never report a computed number as if it were printed.)
+                THE ONE EXCEPTION is converting level marks into heights, above: subtracting two
+                printed marks is transcription in another unit, not an estimate.
               - Do NOT measure anything off the drawing by eye or scale; only read printed figures.
               - The floor is NOT determined from a table's contents (schedules repeat identically on
                 every sheet) — leave floor "" unless the sheet's own title/stamp names it
@@ -537,11 +731,20 @@ public class ProjectImportService {
                 numbered circles, or the numbers printed beside the stamp). This is what tells which
                 rooms belong to this floor when the table itself is identical on every sheet. If the
                 sheet has no plan or you can't tell, return an empty list — never guess.
-              - Ceiling height is written many ways: «H=2700», «H 2700», «H-2700», the Cyrillic
-                «Н=2700», with or without a space and an optional trailing «*» — all mean the room's
-                ceiling height in mm. BUT «Нпр=…» (opening height) and «Нпд=…» (window sill) are
-                NOT ceiling heights. Only an explicitly printed ABSOLUTE height counts; relative
-                drops («опуск від нуля стелі») are NOT a ceiling height — leave 0.
+              - HEIGHTS come in TWO different notations. Recognise BOTH — a studio uses one or the
+                other, and finding neither is usually a misread, not an empty sheet:
+                (a) DIRECT: «H=2700», «H 2700», «H-2700», the Cyrillic «Н=2700», optional trailing
+                    «*» — the room's ceiling height in MILLIMETRES. «Нпр=…» is an opening's height,
+                    «Нпд=…» a window sill, «Ндв=…» a door leaf, «Нвк=…» a window — NOT ceilings.
+                (b) LEVEL MARKS («відмітки»), usually in METRES with a dot or comma: «відмітка
+                    стелі» 2.93, «відмітка підлоги» 0.00, «відмітка верха прорізу» 2.28, «відмітка
+                    низа прорізу» 0.82. Convert to mm:
+                      ceilingHmm = (ceiling mark − floor mark) × 1000  → 2930
+                      an opening's hMm = (top mark − bottom mark) × 1000  → 1460
+                      sillMm = (bottom mark − floor mark) × 1000  → 820
+                    This subtraction is the ONE arithmetic you are asked to do (see the next rule):
+                    it is exact, not an estimate. Say «з відміток» in the note so it is traceable.
+                Relative drops («опуск від нуля стелі», «-0,15 від стелі») are NOT ceiling heights.
               - Designer remarks like «без запасу на порізку», «уточнити на місці» → add to warnings
                 verbatim.
               - Notation you can't be sure of (e.g. Нпд/Нпр next to windows) → transcribe as written
@@ -549,75 +752,110 @@ public class ProjectImportService {
               - Return ONLY JSON matching the schema.
             """;
 
-    private static final String SCHEDULE_PROMPT = """
-            You read the ROOM SCHEDULE table (експлікація приміщень) of a Ukrainian design project:
-            columns are room number, room name, area in m². The footer usually has «Загальна площа»
-            — put it into totals.totalAreaM2 (0 if absent).
+    /**
+     * What to look for on ANY sheet. Shared by every prompt on purpose: a sheet's real content
+     * does not follow the label we guessed for it, so no prompt is allowed to gate data off. The
+     * per-kind text above this only says where to look FIRST.
+     */
+    private static final String SHEET_CORE = """
 
-            Return every row as a room: number (as printed, e.g. "4"), name («Спальня»), areaM2.
-            Rooms go under ONE floor entry with floor "" unless the sheet title/stamp names the
-            floor. perimeterMm/wallSegmentsMm/openings stay empty — this table has none.
+            EXTRACT EVERYTHING BELOW THAT THIS SHEET HAPPENS TO CARRY. Sheets vary enormously
+            between studios; absence of one thing says nothing about the others.
 
-            ⚠️ The table's LAYOUT is what matters: read each row as printed (number + name + area on
-            ONE line). A name may be typeset away from its row in the file's text order — trust what
-            you SEE on the page, not the raw text order. Never leave a printed name unassigned.
+            1. ROOM INVENTORY — from whichever of these the sheet has, most trustworthy first:
+               (a) a rooms TABLE: «Специфікація приміщень (обміри)», «Експлікація приміщень»,
+                   columns № + name + area in m², often with a «Загальна площа» footer → every row
+                   becomes a room, and the footer goes to totals.totalAreaM2;
+               (b) LABELS printed inside the rooms on the plan — a numbered circle, a name, an area
+                   like «12.63 m²» typeset in the room. This is just as valid as a table: many
+                   studios print no table at all;
+               (c) numbered circles ALONE, with no name and no area.
+               A room from the inventory MUST appear in the output even when you find no geometry
+               for it. If the sheet has none of (a)(b)(c) it has no rooms — return "floors": [] and
+               say what the sheet is in sheetTitle. Never invent rooms to fill the output.
+               ⚠️ The table's LAYOUT is what matters: read each row as printed (number + name +
+               area on ONE line). A name is often typeset away from its row in the file's text
+               order — trust what you SEE, not the text order. Never leave a printed name
+               unassigned.
+            2. PER-ROOM GEOMETRY off the drawing, matched by the room's printed number/name:
+               - widthMm × lengthMm — the room's OVERALL gabarits from the dimension chains along
+                 its contour.
+                 SELF-CHECK WHEN AN AREA IS KNOWN: widthMm × lengthMm ÷ 1000000 must match that
+                 room's area to within ±0.3 m². If it doesn't, you misread a chain (most often a
+                 «5 000» thousands group) — re-read it ONCE. If it still disagrees, report the
+                 figures you ACTUALLY SEE, name them in "uncertain" and give the reason in note.
+                 Never bend a figure to fit the area.
+                 WHEN NO AREA IS PRINTED ANYWHERE there is nothing to check against — that is
+                 normal on a plain measure plan. Report the chains you read and name widthMm /
+                 lengthMm in "uncertain". The system computes the area from them.
+               - An L-shaped room (a rectangle with one cut-out corner): also cutWidthMm ×
+                 cutDepthMm of the cut, from the chains.
+               - wallSegmentsMm / perimeterMm — only figures PRINTED as such; never sum or measure
+                 them yourself.
+               - A sloped / mansard ceiling («скоси»), a niche or a ledge → describe it in that
+                 room's note. Walls there are approximate and the master must check on site.
+            3. HEIGHTS — both notations from the HARD RULES (direct «H=2700» and level marks
+               «відмітка стелі 2.93»). Per-room → ceilingHmm. A single height stated for the whole
+               floor in the stamp or the notes → ceilingHeights, keyed by the floor label.
+            4. OPENINGS — every window and door on a room's walls: kind "вікно"/"двері",
+               wMm = printed width, hMm = the opening's height, sillMm = the window sill.
+               Sources, in order: a doors/windows SPECIFICATION table on this sheet («Д 01», «ДЗ
+               02», «В 07» rows with sizes) OUTRANKS everything — take the sizes from it and set
+               confidence "high"; then «Нпр»/«Ндв»/«Нвк»/«Нпд» markings; then level marks; sizes
+               taken off the chains alone are "medium".
+               toFloor = true for doors, open passages and floor-to-ceiling / panoramic windows
+               (they reach the floor and interrupt the skirting), false for a window on a sill.
+               An interior door SHARED by two rooms belongs to BOTH — list it in each room's
+               openings, because each of them loses that hole from its walls.
+               note = any other marking, as written.
+            5. COVERINGS — when the sheet is a finishes specification («специфікація покриттів»,
+               a floor/wall finishes table): each line as name (as printed), kind — one of
+               "підлога", "стіни", "плінтус", "карниз", "молдінг" (closest match) — qty, and unit
+               ("M2" for м², "LINEAR_METER" for м / м.пог / пог.м). Skip lines with no number.
+            6. sheetTitle — this sheet's own title from its stamp, as printed («ОБМІРНИЙ ПЛАН»,
+               «ПЛАН ПІДЛОГ», «02_обмірний план»). This is how the system learns what it actually
+               sent, when our own label was wrong.
             """ + COMMON_RULES;
 
+    private static final String SCHEDULE_PROMPT = """
+            You read a sheet of Ukrainian design-project documentation that is PROBABLY a room
+            schedule (експлікація приміщень) — a table of room number, name and area in m².
+
+            Start with that table. If the same sheet also carries a plan drawing, take its geometry
+            too; if it turns out to be a different sheet entirely, extract whatever it does have.
+            """ + SHEET_CORE;
+
     private static final String PLAN_PROMPT = """
-            You read a MEASURE PLAN sheet (обмірний план) of a Ukrainian design project. The sheet
-            typically carries BOTH the drawing (printed dimension chains in mm, numbered room
-            circles, window/door openings, per-room «H=…мм» ceiling heights) AND a rooms table
-            («Специфікація приміщень (обміри)» / «Експлікація приміщень»: № + name + area in m²,
-            with a «Загальна площа» footer). Extract BOTH in one pass.
+            You read a sheet of Ukrainian design-project documentation that is PROBABLY a MEASURE
+            PLAN (обмірний план): dimension chains in mm along the room contours, numbered room
+            circles, window and door openings, ceiling heights, and OFTEN — but far from always —
+            a rooms table on the same sheet.
 
             ⚠️ TWO SETS OF PLANS: a project often carries the existing layout («як є», «до
             перепланування») AND the new one («після перепланування»), differing ONLY by the
             sheet's title. The base geometry is the one AFTER remodelling — that is what will be
             finished. State which one you read in the first room's note.
-
-            1. THE TABLE — every row, all of them: number, name, areaM2. Put «Загальна площа»
-               into totals.totalAreaM2 (0 if absent). The table is the room inventory — a room
-               from the table must appear in the output even if you find no geometry for it.
-            2. PER-ROOM GEOMETRY off the drawing, matched by the room's printed number:
-               - widthMm × lengthMm: the room's OVERALL gabarits from the dimension chains along
-                 its contour. SELF-CHECK BEFORE ANSWERING: widthMm × lengthMm ÷ 1000000 must equal
-                 that room's table area to within ±0.3 m². If it doesn't, you misread a chain (most
-                 often a «5 000» thousands group) — re-read it ONCE. If it still disagrees, report
-                 the figures you ACTUALLY SEE — never bend them to fit the area — set confidence
-                 "low" and give the reason in note. Unsure which chain belongs to the room → 0 for
-                 both, never a guess.
-               - An L-shaped room (a rectangle with one cut-out corner): also cutWidthMm ×
-                 cutDepthMm of the cut, read from the chains (0 when not applicable/unsure).
-               - ceilingHmm: the ceiling height printed INSIDE that room — «H=…», «H …», «H-…»
-                 or the Cyrillic «Н=…» (optional space, optional trailing «*»), in mm. «Нпр=…» is
-                 an OPENING's height and «Нпд=…» is a window SILL height — NEVER report them as the
-                 ceiling.
-               - openings: every window/door on the room's walls: kind "вікно"/"двері",
-                 wMm = printed width; hMm = the opening height from «Нпр», «Ндв» (door leaf) or
-                 «Нвк» (window) or a doors/windows spec (0 when nowhere printed); sillMm = the
-                 «Нпд» window sill height (0 when absent); toFloor = true for doors, open passages
-                 and floor-to-ceiling / panoramic windows (they reach the floor), false for an
-                 ordinary window on a sill. An interior door SHARED by two rooms belongs to BOTH:
-                 list it in each of the two rooms' openings (each room loses that hole from its
-                 walls). note = any other marking as written.
-                 A doors/windows SPECIFICATION table on the sheet OUTRANKS a figure read off the
-                 drawing: when one exists take the sizes from it (confidence "high"); sizes read
-                 from the chains alone are "medium".
-               - A sloped / mansard ceiling («скоси»), a niche or a ledge → describe it in that
-                 room's note. Walls there are approximate and the master must check on site.
-               - wallSegmentsMm / perimeterMm: only figures PRINTED as such (never sum or
-                 measure yourself; leave 0/empty otherwise).
-            """ + COMMON_RULES;
+            """ + SHEET_CORE;
 
     private static final String COVERINGS_PROMPT = """
-            You read a COVERINGS SPECIFICATION (специфікація покриття підлог і стін / покриттів)
-            of a Ukrainian design project: a table of finish materials with quantities.
+            You read a sheet of Ukrainian design-project documentation that is PROBABLY a COVERINGS
+            SPECIFICATION (специфікація покриття підлог і стін / покриттів) — finish materials with
+            quantities.
 
-            Return each line as a covering: name (as printed, e.g. «Плитка керамогранітна»),
-            kind — one of "підлога", "стіни", "плінтус", "карниз", "молдінг" (closest match),
-            qty and unit ("M2" for м², "LINEAR_METER" for м / м.пог / пог.м). Skip lines without a
-            numeric quantity. Rooms/floors stay empty for this sheet type.
-            """ + COMMON_RULES;
+            Start with those lines. Such a sheet frequently also prints per-room areas next to the
+            finishes — take those as rooms as well, rather than dropping them.
+            """ + SHEET_CORE;
+
+    private static final String GENERIC_PROMPT = """
+            You read a sheet of Ukrainian design-project documentation. We could NOT tell what kind
+            it is — its file name and stamp matched nothing we recognise, so there is no hint to
+            give you, and you must not assume it is useless: a sheet whose name we cannot read is
+            usually a perfectly ordinary plan.
+
+            Read its stamp, report it in sheetTitle, and take everything below that it carries. If
+            it genuinely holds no room data (a title page, an index, a 3D view, an elevation),
+            return empty lists and say so in sheetTitle — that is a useful answer too.
+            """ + SHEET_CORE;
 
     private static final Map<String, Object> STRING = Map.of("type", "string");
     private static final Map<String, Object> NUMBER = Map.of("type", "number");
@@ -640,7 +878,7 @@ public class ProjectImportService {
     private static final Map<String, Object> ROOM = obj(
             List.of("number", "name", "areaM2", "perimeterMm", "wallSegmentsMm",
                     "widthMm", "lengthMm", "cutWidthMm", "cutDepthMm", "ceilingHmm",
-                    "openings", "confidence", "note"),
+                    "openings", "confidence", "note", "uncertain"),
             Map.ofEntries(
                     Map.entry("number", STRING),
                     Map.entry("name", STRING),
@@ -654,7 +892,8 @@ public class ProjectImportService {
                     Map.entry("ceilingHmm", NUMBER),
                     Map.entry("openings", arr(OPENING)),
                     Map.entry("confidence", STRING),
-                    Map.entry("note", STRING)));
+                    Map.entry("note", STRING),
+                    Map.entry("uncertain", arr(STRING))));
 
     private static final Map<String, Object> FLOOR = obj(
             List.of("floor", "roomsOnThisSheet", "rooms"),
@@ -672,8 +911,11 @@ public class ProjectImportService {
             List.of("totalAreaM2"), Map.of("totalAreaM2", NUMBER));
 
     static final Map<String, Object> SCHEMA = obj(
-            List.of("floors", "coverings", "totals", "ceilingHeights", "warnings"),
+            List.of("sheetTitle", "floors", "coverings", "totals", "ceilingHeights", "warnings"),
             Map.of(
+                    // What the sheet says it is, in its own words. Our label was a guess made from a
+                    // filename before anything was read; this is the sheet answering for itself.
+                    "sheetTitle", STRING,
                     "floors", arr(FLOOR),
                     "coverings", arr(COVERING),
                     "totals", TOTALS,

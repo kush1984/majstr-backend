@@ -228,6 +228,113 @@ class ProjectImportServiceTest {
                 .hasMessage("error.import.unsupported");
     }
 
+    // ---- fragments: a second look, only when the first one failed ----------------
+
+    /** One room, its area read from the table, and not a single dimension — the reported failure. */
+    private static final String ROOMS_WITHOUT_GEOMETRY = """
+            {"sheetTitle":"ОБМІРНИЙ ПЛАН","floors":[{"floor":"","roomsOnThisSheet":[],"rooms":[
+             {"number":"4","name":"Дитяча","areaM2":16.46,"perimeterMm":0,"wallSegmentsMm":[],
+              "widthMm":0,"lengthMm":0,"cutWidthMm":0,"cutDepthMm":0,"ceilingHmm":0,
+              "openings":[],"confidence":"medium","note":"","uncertain":["widthMm","lengthMm"]}]}],
+             "coverings":[],"totals":{"totalAreaM2":0},"ceilingHeights":[],"warnings":[]}""";
+
+    /** What a fragment sees once the same chains are 2.3x bigger. */
+    private static final String GEOMETRY_FROM_FRAGMENT = """
+            {"sheetTitle":"","floors":[{"floor":"","roomsOnThisSheet":[],"rooms":[
+             {"number":"4","name":"Дитяча","areaM2":0,"perimeterMm":0,"wallSegmentsMm":[],
+              "widthMm":4730,"lengthMm":3480,"cutWidthMm":0,"cutDepthMm":0,"ceilingHmm":2850,
+              "openings":[],"confidence":"high","note":"","uncertain":[]}]}],
+             "coverings":[],"totals":{"totalAreaM2":0},"ceilingHeights":[],"warnings":[]}""";
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void aPlanWhoseChainsWereUnreadable_isReadAgainInFragments() throws Exception {
+        given(extractor.requestJson(anyList(), anyString(), any(Map.class)))
+                .willReturn(ROOMS_WITHOUT_GEOMETRY, GEOMETRY_FROM_FRAGMENT, GEOMETRY_FROM_FRAGMENT,
+                        GEOMETRY_FROM_FRAGMENT, GEOMETRY_FROM_FRAGMENT);
+
+        ProjectImportParseResponse resp = service.parse(ownerId, objectId,
+                ProjectImportService.Kind.PLAN_MEASURE, "обмірний план.pdf", "application/pdf",
+                textPdf());
+
+        // The whole page, then its four quarters.
+        ArgumentCaptor<List<AiInput>> content = ArgumentCaptor.forClass(List.class);
+        verify(extractor, times(5)).requestJson(content.capture(), anyString(), any(Map.class));
+        assertThat(content.getAllValues().get(0).get(0)).isInstanceOf(AiInput.Pdf.class);
+        assertThat(content.getAllValues().get(1).get(0)).isInstanceOf(AiInput.Image.class);
+        // A fragment call carries the inventory read from the full page, so it knows what to look for.
+        assertThat(((AiInput.Text) content.getAllValues().get(1).get(1)).text())
+                .contains("№4 Дитяча").contains("FRAGMENT");
+
+        ProjectImportParseResponse.Room room = resp.floors().get(0).rooms().get(0);
+        assertThat(room.widthMm()).isEqualByComparingTo("4730");
+        assertThat(room.lengthMm()).isEqualByComparingTo("3480");
+        assertThat(room.ceilingHmm()).isEqualByComparingTo("2850");
+        assertThat(room.areaM2()).isEqualByComparingTo("16.46");   // the table still owns the area
+        assertThat(resp.sheetTitle()).isEqualTo("ОБМІРНИЙ ПЛАН");
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void aPlanThatAlreadyReadItsChains_costsNoExtraCalls() throws Exception {
+        // Fragments are four more vision calls on the same page. When the gabarits are already
+        // there they were legible, and paying again buys nothing.
+        String complete = ROOMS_WITHOUT_GEOMETRY
+                .replace("\"widthMm\":0", "\"widthMm\":4730")
+                .replace("\"lengthMm\":0", "\"lengthMm\":3480");
+        given(extractor.requestJson(anyList(), anyString(), any(Map.class))).willReturn(complete);
+
+        service.parse(ownerId, objectId, ProjectImportService.Kind.PLAN_MEASURE,
+                "обмірний план.pdf", "application/pdf", textPdf());
+
+        verify(extractor, times(1)).requestJson(anyList(), anyString(), any(Map.class));
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void anUnnamedSheetIsStillRead_andSaysWhatItTurnedOutToBe() throws Exception {
+        // A page whose stamp matched nothing used to be dropped before upload. On one real 19-sheet
+        // set that was every page, and the import did nothing at all.
+        given(extractor.requestJson(anyList(), anyString(), any(Map.class)))
+                .willReturn(EMPTY_JSON.replace("{\"floors\"", "{\"sheetTitle\":\"ПЛАН ПІДЛОГ\",\"floors\""));
+
+        ProjectImportParseResponse resp = service.parse(ownerId, objectId,
+                ProjectImportService.Kind.UNKNOWN, "лист 7.pdf", "application/pdf", textPdf());
+
+        ArgumentCaptor<List<AiInput>> content = ArgumentCaptor.forClass(List.class);
+        verify(extractor).requestJson(content.capture(), anyString(), any(Map.class));
+        // Vision, not the flattened-text path: an unnamed sheet is far more likely a drawing.
+        assertThat(content.getValue().get(0)).isInstanceOf(AiInput.Pdf.class);
+        assertThat(((AiInput.Text) content.getValue().get(1)).text())
+                .contains("A GUESS").contains("unclassified");
+        assertThat(resp.sheetTitle()).isEqualTo("ПЛАН ПІДЛОГ");
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void aFigureReadButNotConfirmed_reachesTheMasterFlaggedInsteadOfBlank() {
+        String json = """
+                {"sheetTitle":"02_обмірний план","floors":[{"floor":"","roomsOnThisSheet":[],"rooms":[
+                 {"number":"3","name":"Кухня","areaM2":0,"perimeterMm":0,"wallSegmentsMm":[],
+                  "widthMm":5470,"lengthMm":2415,"cutWidthMm":0,"cutDepthMm":0,"ceilingHmm":0,
+                  "openings":[],"confidence":"medium","note":"площа не вказана",
+                  "uncertain":["widthMm"]}]}],
+                 "coverings":[],"totals":{"totalAreaM2":0},"ceilingHeights":[],"warnings":[]}""";
+        given(extractor.requestJson(anyList(), anyString(), any(Map.class))).willReturn(json);
+
+        ProjectImportParseResponse.Room room = service.parse(ownerId, objectId,
+                ProjectImportService.Kind.PLAN_MEASURE, "план.jpg", "image/jpeg", new byte[]{1})
+                .floors().get(0).rooms().get(0);
+
+        // The figure survives — a number the master can check beats an empty field.
+        assertThat(room.widthMm()).isEqualByComparingTo("5470");
+        assertThat(room.uncertain()).contains("widthMm");
+        // A measure plan with no printed area is ordinary, not a broken row: the field is flagged,
+        // and the row keeps its confidence because the gabarits it DID read can produce the area.
+        assertThat(room.uncertain()).contains("areaM2");
+        assertThat(room.confidence()).isNotEqualTo("low");
+    }
+
     // ---- sentinel mapping -------------------------------------------------------
 
     @Test
