@@ -170,7 +170,7 @@ app:
     # Which provider reads a drawing: anthropic (shipped) or openai (for comparing the two on real
     # sheets). One switch for every recognition flow — chosen at startup, not per request, so a whole
     # run's results are comparable instead of silently mixed.
-    provider: ${AI_PROVIDER:}
+    provider: ${AI_PROVIDER:openai}
   openai:
     # Inert unless `provider` above selects it. Key is env only, same rule as the Anthropic one.
     api-key: ${OPENAI_API_KEY:}
