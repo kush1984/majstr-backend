@@ -1,8 +1,9 @@
 package com.majstr.backend.config;
 
+import com.majstr.backend.service.ai.AnthropicJsonExtractor;
 import com.majstr.backend.service.ai.JsonExtractor;
+import com.majstr.backend.service.ai.MisconfiguredJsonExtractor;
 import com.majstr.backend.service.ai.OpenAiJsonExtractor;
-import com.majstr.backend.service.importer.ClaudeEstimateExtractor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
@@ -19,6 +20,12 @@ import org.springframework.context.annotation.Primary;
  *
  * <p>The chosen provider is logged at boot, because "which model produced this reading" is the first
  * question anyone asks about a bad result.</p>
+ *
+ * <p><b>A misconfiguration here never stops the application.</b> An earlier version threw, which
+ * meant a missing recognition key took down estimates, PDFs, the portal and billing — none of which
+ * use it — and, twice, an entire CI suite. A bad setting now disables recognition alone and says so
+ * in the log; see {@link MisconfiguredJsonExtractor} for why that beats both crashing and silently
+ * substituting another provider.</p>
  */
 @Slf4j
 @Configuration
@@ -30,7 +37,7 @@ public class AiProviderConfig {
     @Bean
     @Primary
     public JsonExtractor jsonExtractor(
-            ClaudeEstimateExtractor anthropic,
+            AnthropicProperties anthropicProperties,
             OpenAiProperties openAiProperties,
             @Value("${app.ai.provider:anthropic}") String provider) {
 
@@ -43,20 +50,24 @@ public class AiProviderConfig {
 
         if (OPENAI.equalsIgnoreCase(chosen)) {
             if (!openAiProperties.isConfigured()) {
-                // Fail loudly at boot rather than at the first import: a missing key here means every
-                // recognition would report "unavailable", and the master would have no way to know why.
-                throw new IllegalStateException(
+                return new MisconfiguredJsonExtractor(
                         "app.ai.provider=openai but OPENAI_API_KEY is not set");
             }
             log.info("AI recognition provider: OpenAI ({})", openAiProperties.model());
             return new OpenAiJsonExtractor(openAiProperties);
         }
-        // A typo must not fall back to Anthropic: a comparison run silently attributed to the wrong
-        // model is worse than a boot failure. The value is quoted because it is the whole diagnosis.
+        // A typo must not quietly become Anthropic: a comparison run attributed to the wrong model
+        // is the one failure that makes the numbers lie. Recognition stops, the app does not.
         if (!ANTHROPIC.equalsIgnoreCase(chosen)) {
-            throw new IllegalStateException(
-                    "Unknown app.ai.provider '" + chosen + "' — expected anthropic or openai");
+            return new MisconfiguredJsonExtractor(
+                    "unknown app.ai.provider '" + chosen + "' — expected anthropic or openai");
         }
+        if (!anthropicProperties.isConfigured()) {
+            // Blank in local dev is normal and always was: the app runs, recognition reports
+            // "unavailable". Saying so once at boot beats discovering it per import.
+            return new MisconfiguredJsonExtractor("ANTHROPIC_API_KEY is not set");
+        }
+        JsonExtractor anthropic = new AnthropicJsonExtractor(anthropicProperties);
         log.info("AI recognition provider: {}", anthropic.providerName());
         return anthropic;
     }

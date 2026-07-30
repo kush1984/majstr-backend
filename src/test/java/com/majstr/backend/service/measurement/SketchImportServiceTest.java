@@ -12,7 +12,7 @@ import com.majstr.backend.feature.Feature;
 import com.majstr.backend.feature.FeatureGuard;
 import com.majstr.backend.repository.UserRepository;
 import com.majstr.backend.service.ProjectService;
-import com.majstr.backend.service.importer.ClaudeEstimateExtractor;
+import com.majstr.backend.service.ai.JsonExtractor;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -44,7 +44,7 @@ class SketchImportServiceTest {
     @Mock private FeatureGuard featureGuard;
     @Mock private UserRepository userRepository;
     @Mock private ProjectService projectService;
-    @Mock private ClaudeEstimateExtractor extractor;
+    @Mock private JsonExtractor extractor;
     @Mock private MeasurementService measurementService;
 
     private final JsonMapper mapper = JsonMapper.builder().build();

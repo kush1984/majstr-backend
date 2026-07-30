@@ -43,7 +43,7 @@ import java.util.UUID;
 
 /**
  * Orchestrates the LLM estimate import (PRO-gated). {@code parse} feeds the uploaded
- * Excel/CSV (rendered to a text grid) or photo (base64) to {@link ClaudeEstimateExtractor},
+ * Excel/CSV (rendered to a text grid) or photo (base64) to {@link EstimateExtractor},
  * normalizes units/types, and returns a review proposal — the file is never persisted.
  * {@code commit} creates the estimate on the target object (via {@link EstimateService})
  * and upserts the ticked positions into the master's catalog (via {@link CatalogImportService}),
@@ -59,7 +59,7 @@ public class EstimateImportService {
 
     private final FeatureGuard featureGuard;
     private final UserRepository userRepository;
-    private final ClaudeEstimateExtractor extractor;
+    private final EstimateExtractor extractor;
     private final EstimateService estimateService;
     private final CatalogImportService catalogImportService;
 
@@ -70,7 +70,7 @@ public class EstimateImportService {
         featureGuard.requireFeature(loadUser(ownerId), Feature.ESTIMATE_IMPORT);
 
         String imageMediaType = imageMediaType(filename, contentType);
-        ClaudeEstimateExtractor.Extracted extracted;
+        EstimateExtractor.Extracted extracted;
         if (imageMediaType != null) {
             extracted = extractor.extractFromImage(imageMediaType, bytes);
         } else if (isSpreadsheet(filename, contentType)) {
@@ -116,9 +116,9 @@ public class EstimateImportService {
 
     // ---- extraction → review mapping ------------------------------------------
 
-    private EstimateImportParseResponse toReview(ClaudeEstimateExtractor.Extracted extracted) {
+    private EstimateImportParseResponse toReview(EstimateExtractor.Extracted extracted) {
         List<ParsedItem> items = new ArrayList<>();
-        for (ClaudeEstimateExtractor.Extracted.Line line : extracted.items()) {
+        for (EstimateExtractor.Extracted.Line line : extracted.items()) {
             Unit unit = UnitNormalizer.normalize(line.unit());
             ItemType type = parseType(line.type());
             BigDecimal quantity = line.quantity();

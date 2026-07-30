@@ -1,7 +1,9 @@
 package com.majstr.backend.service.importer;
 
-import com.majstr.backend.config.AnthropicProperties;
-import com.majstr.backend.service.importer.ClaudeEstimateExtractor.Extracted;
+import com.majstr.backend.exception.AiExtractionException;
+import com.majstr.backend.service.ai.AiInput;
+import com.majstr.backend.service.ai.JsonExtractor;
+import com.majstr.backend.service.importer.EstimateExtractor.Extracted;
 import org.junit.jupiter.api.Test;
 import tools.jackson.databind.json.JsonMapper;
 
@@ -13,10 +15,28 @@ import static org.assertj.core.api.Assertions.assertThat;
  * null, a 0 deposit means "no deposit", and 0 quantity/price survive (flagged later on
  * the review screen). No Spring context — a plain {@link JsonMapper} is enough.
  */
-class ClaudeEstimateExtractorTest {
+class EstimateExtractorTest {
 
-    private final ClaudeEstimateExtractor extractor = new ClaudeEstimateExtractor(
-            new AnthropicProperties("", "claude-opus-4-8", 8000), JsonMapper.builder().build());
+    /**
+     * A stand-in for whichever provider is configured. These tests are about the JSON → Extracted
+     * mapping, and after the split this class has no idea who produced that JSON — which is the
+     * whole point: the estimate prompts now follow {@code app.ai.provider} like every other flow.
+     */
+    private static final JsonExtractor NO_PROVIDER = new JsonExtractor() {
+        @Override
+        public String requestJson(java.util.List<AiInput> input, String systemPrompt,
+                                 java.util.Map<String, Object> schema) {
+            throw new AiExtractionException("error.ai.unavailable");
+        }
+
+        @Override
+        public String providerName() {
+            return "test";
+        }
+    };
+
+    private final EstimateExtractor extractor =
+            new EstimateExtractor(NO_PROVIDER, JsonMapper.builder().build());
 
     @Test
     void parsesItemsAndDeposit() {
@@ -67,19 +87,5 @@ class ClaudeEstimateExtractorTest {
         assertThat(line.quantity()).isEqualByComparingTo("0"); // 0 kept → flagged on review
         assertThat(line.unitPrice()).isEqualByComparingTo("0");
         assertThat(result.depositAmount()).isNull();          // 0 deposit → absent
-    }
-
-    @Test
-    void retriesTransientStatusesButNotPermanentOnes() {
-        // Transient — a quick retry is worth it (the master is waiting on a synchronous import).
-        assertThat(ClaudeEstimateExtractor.isTransient(429)).isTrue(); // rate limit
-        assertThat(ClaudeEstimateExtractor.isTransient(500)).isTrue();
-        assertThat(ClaudeEstimateExtractor.isTransient(503)).isTrue();
-        assertThat(ClaudeEstimateExtractor.isTransient(529)).isTrue(); // Anthropic "Overloaded"
-        // Permanent — retrying can't help; fail fast to the manual-entry fallback.
-        assertThat(ClaudeEstimateExtractor.isTransient(400)).isFalse(); // bad request
-        assertThat(ClaudeEstimateExtractor.isTransient(401)).isFalse(); // bad key
-        assertThat(ClaudeEstimateExtractor.isTransient(413)).isFalse(); // payload too large
-        assertThat(ClaudeEstimateExtractor.isTransient(404)).isFalse();
     }
 }

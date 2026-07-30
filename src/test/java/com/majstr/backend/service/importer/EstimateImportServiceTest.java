@@ -19,7 +19,7 @@ import com.majstr.backend.feature.FeatureNotAvailableException;
 import com.majstr.backend.repository.UserRepository;
 import com.majstr.backend.service.EstimateService;
 import com.majstr.backend.service.EstimateService.ImportEstimateData;
-import com.majstr.backend.service.importer.ClaudeEstimateExtractor.Extracted;
+import com.majstr.backend.service.importer.EstimateExtractor.Extracted;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
@@ -49,7 +49,7 @@ class EstimateImportServiceTest {
 
     @Mock private FeatureGuard featureGuard;
     @Mock private UserRepository userRepository;
-    @Mock private ClaudeEstimateExtractor extractor;
+    @Mock private EstimateExtractor extractor;
     @Mock private EstimateService estimateService;
     @Mock private CatalogImportService catalogImportService;
 

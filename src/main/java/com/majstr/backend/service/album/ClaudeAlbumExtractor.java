@@ -25,7 +25,7 @@ import java.util.Map;
 /**
  * Design-album recognition via the Anthropic Messages API (Opus tier) — the multi-pass
  * extractor behind the "імпорт дизайн-альбому → електричний takeoff" feature. Raw HTTP
- * ({@link RestClient}) matching the codebase precedent ({@code ClaudeEstimateExtractor}),
+ * ({@link RestClient}) matching the codebase precedent ({@code EstimateExtractor}),
  * but with the lessons applied from day one:
  * <ul>
  *   <li><b>Timeouts</b>: connect 5 s, read 5 min — a hung upstream must not pin a thread

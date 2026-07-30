@@ -1,6 +1,5 @@
-package com.majstr.backend.service.importer;
+package com.majstr.backend.service.ai;
 
-import com.majstr.backend.service.ai.AiInput;
 import org.junit.jupiter.api.Test;
 
 import java.nio.charset.StandardCharsets;
@@ -26,7 +25,7 @@ class AnthropicInputRenderingTest {
     void aPdfBecomesANativeDocumentBlock() {
         // `document` + source.media_type is Anthropic's shape; OpenAI's is input_file + file_data.
         // Native means Anthropic renders the pages itself — which is why the deploy needs no poppler.
-        Map<String, Object> block = ClaudeEstimateExtractor.blocks(AiInput.pdf(BYTES, "read it")).get(0);
+        Map<String, Object> block = AnthropicJsonExtractor.blocks(AiInput.pdf(BYTES, "read it")).get(0);
 
         assertThat(block).containsEntry("type", "document");
         assertThat(block.get("source")).isEqualTo(Map.of(
@@ -36,7 +35,7 @@ class AnthropicInputRenderingTest {
     @Test
     void anImageCarriesItsMediaTypeAsItsOwnField() {
         Map<String, Object> block =
-                ClaudeEstimateExtractor.blocks(AiInput.image("image/webp", BYTES, "read it")).get(0);
+                AnthropicJsonExtractor.blocks(AiInput.image("image/webp", BYTES, "read it")).get(0);
 
         assertThat(block).containsEntry("type", "image");
         assertThat(block.get("source")).isEqualTo(Map.of(
@@ -45,7 +44,7 @@ class AnthropicInputRenderingTest {
 
     @Test
     void theInstructionFollowsTheSheet() {
-        List<Map<String, Object>> blocks = ClaudeEstimateExtractor.blocks(AiInput.pdf(BYTES, "read it"));
+        List<Map<String, Object>> blocks = AnthropicJsonExtractor.blocks(AiInput.pdf(BYTES, "read it"));
 
         assertThat(blocks).hasSize(2);
         assertThat(blocks.get(1)).containsEntry("type", "text").containsEntry("text", "read it");
@@ -53,7 +52,7 @@ class AnthropicInputRenderingTest {
 
     @Test
     void aTextGridRendersAsOneTextBlock() {
-        List<Map<String, Object>> blocks = ClaudeEstimateExtractor.blocks(AiInput.text("a grid"));
+        List<Map<String, Object>> blocks = AnthropicJsonExtractor.blocks(AiInput.text("a grid"));
 
         assertThat(blocks).hasSize(1);
         assertThat(blocks.get(0)).containsEntry("type", "text").containsEntry("text", "a grid");

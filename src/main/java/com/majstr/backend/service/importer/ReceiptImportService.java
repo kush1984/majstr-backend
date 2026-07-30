@@ -29,7 +29,7 @@ import java.util.UUID;
 /**
  * Add line items to an open estimate from a receipt photo (store / terminal / hand-written)
  * via LLM vision — PRO-gated ({@code Feature.RECEIPT_IMPORT}). {@code parse} sends the photo
- * to {@link ClaudeEstimateExtractor} (receipt prompt), normalizes units/types, and returns a
+ * to {@link EstimateExtractor} (receipt prompt), normalizes units/types, and returns a
  * review proposal — the image is never persisted. {@code commit} appends the master-confirmed
  * lines to the estimate (via {@link EstimateService#appendItems}); a SIGNED estimate is
  * rejected (409). Unlike the estimate import, receipts never touch the catalog.
@@ -41,7 +41,7 @@ public class ReceiptImportService {
 
     private final FeatureGuard featureGuard;
     private final UserRepository userRepository;
-    private final ClaudeEstimateExtractor extractor;
+    private final EstimateExtractor extractor;
     private final EstimateService estimateService;
 
     /** Parse a receipt photo into a review proposal. Nothing is written; the bytes are discarded. */
@@ -73,9 +73,9 @@ public class ReceiptImportService {
 
     // ---- extraction → review mapping ------------------------------------------
 
-    private EstimateImportParseResponse toReview(ClaudeEstimateExtractor.Extracted extracted) {
+    private EstimateImportParseResponse toReview(EstimateExtractor.Extracted extracted) {
         List<ParsedItem> items = new ArrayList<>();
-        for (ClaudeEstimateExtractor.Extracted.Line line : extracted.items()) {
+        for (EstimateExtractor.Extracted.Line line : extracted.items()) {
             Unit unit = UnitNormalizer.normalize(line.unit());
             ItemType type = parseType(line.type());
             BigDecimal quantity = line.quantity();

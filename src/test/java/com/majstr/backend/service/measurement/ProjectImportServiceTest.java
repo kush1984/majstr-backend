@@ -11,7 +11,7 @@ import com.majstr.backend.exception.CatalogImportException;
 import com.majstr.backend.feature.FeatureGuard;
 import com.majstr.backend.repository.UserRepository;
 import com.majstr.backend.service.ProjectService;
-import com.majstr.backend.service.importer.ClaudeEstimateExtractor;
+import com.majstr.backend.service.ai.JsonExtractor;
 import org.apache.pdfbox.pdmodel.PDDocument;
 import org.apache.pdfbox.pdmodel.PDPage;
 import org.apache.pdfbox.pdmodel.PDPageContentStream;
@@ -52,7 +52,7 @@ class ProjectImportServiceTest {
 
     @Mock private FeatureGuard featureGuard;
     @Mock private ProjectService projectService;
-    @Mock private ClaudeEstimateExtractor extractor;
+    @Mock private JsonExtractor extractor;
     @Mock private MeasurementService measurementService;
     @Mock private UserRepository userRepository;
 

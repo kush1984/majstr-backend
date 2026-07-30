@@ -1,53 +1,39 @@
 package com.majstr.backend.service.importer;
 
-import com.majstr.backend.config.AnthropicProperties;
-import com.majstr.backend.config.HttpClients;
 import com.majstr.backend.exception.AiExtractionException;
-import com.majstr.backend.service.ai.AiHttp;
 import com.majstr.backend.service.ai.AiInput;
 import com.majstr.backend.service.ai.JsonExtractor;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
-import org.springframework.web.client.ResourceAccessException;
-import org.springframework.web.client.RestClient;
-import org.springframework.web.client.RestClientResponseException;
 import tools.jackson.databind.ObjectMapper;
 
 import java.math.BigDecimal;
 import java.util.ArrayList;
-import java.util.Base64;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
 /**
- * Extracts estimate line items from a text grid (Excel/CSV rendered to text) or a
- * photo via the Anthropic Messages API — raw HTTP ({@link RestClient}), matching the
- * codebase's no-SDK precedent ({@code ResendEmailService}, {@code MonobankClient}).
- * Model + key come from {@link AnthropicProperties} (key env only). Structured JSON
- * output is enforced with {@code output_config.format} (a JSON schema), so the first
- * text block of the response is the parseable result. No beta headers — vision and
- * structured outputs are GA on the Opus tier.
+ * What to ask about an estimate or a receipt, and how to read the answer — with no idea who
+ * answered it.
  *
- * <p>The extractor is purely the Claude round-trip: it returns raw strings/numbers;
- * unit/type normalization and issue-flagging happen in {@code EstimateImportService}.
- * Any failure (unconfigured key, HTTP error, unparseable response) becomes an
- * {@link AiExtractionException} — the import is synchronous, so it is surfaced to the
- * master, not logged-and-skipped.</p>
+ * <p>This class used to BE the Anthropic client as well ({@code ClaudeEstimateExtractor}), and that
+ * is precisely why estimate and receipt import could not follow {@code app.ai.provider} while the
+ * measurement flows already did: the prompts came welded to one vendor's HTTP. The transport now
+ * lives in {@code AnthropicJsonExtractor} / {@code OpenAiJsonExtractor} behind
+ * {@link JsonExtractor}, and what is left here is the domain knowledge: two prompts, one schema,
+ * and the parsing of the result.</p>
+ *
+ * <p>It returns raw strings/numbers as the model gave them; unit/type normalisation and
+ * issue-flagging happen in {@code EstimateImportService}. Any failure (unconfigured key, HTTP
+ * error, unparseable response) becomes an {@link AiExtractionException} — the import is synchronous,
+ * so it is surfaced to the master, not logged-and-skipped.</p>
  */
 @Slf4j
 @Component
-public class ClaudeEstimateExtractor implements JsonExtractor {
-
-    private static final String MESSAGES_URL = "https://api.anthropic.com/v1/messages";
-    private static final String ANTHROPIC_VERSION = "2023-06-01";
-
-    // Import is synchronous (the master is waiting), so retries are FEW and quick — just enough
-    // to ride out a transient Anthropic hiccup (529 "Overloaded", 429, a 5xx, or a dropped
-    // connection) instead of dropping the master to manual entry on the first blip.
-    private static final int MAX_ATTEMPTS = 3;
-    private static final long BACKOFF_BASE_MS = 400L;
+@RequiredArgsConstructor
+public class EstimateExtractor {
 
     private static final String SYSTEM_PROMPT = """
             You extract line items from a Ukrainian building/renovation contractor's estimate.
@@ -117,23 +103,9 @@ public class ClaudeEstimateExtractor implements JsonExtractor {
               - type must be exactly "WORK" or "MATERIAL"; default "MATERIAL".
               - Keep the original top-to-bottom order.
             """;
-
-    private final AnthropicProperties props;
+    /** Whichever provider `app.ai.provider` selected — this flow does not care which. */
+    private final JsonExtractor extractor;
     private final ObjectMapper objectMapper;
-    // Explicit timeouts. Six call sites now share this ONE client (estimate, receipt,
-    // sketch, electrical plan, project-import ×2 passes) — without a read timeout a single
-    // stalled Anthropic response would hold a Tomcat thread until the pool is gone.
-    private final RestClient restClient = HttpClients.forLlm();
-
-    @Override
-    public String providerName() {
-        return "anthropic:" + props.model();
-    }
-
-    public ClaudeEstimateExtractor(AnthropicProperties props, ObjectMapper objectMapper) {
-        this.props = props;
-        this.objectMapper = objectMapper;
-    }
 
     /** Extract from a spreadsheet/CSV already rendered to a plain text grid. */
     public Extracted extractFromText(String grid) {
@@ -153,132 +125,8 @@ public class ClaudeEstimateExtractor implements JsonExtractor {
                 RECEIPT_SYSTEM_PROMPT);
     }
 
-    /**
-     * Our neutral input rendered into Anthropic's content blocks. A PDF goes as a native
-     * {@code document} block — Anthropic renders the pages itself, which is why the deploy needs no
-     * poppler for an architect's plan.
-     */
-    static List<Map<String, Object>> blocks(List<AiInput> input) {
-        List<Map<String, Object>> out = new ArrayList<>(input.size());
-        for (AiInput in : input) {
-            out.add(switch (in) {
-                case AiInput.Text t -> Map.<String, Object>of("type", "text", "text", t.text());
-                case AiInput.Image i -> Map.<String, Object>of("type", "image", "source",
-                        Map.of("type", "base64", "media_type", i.mediaType(),
-                                "data", base64(i.bytes())));
-                case AiInput.Pdf pdf -> Map.<String, Object>of("type", "document", "source",
-                        Map.of("type", "base64", "media_type", "application/pdf",
-                                "data", base64(pdf.bytes())));
-            });
-        }
-        return out;
-    }
-
-    private static String base64(byte[] bytes) {
-        return Base64.getEncoder().encodeToString(bytes);
-    }
-
-    // ---- Anthropic round-trip --------------------------------------------------
-
     private Extracted call(List<AiInput> content, String systemPrompt) {
-        return parse(requestJson(content, systemPrompt, SCHEMA));
-    }
-
-    /**
-     * The low-level Anthropic call: send {@code content} under {@code systemPrompt}, forcing
-     * structured output to {@code schema} ({@code output_config.format}), and return the first
-     * text block (the JSON string). Shared transport so a new extraction (e.g. room sketches)
-     * reuses the ONE client/error handling with its own prompt + schema. Any failure →
-     * {@link AiExtractionException} (surfaced synchronously, not logged-and-skipped).
-     */
-    @Override
-    @SuppressWarnings("unchecked")
-    public String requestJson(List<AiInput> content, String systemPrompt,
-                              Map<String, Object> schema) {
-        if (!props.isConfigured()) {
-            throw new AiExtractionException("error.ai.unavailable");
-        }
-        Map<String, Object> body = new LinkedHashMap<>();
-        body.put("model", props.model());
-        body.put("max_tokens", props.maxTokens());
-        body.put("system", systemPrompt);
-        body.put("messages", List.of(Map.of("role", "user", "content", blocks(content))));
-        body.put("output_config", Map.of("format",
-                Map.of("type", "json_schema", "schema", schema)));
-
-        Map<String, Object> resp;
-        try {
-            resp = postForMap(body);
-        } catch (Exception e) {
-            log.error("Anthropic extraction call failed: {}", e.getMessage());
-            throw new AiExtractionException("error.ai.unavailable", e);
-        }
-        return firstTextBlock(resp);
-    }
-
-    /**
-     * POST the request, retrying up to {@link #MAX_ATTEMPTS} times on a TRANSIENT failure
-     * (see {@link #isTransient}) with a short linear backoff. A permanent 4xx (bad request,
-     * bad key, payload too large) is not retried. On exhaustion the last exception propagates
-     * and becomes a 503 {@code AI_UNAVAILABLE} upstream — same fallback as before, just after
-     * a couple of quick retries rather than on the first blip.
-     */
-    @SuppressWarnings("unchecked")
-    private Map<String, Object> postForMap(Map<String, Object> body) {
-        for (int attempt = 1; ; attempt++) {
-            try {
-                return restClient.post()
-                        .uri(MESSAGES_URL)
-                        .header("x-api-key", props.apiKey())
-                        .header("anthropic-version", ANTHROPIC_VERSION)
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .body(body)
-                        .retrieve()
-                        .body(Map.class);
-            } catch (RestClientResponseException e) { // carries the HTTP status
-                if (attempt >= MAX_ATTEMPTS || !isTransient(e.getStatusCode().value())) {
-                    throw e;
-                }
-                backoff(attempt, e);
-            } catch (ResourceAccessException e) { // connection reset / read timeout
-                if (attempt >= MAX_ATTEMPTS) {
-                    throw e;
-                }
-                backoff(attempt, e);
-            }
-        }
-    }
-
-    /** Delegates so the rule has ONE definition shared with the other provider. */
-    static boolean isTransient(int status) {
-        return AiHttp.isTransient(status);
-    }
-
-    private static void backoff(int attempt, RuntimeException cause) {
-        log.warn("Anthropic call transient failure (attempt {}/{}), retrying: {}",
-                attempt, MAX_ATTEMPTS, cause.getMessage());
-        try {
-            Thread.sleep(BACKOFF_BASE_MS * attempt); // 400ms, 800ms — the master is waiting
-        } catch (InterruptedException ie) {
-            Thread.currentThread().interrupt();
-            throw cause; // give up promptly if the request thread is interrupted
-        }
-    }
-
-    @SuppressWarnings("unchecked")
-    private String firstTextBlock(Map<String, Object> resp) {
-        Object content = resp == null ? null : resp.get("content");
-        if (content instanceof List<?> blocks) {
-            for (Object block : blocks) {
-                if (block instanceof Map<?, ?> map && "text".equals(map.get("type"))) {
-                    Object text = map.get("text");
-                    if (text instanceof String s && !s.isBlank()) {
-                        return s;
-                    }
-                }
-            }
-        }
-        throw new AiExtractionException("error.ai.unavailable");
+        return parse(extractor.requestJson(content, systemPrompt, SCHEMA));
     }
 
     @SuppressWarnings("unchecked")
@@ -310,7 +158,8 @@ public class ClaudeEstimateExtractor implements JsonExtractor {
             }
             return new Extracted(lines, deposit);
         } catch (Exception e) {
-            log.error("Failed to parse Anthropic extraction JSON: {}", e.getMessage());
+            log.error("Failed to parse extraction JSON from {}: {}",
+                    extractor.providerName(), e.getMessage());
             throw new AiExtractionException("error.ai.unavailable", e);
         }
     }

@@ -41,7 +41,7 @@ class ReceiptImportServiceTest {
 
     @Mock private FeatureGuard featureGuard;
     @Mock private UserRepository userRepository;
-    @Mock private ClaudeEstimateExtractor extractor;
+    @Mock private EstimateExtractor extractor;
     @Mock private EstimateService estimateService;
 
     private ReceiptImportService service;
@@ -81,8 +81,8 @@ class ReceiptImportServiceTest {
         given(userRepository.findById(ownerId)).willReturn(Optional.of(user()));
         given(estimateService.get(estimateId, ownerId)).willReturn(estimate(EstimateStatus.DRAFT));
         given(extractor.extractReceiptFromImage(eq("image/jpeg"), any())).willReturn(
-                new ClaudeEstimateExtractor.Extracted(List.of(
-                        new ClaudeEstimateExtractor.Extracted.Line(
+                new EstimateExtractor.Extracted(List.of(
+                        new EstimateExtractor.Extracted.Line(
                                 "Цемент М500", "шт", new BigDecimal("2"), new BigDecimal("180"),
                                 "MATERIAL", null)),
                         null));

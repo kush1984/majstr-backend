@@ -25,8 +25,8 @@ import java.util.Map;
 import java.util.UUID;
 
 /**
- * Read the ELECTRICAL POINTS off a plan (PDF or photo) with Claude vision — the fourth
- * prompt on {@link ClaudeEstimateExtractor}, reusing its one Anthropic client.
+ * Read the ELECTRICAL POINTS off a plan (PDF or photo) with LLM vision — one prompt on the
+ * {@link com.majstr.backend.service.ai.JsonExtractor} seam, whichever provider it resolves to.
  *
  * <p><b>The split that makes this safe:</b> the model counts DISCRETE symbols against the
  * drawing's legend — a reliable reading task, like a receipt. It is explicitly forbidden to

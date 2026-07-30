@@ -32,9 +32,9 @@ import java.util.UUID;
 
 /**
  * Recognise a hand-drawn room sketch photo into a DRAFT set of measurement rooms/elements
- * via Claude vision — PRO-gated ({@code Feature.SKETCH_IMPORT}). The third prompt/schema on
- * top of {@link ClaudeEstimateExtractor} (estimate + receipt were the first two); it reuses
- * that ONE Anthropic client via {@link ClaudeEstimateExtractor#requestJson}.
+ * via LLM vision — PRO-gated ({@code Feature.SKETCH_IMPORT}). One of six prompts sharing the
+ * {@link com.majstr.backend.service.ai.JsonExtractor} seam, so which provider answers is
+ * {@code app.ai.provider}'s business and not this class's.
  *
  * <p>{@code parse} normalises the model's output into the same payload shape the manual editor
  * uses (so the review screen redraws the identical schema for the master to compare against the
