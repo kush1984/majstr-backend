@@ -6,7 +6,9 @@ import com.majstr.backend.dto.AdminCatalogTemplateResponse;
 import com.majstr.backend.entity.CatalogTemplate;
 import com.majstr.backend.entity.ItemType;
 import com.majstr.backend.entity.Trade;
+import com.majstr.backend.exception.DefaultCatalogDuplicateException;
 import com.majstr.backend.exception.ResourceNotFoundException;
+import com.majstr.backend.service.catalog.CatalogNameKey;
 import com.majstr.backend.repository.CatalogTemplateRepository;
 import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
@@ -56,8 +58,27 @@ public class AdminCatalogTemplateService {
                 repository.currentVersion());
     }
 
+    /**
+     * Adds a position to the shared default catalog.
+     *
+     * <p>Refuses an EQUIVALENT of something already there — same words under
+     * {@link CatalogNameKey}, differing only in punctuation, connectors or order. The unique
+     * index cannot see that (it compares exact name + type + unit), which is precisely how the
+     * catalog collected 100+ duplicates that V71 had to collapse by hand. Whether they arrive
+     * from an import or from an admin promoting a master's wording one click at a time, the
+     * result is the same mess.
+     */
     @Transactional
     public AdminCatalogTemplateResponse create(AdminCatalogTemplateRequest req, String actor) {
+        String key = CatalogNameKey.of(req.name());
+        if (!key.isEmpty()) {
+            repository.findAll().stream()
+                    .filter(t -> key.equals(CatalogNameKey.of(t.getName())))
+                    .findFirst()
+                    .ifPresent(clash -> {
+                        throw new DefaultCatalogDuplicateException(clash.getName());
+                    });
+        }
         // Next version → existing masters see it under "Add new from library".
         int version = repository.currentVersion() + 1;
         CatalogTemplate t = repository.save(CatalogTemplate.builder()

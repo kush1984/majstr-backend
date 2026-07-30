@@ -105,6 +105,21 @@ public class GlobalExceptionHandler {
     }
 
     /**
+     * An admin tried to add a default-catalog position equivalent to one already there. Carries
+     * the colliding name so the panel can show WHAT it clashes with — a bare "duplicate" would
+     * leave the admin hunting through 800 positions for it.
+     */
+    @ExceptionHandler(DefaultCatalogDuplicateException.class)
+    public ResponseEntity<ErrorResponse> handleDefaultCatalogDuplicate(
+            DefaultCatalogDuplicateException ex, HttpServletRequest req) {
+        ErrorResponse body = ErrorResponse.coded(HttpStatus.CONFLICT.value(),
+                HttpStatus.CONFLICT.getReasonPhrase(),
+                msg("error.catalog.default-duplicate", ex.getExistingName()),
+                req.getRequestURI(), "DEFAULT_CATALOG_DUPLICATE");
+        return ResponseEntity.status(HttpStatus.CONFLICT).body(body);
+    }
+
+    /**
      * Level 2 (race safety): the pre-check in {@code AuthService.register} can't prevent
      * two concurrent registrations of the same email — the DB unique constraint does, and
      * surfaces at commit as a {@link DataIntegrityViolationException}. Map ONLY the email

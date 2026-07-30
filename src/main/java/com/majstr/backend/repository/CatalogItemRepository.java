@@ -14,6 +14,49 @@ import java.util.UUID;
 @Repository
 public interface CatalogItemRepository extends JpaRepository<CatalogItem, UUID> {
 
+    /**
+     * Every distinct position masters hold, aggregated across accounts — the raw material for
+     * the admin catalog-insight screens.
+     *
+     * <p>Grouped only by <b>exact lowercased name + type + unit</b>. The real grouping is by
+     * {@code CatalogNameKey} and happens in Java, deliberately: putting that rule in SQL would
+     * be a second copy of it, and this project already pays the "change them in pairs" tax on
+     * one mirrored formula. This step exists purely to cut tens of thousands of rows down to a
+     * few thousand before they reach the JVM.
+     *
+     * <p><b>No master's price is exposed.</b> The projection carries a median and a range across
+     * accounts — a master's own pricing is their commercial data, and the point here is to learn
+     * what positions should exist, not what any one person charges. A WIDE range is itself the
+     * useful signal: it means the position is ambiguously defined, not that the average is off.
+     */
+    @Query(value = """
+            SELECT MIN(ci.name)                                                        AS name,
+                   ci.type                                                             AS type,
+                   ci.unit                                                             AS unit,
+                   MIN(ci.category)                                                    AS category,
+                   COUNT(DISTINCT ci.owner_id)                                         AS masters,
+                   MIN(ci.created_at)                                                  AS firstSeen,
+                   percentile_cont(0.5) WITHIN GROUP (ORDER BY ci.default_price)       AS medianPrice,
+                   MIN(ci.default_price)                                               AS minPrice,
+                   MAX(ci.default_price)                                               AS maxPrice
+            FROM catalog_items ci
+            GROUP BY lower(ci.name), ci.type, ci.unit
+            """, nativeQuery = true)
+    List<MasterPositionRow> aggregateMasterPositions();
+
+    /** Projection for {@link #aggregateMasterPositions()}. */
+    interface MasterPositionRow {
+        String getName();
+        String getType();
+        String getUnit();
+        String getCategory();
+        long getMasters();
+        java.time.Instant getFirstSeen();
+        java.math.BigDecimal getMedianPrice();
+        java.math.BigDecimal getMinPrice();
+        java.math.BigDecimal getMaxPrice();
+    }
+
     List<CatalogItem> findByOwnerIdOrderByNameAsc(UUID ownerId);
 
     List<CatalogItem> findByOwnerIdAndTypeOrderByNameAsc(UUID ownerId, ItemType type);

@@ -141,6 +141,7 @@
             <button class="navlink active" data-view="dashboard">📊 Дашборд</button>
             <button class="navlink" data-view="catalog">📖 Каталог</button>
             <button class="navlink" data-view="templates">🧩 Шаблони кошторисів</button>
+            <button class="navlink" data-view="insights">💡 Від майстрів</button>
             <button class="navlink logout" id="logoutBtn">Вийти</button>
         </aside>
 
@@ -281,6 +282,11 @@
                 <div class="filters">
                     <button id="tpl-new" class="primary">+ Новий шаблон</button>
                     <button id="tpl-reload">Оновити</button>
+                    <!-- Filtering is client-side: the list is loaded whole anyway, and a trade
+                         alone does not narrow enough (Будівельні is most of it), so there is a
+                         name search next to it. -->
+                    <select id="tpl-trade-filter"><option value="">Усі трейди</option></select>
+                    <input id="tpl-search" placeholder="Пошук за назвою" style="min-width:160px">
                 </div>
                 <div style="display:flex; gap:16px; flex-wrap:wrap; align-items:flex-start;">
                     <section class="card" style="flex:1; min-width:280px;">
@@ -293,7 +299,61 @@
                 </div>
             </section>
 
+            <!-- Not a moderation queue: the default catalog was assembled fast and nobody knows
+                 how much of it is useful. These lists are how we find out. -->
+            <section id="view-insights" class="view" hidden>
+                <h1>Від майстрів</h1>
+                <p class="hint">
+                    Що майстри роблять із каталогом — як підказка, що виправити в наших дефолтах.
+                    Ціни показані як медіана й розкид по акаунтах; чиюсь конкретну ціну не публікуємо.
+                </p>
+
+                <div class="filters">
+                    <button class="ins-tab primary" data-tab="new">Нове від майстрів</button>
+                    <button class="ins-tab" data-tab="reworded">Названо інакше</button>
+                    <button class="ins-tab" data-tab="unused">Не використовується</button>
+                    <button id="ins-reload">Оновити</button>
+                </div>
+                <p class="hint" id="ins-tabhint"></p>
+                <section class="card">
+                    <div id="ins-body">Завантаження…</div>
+                </section>
+            </section>
+
         </main>
+    </div>
+</div>
+
+<!-- Promote is an EDIT form on purpose. The admin publishes text to every master, so they must
+     see and be able to change exactly what goes out — a template a master named after a client
+     («Квартира Іванова») must not reach anyone through a stray click. The master's price is not
+     carried over at all; the price below is the admin's own decision. -->
+<div id="promoteOverlay" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.4); z-index:50;">
+    <div class="card" style="max-width:560px; margin:40px auto; max-height:88vh; overflow:auto;">
+        <div style="display:flex; justify-content:space-between; align-items:center; gap:12px;">
+            <h2 style="margin:0; text-transform:none; letter-spacing:0;">Перенести в дефолтні</h2>
+            <button id="promoteClose">✕</button>
+        </div>
+        <p class="hint" id="promoteOrigin"></p>
+        <div class="formrow"><input id="pr-name" placeholder="Назва позиції" style="flex:1 1 100%"></div>
+        <div class="formrow">
+            <select id="pr-trade"></select>
+            <select id="pr-type"></select>
+            <select id="pr-unit"></select>
+        </div>
+        <div class="formrow">
+            <input id="pr-category" placeholder="Категорія (групування)">
+            <input id="pr-price" type="number" step="0.01" min="0" placeholder="Ціна-підказка">
+        </div>
+        <p class="hint">
+            Ціну майстрів не переносимо — впишіть свою. Позиція отримає наступну версію каталогу,
+            тож наявні майстри побачать її в «Додати нові позиції».
+        </p>
+        <div class="error" id="promoteError"></div>
+        <div class="formrow">
+            <button id="promoteSubmit" class="primary">Перенести</button>
+            <button id="promoteCancel">Скасувати</button>
+        </div>
     </div>
 </div>
 
@@ -423,7 +483,7 @@
     document.getElementById('logoutBtn').addEventListener('click', logout);
 
     // ================= view switching =================
-    let catalogLoaded = false, templatesLoaded = false;
+    let catalogLoaded = false, templatesLoaded = false, insightsLoaded = false;
 
     function showView(name) {
         document.querySelectorAll('.view').forEach(v => { v.hidden = v.id !== 'view-' + name; });
@@ -431,6 +491,7 @@
             a.classList.toggle('active', a.dataset.view === name));
         if (name === 'catalog' && !catalogLoaded) { catalogLoaded = true; loadCatalog(); }
         if (name === 'templates' && !templatesLoaded) { templatesLoaded = true; loadTemplates(); }
+        if (name === 'insights' && !insightsLoaded) { insightsLoaded = true; loadInsights(); }
     }
     document.querySelectorAll('.navlink[data-view]').forEach(a =>
         a.addEventListener('click', () => showView(a.dataset.view)));
@@ -738,13 +799,33 @@
     document.getElementById('cat-next').addEventListener('click', () => { if (catPage < catTotalPages - 1) { catPage++; loadCatalog(); } });
 
     // ================= ESTIMATE TEMPLATES editor =================
+    /** Loaded once; the trade/name filters below narrow this copy rather than refetching. */
+    let templatesAll = [];
+
     async function loadTemplates() {
         const resp = await api('/admin/estimate-templates');
         if (resp.status === 401 || resp.status === 403) { logout(); return; }
         if (!resp.ok) { document.getElementById('tpl-body').innerHTML = '<tr><td colspan="3" class="error">Помилка</td></tr>'; return; }
-        const list = await resp.json();
+        templatesAll = await resp.json();
+        // Only the trades actually present — offering an empty bucket is a dead end.
+        const used = [...new Set(templatesAll.map(t => t.trade || ''))]
+            .sort((a, b) => (a ? tradeLabel(a) : 'Загальний').localeCompare(b ? tradeLabel(b) : 'Загальний', 'uk'));
+        const filter = document.getElementById('tpl-trade-filter');
+        const keep = filter.value;
+        filter.innerHTML = '<option value="">Усі трейди</option>'
+            + used.map(v => `<option value="${v}">${v ? tradeLabel(v) : 'Загальний'}</option>`).join('');
+        filter.value = keep; // a reload must not silently reset what the admin was looking at
+        renderTemplates();
+    }
+
+    function renderTemplates() {
+        const trade = document.getElementById('tpl-trade-filter').value;
+        const q = document.getElementById('tpl-search').value.trim().toLowerCase();
+        const list = templatesAll.filter(t =>
+            (!trade || (t.trade || '') === trade)
+            && (!q || t.name.toLowerCase().includes(q)));
         document.getElementById('tpl-body').innerHTML = list.length === 0
-            ? '<tr><td colspan="3" class="muted">Порожньо</td></tr>'
+            ? `<tr><td colspan="3" class="muted">${templatesAll.length ? 'Нічого не знайдено' : 'Порожньо'}</td></tr>`
             : list.map(t => `
                 <tr>
                     <td><a href="#" class="tpl-link" data-id="${t.id}">${escapeHtml(t.name)}</a></td>
@@ -775,10 +856,17 @@
         document.getElementById('tpl-detail').innerHTML = `
             <div class="card">
                 <h3>Редагувати шаблон</h3>
+                <!-- The name gets its own row: it is the longest field, and sharing a flex row
+                     with the trade select squeezed it until the title was unreadable. Delete is
+                     pushed to the far end rather than sitting against Save — they are one
+                     mis-tap apart otherwise, and one of them is irreversible. -->
                 <div class="formrow">
-                    <input id="td-name" value="${escapeHtml(d.name)}">
+                    <input id="td-name" style="flex:1 1 100%" value="${escapeHtml(d.name)}">
+                </div>
+                <div class="formrow">
                     <select id="td-trade">${optionsHtml(TRADES, d.trade, 'Загальний')}</select>
                     <button id="td-save" class="primary small">Зберегти</button>
+                    <span style="flex:1 1 auto"></span>
                     <button id="td-del" class="danger small">Видалити шаблон</button>
                 </div>
                 <table>
@@ -952,6 +1040,180 @@
 
     document.getElementById('tpl-new').addEventListener('click', createTemplate);
     document.getElementById('tpl-reload').addEventListener('click', loadTemplates);
+    document.getElementById('tpl-trade-filter').addEventListener('change', renderTemplates);
+    document.getElementById('tpl-search').addEventListener('input', renderTemplates);
+
+    // ================= INSIGHTS (від майстрів) =================
+
+    const INSIGHT_TABS = {
+        new: {
+            path: '/admin/catalog-insights/new-positions',
+            hint: 'Позиції, яких у наших дефолтах немає. Сортування — за кількістю майстрів, '
+                + 'бо те, що незалежно вписали багато людей, кращий кандидат за щось учорашнє.',
+            render: renderNewPositions,
+        },
+        reworded: {
+            path: '/admin/catalog-insights/reworded',
+            hint: 'Позиції, які в нас Є, але майстри написали їх інакше — тобто нашу вони не '
+                + 'знайшли. Зазвичай правильна дія — перейменувати НАШУ, а не додавати їхню.',
+            render: renderReworded,
+        },
+        unused: {
+            path: '/admin/catalog-insights/unused',
+            hint: 'Наші дефолти, на які не схожий жоден рядок у кошторисах. Приблизно: рядок '
+                + 'кошторису — це снапшот без звʼязку з каталогом, тож зіставлення лише за назвою.',
+            render: renderUnused,
+        },
+    };
+    let insightTab = 'new';
+
+    async function loadInsights() {
+        const tab = INSIGHT_TABS[insightTab];
+        document.getElementById('ins-tabhint').textContent = tab.hint;
+        document.querySelectorAll('.ins-tab').forEach(b =>
+            b.classList.toggle('primary', b.dataset.tab === insightTab));
+        const body = document.getElementById('ins-body');
+        body.textContent = 'Завантаження…';
+        const resp = await api(tab.path);
+        if (resp.status === 401 || resp.status === 403) { logout(); return; }
+        if (!resp.ok) { body.innerHTML = '<div class="error">Не вдалося завантажити</div>'; return; }
+        const rows = await resp.json();
+        body.innerHTML = rows.length === 0
+            ? '<p class="muted">Порожньо — нових кандидатів немає.</p>'
+            : tab.render(rows);
+        wireInsightActions();
+    }
+
+    /** Price as a range, never a single master's number. A wide spread is itself the finding. */
+    function priceCell(r) {
+        if (r.medianPrice == null) return '—';
+        const med = numberFormat.format(r.medianPrice);
+        if (r.minPrice == null || r.maxPrice == null) return med + ' ₴';
+        const spread = `${numberFormat.format(r.minPrice)}–${numberFormat.format(r.maxPrice)}`;
+        // Flag a spread that is wide relative to the median: it usually means the position is
+        // ambiguously defined (unclear unit or scope), not that the average needs refining.
+        const wide = r.minPrice > 0 && r.maxPrice / r.minPrice >= 3;
+        return `${med} ₴ <span class="muted">(${spread}${wide ? ' ⚠ розкид' : ''})</span>`;
+    }
+
+    const dismissBtn = (kind, r, sample) =>
+        `<button class="small ins-dismiss" data-kind="${kind}" data-key="${escapeHtml(r.nameKey)}"
+                 data-sample="${escapeHtml(sample)}" title="Більше не показувати">Не брати</button>`;
+
+    function renderNewPositions(rows) {
+        return `<table>
+            <thead><tr><th>Позиція</th><th>Тип / од.</th><th title="Скільки майстрів">Майстрів</th>
+                       <th>Ціна</th><th>Дії</th></tr></thead>
+            <tbody>${rows.map(r => `
+                <tr>
+                    <td>${escapeHtml(r.name)}<div class="muted">${escapeHtml(r.category || '—')}</div></td>
+                    <td class="muted">${typeLabel(r.type)} · ${unitLabel(r.unit)}</td>
+                    <td><b>${r.masters}</b></td>
+                    <td>${priceCell(r)}</td>
+                    <td style="white-space:nowrap">
+                        <button class="small primary ins-promote"
+                                data-json='${escapeHtml(JSON.stringify(r))}'>Перенести</button>
+                        ${dismissBtn('NEW_POSITION', r, r.name)}
+                    </td>
+                </tr>`).join('')}</tbody></table>`;
+    }
+
+    function renderReworded(rows) {
+        return `<table>
+            <thead><tr><th>Наша назва</th><th>Як пишуть майстри</th>
+                       <th title="Скільки майстрів">Майстрів</th><th>Дії</th></tr></thead>
+            <tbody>${rows.map(r => `
+                <tr>
+                    <td>${escapeHtml(r.ourName)}</td>
+                    <td><b>${escapeHtml(r.theirName)}</b>
+                        <div class="muted">${typeLabel(r.type)} · ${unitLabel(r.unit)}</div></td>
+                    <td><b>${r.masters}</b></td>
+                    <td style="white-space:nowrap">
+                        <!-- No "promote" here on purpose: the position already exists. Adding
+                             theirs would create the duplicate V71 spent 498 lines removing. -->
+                        <button class="small ins-rename" data-id="${r.ourTemplateId}"
+                                data-name="${escapeHtml(r.theirName)}">Перейменувати нашу</button>
+                        ${dismissBtn('RENAMED_POSITION', r, r.theirName)}
+                    </td>
+                </tr>`).join('')}</tbody></table>`;
+    }
+
+    function renderUnused(rows) {
+        return `<table>
+            <thead><tr><th>Позиція</th><th>Трейд</th><th>Тип / од.</th><th>Ціна</th><th>Дії</th></tr></thead>
+            <tbody>${rows.map(r => `
+                <tr>
+                    <td>${escapeHtml(r.name)}<div class="muted">${escapeHtml(r.category || '—')}</div></td>
+                    <td class="muted">${tradeLabel(r.trade)}</td>
+                    <td class="muted">${typeLabel(r.type)} · ${unitLabel(r.unit)}</td>
+                    <td>${numberFormat.format(r.suggestedPrice)} ₴</td>
+                    <td>${dismissBtn('UNUSED_DEFAULT', r, r.name)}</td>
+                </tr>`).join('')}</tbody></table>`;
+    }
+
+    function wireInsightActions() {
+        document.querySelectorAll('.ins-promote').forEach(b =>
+            b.addEventListener('click', () => openPromote(JSON.parse(b.dataset.json))));
+        document.querySelectorAll('.ins-dismiss').forEach(b =>
+            b.addEventListener('click', () => dismissCandidate(b.dataset.kind, b.dataset.key, b.dataset.sample)));
+        document.querySelectorAll('.ins-rename').forEach(b =>
+            b.addEventListener('click', () => { showView('catalog'); alert(
+                'Відкрийте позицію в Каталозі та перейменуйте її на: ' + b.dataset.name); }));
+    }
+
+    async function dismissCandidate(kind, nameKey, sampleName) {
+        const resp = await api('/admin/catalog-insights/dismiss', {
+            method: 'POST', body: JSON.stringify({ kind, nameKey, sampleName }) });
+        if (!resp.ok) { alert('Не вдалося'); return; }
+        loadInsights();
+    }
+
+    function openPromote(r) {
+        document.getElementById('promoteOverlay').style.display = 'block';
+        document.getElementById('promoteError').textContent = '';
+        document.getElementById('promoteOrigin').textContent =
+            `Майстрів із цією позицією: ${r.masters}. Медіана їхніх цін — `
+            + `${r.medianPrice == null ? '—' : numberFormat.format(r.medianPrice) + ' ₴'}, `
+            + 'у дефолти вона не переноситься.';
+        document.getElementById('pr-name').value = r.name;
+        document.getElementById('pr-category').value = r.category || '';
+        document.getElementById('pr-price').value = '';
+        document.getElementById('pr-trade').innerHTML = optionsHtml(TRADES, 'OTHER');
+        document.getElementById('pr-type').innerHTML = optionsHtml(TYPES, r.type);
+        document.getElementById('pr-unit').innerHTML = optionsHtml(UNITS, r.unit);
+    }
+
+    function closePromote() { document.getElementById('promoteOverlay').style.display = 'none'; }
+
+    async function submitPromote() {
+        const price = document.getElementById('pr-price').value;
+        const body = { template: {
+            trade: document.getElementById('pr-trade').value,
+            category: document.getElementById('pr-category').value.trim() || null,
+            name: document.getElementById('pr-name').value.trim(),
+            type: document.getElementById('pr-type').value,
+            unit: document.getElementById('pr-unit').value,
+            suggestedPrice: price === '' ? 0 : Number(price),
+        } };
+        const resp = await api('/admin/catalog-insights/promote', {
+            method: 'POST', body: JSON.stringify(body) });
+        if (!resp.ok) {
+            // 409 carries the colliding name — show it, otherwise the admin hunts for it.
+            const err = await resp.json().catch(() => ({}));
+            document.getElementById('promoteError').textContent = err.message || 'Не вдалося перенести';
+            return;
+        }
+        closePromote();
+        catalogLoaded = false; // the default catalog changed
+        loadInsights();
+    }
+
+    document.querySelectorAll('.ins-tab').forEach(b =>
+        b.addEventListener('click', () => { insightTab = b.dataset.tab; loadInsights(); }));
+    document.getElementById('ins-reload').addEventListener('click', loadInsights);
+    document.getElementById('promoteClose').addEventListener('click', closePromote);
+    document.getElementById('promoteCancel').addEventListener('click', closePromote);
+    document.getElementById('promoteSubmit').addEventListener('click', submitPromote);
 
     // ================= dashboard bootstrap + user detail overlay =================
     async function loadAll() {
