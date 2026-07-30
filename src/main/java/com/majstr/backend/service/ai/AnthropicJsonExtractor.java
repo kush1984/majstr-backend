@@ -56,13 +56,7 @@ public class AnthropicJsonExtractor implements JsonExtractor {
         if (!props.isConfigured()) {
             throw new AiExtractionException("error.ai.unavailable");
         }
-        Map<String, Object> body = new LinkedHashMap<>();
-        body.put("model", props.model());
-        body.put("max_tokens", props.maxTokens());
-        body.put("system", systemPrompt);
-        body.put("messages", List.of(Map.of("role", "user", "content", blocks(content))));
-        body.put("output_config", Map.of("format",
-                Map.of("type", "json_schema", "schema", schema)));
+        Map<String, Object> body = buildBody(content, systemPrompt, schema);
 
         Map<String, Object> resp;
         try {
@@ -80,7 +74,58 @@ public class AnthropicJsonExtractor implements JsonExtractor {
             log.error("Anthropic extraction call failed: {}", e.getMessage());
             throw new AiExtractionException("error.ai.unavailable", e);
         }
+        logCacheUse(resp);
         return firstTextBlock(resp);
+    }
+
+    /**
+     * Whether the prompt cache actually took. A cache miss is silent — no error, just the full bill
+     * again — and the usual cause is a prompt that is not byte-identical between calls (a timestamp,
+     * a sheet name, a re-serialised map). Reads at ~0.1× and writes at ~1.25×, so on a five-call
+     * sheet a working cache is 1.65× the prompt instead of 5×; if {@code read} stays 0 across a run,
+     * that saving is not happening and something upstream is varying the prompt.
+     */
+    private void logCacheUse(Map<String, Object> resp) {
+        if (!(resp instanceof Map<?, ?> && resp.get("usage") instanceof Map<?, ?> usage)) {
+            return;
+        }
+        long read = asLong(usage.get("cache_read_input_tokens"));
+        long written = asLong(usage.get("cache_creation_input_tokens"));
+        if (read > 0 || written > 0) {
+            log.info("Prompt cache: {} tokens read, {} written ({})", read, written, providerName());
+        }
+    }
+
+    private static long asLong(Object value) {
+        return value instanceof Number n ? n.longValue() : 0L;
+    }
+
+    /**
+     * The request body — package-private so a test can pin the wire shape without a server.
+     *
+     * <p>The one thing worth pinning here is the cache layout, because getting it wrong costs money
+     * silently rather than failing: {@code system} must be a BLOCK ARRAY carrying
+     * {@code cache_control}, not a bare string. The measurement prompt is ~7k tokens and a hard
+     * sheet is five calls sharing it verbatim (whole page + four fragments); cached, that prompt is
+     * billed at 1.25× once and ~0.1× four times instead of 5× in full.</p>
+     *
+     * <p>What must NOT move into the system block is anything that varies between those five calls —
+     * the page image, the fragment's position. Caching is a prefix match, so one varying byte before
+     * the breakpoint invalidates the whole thing and the saving quietly disappears.</p>
+     */
+    Map<String, Object> buildBody(List<AiInput> content, String systemPrompt,
+                                  Map<String, Object> schema) {
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("model", props.model());
+        body.put("max_tokens", props.maxTokens());
+        body.put("system", List.of(Map.of(
+                "type", "text",
+                "text", systemPrompt,
+                "cache_control", Map.of("type", "ephemeral"))));
+        body.put("messages", List.of(Map.of("role", "user", "content", blocks(content))));
+        body.put("output_config", Map.of("format",
+                Map.of("type", "json_schema", "schema", schema)));
+        return body;
     }
 
     /**
