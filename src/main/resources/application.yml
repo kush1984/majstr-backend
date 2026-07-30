@@ -189,6 +189,8 @@ app:
       sketch: ${AI_FLOW_SKETCH:}
       electrical: ${AI_FLOW_ELECTRICAL:}
       project-docs: ${AI_FLOW_PROJECT_DOCS:}
+      # Reads titles from text, never a drawing — the first flow worth pointing at a cheap model.
+      triage: ${AI_FLOW_TRIAGE:}
   openai:
     # Inert unless `provider` above selects it. Key is env only, same rule as the Anthropic one.
     api-key: ${OPENAI_API_KEY:}

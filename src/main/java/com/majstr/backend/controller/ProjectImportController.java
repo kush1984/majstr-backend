@@ -3,8 +3,11 @@ package com.majstr.backend.controller;
 import com.majstr.backend.dto.MeasurementsResponse;
 import com.majstr.backend.dto.ProjectImportCommitRequest;
 import com.majstr.backend.dto.ProjectImportParseResponse;
+import com.majstr.backend.dto.ProjectTriageRequest;
+import com.majstr.backend.dto.ProjectTriageResponse;
 import com.majstr.backend.security.UserPrincipal;
 import com.majstr.backend.service.measurement.ProjectImportService;
+import com.majstr.backend.service.measurement.ProjectTriageService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
@@ -37,6 +40,15 @@ import java.util.UUID;
 public class ProjectImportController {
 
     private final ProjectImportService importService;
+    private final ProjectTriageService triageService;
+
+    @Operation(summary = "Sort a whole set's sheets by their titles — one cheap text call, nothing persisted")
+    @PostMapping("/triage")
+    public ProjectTriageResponse triage(@PathVariable UUID projectId,
+                                       @Valid @RequestBody ProjectTriageRequest req,
+                                       @AuthenticationPrincipal UserPrincipal principal) {
+        return triageService.triage(principal.id(), projectId, req);
+    }
 
     @Operation(summary = "Recognise one documentation file into a review draft (nothing persisted)")
     @PostMapping(value = "/parse", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)

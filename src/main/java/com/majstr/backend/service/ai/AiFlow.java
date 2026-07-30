@@ -23,7 +23,12 @@ public enum AiFlow {
     /** Electrical points counted off a plan against its legend. */
     ELECTRICAL,
     /** Designer's documentation sheets → rooms, geometry, openings. The heaviest of them. */
-    PROJECT_DOCS;
+    PROJECT_DOCS,
+    /**
+     * Sorting a whole set's sheets by their titles, from text alone — the cheapest job here and the
+     * one most worth putting on a small model: it reads no drawing, it only answers "what is this".
+     */
+    TRIAGE;
 
     /** The config key for this flow: {@code app.ai.flows.project-docs}. */
     public String key() {
