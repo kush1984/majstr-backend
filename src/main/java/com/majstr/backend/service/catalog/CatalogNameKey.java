@@ -38,8 +38,12 @@ public final class CatalogNameKey {
      */
     private static final Set<String> CONNECTORS = Set.of(
             "і", "й", "та", "а", "але", "або", "чи",
-            "в", "у", "на", "з", "із", "зі", "до", "від", "для", "під", "по", "при", "про",
+            "в", "у", "на", "з", "із", "зі", "для", "під", "по", "при", "про",
             "за", "над", "перед", "між", "без", "через", "о", "об", "та-й");
+    // «від» and «до» are NOT here, though they are prepositions. In a catalog name they carry
+    // a range: «шириною ДО 30см» and «шириною ВІД 30см» are opposite jobs at different prices,
+    // and dropping the word made them the same key. Found on the real tiling catalog, where it
+    // reported two legitimate shelf positions as duplicates of each other.
 
     private CatalogNameKey() {
     }
@@ -61,6 +65,12 @@ public final class CatalogNameKey {
                 // slashes, brackets, dashes, the «×» in dimensions, and the non-breaking spaces
                 // that arrive from Excel paste.
                 .replaceAll("[^\\p{L}\\p{N}]+", " ")
+                // Split letter↔digit runs, so «Ø25» and «Ø 25» meet. Needed because «Ø» is a
+                // Unicode LETTER, not punctuation — the rule above leaves «ø25» glued while the
+                // spaced spelling becomes two tokens, and the two never match. Same for «ВВГ3х2.5»
+                // against «ВВГ 3х2.5». It cannot over-merge: «Автомат 16А» and «Автомат 25А» still
+                // differ by their digits.
+                .replaceAll("(?<=\\p{L})(?=\\p{N})|(?<=\\p{N})(?=\\p{L})", " ")
                 .trim();
         if (cleaned.isEmpty()) {
             return "";

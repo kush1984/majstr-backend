@@ -66,6 +66,21 @@ public class CatalogItem {
     @Column(name = "default_price", nullable = false, precision = 15, scale = 2)
     private BigDecimal defaultPrice;
 
+    /**
+     * Where this row came from — recorded at write time, never inferred later.
+     *
+     * <p>The admin insight screens read it to tell "the master invented this" from "we gave them
+     * this". Deriving it from the default catalog does not work: a position we shipped and later
+     * deleted is absent from the templates too, and V70–V73 deleted plenty.
+     *
+     * <p>Defaults to {@link CatalogItemSource#MANUAL} so a new write path that forgets to set it
+     * lands in the candidate list, where a human sees it — rather than being filed as ours and
+     * silently disappearing.
+     */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "source", nullable = false, length = 20)
+    private CatalogItemSource source = CatalogItemSource.MANUAL;
+
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
 
@@ -76,6 +91,13 @@ public class CatalogItem {
         }
         if (createdAt == null) {
             createdAt = Instant.now();
+        }
+        // Lombok's @Builder ignores field initialisers, so the default above does not survive a
+        // builder that omits it — same trap `trade` and `User.role` already carry. MANUAL is the
+        // safe side to fail on: a row lands in the admin candidate list instead of being filed
+        // as ours and never looked at.
+        if (source == null) {
+            source = CatalogItemSource.MANUAL;
         }
     }
 }

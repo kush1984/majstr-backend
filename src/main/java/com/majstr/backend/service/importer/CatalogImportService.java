@@ -5,6 +5,7 @@ import com.majstr.backend.dto.CatalogImportCommitRequest.CommitItem;
 import com.majstr.backend.dto.CatalogImportCommitRequest.DedupPolicy;
 import com.majstr.backend.dto.CatalogImportCommitResponse;
 import com.majstr.backend.entity.CatalogItem;
+import com.majstr.backend.entity.CatalogItemSource;
 import com.majstr.backend.entity.Trade;
 import com.majstr.backend.entity.User;
 import com.majstr.backend.repository.CatalogItemRepository;
@@ -68,6 +69,7 @@ public class CatalogImportService {
                     .unit(in.unit())
                     .defaultPrice(in.price())
                     .trade(trade)
+                    .source(CatalogItemSource.IMPORT)
                     .build();
             catalogRepository.save(fresh);
             // A newly created item can be a dup target for a later row with the same name.

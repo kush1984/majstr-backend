@@ -1,6 +1,7 @@
 package com.majstr.backend.service;
 
 import com.majstr.backend.entity.CatalogItem;
+import com.majstr.backend.entity.CatalogItemSource;
 import com.majstr.backend.entity.CatalogTemplate;
 import com.majstr.backend.entity.Trade;
 import com.majstr.backend.entity.User;
@@ -130,6 +131,10 @@ public class CatalogTemplateService {
                         .type(t.getType())
                         .unit(t.getUnit())
                         .defaultPrice(t.getSuggestedPrice())
+                        // Copied from the shared library, not invented here — the admin insight screens
+                        // filter on this so a position we shipped and later deleted is never mistaken
+                        // for something a master came up with.
+                        .source(CatalogItemSource.LIBRARY)
                         .build());
             }
         }

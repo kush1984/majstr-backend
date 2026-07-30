@@ -28,6 +28,13 @@ public interface CatalogItemRepository extends JpaRepository<CatalogItem, UUID> 
      * accounts — a master's own pricing is their commercial data, and the point here is to learn
      * what positions should exist, not what any one person charges. A WIDE range is itself the
      * useful signal: it means the position is ambiguously defined, not that the average is off.
+     *
+     * <p><b>{@code source <> 'LIBRARY'} is the whole point of the filter.</b> Without it the list
+     * is dominated by positions WE handed out: everything the V70–V73 cleanup deleted from the
+     * defaults is absent from {@code catalog_templates} too, so it reads as master-invented. In
+     * production that surfaced as a position credited to 64 masters — nobody invents the same
+     * thing 64 times independently; that is a seeding batch. Provenance is recorded at write
+     * time (V79) precisely because it cannot be reconstructed afterwards.
      */
     @Query(value = """
             SELECT MIN(ci.name)                                                        AS name,
@@ -40,6 +47,7 @@ public interface CatalogItemRepository extends JpaRepository<CatalogItem, UUID> 
                    MIN(ci.default_price)                                               AS minPrice,
                    MAX(ci.default_price)                                               AS maxPrice
             FROM catalog_items ci
+            WHERE ci.source <> 'LIBRARY'
             GROUP BY lower(ci.name), ci.type, ci.unit
             """, nativeQuery = true)
     List<MasterPositionRow> aggregateMasterPositions();

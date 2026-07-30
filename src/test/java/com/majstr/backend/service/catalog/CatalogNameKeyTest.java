@@ -34,12 +34,21 @@ class CatalogNameKeyTest {
                 "Демонтаж настінної плитки")).isTrue();
     }
 
-    //@Test
-    // TODO fix it later
+    @Test
     void dimensionSeparatorsAndUnitsInTheNameCollapse() {
         assertThat(CatalogNameKey.sameWork(
                 "Свердління отворів Ø25",
                 "свердління отворів ø 25")).isTrue();
+    }
+
+    @Test
+    void vidAndDoAreNotDroppedAsConnectors_theyCarryARange() {
+        // Found on the real tiling catalog, which reported these two as duplicates of each
+        // other. They are opposite jobs at different prices; treating «від»/«до» as noise
+        // because they are prepositions merges "up to 30cm" with "from 30cm".
+        assertThat(CatalogNameKey.sameWork(
+                "Виготовлення поличок з плитки в три сторони (шириною до 30см)",
+                "Виготовлення поличок з плитки в три сторони (шириною від 30см)")).isFalse();
     }
 
     @Test

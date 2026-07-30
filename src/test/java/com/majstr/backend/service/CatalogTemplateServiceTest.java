@@ -1,6 +1,7 @@
 package com.majstr.backend.service;
 
 import com.majstr.backend.entity.CatalogItem;
+import com.majstr.backend.entity.CatalogItemSource;
 import com.majstr.backend.entity.CatalogTemplate;
 import com.majstr.backend.entity.ItemType;
 import com.majstr.backend.entity.Trade;
@@ -53,6 +54,13 @@ class CatalogTemplateServiceTest {
         assertThat(captor.getValue())
                 .extracting(CatalogItem::getName)
                 .containsExactlyInAnyOrder("Розетка", "Кабель");
+        // Provenance, and it is not a detail: the admin "від майстрів" screen filters LIBRARY
+        // out. Without this stamp a position WE handed out — including everything V70–V73
+        // deleted from the defaults — reads as something a master invented, which is exactly
+        // how a position ended up credited to 64 independent inventors in production.
+        assertThat(captor.getValue())
+                .extracting(CatalogItem::getSource)
+                .containsOnly(CatalogItemSource.LIBRARY);
         // Category is carried over from the template.
         assertThat(captor.getValue())
                 .filteredOn(i -> i.getName().equals("Розетка"))

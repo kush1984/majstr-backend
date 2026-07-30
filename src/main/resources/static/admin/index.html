@@ -80,6 +80,17 @@
         button.primary { background: var(--accent); color: var(--accent-text); border-color: var(--accent); }
         button.small { padding: 4px 8px; font-size: 0.85rem; }
         button.danger { color: var(--danger); border-color: #f3c6c6; }
+
+        /* Per-row save/delete. Two things were wrong: the buttons touched each other, and at
+           4px padding they were barely a target — so the destructive one sat a pixel from the
+           one you press dozens of times while editing a template. The gap is the point; the
+           size just makes them hittable. */
+        .rowactions { width: 1%; white-space: nowrap; text-align: right; }
+        .rowactions .rowbtn { padding: 6px 10px; font-size: 1rem; line-height: 1; }
+        .rowactions .rowbtn + .rowbtn { margin-left: 14px; }
+        /* The name is the only column worth space — the two selects and the actions are
+           fixed-width, so let it take whatever is left instead of being clipped mid-word. */
+        #tpl-detail table td:first-child input { width: 100%; }
         .filters { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; align-items: center; }
         .filters input.grow { flex: 1; min-width: 180px; }
         .pager { display: flex; justify-content: center; gap: 8px; margin-top: 12px; align-items: center; }
@@ -410,7 +421,12 @@
     const TYPES = [['WORK', 'Робота'], ['MATERIAL', 'Матеріал']];
     const UNITS = [
         ['M2', 'м²'], ['M', 'м'], ['LINEAR_METER', 'м.п.'], ['PIECE', 'шт'], ['KG', 'кг'],
-        ['HOUR', 'год'], ['SET', 'компл'], ['M3', 'м³'], ['T', 'т'], ['POINT', 'точка'], ['PERCENT', '%']
+        ['HOUR', 'год'], ['SET', 'компл'], ['M3', 'м³'], ['T', 'т'], ['POINT', 'точка'], ['PERCENT', '%'],
+        // KM was missing here long before DAY/FLOOR existed. A unit absent from this list is not
+        // a cosmetic gap: optionsHtml marks nothing as selected, so opening a position that uses
+        // it and pressing save silently rewrites the unit to whatever sits first. Keep this in
+        // step with the Unit enum — UnitLabelTest guards the server side, nothing guards this.
+        ['KM', 'км'], ['DAY', 'день'], ['FLOOR', 'поверх']
     ];
     const labelOf = (arr, v) => (arr.find(x => x[0] === v) || [null, v ?? '—'])[1];
     const tradeLabel = v => labelOf(TRADES, v);
@@ -846,11 +862,11 @@
         const itemRows = d.items.map(it => `
             <tr data-item="${it.id}">
                 <td><input class="ti-name" value="${escapeHtml(it.name)}"></td>
-                <td><select class="ti-type">${optionsHtml(TYPES, it.type)}</select></td>
-                <td><select class="ti-unit">${optionsHtml(UNITS, it.unit)}</select></td>
-                <td style="white-space:nowrap; text-align:center; width:1%">
-                    <button class="small ti-save" data-item="${it.id}" title="Зберегти">💾</button>
-                    <button class="small danger ti-del" data-item="${it.id}" title="Видалити">🗑</button>
+                <td style="width:1%"><select class="ti-type">${optionsHtml(TYPES, it.type)}</select></td>
+                <td style="width:1%"><select class="ti-unit">${optionsHtml(UNITS, it.unit)}</select></td>
+                <td class="rowactions">
+                    <button class="rowbtn ti-save" data-item="${it.id}" title="Зберегти">💾</button>
+                    <button class="rowbtn danger ti-del" data-item="${it.id}" title="Видалити">🗑</button>
                 </td>
             </tr>`).join('');
         document.getElementById('tpl-detail').innerHTML = `
@@ -870,7 +886,7 @@
                     <button id="td-del" class="danger small">Видалити шаблон</button>
                 </div>
                 <table>
-                    <thead><tr><th>Назва</th><th>Тип</th><th>Од.</th><th style="text-align:center">Дії</th></tr></thead>
+                    <thead><tr><th>Назва</th><th>Тип</th><th>Од.</th><th style="text-align:right">Дії</th></tr></thead>
                     <tbody>${itemRows || '<tr><td colspan="4" class="muted">Позицій немає</td></tr>'}</tbody>
                 </table>
                 <div class="formrow" style="margin-top:8px">

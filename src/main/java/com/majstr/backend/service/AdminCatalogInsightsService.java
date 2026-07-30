@@ -38,7 +38,15 @@ import java.util.stream.Collectors;
  *       recency.</li>
  *   <li><b>Reworded</b> — positions we DO cover that masters typed differently anyway. The most
  *       actionable of the three: they could not find ours, so ours is written wrong. The fix is
- *       to rename our default, not to add theirs.</li>
+ *       to rename our default, not to add theirs.
+ *       <p><b>Only spelling-level differences are detected</b> — punctuation, connectors, word
+ *       order. A genuine SYNONYM («Штукатурка стін» for «Оштукатурювання поверхонь стін
+ *       цементно-піщаним розчином») shares one word and no normalisation can equate the two;
+ *       it appears in the gap list instead, where a human recognises it. That is the right way
+ *       to be wrong: a candidate someone reviews, rather than a silent merge of two positions
+ *       that only looked alike. If this ever needs automating, it is an LLM pass over the gap
+ *       list ("does the default catalog already contain this work under another name?"), not a
+ *       cleverer string rule.</p></li>
  *   <li><b>Unused</b> — our defaults that no estimate has ever resembled. Dead weight, and the
  *       only list that answers "is this catalog any use to anyone".</li>
  * </ol>

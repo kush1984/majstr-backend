@@ -1,0 +1,1338 @@
+[
+  {
+    "category": "УКЛАДАННЯ ПЛИТКИ",
+    "name": "Укладання багатокутників: гексагон, стільники",
+    "type": "WORK",
+    "unit": "M2",
+    "price": 952,
+    "origin": "plytochnyk.ua"
+  },
+  {
+    "category": "УКЛАДАННЯ ПЛИТКИ",
+    "name": "Укладання ексклюзивної дорогої плитки",
+    "type": "WORK",
+    "unit": "M2",
+    "price": 1470,
+    "origin": "plytochnyk.ua"
+  },
+  {
+    "category": "УКЛАДАННЯ ПЛИТКИ",
+    "name": "Укладання керамічного паркету, дрібної дошки",
+    "type": "WORK",
+    "unit": "M2",
+    "price": 866,
+    "origin": "plytochnyk.ua"
+  },
+  {
+    "category": "УКЛАДАННЯ ПЛИТКИ",
+    "name": "Укладання плитки 1000х1000",
+    "type": "WORK",
+    "unit": "M2",
+    "price": 918,
+    "origin": "plytochnyk.ua"
+  },
+  {
+    "category": "УКЛАДАННЯ ПЛИТКИ",
+    "name": "Укладання плитки 100х100",
+    "type": "WORK",
+    "unit": "M2",
+    "price": 911,
+    "origin": "plytochnyk.ua"
+  },
+  {
+    "category": "УКЛАДАННЯ ПЛИТКИ",
+    "name": "Укладання плитки 200х200",
+    "type": "WORK",
+    "unit": "M2",
+    "price": 746,
+    "origin": "plytochnyk.ua"
+  },
+  {
+    "category": "УКЛАДАННЯ ПЛИТКИ",
+    "name": "Укладання плитки 300х300",
+    "type": "WORK",
+    "unit": "M2",
+    "price": 641,
+    "origin": "plytochnyk.ua"
+  },
+  {
+    "category": "УКЛАДАННЯ ПЛИТКИ",
+    "name": "Укладання плитки 300х600",
+    "type": "WORK",
+    "unit": "M2",
+    "price": 594,
+    "origin": "plytochnyk.ua"
+  },
+  {
+    "category": "УКЛАДАННЯ ПЛИТКИ",
+    "name": "Укладання плитки 300х900",
+    "type": "WORK",
+    "unit": "M2",
+    "price": 625,
+    "origin": "plytochnyk.ua"
+  },
+  {
+    "category": "УКЛАДАННЯ ПЛИТКИ",
+    "name": "Укладання плитки 600х1200",
+    "type": "WORK",
+    "unit": "M2",
+    "price": 732,
+    "origin": "plytochnyk.ua"
+  },
+  {
+    "category": "УКЛАДАННЯ ПЛИТКИ",
+    "name": "Укладання плитки 600х600",
+    "type": "WORK",
+    "unit": "M2",
+    "price": 631,
+    "origin": "plytochnyk.ua"
+  },
+  {
+    "category": "УКЛАДАННЯ ПЛИТКИ",
+    "name": "Укладання плитки 800х1600",
+    "type": "WORK",
+    "unit": "M2",
+    "price": 1077,
+    "origin": "plytochnyk.ua"
+  },
+  {
+    "category": "УКЛАДАННЯ ПЛИТКИ",
+    "name": "Укладання плитки 800х800",
+    "type": "WORK",
+    "unit": "M2",
+    "price": 779,
+    "origin": "plytochnyk.ua"
+  },
+  {
+    "category": "УКЛАДАННЯ ПЛИТКИ",
+    "name": "Укладання плитки без шва",
+    "type": "WORK",
+    "unit": "M2",
+    "price": 1241,
+    "origin": "plytochnyk.ua"
+  },
+  {
+    "category": "УКЛАДАННЯ ПЛИТКИ",
+    "name": "Укладання плитки дошка до 1200 мм",
+    "type": "WORK",
+    "unit": "M2",
+    "price": 756,
+    "origin": "plytochnyk.ua"
+  },
+  {
+    "category": "УКЛАДАННЯ ПЛИТКИ",
+    "name": "Укладання плитки дошка до 1800 мм",
+    "type": "WORK",
+    "unit": "M2",
+    "price": 968,
+    "origin": "plytochnyk.ua"
+  },
+  {
+    "category": "УКЛАДАННЯ ПЛИТКИ",
+    "name": "Укладання плитки дошка до 900 мм",
+    "type": "WORK",
+    "unit": "M2",
+    "price": 730,
+    "origin": "plytochnyk.ua"
+  },
+  {
+    "category": "УКЛАДАННЯ ПЛИТКИ",
+    "name": "Укладання плитки кабанчик, «цегла»",
+    "type": "WORK",
+    "unit": "M2",
+    "price": 998,
+    "origin": "plytochnyk.ua"
+  },
+  {
+    "category": "УКЛАДАННЯ ПЛИТКИ",
+    "name": "Укладання плитки на відкос (коефіцієнт від м.кв.)",
+    "type": "WORK",
+    "unit": "PERCENT",
+    "price": 88,
+    "origin": "plytochnyk.ua"
+  },
+  {
+    "category": "УКЛАДАННЯ ПЛИТКИ",
+    "name": "Укладання плитки по діагоналі ( плюс % до м.кв.)",
+    "type": "WORK",
+    "unit": "PERCENT",
+    "price": 33,
+    "origin": "plytochnyk.ua"
+  },
+  {
+    "category": "УКЛАДАННЯ ШИРОКОФОРМАТНОЇ ПЛИТКИ",
+    "name": "Облицювання меблів великим форматом ( плюс % до м.кв.)",
+    "type": "WORK",
+    "unit": "PERCENT",
+    "price": 50,
+    "origin": "plytochnyk.ua"
+  },
+  {
+    "category": "УКЛАДАННЯ ШИРОКОФОРМАТНОЇ ПЛИТКИ",
+    "name": "Облицювання стелі великим форматом ( плюс % до м.кв.)",
+    "type": "WORK",
+    "unit": "PERCENT",
+    "price": 76,
+    "origin": "plytochnyk.ua"
+  },
+  {
+    "category": "УКЛАДАННЯ ШИРОКОФОРМАТНОЇ ПЛИТКИ",
+    "name": "Укладання великоформатної плитки товщиною 15-20 мм ( плюс % до м.кв.)",
+    "type": "WORK",
+    "unit": "PERCENT",
+    "price": 45,
+    "origin": "plytochnyk.ua"
+  },
+  {
+    "category": "УКЛАДАННЯ ШИРОКОФОРМАТНОЇ ПЛИТКИ",
+    "name": "Укладання плитки 1000х2000 мм",
+    "type": "WORK",
+    "unit": "M2",
+    "price": 1617,
+    "origin": "plytochnyk.ua"
+  },
+  {
+    "category": "УКЛАДАННЯ ШИРОКОФОРМАТНОЇ ПЛИТКИ",
+    "name": "Укладання плитки 1000х3000 мм",
+    "type": "WORK",
+    "unit": "M2",
+    "price": 2188,
+    "origin": "plytochnyk.ua"
+  },
+  {
+    "category": "УКЛАДАННЯ ШИРОКОФОРМАТНОЇ ПЛИТКИ",
+    "name": "Укладання плитки 1200х1200 мм",
+    "type": "WORK",
+    "unit": "M2",
+    "price": 1130,
+    "origin": "plytochnyk.ua"
+  },
+  {
+    "category": "УКЛАДАННЯ ШИРОКОФОРМАТНОЇ ПЛИТКИ",
+    "name": "Укладання плитки 1200х2400 мм",
+    "type": "WORK",
+    "unit": "M2",
+    "price": 1837,
+    "origin": "plytochnyk.ua"
+  },
+  {
+    "category": "УКЛАДАННЯ ШИРОКОФОРМАТНОЇ ПЛИТКИ",
+    "name": "Укладання плитки 1200х3200 мм",
+    "type": "WORK",
+    "unit": "M2",
+    "price": 2383,
+    "origin": "plytochnyk.ua"
+  },
+  {
+    "category": "УКЛАДАННЯ ШИРОКОФОРМАТНОЇ ПЛИТКИ",
+    "name": "Укладання плитки 1500х3000 мм",
+    "type": "WORK",
+    "unit": "M2",
+    "price": 2644,
+    "origin": "plytochnyk.ua"
+  },
+  {
+    "category": "УКЛАДАННЯ ШИРОКОФОРМАТНОЇ ПЛИТКИ",
+    "name": "Укладання плитки 1600х1600 мм",
+    "type": "WORK",
+    "unit": "M2",
+    "price": 1543,
+    "origin": "plytochnyk.ua"
+  },
+  {
+    "category": "УКЛАДАННЯ ШИРОКОФОРМАТНОЇ ПЛИТКИ",
+    "name": "Укладання плитки 1600х3200 мм",
+    "type": "WORK",
+    "unit": "M2",
+    "price": 2742,
+    "origin": "plytochnyk.ua"
+  },
+  {
+    "category": "УКЛАДАННЯ ШИРОКОФОРМАТНОЇ ПЛИТКИ",
+    "name": "Укладання плитки більше 3200 мм",
+    "type": "WORK",
+    "unit": "M2",
+    "price": 3269,
+    "origin": "plytochnyk.ua"
+  },
+  {
+    "category": "УКЛАДАННЯ МОЗАЇКИ ТА БАСЕЙНИ",
+    "name": "Виготовлення конструкцій з вологостійкої панелі",
+    "type": "WORK",
+    "unit": "M2",
+    "price": 2387,
+    "origin": "plytochnyk.ua"
+  },
+  {
+    "category": "УКЛАДАННЯ МОЗАЇКИ ТА БАСЕЙНИ",
+    "name": "Виготовлення та вкладання смальти",
+    "type": "WORK",
+    "unit": "M2",
+    "price": 4025,
+    "origin": "plytochnyk.ua"
+  },
+  {
+    "category": "УКЛАДАННЯ МОЗАЇКИ ТА БАСЕЙНИ",
+    "name": "Вкладання копінгового каменю",
+    "type": "WORK",
+    "unit": "LINEAR_METER",
+    "price": 1260,
+    "origin": "plytochnyk.ua"
+  },
+  {
+    "category": "УКЛАДАННЯ МОЗАЇКИ ТА БАСЕЙНИ",
+    "name": "Гідроізоляція басейну",
+    "type": "WORK",
+    "unit": "M2",
+    "price": 360,
+    "origin": "plytochnyk.ua"
+  },
+  {
+    "category": "УКЛАДАННЯ МОЗАЇКИ ТА БАСЕЙНИ",
+    "name": "Комплексне будівництво басейну",
+    "type": "WORK",
+    "unit": "PIECE",
+    "price": 145000,
+    "origin": "plytochnyk.ua"
+  },
+  {
+    "category": "УКЛАДАННЯ МОЗАЇКИ ТА БАСЕЙНИ",
+    "name": "Набір малюнка з мозаїки",
+    "type": "WORK",
+    "unit": "M2",
+    "price": 3637,
+    "origin": "plytochnyk.ua"
+  },
+  {
+    "category": "УКЛАДАННЯ МОЗАЇКИ ТА БАСЕЙНИ",
+    "name": "Облицювання басейнів",
+    "type": "WORK",
+    "unit": "M2",
+    "price": 1204,
+    "origin": "plytochnyk.ua"
+  },
+  {
+    "category": "УКЛАДАННЯ МОЗАЇКИ ТА БАСЕЙНИ",
+    "name": "Облицювання радіусних поверхонь мозаїкою",
+    "type": "WORK",
+    "unit": "M2",
+    "price": 1859,
+    "origin": "plytochnyk.ua"
+  },
+  {
+    "category": "УКЛАДАННЯ МОЗАЇКИ ТА БАСЕЙНИ",
+    "name": "Укладання мозаїки",
+    "type": "WORK",
+    "unit": "M2",
+    "price": 1115,
+    "origin": "plytochnyk.ua"
+  },
+  {
+    "category": "УКЛАДАННЯ МОЗАЇКИ ТА БАСЕЙНИ",
+    "name": "Штукатурка, стяжка басейну",
+    "type": "WORK",
+    "unit": "M2",
+    "price": 440,
+    "origin": "plytochnyk.ua"
+  },
+  {
+    "category": "УКЛАДАННЯ НАТУРАЛЬНОГО КАМЕНЮ",
+    "name": "Виготовлення стільниць з каменю",
+    "type": "WORK",
+    "unit": "LINEAR_METER",
+    "price": 9875,
+    "origin": "plytochnyk.ua"
+  },
+  {
+    "category": "УКЛАДАННЯ НАТУРАЛЬНОГО КАМЕНЮ",
+    "name": "Викладення узорів з каменю",
+    "type": "WORK",
+    "unit": "M2",
+    "price": 4900,
+    "origin": "plytochnyk.ua"
+  },
+  {
+    "category": "УКЛАДАННЯ НАТУРАЛЬНОГО КАМЕНЮ",
+    "name": "Встановлення виробів з каменю",
+    "type": "WORK",
+    "unit": "PIECE",
+    "price": 4200,
+    "origin": "plytochnyk.ua"
+  },
+  {
+    "category": "УКЛАДАННЯ НАТУРАЛЬНОГО КАМЕНЮ",
+    "name": "Облицювання каменем відкосів, підвіконь",
+    "type": "WORK",
+    "unit": "LINEAR_METER",
+    "price": 1850,
+    "origin": "plytochnyk.ua"
+  },
+  {
+    "category": "УКЛАДАННЯ НАТУРАЛЬНОГО КАМЕНЮ",
+    "name": "Облицювання каменем сходів",
+    "type": "WORK",
+    "unit": "LINEAR_METER",
+    "price": 1779,
+    "origin": "plytochnyk.ua"
+  },
+  {
+    "category": "УКЛАДАННЯ НАТУРАЛЬНОГО КАМЕНЮ",
+    "name": "Обробка пропиткою, лаком",
+    "type": "WORK",
+    "unit": "M2",
+    "price": 193,
+    "origin": "plytochnyk.ua"
+  },
+  {
+    "category": "УКЛАДАННЯ НАТУРАЛЬНОГО КАМЕНЮ",
+    "name": "Полірування каменю",
+    "type": "WORK",
+    "unit": "M2",
+    "price": 1050,
+    "origin": "plytochnyk.ua"
+  },
+  {
+    "category": "УКЛАДАННЯ НАТУРАЛЬНОГО КАМЕНЮ",
+    "name": "Укладання \"дикого каменю\" піщаник, сланець",
+    "type": "WORK",
+    "unit": "M2",
+    "price": 971,
+    "origin": "plytochnyk.ua"
+  },
+  {
+    "category": "УКЛАДАННЯ НАТУРАЛЬНОГО КАМЕНЮ",
+    "name": "Укладання \"соломки\" з каменю",
+    "type": "WORK",
+    "unit": "M2",
+    "price": 1616,
+    "origin": "plytochnyk.ua"
+  },
+  {
+    "category": "УКЛАДАННЯ НАТУРАЛЬНОГО КАМЕНЮ",
+    "name": "Укладання великих слябів з каменю",
+    "type": "WORK",
+    "unit": "M2",
+    "price": 2740,
+    "origin": "plytochnyk.ua"
+  },
+  {
+    "category": "УКЛАДАННЯ НАТУРАЛЬНОГО КАМЕНЮ",
+    "name": "Укладання натурального каменю граніту, мармуру",
+    "type": "WORK",
+    "unit": "M2",
+    "price": 1333,
+    "origin": "plytochnyk.ua"
+  },
+  {
+    "category": "ОБРОБЛЕННЯ ПЛИТКИ ТА ВИРОБИ",
+    "name": "Виготовлення душового піддону без борту",
+    "type": "WORK",
+    "unit": "PIECE",
+    "price": 9958,
+    "origin": "plytochnyk.ua"
+  },
+  {
+    "category": "ОБРОБЛЕННЯ ПЛИТКИ ТА ВИРОБИ",
+    "name": "Виготовлення душового піддону врівень з підлогою",
+    "type": "WORK",
+    "unit": "PIECE",
+    "price": 12083,
+    "origin": "plytochnyk.ua"
+  },
+  {
+    "category": "ОБРОБЛЕННЯ ПЛИТКИ ТА ВИРОБИ",
+    "name": "Виготовлення душового піддону з бортом",
+    "type": "WORK",
+    "unit": "PIECE",
+    "price": 12371,
+    "origin": "plytochnyk.ua"
+  },
+  {
+    "category": "ОБРОБЛЕННЯ ПЛИТКИ ТА ВИРОБИ",
+    "name": "Виготовлення душового піддону з нішею для підсвітки",
+    "type": "WORK",
+    "unit": "PIECE",
+    "price": 26308,
+    "origin": "plytochnyk.ua"
+  },
+  {
+    "category": "ОБРОБЛЕННЯ ПЛИТКИ ТА ВИРОБИ",
+    "name": "Виготовлення кнопки з плитки",
+    "type": "WORK",
+    "unit": "PIECE",
+    "price": 13316,
+    "origin": "plytochnyk.ua"
+  },
+  {
+    "category": "ОБРОБЛЕННЯ ПЛИТКИ ТА ВИРОБИ",
+    "name": "Виготовлення кухонної стільниці з керамограніту",
+    "type": "WORK",
+    "unit": "LINEAR_METER",
+    "price": 12600,
+    "origin": "plytochnyk.ua"
+  },
+  {
+    "category": "ОБРОБЛЕННЯ ПЛИТКИ ТА ВИРОБИ",
+    "name": "Виготовлення панелі під ванну з підступом (ніша)",
+    "type": "WORK",
+    "unit": "PIECE",
+    "price": 5982,
+    "origin": "plytochnyk.ua"
+  },
+  {
+    "category": "ОБРОБЛЕННЯ ПЛИТКИ ТА ВИРОБИ",
+    "name": "Виготовлення панелі під ванну прямої",
+    "type": "WORK",
+    "unit": "PIECE",
+    "price": 4251,
+    "origin": "plytochnyk.ua"
+  },
+  {
+    "category": "ОБРОБЛЕННЯ ПЛИТКИ ТА ВИРОБИ",
+    "name": "Виготовлення полиці з плитки",
+    "type": "WORK",
+    "unit": "PIECE",
+    "price": 6803,
+    "origin": "plytochnyk.ua"
+  },
+  {
+    "category": "ОБРОБЛЕННЯ ПЛИТКИ ТА ВИРОБИ",
+    "name": "Виготовлення прихованої розетки/вимикача з плитки",
+    "type": "WORK",
+    "unit": "PIECE",
+    "price": 4313,
+    "origin": "plytochnyk.ua"
+  },
+  {
+    "category": "ОБРОБЛЕННЯ ПЛИТКИ ТА ВИРОБИ",
+    "name": "Виготовлення умивальника з плитки",
+    "type": "WORK",
+    "unit": "PIECE",
+    "price": 24200,
+    "origin": "plytochnyk.ua"
+  },
+  {
+    "category": "ОБРОБЛЕННЯ ПЛИТКИ ТА ВИРОБИ",
+    "name": "Викладання узорів після гідроабразивної порізки",
+    "type": "WORK",
+    "unit": "M2",
+    "price": 2046,
+    "origin": "plytochnyk.ua"
+  },
+  {
+    "category": "ОБРОБЛЕННЯ ПЛИТКИ ТА ВИРОБИ",
+    "name": "Вирівнювання плитки під час збору кута 90°",
+    "type": "WORK",
+    "unit": "LINEAR_METER",
+    "price": 270,
+    "origin": "plytochnyk.ua"
+  },
+  {
+    "category": "ОБРОБЛЕННЯ ПЛИТКИ ТА ВИРОБИ",
+    "name": "Виріз в плитці Г-образний",
+    "type": "WORK",
+    "unit": "PIECE",
+    "price": 447,
+    "origin": "plytochnyk.ua"
+  },
+  {
+    "category": "ОБРОБЛЕННЯ ПЛИТКИ ТА ВИРОБИ",
+    "name": "Виріз отворів більше 70 мм",
+    "type": "WORK",
+    "unit": "PIECE",
+    "price": 283,
+    "origin": "plytochnyk.ua"
+  },
+  {
+    "category": "ОБРОБЛЕННЯ ПЛИТКИ ТА ВИРОБИ",
+    "name": "Виріз отворів до 70 мм",
+    "type": "WORK",
+    "unit": "PIECE",
+    "price": 196,
+    "origin": "plytochnyk.ua"
+  },
+  {
+    "category": "ОБРОБЛЕННЯ ПЛИТКИ ТА ВИРОБИ",
+    "name": "Виріз отвору в плитці великого формату",
+    "type": "WORK",
+    "unit": "PIECE",
+    "price": 520,
+    "origin": "plytochnyk.ua"
+  },
+  {
+    "category": "ОБРОБЛЕННЯ ПЛИТКИ ТА ВИРОБИ",
+    "name": "Влаштування люка ревізії на магнітах",
+    "type": "WORK",
+    "unit": "PIECE",
+    "price": 1927,
+    "origin": "plytochnyk.ua"
+  },
+  {
+    "category": "ОБРОБЛЕННЯ ПЛИТКИ ТА ВИРОБИ",
+    "name": "Влаштування люка ревізії на магнітах з полукруглими кутами",
+    "type": "WORK",
+    "unit": "PIECE",
+    "price": 3488,
+    "origin": "plytochnyk.ua"
+  },
+  {
+    "category": "ОБРОБЛЕННЯ ПЛИТКИ ТА ВИРОБИ",
+    "name": "Встановлення прихованого вентилятора з плитки (з порізкою)",
+    "type": "WORK",
+    "unit": "PIECE",
+    "price": 4550,
+    "origin": "plytochnyk.ua"
+  },
+  {
+    "category": "ОБРОБЛЕННЯ ПЛИТКИ ТА ВИРОБИ",
+    "name": "Встановлення профілю для плитки",
+    "type": "WORK",
+    "unit": "LINEAR_METER",
+    "price": 230,
+    "origin": "plytochnyk.ua"
+  },
+  {
+    "category": "ОБРОБЛЕННЯ ПЛИТКИ ТА ВИРОБИ",
+    "name": "Встановлення фризу, плінтуса",
+    "type": "WORK",
+    "unit": "LINEAR_METER",
+    "price": 397,
+    "origin": "plytochnyk.ua"
+  },
+  {
+    "category": "ОБРОБЛЕННЯ ПЛИТКИ ТА ВИРОБИ",
+    "name": "Заусовка під 45° кута широкоформатної плитки",
+    "type": "WORK",
+    "unit": "LINEAR_METER",
+    "price": 620,
+    "origin": "plytochnyk.ua"
+  },
+  {
+    "category": "ОБРОБЛЕННЯ ПЛИТКИ ТА ВИРОБИ",
+    "name": "Порізка широкоформатної плитки",
+    "type": "WORK",
+    "unit": "LINEAR_METER",
+    "price": 438,
+    "origin": "plytochnyk.ua"
+  },
+  {
+    "category": "ОБРОБЛЕННЯ ПЛИТКИ ТА ВИРОБИ",
+    "name": "Посилення кутів в підлоговій плитці",
+    "type": "WORK",
+    "unit": "PIECE",
+    "price": 394,
+    "origin": "plytochnyk.ua"
+  },
+  {
+    "category": "ОБРОБЛЕННЯ ПЛИТКИ ТА ВИРОБИ",
+    "name": "Різ плітки під 45° заусовка",
+    "type": "WORK",
+    "unit": "LINEAR_METER",
+    "price": 367,
+    "origin": "plytochnyk.ua"
+  },
+  {
+    "category": "ОБРОБЛЕННЯ ПЛИТКИ ТА ВИРОБИ",
+    "name": "Різ плітки під 90° (чорновий різ)",
+    "type": "WORK",
+    "unit": "LINEAR_METER",
+    "price": 111,
+    "origin": "plytochnyk.ua"
+  },
+  {
+    "category": "ОБРОБЛЕННЯ ПЛИТКИ ТА ВИРОБИ",
+    "name": "Різ плітки під 90° зі шліфуванням (чистовий різ)",
+    "type": "WORK",
+    "unit": "LINEAR_METER",
+    "price": 246,
+    "origin": "plytochnyk.ua"
+  },
+  {
+    "category": "ОБРОБЛЕННЯ ПЛИТКИ ТА ВИРОБИ",
+    "name": "Різ плітки радіальний, фігурний",
+    "type": "WORK",
+    "unit": "LINEAR_METER",
+    "price": 711,
+    "origin": "plytochnyk.ua"
+  },
+  {
+    "category": "ОБРОБЛЕННЯ ПЛИТКИ ТА ВИРОБИ",
+    "name": "Сортування плитки та підбір малюнка",
+    "type": "WORK",
+    "unit": "M2",
+    "price": 247,
+    "origin": "plytochnyk.ua"
+  },
+  {
+    "category": "ОБРОБЛЕННЯ ПЛИТКИ ТА ВИРОБИ",
+    "name": "Фрезерування плитки під плінтус, сходи",
+    "type": "WORK",
+    "unit": "LINEAR_METER",
+    "price": 517,
+    "origin": "plytochnyk.ua"
+  },
+  {
+    "category": "ЗАТИРАННЯ ШВІВ",
+    "name": "Заповнення товстого шва напівсухою сумішшю",
+    "type": "WORK",
+    "unit": "M2",
+    "price": 229,
+    "origin": "plytochnyk.ua"
+  },
+  {
+    "category": "ЗАТИРАННЯ ШВІВ",
+    "name": "Заповнення шва з будівельного пістолету",
+    "type": "WORK",
+    "unit": "M2",
+    "price": 223,
+    "origin": "plytochnyk.ua"
+  },
+  {
+    "category": "ЗАТИРАННЯ ШВІВ",
+    "name": "Заповнення швів герметиком",
+    "type": "WORK",
+    "unit": "LINEAR_METER",
+    "price": 130,
+    "origin": "plytochnyk.ua"
+  },
+  {
+    "category": "ЗАТИРАННЯ ШВІВ",
+    "name": "Заповнення швів епоксидною сумішшю",
+    "type": "WORK",
+    "unit": "M2",
+    "price": 241,
+    "origin": "plytochnyk.ua"
+  },
+  {
+    "category": "ЗАТИРАННЯ ШВІВ",
+    "name": "Заповнення швів епоксидною сумішшю в один рівень з плиткою",
+    "type": "WORK",
+    "unit": "LINEAR_METER",
+    "price": 360,
+    "origin": "plytochnyk.ua"
+  },
+  {
+    "category": "ЗАТИРАННЯ ШВІВ",
+    "name": "Заповнення швів епоксидною сумішшю на відкосах",
+    "type": "WORK",
+    "unit": "LINEAR_METER",
+    "price": 260,
+    "origin": "plytochnyk.ua"
+  },
+  {
+    "category": "ЗАТИРАННЯ ШВІВ",
+    "name": "Заповнення швів цементною сумішшю",
+    "type": "WORK",
+    "unit": "M2",
+    "price": 116,
+    "origin": "plytochnyk.ua"
+  },
+  {
+    "category": "ЗАТИРАННЯ ШВІВ",
+    "name": "Заповнення швів цементною сумішшю з латексом",
+    "type": "WORK",
+    "unit": "M2",
+    "price": 218,
+    "origin": "plytochnyk.ua"
+  },
+  {
+    "category": "ЗАТИРАННЯ ШВІВ",
+    "name": "Захисне укриття плитки листами ДВП",
+    "type": "WORK",
+    "unit": "M2",
+    "price": 70,
+    "origin": "plytochnyk.ua"
+  },
+  {
+    "category": "ЗАТИРАННЯ ШВІВ",
+    "name": "Обробка захисною сумішшю, гідрофобізатором",
+    "type": "WORK",
+    "unit": "M2",
+    "price": 131,
+    "origin": "plytochnyk.ua"
+  },
+  {
+    "category": "ЗАТИРАННЯ ШВІВ",
+    "name": "Формування кута з епоксидної суміші",
+    "type": "WORK",
+    "unit": "M2",
+    "price": 287,
+    "origin": "plytochnyk.ua"
+  },
+  {
+    "category": "ОРГАНІЗАЦІЙНІ ПОСЛУГИ",
+    "name": "Виїзд для прорахунку вартості робіт та матеріалів",
+    "type": "WORK",
+    "unit": "PIECE",
+    "price": 1185,
+    "origin": "plytochnyk.ua"
+  },
+  {
+    "category": "ОРГАНІЗАЦІЙНІ ПОСЛУГИ",
+    "name": "Виїзд майстра в магазин для підбору плитки",
+    "type": "WORK",
+    "unit": "PIECE",
+    "price": 1296,
+    "origin": "plytochnyk.ua"
+  },
+  {
+    "category": "ОРГАНІЗАЦІЙНІ ПОСЛУГИ",
+    "name": "Виїзд спеціаліста для консультації",
+    "type": "WORK",
+    "unit": "PIECE",
+    "price": 1109,
+    "origin": "plytochnyk.ua"
+  },
+  {
+    "category": "ОРГАНІЗАЦІЙНІ ПОСЛУГИ",
+    "name": "Витратні матеріали",
+    "type": "WORK",
+    "unit": "PERCENT",
+    "price": 13,
+    "origin": "plytochnyk.ua"
+  },
+  {
+    "category": "ОРГАНІЗАЦІЙНІ ПОСЛУГИ",
+    "name": "Підняття матеріалу по сходах",
+    "type": "WORK",
+    "unit": "T",
+    "price": 1642,
+    "origin": "plytochnyk.ua"
+  },
+  {
+    "category": "ОРГАНІЗАЦІЙНІ ПОСЛУГИ",
+    "name": "Підняття широкоформатної плитки по сходах",
+    "type": "WORK",
+    "unit": "FLOOR",
+    "price": 564,
+    "origin": "plytochnyk.ua"
+  },
+  {
+    "category": "ОРГАНІЗАЦІЙНІ ПОСЛУГИ",
+    "name": "Розвантаження матеріалу",
+    "type": "WORK",
+    "unit": "T",
+    "price": 1271,
+    "origin": "plytochnyk.ua"
+  },
+  {
+    "category": "ОРГАНІЗАЦІЙНІ ПОСЛУГИ",
+    "name": "Транспортні витрати за містом",
+    "type": "WORK",
+    "unit": "KM",
+    "price": 21,
+    "origin": "plytochnyk.ua"
+  },
+  {
+    "category": "ПІДГОТОВЧІ РОБОТИ",
+    "name": "Армування кутів гідроізоляційної стрічкою",
+    "type": "WORK",
+    "unit": "LINEAR_METER",
+    "price": 119,
+    "origin": "plytochnyk.ua"
+  },
+  {
+    "category": "ПІДГОТОВЧІ РОБОТИ",
+    "name": "Виготовлення конструкціїї під інсталяцію з ГКЛ в 2 шари",
+    "type": "WORK",
+    "unit": "PIECE",
+    "price": 2466,
+    "origin": "plytochnyk.ua"
+  },
+  {
+    "category": "ПІДГОТОВЧІ РОБОТИ",
+    "name": "Вирівнювання поверхні шаром клею",
+    "type": "WORK",
+    "unit": "M2",
+    "price": 209,
+    "origin": "plytochnyk.ua"
+  },
+  {
+    "category": "ПІДГОТОВЧІ РОБОТИ",
+    "name": "Влаштування наливної підлоги",
+    "type": "WORK",
+    "unit": "M2",
+    "price": 255,
+    "origin": "plytochnyk.ua"
+  },
+  {
+    "category": "ПІДГОТОВЧІ РОБОТИ",
+    "name": "Встановлення гідроізоляційної мембрани",
+    "type": "WORK",
+    "unit": "M2",
+    "price": 255,
+    "origin": "plytochnyk.ua"
+  },
+  {
+    "category": "ПІДГОТОВЧІ РОБОТИ",
+    "name": "Встановлення мембрани для теплої підлоги",
+    "type": "WORK",
+    "unit": "M2",
+    "price": 267,
+    "origin": "plytochnyk.ua"
+  },
+  {
+    "category": "ПІДГОТОВЧІ РОБОТИ",
+    "name": "Встановлення металевого люка скритого монтажу",
+    "type": "WORK",
+    "unit": "PIECE",
+    "price": 2036,
+    "origin": "plytochnyk.ua"
+  },
+  {
+    "category": "ПІДГОТОВЧІ РОБОТИ",
+    "name": "Ґрунтівка поверхні",
+    "type": "WORK",
+    "unit": "M2",
+    "price": 35,
+    "origin": "plytochnyk.ua"
+  },
+  {
+    "category": "ПІДГОТОВЧІ РОБОТИ",
+    "name": "Демонтаж плитки",
+    "type": "WORK",
+    "unit": "M2",
+    "price": 224,
+    "origin": "plytochnyk.ua"
+  },
+  {
+    "category": "ПІДГОТОВЧІ РОБОТИ",
+    "name": "Демонтаж фарби",
+    "type": "WORK",
+    "unit": "M2",
+    "price": 300,
+    "origin": "plytochnyk.ua"
+  },
+  {
+    "category": "ПІДГОТОВЧІ РОБОТИ",
+    "name": "Демонтаж штукатурки, стяжки",
+    "type": "WORK",
+    "unit": "M2",
+    "price": 217,
+    "origin": "plytochnyk.ua"
+  },
+  {
+    "category": "ПІДГОТОВЧІ РОБОТИ",
+    "name": "Закладення штроб",
+    "type": "WORK",
+    "unit": "LINEAR_METER",
+    "price": 113,
+    "origin": "plytochnyk.ua"
+  },
+  {
+    "category": "ПІДГОТОВЧІ РОБОТИ",
+    "name": "Монтаж фальшстіни ГКЛ в 1 шар",
+    "type": "WORK",
+    "unit": "M2",
+    "price": 617,
+    "origin": "plytochnyk.ua"
+  },
+  {
+    "category": "ПІДГОТОВЧІ РОБОТИ",
+    "name": "Нанесення двокомпонентної гідроізоляції",
+    "type": "WORK",
+    "unit": "M2",
+    "price": 273,
+    "origin": "plytochnyk.ua"
+  },
+  {
+    "category": "ПІДГОТОВЧІ РОБОТИ",
+    "name": "Нанесення однокомпонентної гідроізоляції",
+    "type": "WORK",
+    "unit": "M2",
+    "price": 174,
+    "origin": "plytochnyk.ua"
+  },
+  {
+    "category": "ПІДГОТОВЧІ РОБОТИ",
+    "name": "Очищення, обезпилювання",
+    "type": "WORK",
+    "unit": "M2",
+    "price": 41,
+    "origin": "plytochnyk.ua"
+  },
+  {
+    "category": "ПІДГОТОВЧІ РОБОТИ",
+    "name": "Пояс клею під натяжну стелю",
+    "type": "WORK",
+    "unit": "LINEAR_METER",
+    "price": 186,
+    "origin": "plytochnyk.ua"
+  },
+  {
+    "category": "ПІДГОТОВЧІ РОБОТИ",
+    "name": "Стяжка маякова цементна",
+    "type": "WORK",
+    "unit": "M2",
+    "price": 342,
+    "origin": "plytochnyk.ua"
+  },
+  {
+    "category": "ПІДГОТОВЧІ РОБОТИ",
+    "name": "Шліфування видалення слабкого шару, молочка",
+    "type": "WORK",
+    "unit": "M2",
+    "price": 161,
+    "origin": "plytochnyk.ua"
+  },
+  {
+    "category": "ПІДГОТОВЧІ РОБОТИ",
+    "name": "Шліфування стяжки, вирівнювання до 5 мм",
+    "type": "WORK",
+    "unit": "M2",
+    "price": 392,
+    "origin": "plytochnyk.ua"
+  },
+  {
+    "category": "ПІДГОТОВЧІ РОБОТИ",
+    "name": "Штукатурка маякова цементна",
+    "type": "WORK",
+    "unit": "M2",
+    "price": 349,
+    "origin": "plytochnyk.ua"
+  },
+  {
+    "category": "ДРІБНИЙ РЕМОНТ ОБЛИЦЮВАННЯ",
+    "name": "День роботи майстра",
+    "type": "WORK",
+    "unit": "DAY",
+    "price": 4195,
+    "origin": "plytochnyk.ua"
+  },
+  {
+    "category": "ДРІБНИЙ РЕМОНТ ОБЛИЦЮВАННЯ",
+    "name": "Заміна затірки швів",
+    "type": "WORK",
+    "unit": "M2",
+    "price": 727,
+    "origin": "plytochnyk.ua"
+  },
+  {
+    "category": "ДРІБНИЙ РЕМОНТ ОБЛИЦЮВАННЯ",
+    "name": "Обсяг замовлення менше 10 м²",
+    "type": "WORK",
+    "unit": "M2",
+    "price": 1530,
+    "origin": "plytochnyk.ua"
+  },
+  {
+    "category": "ДРІБНИЙ РЕМОНТ ОБЛИЦЮВАННЯ",
+    "name": "Обсяг замовлення менше 25 м²",
+    "type": "WORK",
+    "unit": "M2",
+    "price": 1046,
+    "origin": "plytochnyk.ua"
+  },
+  {
+    "category": "ДРІБНИЙ РЕМОНТ ОБЛИЦЮВАННЯ",
+    "name": "Ремонт облицювання з каменю",
+    "type": "WORK",
+    "unit": "M2",
+    "price": 2500,
+    "origin": "plytochnyk.ua"
+  },
+  {
+    "category": "ДРІБНИЙ РЕМОНТ ОБЛИЦЮВАННЯ",
+    "name": "Ремонт облицювання з мозаїки",
+    "type": "WORK",
+    "unit": "M2",
+    "price": 3500,
+    "origin": "plytochnyk.ua"
+  },
+  {
+    "category": "ДРІБНИЙ РЕМОНТ ОБЛИЦЮВАННЯ",
+    "name": "Ремонт облицювання з плитки",
+    "type": "WORK",
+    "unit": "M2",
+    "price": 1910,
+    "origin": "plytochnyk.ua"
+  },
+  {
+    "category": "ОБЛИЦЮВАННЯ СХОДІВ",
+    "name": "Влаштування гідроізоляції",
+    "type": "WORK",
+    "unit": "M2",
+    "price": 280,
+    "origin": "plytochnyk.ua"
+  },
+  {
+    "category": "ОБЛИЦЮВАННЯ СХОДІВ",
+    "name": "Встановлення капіносу",
+    "type": "WORK",
+    "unit": "LINEAR_METER",
+    "price": 445,
+    "origin": "plytochnyk.ua"
+  },
+  {
+    "category": "ОБЛИЦЮВАННЯ СХОДІВ",
+    "name": "Затирання швів від 3 мм цементною сумішшю",
+    "type": "WORK",
+    "unit": "M2",
+    "price": 174,
+    "origin": "plytochnyk.ua"
+  },
+  {
+    "category": "ОБЛИЦЮВАННЯ СХОДІВ",
+    "name": "Затирання швів цементною сумішшю з латексом",
+    "type": "WORK",
+    "unit": "M2",
+    "price": 300,
+    "origin": "plytochnyk.ua"
+  },
+  {
+    "category": "ОБЛИЦЮВАННЯ СХОДІВ",
+    "name": "Коефіцієнт на погодні умови",
+    "type": "WORK",
+    "unit": "PERCENT",
+    "price": 20,
+    "origin": "plytochnyk.ua"
+  },
+  {
+    "category": "ОБЛИЦЮВАННЯ СХОДІВ",
+    "name": "Облицювання радіусних сходів (без підступка)",
+    "type": "WORK",
+    "unit": "LINEAR_METER",
+    "price": 1467,
+    "origin": "plytochnyk.ua"
+  },
+  {
+    "category": "ОБЛИЦЮВАННЯ СХОДІВ",
+    "name": "Укладання керамограніту 20 мм",
+    "type": "WORK",
+    "unit": "M2",
+    "price": 1106,
+    "origin": "plytochnyk.ua"
+  },
+  {
+    "category": "ОБЛИЦЮВАННЯ СХОДІВ",
+    "name": "Укладання керамограніту на вулиці",
+    "type": "WORK",
+    "unit": "M2",
+    "price": 775,
+    "origin": "plytochnyk.ua"
+  },
+  {
+    "category": "ОБЛИЦЮВАННЯ СХОДІВ",
+    "name": "Укладання клінкерної підлогової плитки",
+    "type": "WORK",
+    "unit": "M2",
+    "price": 891,
+    "origin": "plytochnyk.ua"
+  },
+  {
+    "category": "ОБЛИЦЮВАННЯ СХОДІВ",
+    "name": "Укладання плитки на сходи та підсходинок",
+    "type": "WORK",
+    "unit": "LINEAR_METER",
+    "price": 950,
+    "origin": "plytochnyk.ua"
+  },
+  {
+    "category": "ПРОМИСЛОВЕ ОБЛИЦЮВАННЯ",
+    "name": "Облицювання «диким каменем» фасаду будинку, парканів",
+    "type": "WORK",
+    "unit": "M2",
+    "price": 1310,
+    "origin": "plytochnyk.ua"
+  },
+  {
+    "category": "ПРОМИСЛОВЕ ОБЛИЦЮВАННЯ",
+    "name": "Облицювання будинків клінкером «під цеглу»",
+    "type": "WORK",
+    "unit": "M2",
+    "price": 1014,
+    "origin": "plytochnyk.ua"
+  },
+  {
+    "category": "ПРОМИСЛОВЕ ОБЛИЦЮВАННЯ",
+    "name": "Облицювання каменем обсягів",
+    "type": "WORK",
+    "unit": "M2",
+    "price": 883,
+    "origin": "plytochnyk.ua"
+  },
+  {
+    "category": "ПРОМИСЛОВЕ ОБЛИЦЮВАННЯ",
+    "name": "Облицювання кислотостійкою плиткою",
+    "type": "WORK",
+    "unit": "M2",
+    "price": 910,
+    "origin": "plytochnyk.ua"
+  },
+  {
+    "category": "ПРОМИСЛОВЕ ОБЛИЦЮВАННЯ",
+    "name": "Облицювання мозаїкою обсягів",
+    "type": "WORK",
+    "unit": "M2",
+    "price": 869,
+    "origin": "plytochnyk.ua"
+  },
+  {
+    "category": "ПРОМИСЛОВЕ ОБЛИЦЮВАННЯ",
+    "name": "Облицювання стандартною плиткою обсягів",
+    "type": "WORK",
+    "unit": "M2",
+    "price": 547,
+    "origin": "plytochnyk.ua"
+  },
+  {
+    "category": "ПРОМИСЛОВЕ ОБЛИЦЮВАННЯ",
+    "name": "Облицювання сходових маршів",
+    "type": "WORK",
+    "unit": "LINEAR_METER",
+    "price": 754,
+    "origin": "plytochnyk.ua"
+  },
+  {
+    "category": "ПРОМИСЛОВЕ ОБЛИЦЮВАННЯ",
+    "name": "Облицювання широкоформатною плиткою обсягів",
+    "type": "WORK",
+    "unit": "M2",
+    "price": 1238,
+    "origin": "plytochnyk.ua"
+  },
+  {
+    "category": "ПІДГОТОВЧІ РОБОТИ",
+    "name": "Облицювання плиткою короба",
+    "type": "WORK",
+    "unit": "M2",
+    "price": 0,
+    "origin": "наш каталог"
+  },
+  {
+    "category": "ПІДГОТОВЧІ РОБОТИ",
+    "name": "Гідроізоляція плівкова",
+    "type": "WORK",
+    "unit": "M2",
+    "price": 0,
+    "origin": "наш каталог"
+  },
+  {
+    "category": "ПІДГОТОВЧІ РОБОТИ",
+    "name": "Гідроізоляція сухою сумішшю",
+    "type": "WORK",
+    "unit": "M2",
+    "price": 0,
+    "origin": "наш каталог"
+  },
+  {
+    "category": "УКЛАДАННЯ ПЛИТКИ",
+    "name": "Укладання плитки ялинкою (плюс % до м.кв.)",
+    "type": "WORK",
+    "unit": "PERCENT",
+    "price": 0,
+    "origin": "наш каталог"
+  },
+  {
+    "category": "УКЛАДАННЯ ПЛИТКИ",
+    "name": "Укладання плитки на шар клею більше 1 см",
+    "type": "WORK",
+    "unit": "M2",
+    "price": 0,
+    "origin": "наш каталог"
+  },
+  {
+    "category": "УКЛАДАННЯ ПЛИТКИ",
+    "name": "Укладання декоративної плитки під «цеглу» або «камінь» (гіпсова, бетонна)",
+    "type": "WORK",
+    "unit": "M2",
+    "price": 0,
+    "origin": "наш каталог"
+  },
+  {
+    "category": "ЗАТИРАННЯ ШВІВ",
+    "name": "Затирання швів у декоративній плитці, мозаїці",
+    "type": "WORK",
+    "unit": "M2",
+    "price": 0,
+    "origin": "наш каталог"
+  },
+  {
+    "category": "ОБРОБЛЕННЯ ПЛИТКИ ТА ВИРОБИ",
+    "name": "Виготовлення та монтаж кріплення для раковини (зварювання, фарбування)",
+    "type": "WORK",
+    "unit": "PIECE",
+    "price": 0,
+    "origin": "наш каталог"
+  },
+  {
+    "category": "ОРГАНІЗАЦІЙНІ ПОСЛУГИ",
+    "name": "Винесення та вивезення будівельного сміття",
+    "type": "WORK",
+    "unit": "M3",
+    "price": 0,
+    "origin": "дослідження"
+  },
+  {
+    "category": "ОРГАНІЗАЦІЙНІ ПОСЛУГИ",
+    "name": "Прибирання приміщення після робіт",
+    "type": "WORK",
+    "unit": "M2",
+    "price": 0,
+    "origin": "дослідження"
+  },
+  {
+    "category": "ОРГАНІЗАЦІЙНІ ПОСЛУГИ",
+    "name": "Укриття плівкою підлоги, дверей, сантехніки",
+    "type": "WORK",
+    "unit": "M2",
+    "price": 0,
+    "origin": "дослідження"
+  },
+  {
+    "category": "ОРГАНІЗАЦІЙНІ ПОСЛУГИ",
+    "name": "Замір приміщення та схема розкладки плитки",
+    "type": "WORK",
+    "unit": "PIECE",
+    "price": 0,
+    "origin": "дослідження"
+  },
+  {
+    "category": "ОРГАНІЗАЦІЙНІ ПОСЛУГИ",
+    "name": "Гарантійний повторний виїзд",
+    "type": "WORK",
+    "unit": "PIECE",
+    "price": 0,
+    "origin": "дослідження"
+  },
+  {
+    "category": "ПІДГОТОВЧІ РОБОТИ",
+    "name": "Монтаж трапу та формування ухилу до нього",
+    "type": "WORK",
+    "unit": "PIECE",
+    "price": 0,
+    "origin": "дослідження"
+  },
+  {
+    "category": "ПІДГОТОВЧІ РОБОТИ",
+    "name": "Монтаж лінійного душового каналу",
+    "type": "WORK",
+    "unit": "PIECE",
+    "price": 0,
+    "origin": "дослідження"
+  },
+  {
+    "category": "ПІДГОТОВЧІ РОБОТИ",
+    "name": "Поклейка гідроізоляційних муфт на водорозетки",
+    "type": "WORK",
+    "unit": "PIECE",
+    "price": 0,
+    "origin": "дослідження"
+  },
+  {
+    "category": "ПІДГОТОВЧІ РОБОТИ",
+    "name": "Влаштування деформаційних швів",
+    "type": "WORK",
+    "unit": "LINEAR_METER",
+    "price": 0,
+    "origin": "дослідження"
+  },
+  {
+    "category": "УКЛАДАННЯ ПЛИТКИ",
+    "name": "Укладання плитки поверх теплої підлоги (плюс % до м.кв.)",
+    "type": "WORK",
+    "unit": "PERCENT",
+    "price": 0,
+    "origin": "дослідження"
+  }
+]

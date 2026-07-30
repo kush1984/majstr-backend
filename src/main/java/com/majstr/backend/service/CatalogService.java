@@ -3,6 +3,7 @@ package com.majstr.backend.service;
 import com.majstr.backend.dto.CatalogItemRequest;
 import com.majstr.backend.dto.CatalogItemResponse;
 import com.majstr.backend.entity.CatalogItem;
+import com.majstr.backend.entity.CatalogItemSource;
 import com.majstr.backend.entity.ItemType;
 import com.majstr.backend.entity.Trade;
 import com.majstr.backend.entity.User;
@@ -84,6 +85,9 @@ public class CatalogService {
                 .type(req.type())
                 .unit(req.unit())
                 .defaultPrice(req.defaultPrice())
+                // The master typed this themselves — the only rows the admin insight screens
+                // treat as evidence about what our defaults are missing.
+                .source(CatalogItemSource.MANUAL)
                 .build();
         return CatalogItemResponse.from(catalogRepository.save(item));
     }
