@@ -12,7 +12,8 @@ import com.majstr.backend.entity.User;
 import com.majstr.backend.exception.ResourceNotFoundException;
 import com.majstr.backend.service.ProjectService;
 import com.majstr.backend.service.ai.AiInput;
-import com.majstr.backend.service.ai.JsonExtractor;
+import com.majstr.backend.service.ai.AiExtractors;
+import com.majstr.backend.service.ai.AiFlow;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.pdfbox.Loader;
@@ -72,8 +73,8 @@ public class ProjectImportService {
 
     private final FeatureGuard featureGuard;
     private final ProjectService projectService;
-    /** Whichever provider `app.ai.provider` selected — this flow does not care which. */
-    private final JsonExtractor extractor;
+    /** Whichever model `app.ai.flows.project-docs` names — the heaviest flow, five passes deep. */
+    private final AiExtractors extractors;
     private final MeasurementService measurementService;
     private final UserRepository userRepository;
     private final ObjectMapper objectMapper;
@@ -105,14 +106,14 @@ public class ProjectImportService {
             // read as flattened text loses the very thing it was sent for.
             if (kind == Kind.PLAN_MEASURE || kind == Kind.ROOM_SCHEDULE || kind == Kind.UNKNOWN) {
                 pageGuard(bytes);
-                json = withFragmentsIfNeeded(kind, bytes, extractor.requestJson(
+                json = withFragmentsIfNeeded(kind, bytes, extractors.forFlow(AiFlow.PROJECT_DOCS).requestJson(
                         AiInput.pdf(bytes, instruction(kind)),
                         systemPrompt(kind), SCHEMA));
             } else {
                 String text = pdfText(bytes);
                 if (text != null && text.trim().length() >= MIN_TEXT_CHARS) {
                     // The accurate path: exact printed figures, no vision involved.
-                    json = extractor.requestJson(textContent(kind, text), systemPrompt(kind), SCHEMA);
+                    json = extractors.forFlow(AiFlow.PROJECT_DOCS).requestJson(textContent(kind, text), systemPrompt(kind), SCHEMA);
                 } else {
                     json = visionPdf(kind, bytes);
                 }
@@ -178,7 +179,7 @@ public class ProjectImportService {
         List<Map<String, Object>> readings = new ArrayList<>(fragments.size());
         for (List<AiInput> fragment : fragments) {
             try {
-                readings.add(readMap(extractor.requestJson(fragment, systemPrompt(kind), SCHEMA)));
+                readings.add(readMap(extractors.forFlow(AiFlow.PROJECT_DOCS).requestJson(fragment, systemPrompt(kind), SCHEMA)));
             } catch (Exception e) {
                 // One unreadable quarter must not cost the other three.
                 log.warn("Fragment pass failed ({}) — continuing with the rest", e.getMessage());
@@ -220,18 +221,18 @@ public class ProjectImportService {
     private String visionPdf(Kind kind, byte[] bytes) {
         // Only non-plan scans reach here (a plan PDF short-circuits to the document
         // block above) — a single call suffices.
-        return extractor.requestJson(
+        return extractors.forFlow(AiFlow.PROJECT_DOCS).requestJson(
                 AiInput.pdf(bytes, instruction(kind)),
                 systemPrompt(kind), SCHEMA);
     }
 
     private String visionImage(Kind kind, String mediaType, byte[] bytes) {
         if (kind != Kind.PLAN_MEASURE && kind != Kind.UNKNOWN) {
-            return extractor.requestJson(
+            return extractors.forFlow(AiFlow.PROJECT_DOCS).requestJson(
                     AiInput.image(mediaType, bytes, instruction(kind)),
                     systemPrompt(kind), SCHEMA);
         }
-        return twoPass(instr -> extractor.requestJson(
+        return twoPass(instr -> extractors.forFlow(AiFlow.PROJECT_DOCS).requestJson(
                 AiInput.image(mediaType, bytes, instr), systemPrompt(kind), SCHEMA));
     }
 
@@ -424,11 +425,22 @@ public class ProjectImportService {
     @SuppressWarnings("unchecked")
     private ProjectImportParseResponse.Room room(Map<String, Object> rm) {
         List<ProjectImportParseResponse.Opening> openings = new ArrayList<>();
+        boolean partialOpening = false;
         for (Object oo : asList(rm.get("openings"))) {
             if (!(oo instanceof Map<?, ?> om)) continue;
             BigDecimal w = positive(om.get("wMm"));
             BigDecimal h = positive(om.get("hMm"));
-            if (w == null || h == null) continue; // an opening without both sizes can't subtract
+            if (w == null && h == null) continue; // nothing was read at all
+            if (w == null || h == null) {
+                // HALF an opening is still worth keeping. This used to be dropped, which is why a
+                // sheet marking «Нпр=2200» beside every door produced no openings at all: the
+                // heights were printed, the widths had to come off a chain, and one missing figure
+                // discarded the pair. The missing side goes as 0 (subtracts nothing, breaks no
+                // arithmetic) and the room is flagged so the review asks for it.
+                partialOpening = true;
+                if (w == null) w = BigDecimal.ZERO;
+                if (h == null) h = BigDecimal.ZERO;
+            }
             boolean door = "двері".equalsIgnoreCase(str(om.get("kind")));
             // A door always reaches the floor; otherwise honour the model's flag.
             boolean toFloor = door || bool(om.get("toFloor"));
@@ -454,6 +466,7 @@ public class ProjectImportService {
         // longer damns the whole row — it is one unconfirmed FIELD. It only means "check this"
         // when there are also no gabarits to compute it from.
         if (area == null && !uncertain.contains("areaM2")) uncertain.add("areaM2");
+        if (partialOpening && !uncertain.contains("openings")) uncertain.add("openings");
         String confidence = conf(rm.get("confidence"));
         if (area == null && (width == null || length == null)) confidence = "low";
         else if (!uncertain.isEmpty() && "high".equals(confidence)) confidence = "medium";
@@ -790,6 +803,14 @@ public class ProjectImportService {
                  lengthMm in "uncertain". The system computes the area from them.
                - An L-shaped room (a rectangle with one cut-out corner): also cutWidthMm ×
                  cutDepthMm of the cut, from the chains.
+                 ⚠️ THE AREA TELLS YOU WHEN TO LOOK FOR ONE. If widthMm × lengthMm comes out
+                 BIGGER than the room's printed area, the room is not a rectangle — a corridor
+                 wrapping a corner, a niche, a boxed-in riser. Follow the room's contour on the
+                 drawing and read the two chains of the cut-out; the difference between w×l and the
+                 printed area is roughly the cut's area, which tells you whether you found the right
+                 pair. If you cannot read them, say "cutWidthMm" in "uncertain" and describe the
+                 shape in note — do NOT shrink widthMm/lengthMm to make the multiplication fit, and
+                 do not drop them: they are the room's bounding box, which is what its WALLS follow.
                - wallSegmentsMm / perimeterMm — only figures PRINTED as such; never sum or measure
                  them yourself.
                - A sloped / mansard ceiling («скоси»), a niche or a ledge → describe it in that
@@ -799,6 +820,21 @@ public class ProjectImportService {
                floor in the stamp or the notes → ceilingHeights, keyed by the floor label.
             4. OPENINGS — every window and door on a room's walls: kind "вікно"/"двері",
                wMm = printed width, hMm = the opening's height, sillMm = the window sill.
+               HOW TO FIND ONE WHEN NOTHING IS LABELLED. Many sheets mark no opening sizes at all —
+               the openings are drawn, and their widths are segments of the wall's dimension chain.
+               A number on its own cannot tell you which segment that is («800» is a door leaf on
+               one wall and a pier on the next), so read the WALL, not the chain:
+                 • a DOOR is a gap in the wall's hatching with a leaf arc (a quarter circle) or a
+                   sliding/folding symbol across it;
+                 • a WINDOW is a gap crossed by 2–4 thin parallel lines;
+                 • an OPEN PASSAGE («без дверей», «арка») is a gap with neither an arc nor lines —
+                   kind "двері" with toFloor true, since it interrupts the skirting the same way;
+                 • the chain then CONFIRMS the width: the sub-pattern «pier — gap — pier»
+                   («800 2 874 800») lines up with the drawn gap, and the middle figure is wMm.
+               Take a width only when you can see WHICH gap it spans. If you cannot, leave the
+               opening out entirely rather than pairing a number with a guess — but if you can see
+               the gap and the height is nowhere printed, report the width with hMm 0 and flag it
+               (see below): the room is then one tap from complete instead of missing a hole.
                Sources, in order: a doors/windows SPECIFICATION table on this sheet («Д 01», «ДЗ
                02», «В 07» rows with sizes) OUTRANKS everything — take the sizes from it and set
                confidence "high"; then «Нпр»/«Ндв»/«Нвк»/«Нпд» markings; then level marks; sizes
@@ -807,6 +843,12 @@ public class ProjectImportService {
                (they reach the floor and interrupt the skirting), false for a window on a sill.
                An interior door SHARED by two rooms belongs to BOTH — list it in each room's
                openings, because each of them loses that hole from its walls.
+               ⚠️ REPORT HALF AN OPENING RATHER THAN NONE. These sheets routinely print one
+               dimension and not the other — a height beside every door («Нпр=2200») whose width
+               only exists as a segment in the wall's dimension chain, or a width in a chain with
+               the height nowhere on the sheet. Give the figure you have, put 0 in the other, and
+               name "openings" in "uncertain". An opening the master can finish in one tap is worth
+               far more than a wall with no hole in it at all.
                note = any other marking, as written.
             5. COVERINGS — when the sheet is a finishes specification («специфікація покриттів»,
                a floor/wall finishes table): each line as name (as printed), kind — one of

@@ -1,6 +1,11 @@
 package com.majstr.backend.service.importer;
 
+import com.majstr.backend.config.AiFlowsProperties;
+import com.majstr.backend.config.AnthropicProperties;
+import com.majstr.backend.config.OpenAiProperties;
 import com.majstr.backend.exception.AiExtractionException;
+import com.majstr.backend.service.ai.AiExtractors;
+import com.majstr.backend.service.ai.AiFlow;
 import com.majstr.backend.service.ai.AiInput;
 import com.majstr.backend.service.ai.JsonExtractor;
 import com.majstr.backend.service.importer.EstimateExtractor.Extracted;
@@ -35,8 +40,10 @@ class EstimateExtractorTest {
         }
     };
 
-    private final EstimateExtractor extractor =
-            new EstimateExtractor(NO_PROVIDER, JsonMapper.builder().build());
+    private final EstimateExtractor extractor = new EstimateExtractor(
+            new AiExtractors(new AiFlowsProperties(null, null, null),
+                    new AnthropicProperties("", "m", 1), new OpenAiProperties("", "m", 1, null), NO_PROVIDER),
+            JsonMapper.builder().build());
 
     @Test
     void parsesItemsAndDeposit() {
@@ -50,7 +57,7 @@ class EstimateExtractorTest {
                 }
                 """;
 
-        Extracted result = extractor.parse(json);
+        Extracted result = extractor.parse(AiFlow.ESTIMATE, json);
 
         assertThat(result.items()).hasSize(2);
         Extracted.Line first = result.items().get(0);
@@ -79,7 +86,7 @@ class EstimateExtractorTest {
                 }
                 """;
 
-        Extracted result = extractor.parse(json);
+        Extracted result = extractor.parse(AiFlow.ESTIMATE, json);
 
         assertThat(result.items()).hasSize(1); // the name-less row is skipped
         Extracted.Line line = result.items().get(0);

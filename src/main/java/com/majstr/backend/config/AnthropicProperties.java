@@ -15,6 +15,15 @@ public record AnthropicProperties(
         String model,
         int maxTokens
 ) {
+    /**
+     * The same credentials pointed at a different model — how one vendor serves several flows
+     * (a cheap model for receipts, the strongest one for drawings) without a second API key.
+     */
+    public AnthropicProperties withModel(String override) {
+        return override == null || override.isBlank() ? this
+                : new AnthropicProperties(apiKey, override.trim(), maxTokens);
+    }
+
     public boolean isConfigured() {
         return apiKey != null && !apiKey.isBlank();
     }

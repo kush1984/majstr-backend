@@ -11,6 +11,10 @@ import com.majstr.backend.exception.CatalogImportException;
 import com.majstr.backend.feature.FeatureGuard;
 import com.majstr.backend.repository.UserRepository;
 import com.majstr.backend.service.ProjectService;
+import com.majstr.backend.config.AiFlowsProperties;
+import com.majstr.backend.config.AnthropicProperties;
+import com.majstr.backend.config.OpenAiProperties;
+import com.majstr.backend.service.ai.AiExtractors;
 import com.majstr.backend.service.ai.JsonExtractor;
 import org.apache.pdfbox.pdmodel.PDDocument;
 import org.apache.pdfbox.pdmodel.PDPage;
@@ -58,6 +62,13 @@ class ProjectImportServiceTest {
 
     private ProjectImportService service;
 
+
+    /** Every flow answered by one stub — these tests are about the service, not the routing. */
+    private static AiExtractors allFlows(JsonExtractor extractor) {
+        return new AiExtractors(new AiFlowsProperties(null, null, null),
+                new AnthropicProperties("", "m", 1), new OpenAiProperties("", "m", 1, null), extractor);
+    }
+
     private final UUID ownerId = UUID.randomUUID();
     private final UUID objectId = UUID.randomUUID();
 
@@ -66,7 +77,7 @@ class ProjectImportServiceTest {
 
     @BeforeEach
     void setUp() {
-        service = new ProjectImportService(featureGuard, projectService, extractor,
+        service = new ProjectImportService(featureGuard, projectService, allFlows(extractor),
                 measurementService, userRepository, JsonMapper.builder().build());
         given(userRepository.findById(ownerId))
                 .willReturn(Optional.of(User.builder().id(ownerId).plan(Plan.PRO).build()));
@@ -228,6 +239,39 @@ class ProjectImportServiceTest {
                 .hasMessage("error.import.unsupported");
     }
 
+    // ---- openings: half of one beats none ---------------------------------------
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void anOpeningWithOnlyOneDimensionIsKeptAndFlagged() {
+        // Belgradska marks «Нпр=2200мм» beside every door and «Нпд=900мм» at the windows, while the
+        // WIDTH is only a segment in the wall's chain. Requiring both threw the pair away, so a
+        // sheet full of opening marks produced no openings at all.
+        String json = """
+                {"sheetTitle":"ОБМІРНИЙ ПЛАН","floors":[{"floor":"","roomsOnThisSheet":[],"rooms":[
+                 {"number":"7","name":"Коридор","areaM2":16.51,"perimeterMm":0,"wallSegmentsMm":[],
+                  "widthMm":0,"lengthMm":0,"cutWidthMm":0,"cutDepthMm":0,"ceilingHmm":2850,
+                  "openings":[{"kind":"двері","wMm":0,"hMm":2200,"sillMm":0,"toFloor":true,"note":"Нпр=2200"},
+                              {"kind":"вікно","wMm":1300,"hMm":0,"sillMm":900,"toFloor":false,"note":"Нпд=900"},
+                              {"kind":"вікно","wMm":0,"hMm":0,"sillMm":0,"toFloor":false,"note":"не читається"}],
+                  "confidence":"medium","note":"","uncertain":[]}]}],
+                 "coverings":[],"totals":{"totalAreaM2":0},"ceilingHeights":[],"warnings":[]}""";
+        given(extractor.requestJson(anyList(), anyString(), any(Map.class))).willReturn(json);
+
+        ProjectImportParseResponse.Room room = service.parse(ownerId, objectId,
+                ProjectImportService.Kind.PLAN_MEASURE, "план.jpg", "image/jpeg", new byte[]{1})
+                .floors().get(0).rooms().get(0);
+
+        // Two survive with the figure that WAS printed; the third had neither and is not an opening.
+        assertThat(room.openings()).hasSize(2);
+        assertThat(room.openings().get(0).hMm()).isEqualByComparingTo("2200");
+        assertThat(room.openings().get(0).wMm()).isEqualByComparingTo("0"); // subtracts nothing
+        assertThat(room.openings().get(1).wMm()).isEqualByComparingTo("1300");
+        assertThat(room.openings().get(1).sillMm()).isEqualByComparingTo("900");
+        // …and the review is told which room to finish.
+        assertThat(room.uncertain()).contains("openings");
+    }
+
     // ---- fragments: a second look, only when the first one failed ----------------
 
     /** One room, its area read from the table, and not a single dimension — the reported failure. */
@@ -360,7 +404,14 @@ class ProjectImportServiceTest {
         assertThat(room.areaM2()).isNull();
         assertThat(room.perimeterMm()).isNull();
         assertThat(room.confidence()).isEqualTo("low"); // forced: no area = nothing to trust
-        assertThat(room.openings()).isEmpty();          // an opening without both sizes can't subtract
+        // The half-read opening is now KEPT (see anOpeningWithOnlyOneDimensionIsKeptAndFlagged):
+        // the printed height survives, the unread width is 0 so it subtracts nothing, and the room
+        // says so. Dropping it — the old rule — is why sheets covered in «Нпр=…» marks came back
+        // with no openings at all.
+        assertThat(room.openings()).hasSize(1);
+        assertThat(room.openings().get(0).hMm()).isEqualByComparingTo("1500");
+        assertThat(room.openings().get(0).wMm()).isEqualByComparingTo("0");
+        assertThat(room.uncertain()).contains("openings");
         assertThat(resp.coverings()).hasSize(1);        // the qty-less line dropped
         assertThat(resp.totalAreaM2()).isEqualByComparingTo("204");
         assertThat(resp.ceilingHeightsMm()).containsOnlyKeys("2"); // 0-height dropped

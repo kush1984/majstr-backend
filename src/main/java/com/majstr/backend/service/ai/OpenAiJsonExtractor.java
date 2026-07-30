@@ -65,6 +65,10 @@ public class OpenAiJsonExtractor implements JsonExtractor {
                 "name", SCHEMA_NAME,
                 "strict", true,
                 "schema", schema)));
+        // Optional: the thinking/cost dial. Omitted when blank so the model's own default stands.
+        if (props.reasoningEffort() != null && !props.reasoningEffort().isBlank()) {
+            body.put("reasoning", Map.of("effort", props.reasoningEffort().trim()));
+        }
 
         Map<String, Object> resp;
         try {
@@ -79,7 +83,34 @@ public class OpenAiJsonExtractor implements JsonExtractor {
             log.error("OpenAI extraction call failed: {}", e.getMessage());
             throw new AiExtractionException("error.ai.unavailable", e);
         }
+        logCost(resp);
         return outputText(resp);
+    }
+
+    /**
+     * What the call actually cost and whether it finished — one line, on every call.
+     *
+     * <p>Without it a bad reading is unexplainable from the outside: a run that came back all zeros
+     * looks identical to one that never saw the page. The numbers separate the cases. A tiny
+     * input count means the sheet did not reach the model as pages; reasoning tokens near the whole
+     * budget mean it thought until the allowance ran out (they are billed as output and count
+     * against {@code max_output_tokens}); {@code status=incomplete} names it outright.</p>
+     */
+    private void logCost(Map<String, Object> resp) {
+        if (resp == null) {
+            return;
+        }
+        Object usage = resp.get("usage");
+        Object reasoning = usage instanceof Map<?, ?> u && u.get("output_tokens_details") instanceof Map<?, ?> d
+                ? d.get("reasoning_tokens") : null;
+        log.info("OpenAI {} status={} in={} out={} reasoning={} cap={} incomplete={}",
+                props.model(),
+                resp.get("status"),
+                usage instanceof Map<?, ?> u2 ? u2.get("input_tokens") : null,
+                usage instanceof Map<?, ?> u3 ? u3.get("output_tokens") : null,
+                reasoning,
+                props.maxTokens(),
+                resp.get("incomplete_details"));
     }
 
     /** Our neutral input rendered into the Responses API's content parts. */
@@ -90,11 +121,19 @@ public class OpenAiJsonExtractor implements JsonExtractor {
                 case AiInput.Text t -> Map.of("type", "input_text", "text", t.text());
                 // Both binary kinds go as data URIs — there is no separate upload step to keep the
                 // "parsed and discarded, never stored" promise intact.
+                // `detail: high` on BOTH, deliberately. It is the knob that decides how much of a
+                // drawing survives: left at the default («auto») a dense A3 sheet arrives as a
+                // downscaled page image whose 8 pt dimension chains are unreadable, and the model
+                // then leans on the extracted text — which for a plan is a heap of numbers with no
+                // idea which room they belong to. That is exactly what "everything came back zero"
+                // looks like from the outside.
                 case AiInput.Image i -> Map.of("type", "input_image",
-                        "image_url", dataUri(i.mediaType(), i.bytes()));
+                        "image_url", dataUri(i.mediaType(), i.bytes()),
+                        "detail", "high");
                 case AiInput.Pdf p -> Map.of("type", "input_file",
                         "filename", p.filename(),
-                        "file_data", dataUri("application/pdf", p.bytes()));
+                        "file_data", dataUri("application/pdf", p.bytes()),
+                        "detail", "high");
             });
         }
         return parts;

@@ -5,7 +5,6 @@ import com.majstr.backend.service.ai.JsonExtractor;
 import com.majstr.backend.service.ai.MisconfiguredJsonExtractor;
 import com.majstr.backend.service.ai.OpenAiJsonExtractor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Primary;
@@ -37,9 +36,10 @@ public class AiProviderConfig {
     @Bean
     @Primary
     public JsonExtractor jsonExtractor(
+            AiFlowsProperties ai,
             AnthropicProperties anthropicProperties,
-            OpenAiProperties openAiProperties,
-            @Value("${app.ai.provider:anthropic}") String provider) {
+            OpenAiProperties openAiProperties) {
+        String provider = ai.provider();
 
         // "Set to nothing" has to mean "not set". The `:anthropic` default only fires when the key is
         // ABSENT, and an environment variable that exists but is empty — `AI_PROVIDER=` in a .env, a CI
@@ -47,14 +47,18 @@ public class AiProviderConfig {
         // that empty string falls through to the unknown-provider check below and fails the context,
         // which is how an unconfigured CI runner came to fail every integration test in the suite.
         String chosen = provider == null || provider.isBlank() ? ANTHROPIC : provider.trim();
+        // `app.ai.model` re-points the chosen vendor at a different model of its own — the
+        // one-line version of the per-flow overrides, for when every flow should move together.
+        AnthropicProperties anthropicWithModel = anthropicProperties.withModel(ai.model());
+        OpenAiProperties openAiWithModel = openAiProperties.withModel(ai.model());
 
         if (OPENAI.equalsIgnoreCase(chosen)) {
             if (!openAiProperties.isConfigured()) {
                 return new MisconfiguredJsonExtractor(
                         "app.ai.provider=openai but OPENAI_API_KEY is not set");
             }
-            log.info("AI recognition provider: OpenAI ({})", openAiProperties.model());
-            return new OpenAiJsonExtractor(openAiProperties);
+            log.info("AI recognition provider: OpenAI ({})", openAiWithModel.model());
+            return new OpenAiJsonExtractor(openAiWithModel);
         }
         // A typo must not quietly become Anthropic: a comparison run attributed to the wrong model
         // is the one failure that makes the numbers lie. Recognition stops, the app does not.
@@ -67,7 +71,7 @@ public class AiProviderConfig {
             // "unavailable". Saying so once at boot beats discovering it per import.
             return new MisconfiguredJsonExtractor("ANTHROPIC_API_KEY is not set");
         }
-        JsonExtractor anthropic = new AnthropicJsonExtractor(anthropicProperties);
+        JsonExtractor anthropic = new AnthropicJsonExtractor(anthropicWithModel);
         log.info("AI recognition provider: {}", anthropic.providerName());
         return anthropic;
     }

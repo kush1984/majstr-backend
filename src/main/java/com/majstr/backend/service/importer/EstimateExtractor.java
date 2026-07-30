@@ -1,8 +1,9 @@
 package com.majstr.backend.service.importer;
 
 import com.majstr.backend.exception.AiExtractionException;
+import com.majstr.backend.service.ai.AiExtractors;
+import com.majstr.backend.service.ai.AiFlow;
 import com.majstr.backend.service.ai.AiInput;
-import com.majstr.backend.service.ai.JsonExtractor;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
@@ -22,7 +23,7 @@ import java.util.Map;
  * is precisely why estimate and receipt import could not follow {@code app.ai.provider} while the
  * measurement flows already did: the prompts came welded to one vendor's HTTP. The transport now
  * lives in {@code AnthropicJsonExtractor} / {@code OpenAiJsonExtractor} behind
- * {@link JsonExtractor}, and what is left here is the domain knowledge: two prompts, one schema,
+ * {@code JsonExtractor}, and what is left here is the domain knowledge: two prompts, one schema,
  * and the parsing of the result.</p>
  *
  * <p>It returns raw strings/numbers as the model gave them; unit/type normalisation and
@@ -103,34 +104,41 @@ public class EstimateExtractor {
               - type must be exactly "WORK" or "MATERIAL"; default "MATERIAL".
               - Keep the original top-to-bottom order.
             """;
-    /** Whichever provider `app.ai.provider` selected — this flow does not care which. */
-    private final JsonExtractor extractor;
+    /**
+     * Two flows live in this one class: the estimate prompts and the receipt one. They are read
+     * separately because they are different jobs — a receipt is a small printed table read many
+     * times a day, an estimate is a whole document read occasionally — and a master may well want
+     * a cheaper model on the frequent one.
+     */
+    private final AiExtractors extractors;
     private final ObjectMapper objectMapper;
 
     /** Extract from a spreadsheet/CSV already rendered to a plain text grid. */
     public Extracted extractFromText(String grid) {
         String instruction = "Extract the estimate positions from this spreadsheet grid:\n\n" + grid;
-        return call(AiInput.text(instruction), SYSTEM_PROMPT);
+        return call(AiFlow.ESTIMATE, AiInput.text(instruction), SYSTEM_PROMPT);
     }
 
     /** Extract from a photo (printed or hand-written). {@code mediaType} e.g. image/jpeg. */
     public Extracted extractFromImage(String mediaType, byte[] bytes) {
-        return call(AiInput.image(mediaType, bytes, "Extract the estimate positions from this photo."),
+        return call(AiFlow.ESTIMATE,
+                AiInput.image(mediaType, bytes, "Extract the estimate positions from this photo."),
                 SYSTEM_PROMPT);
     }
 
     /** Extract purchased items from a receipt photo (store / terminal / hand-written). */
     public Extracted extractReceiptFromImage(String mediaType, byte[] bytes) {
-        return call(AiInput.image(mediaType, bytes, "Extract the purchased items from this receipt photo."),
+        return call(AiFlow.RECEIPT,
+                AiInput.image(mediaType, bytes, "Extract the purchased items from this receipt photo."),
                 RECEIPT_SYSTEM_PROMPT);
     }
 
-    private Extracted call(List<AiInput> content, String systemPrompt) {
-        return parse(extractor.requestJson(content, systemPrompt, SCHEMA));
+    private Extracted call(AiFlow flow, List<AiInput> content, String systemPrompt) {
+        return parse(flow, extractors.forFlow(flow).requestJson(content, systemPrompt, SCHEMA));
     }
 
     @SuppressWarnings("unchecked")
-    Extracted parse(String json) {
+    Extracted parse(AiFlow flow, String json) {
         try {
             Map<String, Object> root = objectMapper.readValue(json, Map.class);
             List<Extracted.Line> lines = new ArrayList<>();
@@ -159,7 +167,7 @@ public class EstimateExtractor {
             return new Extracted(lines, deposit);
         } catch (Exception e) {
             log.error("Failed to parse extraction JSON from {}: {}",
-                    extractor.providerName(), e.getMessage());
+                    extractors.forFlow(flow).providerName(), e.getMessage());
             throw new AiExtractionException("error.ai.unavailable", e);
         }
     }

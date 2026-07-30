@@ -28,30 +28,35 @@ class AiProviderConfigTest {
     private final AiProviderConfig config = new AiProviderConfig();
     private static final AnthropicProperties ANTHROPIC =
             new AnthropicProperties("sk-ant-x", "claude-opus-4-8", 8000);
-    private static final OpenAiProperties WITH_KEY = new OpenAiProperties("sk-x", "gpt-5.6", 8000);
-    private static final OpenAiProperties NO_KEY = new OpenAiProperties("", "gpt-5.6", 8000);
+
+    /** Only the provider name varies in these tests; models and per-flow overrides do not. */
+    private static AiFlowsProperties ai(String provider) {
+        return new AiFlowsProperties(provider, null, null);
+    }
+    private static final OpenAiProperties WITH_KEY = new OpenAiProperties("sk-x", "gpt-5.6", 8000, null);
+    private static final OpenAiProperties NO_KEY = new OpenAiProperties("", "gpt-5.6", 8000, null);
 
     @Test
     void defaultsToAnthropic() {
-        assertThat(config.jsonExtractor(ANTHROPIC, NO_KEY, "anthropic"))
+        assertThat(config.jsonExtractor(ai("anthropic"), ANTHROPIC, NO_KEY))
                 .isInstanceOf(AnthropicJsonExtractor.class);
     }
 
     @Test
     void selectsOpenAiWhenAsked() {
-        assertThat(config.jsonExtractor(ANTHROPIC, WITH_KEY, "openai"))
+        assertThat(config.jsonExtractor(ai("openai"), ANTHROPIC, WITH_KEY))
                 .isInstanceOf(OpenAiJsonExtractor.class);
     }
 
     @Test
     void caseDoesNotMatter() {
-        assertThat(config.jsonExtractor(ANTHROPIC, WITH_KEY, "OpenAI"))
+        assertThat(config.jsonExtractor(ai("OpenAI"), ANTHROPIC, WITH_KEY))
                 .isInstanceOf(OpenAiJsonExtractor.class);
     }
 
     @Test
     void openAiWithoutAKeyDisablesRecognitionAndNothingElse() {
-        JsonExtractor extractor = config.jsonExtractor(ANTHROPIC, NO_KEY, "openai");
+        JsonExtractor extractor = config.jsonExtractor(ai("openai"), ANTHROPIC, NO_KEY);
 
         assertThat(extractor).isInstanceOf(MisconfiguredJsonExtractor.class);
         // The reason travels with it: it is logged at boot, on every attempt, and readable here.
@@ -67,7 +72,7 @@ class AiProviderConfigTest {
     void anAnthropicKeyIsNotREQUIRED_localDevRunsWithoutOne() {
         // Blank keys in dev were always normal; this only makes the consequence visible at boot.
         JsonExtractor extractor = config.jsonExtractor(
-                new AnthropicProperties("", "claude-opus-4-8", 8000), NO_KEY, "anthropic");
+                ai("anthropic"), new AnthropicProperties("", "claude-opus-4-8", 8000), NO_KEY);
 
         assertThat(extractor).isInstanceOf(MisconfiguredJsonExtractor.class);
         assertThat(extractor.providerName()).contains("ANTHROPIC_API_KEY");
@@ -79,15 +84,15 @@ class AiProviderConfigTest {
         // EXISTS, so @Value's `:anthropic` default never fires and an empty string reached the
         // unknown-provider check — failing the Spring context, and with it every integration test in
         // the suite, on a runner that had simply never configured a provider.
-        assertThat(config.jsonExtractor(ANTHROPIC, NO_KEY, "")).isInstanceOf(AnthropicJsonExtractor.class);
-        assertThat(config.jsonExtractor(ANTHROPIC, NO_KEY, "   ")).isInstanceOf(AnthropicJsonExtractor.class);
-        assertThat(config.jsonExtractor(ANTHROPIC, NO_KEY, null)).isInstanceOf(AnthropicJsonExtractor.class);
+        assertThat(config.jsonExtractor(ai(""), ANTHROPIC, NO_KEY)).isInstanceOf(AnthropicJsonExtractor.class);
+        assertThat(config.jsonExtractor(ai("   "), ANTHROPIC, NO_KEY)).isInstanceOf(AnthropicJsonExtractor.class);
+        assertThat(config.jsonExtractor(ai(null), ANTHROPIC, NO_KEY)).isInstanceOf(AnthropicJsonExtractor.class);
     }
 
     @Test
     void surroundingWhitespaceDoesNotChangeTheChoice() {
         // A trailing space in a .env line is invisible in a diff and would otherwise read as a typo.
-        assertThat(config.jsonExtractor(ANTHROPIC, WITH_KEY, " openai "))
+        assertThat(config.jsonExtractor(ai(" openai "), ANTHROPIC, WITH_KEY))
                 .isInstanceOf(OpenAiJsonExtractor.class);
     }
 
@@ -95,7 +100,7 @@ class AiProviderConfigTest {
     void aTypoInTheProviderNameStopsRecognition_neverFallsBackQuietly() {
         // Falling back to Anthropic would make a comparison run look like it used OpenAI, and the
         // results would be attributed to the wrong model — the one outcome that makes data lie.
-        JsonExtractor extractor = config.jsonExtractor(ANTHROPIC, WITH_KEY, "opeanai");
+        JsonExtractor extractor = config.jsonExtractor(ai("opeanai"), ANTHROPIC, WITH_KEY);
 
         assertThat(extractor).isInstanceOf(MisconfiguredJsonExtractor.class);
         assertThat(extractor.providerName()).contains("opeanai");

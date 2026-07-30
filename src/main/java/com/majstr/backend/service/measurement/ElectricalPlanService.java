@@ -10,7 +10,8 @@ import com.majstr.backend.feature.FeatureGuard;
 import com.majstr.backend.repository.UserRepository;
 import com.majstr.backend.service.ProjectService;
 import com.majstr.backend.service.ai.AiInput;
-import com.majstr.backend.service.ai.JsonExtractor;
+import com.majstr.backend.service.ai.AiExtractors;
+import com.majstr.backend.service.ai.AiFlow;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -48,8 +49,8 @@ public class ElectricalPlanService {
     private final FeatureGuard featureGuard;
     private final UserRepository userRepository;
     private final ProjectService projectService;
-    /** Whichever provider `app.ai.provider` selected — this flow does not care which. */
-    private final JsonExtractor extractor;
+    /** Whichever model `app.ai.flows.electrical` names. */
+    private final AiExtractors extractors;
     private final ObjectMapper objectMapper;
 
     public ElectricalPlanParseResponse parse(UUID ownerId, UUID objectId,
@@ -68,7 +69,7 @@ public class ElectricalPlanService {
             }
             content = AiInput.image(mediaType, bytes, instruction);
         }
-        return toReview(extractor.requestJson(content, PLAN_PROMPT, SCHEMA));
+        return toReview(extractors.forFlow(AiFlow.ELECTRICAL).requestJson(content, PLAN_PROMPT, SCHEMA));
     }
 
     // ---- LLM JSON → review DTO -------------------------------------------------

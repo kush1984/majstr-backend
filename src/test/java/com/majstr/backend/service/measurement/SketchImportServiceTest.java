@@ -12,6 +12,10 @@ import com.majstr.backend.feature.Feature;
 import com.majstr.backend.feature.FeatureGuard;
 import com.majstr.backend.repository.UserRepository;
 import com.majstr.backend.service.ProjectService;
+import com.majstr.backend.config.AiFlowsProperties;
+import com.majstr.backend.config.AnthropicProperties;
+import com.majstr.backend.config.OpenAiProperties;
+import com.majstr.backend.service.ai.AiExtractors;
 import com.majstr.backend.service.ai.JsonExtractor;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -50,13 +54,20 @@ class SketchImportServiceTest {
     private final JsonMapper mapper = JsonMapper.builder().build();
     private SketchImportService service;
 
+
+    /** Every flow answered by one stub — these tests are about the service, not the routing. */
+    private static AiExtractors allFlows(JsonExtractor extractor) {
+        return new AiExtractors(new AiFlowsProperties(null, null, null),
+                new AnthropicProperties("", "m", 1), new OpenAiProperties("", "m", 1, null), extractor);
+    }
+
     private final UUID ownerId = UUID.randomUUID();
     private final UUID objectId = UUID.randomUUID();
 
     @BeforeEach
     void setUp() {
         service = new SketchImportService(featureGuard, userRepository, projectService,
-                extractor, measurementService, new MeasurementCalc(mapper), mapper);
+                allFlows(extractor), measurementService, new MeasurementCalc(mapper), mapper);
         given(userRepository.findById(ownerId))
                 .willReturn(Optional.of(User.builder().id(ownerId).plan(Plan.PRO).build()));
     }

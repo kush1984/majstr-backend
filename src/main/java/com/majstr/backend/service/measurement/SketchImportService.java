@@ -14,7 +14,8 @@ import com.majstr.backend.feature.FeatureGuard;
 import com.majstr.backend.repository.UserRepository;
 import com.majstr.backend.service.ProjectService;
 import com.majstr.backend.service.ai.AiInput;
-import com.majstr.backend.service.ai.JsonExtractor;
+import com.majstr.backend.service.ai.AiExtractors;
+import com.majstr.backend.service.ai.AiFlow;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -54,8 +55,8 @@ public class SketchImportService {
     private final FeatureGuard featureGuard;
     private final UserRepository userRepository;
     private final ProjectService projectService;
-    /** Whichever provider `app.ai.provider` selected — this flow does not care which. */
-    private final JsonExtractor extractor;
+    /** Whichever model `app.ai.flows.sketch` names. */
+    private final AiExtractors extractors;
     private final MeasurementService measurementService;
     private final MeasurementCalc calc;
     private final ObjectMapper objectMapper;
@@ -73,7 +74,7 @@ public class SketchImportService {
         }
         var content = AiInput.image(mediaType, bytes,
                 "Recognise this hand-drawn room sketch into rooms, surfaces and their sizes.");
-        String json = extractor.requestJson(content, SKETCH_PROMPT, SCHEMA);
+        String json = extractors.forFlow(AiFlow.SKETCH).requestJson(content, SKETCH_PROMPT, SCHEMA);
         return toReview(json);
     }
 

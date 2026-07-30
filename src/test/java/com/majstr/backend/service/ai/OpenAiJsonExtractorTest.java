@@ -26,7 +26,7 @@ class OpenAiJsonExtractorTest {
     private static final String B64 = "c2hlZXQ=";
 
     private static OpenAiJsonExtractor extractor(String key) {
-        return new OpenAiJsonExtractor(new OpenAiProperties(key, "gpt-5.6", 8000));
+        return new OpenAiJsonExtractor(new OpenAiProperties(key, "gpt-5.6", 8000, null));
     }
 
     // ---- input rendering --------------------------------------------------------
@@ -40,6 +40,9 @@ class OpenAiJsonExtractorTest {
         assertThat(part).containsEntry("type", "input_file");
         assertThat(part).containsEntry("filename", "document.pdf");
         assertThat(part).containsEntry("file_data", "data:application/pdf;base64," + B64);
+        // The setting an all-zeros reading turned out to hinge on: without it the page arrives
+        // downscaled and the dimension chains are gone before the model ever looks.
+        assertThat(part).containsEntry("detail", "high");
     }
 
     @Test
@@ -51,6 +54,8 @@ class OpenAiJsonExtractorTest {
 
         assertThat(part).containsEntry("type", "input_image");
         assertThat(part).containsEntry("image_url", "data:image/png;base64," + B64);
+        // Matters most on the enlarged fragments — sending them at low detail would undo the point.
+        assertThat(part).containsEntry("detail", "high");
     }
 
     @Test
