@@ -32,9 +32,12 @@ class SheetTilerTest {
 
     /** An A3 landscape sheet with one dimension-like figure on it. */
     private static byte[] a3Sheet() throws Exception {
+        return sheet(PDRectangle.A4.getHeight() * 1.414f, PDRectangle.A4.getWidth() * 1.414f);
+    }
+
+    private static byte[] sheet(float widthPt, float heightPt) throws Exception {
         try (PDDocument doc = new PDDocument()) {
-            PDPage page = new PDPage(new PDRectangle(PDRectangle.A4.getHeight() * 1.414f,
-                    PDRectangle.A4.getWidth() * 1.414f));
+            PDPage page = new PDPage(new PDRectangle(widthPt, heightPt));
             doc.addPage(page);
             try (PDPageContentStream cs = new PDPageContentStream(doc, page)) {
                 cs.beginText();
@@ -60,7 +63,8 @@ class SheetTilerTest {
     void oneSheetBecomesFourFragmentsEachBiggerThanTheProvidersOwnDownscale() throws Exception {
         List<List<AiInput>> fragments = SheetTiler.tiles(a3Sheet(), "read it");
 
-        assertThat(fragments).hasSize(SheetTiler.COLS * SheetTiler.ROWS);
+        // An A3 sheet is 420×297 mm, so at ~A5 per fragment it is still four of them.
+        assertThat(fragments).hasSize(4);
         for (List<AiInput> fragment : fragments) {
             // Each fragment is a ready-to-send pair: the image, then what to do with it.
             assertThat(fragment).hasSize(2);
@@ -72,6 +76,26 @@ class SheetTilerTest {
         }
     }
 
+    /** A1 landscape — the format a технічний паспорт arrives on. */
+    private static byte[] a1Sheet() throws Exception {
+        return sheet(841f * 72f / 25.4f, 594f * 72f / 25.4f);
+    }
+
+    @Test
+    void aBIGGERsheetIsCutIntoMOREfragments_notIntoBiggerOnes() throws Exception {
+        // The grid used to be a fixed 2×2, which quietly meant "assume A3". Quartering an A1 sheet
+        // gives fragments covering 420×297 mm each — after the provider's cap the chains are back to
+        // the ~10 px that made fragments necessary in the first place, and the whole pass buys
+        // nothing. The fragment count follows the PAPER now.
+        List<List<AiInput>> a3 = SheetTiler.tiles(a3Sheet(), "read it");
+        List<List<AiInput>> a1 = SheetTiler.tiles(a1Sheet(), "read it");
+
+        assertThat(a1.size()).isGreaterThan(a3.size());
+        // …but not without limit: past the cap a bigger sheet gets coarser fragments instead of a
+        // bill that grows with paper size.
+        assertThat(a1.size()).isLessThanOrEqualTo(9);
+    }
+
     @Test
     void eachFragmentSaysWhichPartOfTheSheetItIs() throws Exception {
         // Without this the model cannot tell a top-left corner from a bottom-right one, and rooms
@@ -81,10 +105,10 @@ class SheetTilerTest {
                 .toList();
 
         assertThat(instructions).allMatch(s -> s.startsWith("read it"));
-        assertThat(instructions).anyMatch(s -> s.contains("TOP LEFT"));
-        assertThat(instructions).anyMatch(s -> s.contains("TOP RIGHT"));
-        assertThat(instructions).anyMatch(s -> s.contains("BOTTOM LEFT"));
-        assertThat(instructions).anyMatch(s -> s.contains("BOTTOM RIGHT"));
+        // Said as coordinates, not as «top left quarter»: on a 3×3 grid there are no quarters, and
+        // a fragment that cannot say where it sits gets its rooms matched to the wrong chains.
+        assertThat(instructions).anyMatch(s -> s.contains("row 1 of 2") && s.contains("column 1 of 2"));
+        assertThat(instructions).anyMatch(s -> s.contains("row 2 of 2") && s.contains("column 2 of 2"));
         assertThat(instructions).allMatch(s -> s.contains("FRAGMENT"));
     }
 

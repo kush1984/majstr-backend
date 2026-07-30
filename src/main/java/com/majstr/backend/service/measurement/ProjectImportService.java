@@ -752,9 +752,19 @@ public class ProjectImportService {
                 этаж / floor; двері / двери / door; вікно / окно / window; висота / высота / height;
                 Загальна площа / Общая площадь / Total area. Match on MEANING, not on the spelling
                 of one language.
-              - READ THE DRAWING VISUALLY. Any embedded text layer may be garbled or absent
-                (Cyrillic CID fonts routinely fail to extract) — trust the pixels you SEE on the
-                page, never a raw text transcription of it.
+              - READ THE DRAWING VISUALLY. An embedded text layer is unreliable in ways that all
+                look like data: Cyrillic CID fonts fail to extract, a scan's OCR layer floats out of
+                alignment with the cells it belongs to, some sheets carry EVERY string twice, and a
+                plan exported from a drawing tool can leave a text layer of nothing but loose
+                numbers with no names or headers at all. Trust the pixels you SEE, and treat the
+                text as a hint that has to agree with them.
+              - A LETTER AMONG FIGURES IS NOT A FIGURE. A north arrow «N», a sheet code «А-03», a
+                mark «Д 01» or a group number «гр.3» sit in the same visual row as dimensions and
+                must never be read as one.
+              - A SHEET MAY BE A FLATTENED IMAGE at low resolution — a whole album exported from a
+                photo editor. If the figures are genuinely illegible, say so in warnings («аркуш —
+                растр низької якості, розміри не читаються») rather than reporting confident zeros:
+                the master can then send a better copy instead of trusting an empty result.
               - A PHOTOGRAPHED sheet (shot at an angle) — read ONLY the printed labels, tables and
                 symbols. NEVER take a dimension off a photo: perspective distorts distances. A size
                 with no printed figure beside it is unknown (0), never an estimate.
@@ -888,9 +898,16 @@ public class ProjectImportService {
                whichever of those the studio prefers, and finding none on the measure plan says
                nothing about the project. If it is nowhere on THIS sheet, leave 0 and name
                "ceilingHmm" in "uncertain" — another sheet may carry it, and the system merges them.
-               ⚠️ «H=» (capital) is the CEILING; «h=» (small) is an installation height of a
-               fitting above the finished floor — a socket, a switch, a bracket. They look alike and
-               mean different things; never report an «h=» as a room's ceiling.
+               ⚠️ «H=» and «h=» usually mean different things — the ceiling, and the mounting height
+               of a fitting above the finished floor (a socket, a switch, a bracket) — but the CASE
+               ALONE DOES NOT SETTLE IT: real albums write a ceiling as «h=2660 мм». Decide by what
+               the mark belongs to: a figure standing in the middle of a room, on a par with the
+               room's other labels, is that room's ceiling; one sitting next to a symbol, a socket
+               strip or a piece of furniture is a mounting height. If it is genuinely ambiguous, take
+               the reading that fits the room and name "ceilingHmm" in "uncertain".
+               ⚠️ A height with an asterisk or a footnote («h=2660* — уточнити на місці») is
+               PROVISIONAL: report the figure, name "ceilingHmm" in "uncertain", and put the
+               footnote's words in the note. It is the studio itself saying it is not final.
             4. OPENINGS — every window and door on a room's walls: kind "вікно"/"двері",
                wMm = printed width, hMm = the opening's height, sillMm = the window sill.
                HOW TO FIND ONE WHEN NOTHING IS LABELLED. Many sheets mark no opening sizes at all —
