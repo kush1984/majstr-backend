@@ -51,10 +51,21 @@ com.majstr.backend
 ├── config/                    — SecurityConfig, OpenApiConfig, *Properties records
 ├── controller/                — REST endpoints (thin, delegate to services)
 ├── service/                   — business logic, @Transactional boundaries
+│   ├── ai/                    — LLM provider plumbing (see the recognition section)
+│   ├── album/                 — full-album takeoff: surfaces + electrical, two flows
+│   ├── importer/              — estimate / receipt / catalog import from file or photo
+│   └── measurement/           — measurement domain + project-document import
 ├── repository/                — Spring Data JPA interfaces
 ├── entity/                    — JPA entities (Lombok-annotated)
 ├── dto/                       — request/response **records**, validated with jakarta.validation
 ├── security/                  — JwtService, filters, UserPrincipal, body-cache wrapper
+├── feature/                   — plan gates: Feature/Limit enums, PlanConfig, guards
+├── billing/                   — monobank checkout, signatures, auto-renew
+├── storage/                   — pluggable file storage (local / S3-R2)
+├── email/                     — Resend HTTP client + templates
+├── push/                      — Web Push (VAPID)
+├── bootstrap/                 — startup seeding
+├── dev/                       — @Profile("dev") only
 └── exception/                 — typed exceptions + GlobalExceptionHandler
 ```
 
@@ -164,23 +175,44 @@ are addressed per estimate under the project token
 `PublicEstimateService` (`doSign`/`doAsk`) so sign semantics exist once. See
 [docs/iteration-portal-multi-estimate.md](docs/iteration-portal-multi-estimate.md).
 
-### Client questions are a read-only inbox
+### Client messages are a read-only inbox, but clients can attach files
 
-Clients leave questions on the public portal (`PublicEstimateService.doAsk`, reached
-from both token families); the contractor reads them and marks them read, then follows
-up out-of-band — there is no in-app reply thread. Questions are estimate-linked
-(`estimate_id`), and since the multi-estimate portal `QuestionView` carries
-`estimateName` (fetch-joined — don't drop the `JOIN FETCH` or it N+1s) so the inbox
-shows which variant the client meant. `EstimateQuestion.read` (column `is_read`, V22, default
-false) tracks acknowledgement. The contractor side lives in `QuestionService` +
-`ProjectQuestionController` (`/api/projects/{id}/questions`, `PATCH .../{qid}/read`),
-scoped through `ProjectService.loadOwned`. `GET /api/projects` carries an
-`unreadQuestions` count per card, computed with **one grouped query**
-(`countUnreadByProjectIds`) folded into the list — same no-N+1 pattern as the
-latest-estimate summary, backed by a partial index on unread rows. **Naming
-gotcha:** the entity field is `read` (not `isRead`) so the JPQL path `q.read` and
-derived queries `...AndReadFalse` share one property name; the `QuestionView`
-record component is `isRead`, which is the JSON key the PWA sees.
+**Renamed from "questions" — the old names are gone.** `EstimateQuestion` → `ProjectMessage`
+(V74), `QuestionService` → `MessageService`, `ProjectQuestionController` →
+`ProjectMessageController`, `/api/projects/{id}/questions` → `/api/projects/{id}/messages`.
+Don't reintroduce the question wording in new code.
+
+**Direction is still one-way.** Clients send; the contractor reads, marks read, deletes, and
+follows up out-of-band. There is no in-app reply thread. The master side is
+list / `PATCH .../{id}/read` / delete / download-a-file, all scoped through
+`ProjectService.loadOwned`.
+
+**Messages are project-level with an OPTIONAL estimate link.** `ProjectMessage.project` is
+mandatory, `estimate` is nullable — a message about the object as a whole no longer has to be
+pinned to a variant, while one left from an estimate still is (the inbox shows which). Also
+carries `authorName` / `authorPhone` / `authorIp` and `read` (column `is_read`).
+
+**Two ways in, and they are different tokens.** The estimate portal still accepts a message
+alongside a signature; separately, V75 added a **`kind` to `project_share_links`** so a master
+can hand out a **message link** — `MessageLinkService` + `MessageLinkController`
+(`/api/projects/{id}/message-link` to mint/revoke/inspect, public
+`GET|POST /api/public/message-link/{token}`) — that lets a client send a message **with file
+attachments** (multipart) without seeing any estimate. `MessageLinkRateLimiter` guards the
+public POST.
+
+**Attachments have a retention policy, deliberately in two passes.**
+`ProjectMessageFile` (V76) holds the files; `MessageFileRetentionService` expires them after
+**six months** — first a pass that *warns* the master which object's file is going and when
+(V77 stores the warning), then a second pass that deletes what was ignored. Silent deletion
+would be data loss dressed up as housekeeping. The grace window is
+`app.message-files.grace-days` (default 14) and `MessageView` reads it so the app can show a
+real date rather than making the client infer the server's schedule.
+
+`GET /api/projects` still carries an unread count per card from **one grouped query** folded
+into the list — same no-N+1 pattern as the latest-estimate summary, backed by a partial index
+on unread rows. **Naming gotcha survives the rename:** the entity field is `read` (not
+`isRead`) so the JPQL path and derived `...AndReadFalse` queries share one property name,
+while the view record component is `isRead` — that is the JSON key the PWA sees.
 
 ### Login rate limit relies on a custom request wrapper
 
@@ -337,7 +369,9 @@ the normal `403 *_LIMIT_REACHED` code.
 
 `hibernate.ddl-auto: validate`. Never put schema changes in entity
 annotations expecting Hibernate to apply them. Add a new
-`V<N>__<desc>.sql` under `src/main/resources/db/migration/`. Trades live
+`V<N>__<desc>.sql` under `src/main/resources/db/migration/` — **check the highest existing
+number first** (`ls` the directory and sort numerically; the latest is **V77**). Never edit an
+applied migration: Flyway checksums it and a changed file fails startup. Trades live
 in the `user_trades` collection table (one row per `(user_id, trade)`,
 mapped via `User.trades` `@ElementCollection`); it has a `CHECK`
 constraint enumerating the allowed values — if you add a `Trade` enum
@@ -363,19 +397,56 @@ bucket needs **no public-read policy**; keys are identical across backends, so a
 stored `logoUrl` survives a local→R2 switch. A direct-public / CDN read path is a
 possible future optimization, not needed now.
 
-### Estimate import from Excel/photo is LLM extraction (Anthropic, raw HTTP)
+### Which model reads what: `service/ai/` (per-flow provider + model)
+
+**There is no single "the LLM" any more.** Recognition jobs are genuinely different tasks: a
+receipt is a small printed table read many times a day (cheap and fast wins); an A3 measure plan
+is dense line-work read in several passes per project (the strongest vision pays for itself).
+One model for both means overpaying on every receipt or under-reading every drawing.
+
+- **`AiFlow`** enumerates the jobs: `ESTIMATE`, `RECEIPT`, `SKETCH`, `ELECTRICAL`,
+  `PROJECT_DOCS`. `flow.key()` is its config key (`PROJECT_DOCS` → `project-docs`).
+- **`JsonExtractor`** is the seam (`requestJson(input, systemPrompt, schema)` +
+  `providerName()`), implemented by `AnthropicJsonExtractor`, `OpenAiJsonExtractor`, and
+  `MisconfiguredJsonExtractor` (see below).
+- **`AiExtractors`** resolves flow → extractor **once, at startup**, and logs the whole mapping.
+  Services call `extractors.forFlow(AiFlow.X)` — a lookup, not a decision. Adding a third vendor
+  is one `JsonExtractor` implementation plus one branch in `build`; **no service changes**.
+- **Config** is `AiFlowsProperties` (`app.ai.*`): `provider` (default vendor), `model` (override
+  that vendor's default), and `flows.<key>` = `vendor:model` | just a model | just a vendor.
+  **With nothing set, behaviour is exactly what it was** — the default extractor everywhere.
+
+Three decisions worth not undoing:
+
+- **Resolution is at startup and logged**, because "which model produced this reading" is the
+  first question about a bad result, and it must be answerable from the log rather than by
+  re-reading config. It also keeps a comparison honest: one model per flow per run.
+- **A typo disables that ONE flow and says so** (`MisconfiguredJsonExtractor` → the usual 503),
+  instead of silently falling back to the default. Results attributed to a model nobody chose
+  are worse than results that never came. Same for a flow naming a vendor whose key is unset.
+- **An empty config value is treated as absent.** `${AI_FLOW_RECEIPT:}` with nobody setting the
+  variable arrives as a present-but-blank key — the exact trap that once turned an unset
+  provider into 25 failed integration tests.
+
+**The album extractor is deliberately outside this registry.** `ClaudeAlbumExtractor` keeps its
+own HTTP client with much longer timeouts, because a whole-album pass runs for minutes; it joins
+`AiFlow` when the seam learns to carry a timeout.
+
+### Estimate import from Excel/photo is LLM extraction (per-flow provider, raw HTTP)
 
 `POST /api/estimates/import/parse` (multipart) and `/commit` (JSON) import a ready
 estimate **onto an object** from an Excel/CSV file or a **photo** (printed or
 hand-written). PRO-gated via `Feature.ESTIMATE_IMPORT` (PRO+TEAM — deliberately
 **not** the TEAM-only `AI_ASSISTANT`, which stays reserved for "draft from a
-description"). `ClaudeEstimateExtractor` (in `service/importer/`) calls Anthropic
-`/v1/messages` over **raw HTTP** (Spring `RestClient` — same no-SDK precedent as
-`ResendEmailService`/`MonobankClient`), model **`claude-opus-4-8`**, structured
-output via `output_config.format` (a JSON schema; **no beta header** — structured
-outputs + vision are GA on Opus). Two input branches, one extractor: Excel/CSV →
-POI text grid → `text` block; photo → base64 `image` block (vision). Config is
-`app.anthropic.*` (`ANTHROPIC_API_KEY` env only). **Not fire-and-forget:** unlike
+description"). **`EstimateExtractor`** (in `service/importer/`) owns the prompt and the schema and
+delegates the call to `extractors.forFlow(AiFlow.ESTIMATE)` — it used to BE the Anthropic client
+too, and that is exactly the split described in *Which model reads what* above. The transport
+(`AnthropicJsonExtractor` / `OpenAiJsonExtractor`) is **raw HTTP** via Spring `RestClient` — same
+no-SDK precedent as `ResendEmailService`/`MonobankClient` — with structured output via
+`output_config.format` (a JSON schema; **no beta header** — structured outputs + vision are GA on
+Opus). Two input branches, one extractor: Excel/CSV → POI text grid → text input; photo → base64
+image input (vision). Keys are env-only (`ANTHROPIC_API_KEY` / `OPENAI_API_KEY`).
+**Not fire-and-forget:** unlike
 email/push, a blank key or a call/parse failure throws `AiExtractionException` →
 **503 `AI_UNAVAILABLE`** (the import is synchronous, the master is waiting), so the
 PWA can offer "enter manually". Before giving up, the shared call (`requestJson`)
@@ -404,9 +475,9 @@ Three related capabilities added together (docs/iteration-consolidated-receipts-
   ownership- and same-project-checked.
 - **Receipt import** — `POST /api/estimates/{id}/receipt-items/parse|commit`
   (`ReceiptImportService`, `service/importer/`) adds lines to an **open** estimate from
-  a **receipt photo** (store/terminal/hand-written) via `ClaudeEstimateExtractor` with a
-  **receipt-specific system prompt** (`call(content, systemPrompt)` was made
-  prompt-parameterized; the estimate prompt is unchanged). Image-only, no Excel branch;
+  a **receipt photo** (store/terminal/hand-written) via `EstimateExtractor` with a
+  **receipt-specific system prompt**, on its own `AiFlow.RECEIPT` (so a receipt can run on a
+  cheaper model than a drawing — that is the whole reason flows exist). Image-only, no Excel branch;
   `commit` calls `EstimateService.appendItems` (SIGNED → 409) — **no catalog upsert**
   (unlike the estimate import). Gated by a **new `Feature.RECEIPT_IMPORT` (PRO+TEAM)**,
   distinct from `ESTIMATE_IMPORT`. Same 503 `AI_UNAVAILABLE` / discard-the-file behaviour.
@@ -424,6 +495,87 @@ Three related capabilities added together (docs/iteration-consolidated-receipts-
   `PublicEstimateView.sharedPhotos` lists the object's SHARED photos for the portal
   gallery (`static/portal/index.html`). This is the first private upload type — it closes
   the "public file serving needs auth" open question for this asset class.
+
+### The default catalog is reference data; an estimate line is a snapshot
+
+Two rules that make the catalog safe to rewrite, and that every catalog migration leans on:
+
+1. **Default catalog data is copied BY VALUE.** `catalog_templates` is what a new master's
+   `catalog_items` are seeded from. Changing a template only affects future copies — which is
+   why V70–V72 could redo the seed data at all.
+2. **`estimate_items` hold their own name, unit and price**, copied when the line was added,
+   with **no foreign key** to `catalog_items`. An estimate written last month keeps every
+   figure it was written with, no matter what happens to the catalog. Never "fix" this by
+   adding a FK — the snapshot is the feature (the client signed those numbers).
+
+**V70–V73 cleaned up after the V50 "tetris" import**, which had claimed a
+punctuation-insensitive dedupe but could not see the older rows: those had been stored with
+punctuation *and connecting words* stripped, so the comparison saw two different strings. One
+work ended up sold under two names, and default templates referenced positions **by name**, so
+big and small bundles pointed at different rows for the same job.
+
+- **V70** — the fixes with a single correct answer; duplicate positions and placeholder prices
+  were deliberately left for an owner pricing decision.
+- **V71** — collapses the duplicate groups in two passes (provable string-equivalence first,
+  then stripped-word matches). Within a group **the highest price wins** — the same rule V49
+  used — so a price a master raised themselves survives.
+- **V72** — breaks up the four categories that only repeated the trade name («ЕЛЕКТРИКА» inside
+  the electrical trade is not a grouping), moving 107 positions into real buckets and adding
+  «Штроблення». Statements are per position, not per keyword, so the mapping is reviewable.
+  **Category is display-only — nothing matches on it**, which is what makes this redoable.
+- **V73** — carries the same cleanup into catalogs masters ALREADY hold (V71/V72 only changed
+  new copies). Created estimates are untouched, per rule 2.
+
+Guarded by `SeedCatalogInvariantsIntegrationTest` and
+`CatalogCleanupOnLegacyDataIntegrationTest` — these run the migrations against real Postgres,
+which is the only place this class of SQL can be verified.
+
+### Estimate line order is explicit, and categories are a grouping of it
+
+`PATCH /api/estimates/{id}/items/order` (`EstimateItemsOrderRequest` →
+`EstimateService.reorderItems`) persists the master's chosen order, so positions can be dragged
+inside a category **and between categories**. Signed estimates are rejected like every other
+item write. `EstimatePdfService` renders the same grouping, so what the master arranged is what
+the client receives — if you change ordering on one side, change it on the other or the PDF
+silently disagrees with the app.
+
+### Album takeoff (`service/album/`) — built and tested, NOT yet exposed
+
+**Read this first: no controller calls these services, and there is no job runner to host them.**
+The calculators and the extractor are complete and covered by a fixture harness, but the feature
+is unreachable from the product — don't describe it to the user as available, and don't wire it
+to a request thread when you do expose it (see the timing note below). Tracked in
+[docs/open-questions.md](docs/open-questions.md).
+
+Recognition of a full project **album** (the designer's multi-sheet PDF set), split into two
+INDEPENDENT product flows so a master only pays for what their trade needs:
+
+- **`SurfaceTakeoffService`** — «площі по кімнатах», for painters / plasterers / tilers. Runs
+  only the surface-relevant LLM passes (inventory + rooms/openings) then the deterministic
+  **`RoomSurfaceCalc`**.
+- **`ElectroTakeoffService`** — «електрика», for electricians. Runs only the electrical passes
+  (inventory + points per floor + lighting/groups + heating/panel) then **`ElectroTakeoffCalc`**.
+
+Neither pays for the other's passes. Thanks to prompt caching, if both run on the same album
+within the cache TTL the second reads the document from cache (~10% of input price).
+
+**These are minutes-long (multiple Opus passes) — run them on an async job, never on a request
+thread.** That is the one rule most likely to be broken by accident.
+
+`RoomSurfaceCalc` deliberately mirrors the existing measurement domain (`MeasurementCalc`):
+walls = Σ planes − Σ openings (w×h); reveals use the LINEAR default sides (left + right + top,
+no bottom) i.e. `2·H + W` per opening. **A door shared by two rooms is deducted from both** —
+each side of the wall loses the hole.
+
+**The honesty contract is the point, not a nicety.** Nothing is guessed: a missing ceiling
+height or an underivable perimeter leaves dependent values `null` with a note, and an opening
+without both dimensions is skipped from the deduction and *reported*. The master sees WHAT is
+missing instead of a confidently wrong number — the same principle as the import review's
+«Джерела / Відсутнє» block.
+
+Regression net: `AlbumFixtureHarnessTest` replays three real project albums from
+`src/test/resources/album-fixtures/` through the calculators, so a formula change is caught
+against known-good output without spending a single LLM call.
 
 ### Entities vs. records
 
@@ -488,12 +640,22 @@ Tests therefore use one of two patterns:
    `MockMvcBuilders.standaloneSetup(controller)`. No Spring context, no
    DB, instant startup. `GlobalExceptionHandler` is registered manually
    via `.setControllerAdvice(...)` so the error mapping is exercised too.
-2. **Integration tests** (not yet wired) — full `@SpringBootTest` against
-   a **Testcontainers** PostgreSQL. Don't try H2; the Flyway migrations
-   are PostgreSQL-specific.
+2. **Integration tests** — full `@SpringBootTest` against a **Testcontainers**
+   PostgreSQL, via `IntegrationTestBase` (one shared container for the whole run;
+   `@ActiveProfiles("test")`). Don't try H2; the Flyway migrations are PostgreSQL-specific.
+   **Docker is therefore required to build** — these fail rather than skip, deliberately, so a
+   green build means the migrations really ran.
 
-`application-test.yml` still holds a test JWT secret for the day we add
-an integration slice that loads the real context.
+   Use this slice for anything Mockito structurally cannot see: a migration actually applying,
+   a `nativeQuery`/`@Query` running as real SQL, a CHECK constraint, lazy loading on a detached
+   entity, or the security filter chain end to end. It exists because that blindness shipped
+   real bugs (a `LazyInitializationException`, `lower(bytea)` in admin search, income that
+   counted REJECTED estimates, and every unauthenticated request answering 403 instead of 401).
+
+   Naming: `…IntegrationTest`, **not** `…IT` — discovery is name-based, and a class that
+   silently never runs is worse than no test.
+
+`application-test.yml` holds the test JWT secret and the settings that slice loads.
 
 ## Open-question log
 
@@ -548,9 +710,16 @@ a one-line note so the history is preserved.
 
 These are intentional gaps to be aware of (don't claim they exist):
 
-- No integration tests (only Mockito unit tests + standalone MockMvc).
 - No multi-instance rate-limit store (in-memory `ConcurrentHashMap`).
-- No billing / payments — plan changes are admin-manual.
-- No password reset flow.
+- No in-app reply to a client message — the inbox is one-way by design (see
+  *Client messages* above), the master follows up out-of-band.
+- No offline photo upload — every other daily flow authors offline, photos do not
+  (a blob outbox is backlogged).
+- No TEAM multi-user workspaces; TEAM is a plan, not a shared workspace yet.
 - See [docs/open-questions.md](docs/open-questions.md) for the full list of
   deferred decisions.
+
+**Recently shipped — do NOT describe these as missing** (this list has been wrong before):
+integration tests (Testcontainers slice, see *Testing*), billing/payments (monobank checkout,
+auto-renew, yearly tariff, PRO trial), password reset, client messages with attachments +
+retention, album takeoff, offline-first authoring for everything except photos.

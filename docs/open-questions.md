@@ -24,6 +24,29 @@ one-line summary — keep the item in the file as a record.
 
 ## Architecture & operations
 
+### Album takeoff has no entry point and no job runner to host it
+- **Status:** OPEN
+- **Since:** Catch-up review (2026-07-27)
+- **Context:** `service/album/` is complete and tested — extractor, both calculators, both product
+  flows (`SurfaceTakeoffService` / `ElectroTakeoffService`), a fixture harness over three real
+  albums. **But no controller references either service, so the feature is unreachable from the
+  product**, and `@Async` exists only for email/push. The services' own docs say a run is
+  *minutes* of wall clock (several Opus passes) and must never sit on a request thread — which is
+  true, and there is currently nowhere else to put it.
+- **Notes / options:** Two things are needed, and the second is the real decision:
+  1. An endpoint per flow (surfaces / electrical) on a project, plan-gated like the other
+     recognition features.
+  2. **Somewhere to run a minutes-long job**, with the master able to leave the screen and come
+     back. Options: a DB-backed job row + `@Scheduled` poller (fits the current single-node,
+     no-new-infra shape, and the cleanup/expiry services already establish the pattern); a
+     `@Async` fire-and-forget with the result written to a table (simplest, but a restart loses
+     the run with no trace); or a real queue (correct, new infrastructure, and multi-instance is
+     already an open question below). Whichever wins, the run must be **resumable or at least
+     visibly failed** — silently losing a paid multi-pass Opus run is the failure mode to avoid.
+- **Related:** the electrical measurements UI is separately parked behind
+  `ELECTRICAL_MEASUREMENTS_ENABLED=false`, so exposing the electrical flow is also a product
+  decision, not only a plumbing one.
+
 ### Offline-first follow-ups (Phase 1 shipped; these are the deferred pieces)
 - **Status:** IN_PROGRESS (2026-07-26) — the offline programme resumed. **O3 shipped** (see
   below and [iteration-offline-step1-nothing-is-lost.md](iteration-offline-step1-nothing-is-lost.md)):
@@ -770,7 +793,12 @@ one-line summary — keep the item in the file as a record.
 - **Notes / options:** Either current "soft enforcement" is fine (UX-friendly), or block writes to over-limit resources too. Pick before billing lands.
 
 ### Trial period for PRO/TEAM
-- **Status:** OPEN
+- **Status:** RESOLVED — a one-time self-serve PRO trial shipped. `User.trialStartedAt` records it
+  (null = never taken), `BillingService` refuses a second claim with 409 `TRIAL_UNAVAILABLE`, and
+  the daily `BillingExpiryService` downgrades the account when it ends while `trialStartedAt`
+  stays set so it can't be claimed twice. The **grace period was later removed deliberately**
+  (2026-07-26) — see the iteration doc; a trial that quietly kept working past its end was
+  teaching the wrong thing about the paywall.
 - **Since:** step 4
 - **Context:** No trial concept. New user is FREE forever until manual upgrade.
 - **Notes / options:** Add `trial_ends_at` to user; `FeatureGuard` / `LimitService` reads it before checking plan.
@@ -973,7 +1001,16 @@ one-line summary — keep the item in the file as a record.
   A single-trade tag still covers all 23. Not blocking.
 
 ### Tetris default catalog: punctuation-stripped names + market-price gap
-- **Status:** OPEN
+- **Status:** OPEN — **but only the PRICE half now.** The names/duplicates half was fixed by
+  V70–V73 (2026-07-26): the stripped-punctuation rows were exactly why V50's
+  "punctuation-insensitive" dedupe could not see what it was duplicating, so one work ended up
+  sold under two names with big and small templates pointing at different rows. V71 collapses
+  those groups (highest price wins, as V49 did), V72 breaks up the four categories that only
+  repeated the trade name, and V73 carries both into catalogs masters already hold. Created
+  estimates were deliberately untouched — line items are snapshots with no FK. Guarded by
+  `SeedCatalogInvariantsIntegrationTest` + `CatalogCleanupOnLegacyDataIntegrationTest`.
+  **What remains open:** whether the pre-existing positions ever get the master's own market
+  prices, which is still the opt-in-diff question below, never a silent overwrite.
 - **Since:** Tetris-templates iteration (2026-07-13)
 - **Context:** The existing default catalog (V27) was seeded from the same tetris source with
   **punctuation stripped** from names, so V50 had to reference those canonical (uglier) names in
@@ -1195,7 +1232,15 @@ one-line summary — keep the item in the file as a record.
   editor; a true per-segment contour is still out of scope (see «L-shaped / arbitrary contours»).
 
 ### Album takeoff pipeline (from the archived second-agent electro-feature)
-- **Status:** OPEN
+- **Status:** RESOLVED (2026-07-27) — adopted and then **split into two products**. `service/album/`
+  now holds `ClaudeAlbumExtractor`, `AlbumExtraction`, `AlbumSchemas`, `RoomSurfaceCalc`,
+  `ElectroTakeoffCalc` and the 3 real-album fixtures from the archive, plus our own addition on
+  top: `SurfaceTakeoffService` («площі», for painters/plasterers/tilers) and
+  `ElectroTakeoffService` («електрика») run only their own LLM passes, so a master who needs
+  areas never pays for electrical recognition and vice versa. Prompt caching means a second flow
+  on the same album reads the document from cache. `AlbumFixtureHarnessTest` replays the fixtures
+  through the calculators, so formulas are guarded without spending an LLM call. The
+  whole-album auto-run and our cheap per-page pick now coexist rather than compete.
 - **Since:** Archive review (2026-07-24)
 - **Context:** A second agent delivered (in `C:\Users\AndriyKushka\Downloads\majstr.7z`) a whole
   server-side "design-album → takeoff" feature: `ClaudeAlbumExtractor` (5-pass Opus, Files API,
