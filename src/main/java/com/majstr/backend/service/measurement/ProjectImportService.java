@@ -738,7 +738,20 @@ public class ProjectImportService {
     private static final String COMMON_RULES = """
 
             HARD RULES:
-              - This is Ukrainian design-project documentation.
+              - This is design-project documentation from a Ukrainian studio, and every studio draws
+                and labels differently. The conventions named below are EXAMPLES of what such sheets
+                use — they are NOT a closed list, and a sheet that follows none of them is normal.
+              - THE SHEET'S OWN LEGEND OUTRANKS EVERYTHING HERE. Designers print one
+                («Умовні позначення», «Условные обозначения», «Legend», «Примітки») and it defines
+                that sheet's marks, its units and its abbreviations. Read it FIRST and use it. When a
+                mark is not in the legend and not in the list below, transcribe it verbatim into the
+                note rather than interpreting it with a formula of your own.
+              - LANGUAGE VARIES. The same sheets appear in Ukrainian and in Russian, occasionally in
+                English, and one set often mixes them: обмірний план / обмерный план / measure plan;
+                експлікація / экспликация / room schedule; специфікація / спецификация; поверх /
+                этаж / floor; двері / двери / door; вікно / окно / window; висота / высота / height;
+                Загальна площа / Общая площадь / Total area. Match on MEANING, not on the spelling
+                of one language.
               - READ THE DRAWING VISUALLY. Any embedded text layer may be garbled or absent
                 (Cyrillic CID fonts routinely fail to extract) — trust the pixels you SEE on the
                 page, never a raw text transcription of it.
@@ -782,8 +795,9 @@ public class ProjectImportService {
                 numbered circles, or the numbers printed beside the stamp). This is what tells which
                 rooms belong to this floor when the table itself is identical on every sheet. If the
                 sheet has no plan or you can't tell, return an empty list — never guess.
-              - HEIGHTS come in TWO different notations. Recognise BOTH — a studio uses one or the
-                other, and finding neither is usually a misread, not an empty sheet:
+              - HEIGHTS. Two notations cover most sheets, and a studio uses one or the other; if you
+                find NEITHER, look for a third in the legend before concluding the sheet has none —
+                a height written some other way is still a height:
                 (a) DIRECT: «H=2700», «H 2700», «H-2700», the Cyrillic «Н=2700», optional trailing
                     «*» — the room's ceiling height in MILLIMETRES. «Нпр=…» is an opening's height,
                     «Нпд=…» a window sill, «Ндв=…» a door leaf, «Нвк=…» a window — NOT ceilings.
@@ -814,9 +828,11 @@ public class ProjectImportService {
             between studios; absence of one thing says nothing about the others.
 
             1. ROOM INVENTORY — from whichever of these the sheet has, most trustworthy first:
-               (a) a rooms TABLE: «Специфікація приміщень (обміри)», «Експлікація приміщень»,
-                   columns № + name + area in m², often with a «Загальна площа» footer → every row
-                   becomes a room, and the footer goes to totals.totalAreaM2;
+               (a) a rooms TABLE — titled «Експлікація приміщень», «Специфікація приміщень
+                   (обміри)», «Экспликация помещений», «Room schedule» or anything else that reads
+                   like one — columns № + name + area in m², often with a «Загальна площа» /
+                   «Общая площадь» footer → every row becomes a room, the footer goes to
+                   totals.totalAreaM2;
                (b) LABELS printed inside the rooms on the plan — a numbered circle, a name, an area
                    like «12.63 m²» typeset in the room. This is just as valid as a table: many
                    studios print no table at all;
@@ -873,10 +889,11 @@ public class ProjectImportService {
                opening out entirely rather than pairing a number with a guess — but if you can see
                the gap and the height is nowhere printed, report the width with hMm 0 and flag it
                (see below): the room is then one tap from complete instead of missing a hole.
-               Sources, in order: a doors/windows SPECIFICATION table on this sheet («Д 01», «ДЗ
-               02», «В 07» rows with sizes) OUTRANKS everything — take the sizes from it and set
-               confidence "high"; then «Нпр»/«Ндв»/«Нвк»/«Нпд» markings; then level marks; sizes
-               taken off the chains alone are "medium".
+               Sources, in order: a doors/windows SPECIFICATION table on this sheet (rows keyed like
+               «Д 01», «ДЗ 02», «В 07», «Д-1», «W1») OUTRANKS everything — take the sizes from it and
+               set confidence "high"; then per-opening markings, which THIS studio may write as
+               «Нпр»/«Ндв»/«Нвк»/«Нпд» or in some other shorthand its legend defines; then level
+               marks; sizes taken off the chains alone are "medium".
                toFloor = true for doors, open passages and floor-to-ceiling / panoramic windows
                (they reach the floor and interrupt the skirting), false for a window on a sill.
                An interior door SHARED by two rooms belongs to BOTH — list it in each room's
@@ -911,10 +928,12 @@ public class ProjectImportService {
             circles, window and door openings, ceiling heights, and OFTEN — but far from always —
             a rooms table on the same sheet.
 
-            ⚠️ TWO SETS OF PLANS: a project often carries the existing layout («як є», «до
-            перепланування») AND the new one («після перепланування»), differing ONLY by the
-            sheet's title. The base geometry is the one AFTER remodelling — that is what will be
-            finished. State which one you read in the first room's note.
+            ⚠️ TWO VERSIONS OF THE SAME PLAN. A project routinely carries the EXISTING layout and
+            the NEW one, differing only in the title: «до/після перепланування», «до/после
+            перепланировки», «існуючий стан / проектне рішення», «as-is / proposed», sometimes just
+            a revision letter. The base geometry is the one that will EXIST after the work — that is
+            what gets finished and what the schedule's areas belong to. Say in the first room's note
+            which version this sheet is, in the sheet's own words, so the master can tell.
             """ + SHEET_CORE;
 
     private static final String COVERINGS_PROMPT = """
