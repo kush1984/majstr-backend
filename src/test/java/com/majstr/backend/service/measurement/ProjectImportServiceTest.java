@@ -75,6 +75,18 @@ class ProjectImportServiceTest {
     private static final String EMPTY_JSON = """
             {"floors":[],"coverings":[],"totals":{"totalAreaM2":0},"ceilingHeights":[],"warnings":[]}""";
 
+    /**
+     * A whole-page answer that already carries gabarits — so the fragment pass has nothing to add.
+     * Routing tests use this deliberately: with an EMPTY answer a plan sheet now (correctly) gets
+     * read again in quarters, and a test counting calls would be measuring the gate, not the route.
+     */
+    private static final String ROOMS_WITH_GEOMETRY = """
+            {"sheetTitle":"ОБМІРНИЙ ПЛАН","floors":[{"floor":"","roomsOnThisSheet":[],"rooms":[
+             {"number":"1","name":"Коридор","areaM2":26.5,"perimeterMm":0,"wallSegmentsMm":[],
+              "widthMm":7547,"lengthMm":3510,"cutWidthMm":0,"cutDepthMm":0,"ceilingHmm":2700,
+              "openings":[],"confidence":"high","note":"","uncertain":[]}]}],
+             "coverings":[],"totals":{"totalAreaM2":0},"ceilingHeights":[],"warnings":[]}""";
+
     @BeforeEach
     void setUp() {
         service = new ProjectImportService(featureGuard, projectService, allFlows(extractor),
@@ -152,7 +164,8 @@ class ProjectImportServiceTest {
     @Test
     @SuppressWarnings("unchecked")
     void measurePlanPdf_goesAsOneDocumentBlock_evenWhenItHasATextLayer() throws Exception {
-        given(extractor.requestJson(anyList(), anyString(), any(Map.class))).willReturn(EMPTY_JSON);
+        given(extractor.requestJson(anyList(), anyString(), any(Map.class)))
+                .willReturn(ROOMS_WITH_GEOMETRY);
 
         // A real plan sheet carries BOTH the drawing and the rooms table (Belgradska p.3).
         // One combined call sees both; a text-only route would lose the geometry.
@@ -237,6 +250,63 @@ class ProjectImportServiceTest {
                 ProjectImportService.Kind.ROOM_SCHEDULE, "архів.rar", null, new byte[]{1}))
                 .isInstanceOf(CatalogImportException.class)
                 .hasMessage("error.import.unsupported");
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void aPlanThatReadNOTHINGisStillReadAgainInFragments() throws Exception {
+        // The Дубляни measure plan carries NO rooms table — the rooms live in a separate
+        // «експлікація» file — so a squeezed whole-page pass returns an empty answer. The first
+        // version of the gate required rooms > 0 to bother with fragments, which disabled the
+        // mechanism on exactly the sheets that need it: everything came back zero and the tiling
+        // looked broken when it had never been asked to run.
+        given(extractor.requestJson(anyList(), anyString(), any(Map.class)))
+                .willReturn(EMPTY_JSON, GEOMETRY_FROM_FRAGMENT, GEOMETRY_FROM_FRAGMENT,
+                        GEOMETRY_FROM_FRAGMENT, GEOMETRY_FROM_FRAGMENT);
+
+        ProjectImportParseResponse resp = service.parse(ownerId, objectId,
+                ProjectImportService.Kind.PLAN_MEASURE, "7_обмірний план 1п.pdf",
+                "application/pdf", textPdf());
+
+        verify(extractor, times(5)).requestJson(anyList(), anyString(), any(Map.class));
+        // The room exists only because a fragment saw it — kept, with a warning, never dropped.
+        assertThat(resp.floors().get(0).rooms()).hasSize(1);
+        assertThat(resp.floors().get(0).rooms().get(0).widthMm()).isEqualByComparingTo("4730");
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void anEmptySCHEDULEisNotWorthFourMoreCalls() throws Exception {
+        // A schedule with no rooms is genuinely empty (a misfiled cover sheet). Paying to re-read
+        // it in quarters is how a cost control turns into a cost.
+        given(extractor.requestJson(anyList(), anyString(), any(Map.class))).willReturn(EMPTY_JSON);
+
+        service.parse(ownerId, objectId, ProjectImportService.Kind.ROOM_SCHEDULE,
+                "титульний лист.pdf", "application/pdf", textPdf());
+
+        verify(extractor, times(1)).requestJson(anyList(), anyString(), any(Map.class));
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void anUNCLASSIFIEDsheetIsJudgedByWhatTheMODELsaysItIs() throws Exception {
+        // We could not name the page, but the model just did. «ПЛАН ПІДЛОГ» with no rooms deserves
+        // a closer look; «ВІДОМІСТЬ КРЕСЛЕНЬ» does not, and the difference costs four calls.
+        String plan = EMPTY_JSON.replace("{\"floors\"", "{\"sheetTitle\":\"ПЛАН ПІДЛОГ\",\"floors\"");
+        given(extractor.requestJson(anyList(), anyString(), any(Map.class)))
+                .willReturn(plan, GEOMETRY_FROM_FRAGMENT, GEOMETRY_FROM_FRAGMENT,
+                        GEOMETRY_FROM_FRAGMENT, GEOMETRY_FROM_FRAGMENT);
+
+        service.parse(ownerId, objectId, ProjectImportService.Kind.UNKNOWN,
+                "лист 16.pdf", "application/pdf", textPdf());
+        verify(extractor, times(5)).requestJson(anyList(), anyString(), any(Map.class));
+
+        // An index page names itself and is left alone.
+        given(extractor.requestJson(anyList(), anyString(), any(Map.class))).willReturn(
+                EMPTY_JSON.replace("{\"floors\"", "{\"sheetTitle\":\"ВІДОМІСТЬ КРЕСЛЕНЬ\",\"floors\""));
+        service.parse(ownerId, objectId, ProjectImportService.Kind.UNKNOWN,
+                "лист 2.pdf", "application/pdf", textPdf());
+        verify(extractor, times(6)).requestJson(anyList(), anyString(), any(Map.class));
     }
 
     // ---- openings: half of one beats none ---------------------------------------
@@ -340,7 +410,7 @@ class ProjectImportServiceTest {
         // A page whose stamp matched nothing used to be dropped before upload. On one real 19-sheet
         // set that was every page, and the import did nothing at all.
         given(extractor.requestJson(anyList(), anyString(), any(Map.class)))
-                .willReturn(EMPTY_JSON.replace("{\"floors\"", "{\"sheetTitle\":\"ПЛАН ПІДЛОГ\",\"floors\""));
+                .willReturn(ROOMS_WITH_GEOMETRY.replace("ОБМІРНИЙ ПЛАН", "ПЛАН ПІДЛОГ"));
 
         ProjectImportParseResponse resp = service.parse(ownerId, objectId,
                 ProjectImportService.Kind.UNKNOWN, "лист 7.pdf", "application/pdf", textPdf());

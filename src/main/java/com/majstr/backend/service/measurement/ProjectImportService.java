@@ -157,7 +157,7 @@ public class ProjectImportService {
     private String withFragmentsIfNeeded(Kind kind, byte[] bytes, String wholePageJson) {
         List<String> inventory;
         try {
-            if (!needsFragments(wholePageJson)) {
+            if (!needsFragments(kind, wholePageJson)) {
                 return wholePageJson;
             }
             inventory = inventoryRoomNames(wholePageJson);
@@ -200,22 +200,48 @@ public class ProjectImportService {
     }
 
     /**
-     * True when the sheet gave us rooms but no usable geometry for them.
+     * Whether a closer look is worth four more calls.
      *
-     * <p>Deliberately "no room has both gabarits" rather than "some room is missing one": a plan
-     * where the model read half the chains is a different situation from one where it read none,
-     * and only the second is worth four more calls.</p>
+     * <p>"No room has BOTH gabarits" rather than "some room is missing one": a plan where the model
+     * read half the chains is a different situation from one where it read none, and only the second
+     * is worth paying again for.</p>
+     *
+     * <p><b>An EMPTY answer counts.</b> The first version required {@code rooms > 0}, and that quietly
+     * disabled the whole mechanism on the sheets that need it most: the Дубляни measure plan carries
+     * no rooms table at all — the rooms live in a separate «експлікація» file — so a squeezed
+     * whole-page pass returns nothing, the gate read "nothing to improve", and the fragments never
+     * ran. Everything came back zero and the tiling looked broken when it had simply never been
+     * asked to work.</p>
+     *
+     * <p>For a sheet nobody classified, the SHEET'S OWN title decides: the model has just told us
+     * what it is, and a title page or a drawings index legitimately holds no rooms — going four
+     * calls deeper on those would be paying to re-read a cover sheet.</p>
      */
-    private boolean needsFragments(String wholePageJson) {
+    private boolean needsFragments(Kind kind, String wholePageJson) {
         ProjectImportParseResponse review = toReview(wholePageJson);
         int rooms = 0;
+        int withGeometry = 0;
         for (var floor : review.floors()) {
             for (var room : floor.rooms()) {
                 rooms++;
-                if (room.widthMm() != null && room.lengthMm() != null) return false;
+                if (room.widthMm() != null && room.lengthMm() != null) withGeometry++;
             }
         }
-        return rooms > 0;
+        boolean drawing = kind == Kind.PLAN_MEASURE || looksLikeAPlan(review.sheetTitle());
+        boolean needed = withGeometry == 0 && (rooms > 0 || drawing);
+        // Logged either way: "why did the fragments not run" cost a round trip to answer once.
+        log.info("Whole-page pass: kind={} sheet='{}' rooms={} withGeometry={} → fragments={}",
+                kind, review.sheetTitle(), rooms, withGeometry, needed);
+        return needed;
+    }
+
+    /** The model's own words for the sheet — «ОБМІРНИЙ ПЛАН», «ПЛАН ПІДЛОГ», «02_обмірний план». */
+    private static boolean looksLikeAPlan(String sheetTitle) {
+        if (sheetTitle == null) {
+            return false;
+        }
+        String t = sheetTitle.toLowerCase(Locale.ROOT);
+        return t.contains("план") || t.contains("обмір") || t.contains("plan");
     }
 
     private String visionPdf(Kind kind, byte[] bytes) {
