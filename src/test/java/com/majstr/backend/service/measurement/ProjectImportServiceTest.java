@@ -268,10 +268,31 @@ class ProjectImportServiceTest {
                 ProjectImportService.Kind.PLAN_MEASURE, "7_обмірний план 1п.pdf",
                 "application/pdf", textPdf());
 
-        verify(extractor, times(5)).requestJson(anyList(), anyString(), any(Map.class));
+        ArgumentCaptor<List<AiInput>> content = ArgumentCaptor.forClass(List.class);
+        verify(extractor, times(5)).requestJson(content.capture(), anyString(), any(Map.class));
+        // With nothing to anchor to, the fragment is told to find the rooms itself — not handed an
+        // empty list as if the sheet had none.
+        String fragmentInstruction = ((AiInput.Text) content.getAllValues().get(1).get(1)).text();
+        assertThat(fragmentInstruction).contains("NO rooms could be made out")
+                .doesNotContain("its rooms are: .");
         // The room exists only because a fragment saw it — kept, with a warning, never dropped.
         assertThat(resp.floors().get(0).rooms()).hasSize(1);
         assertThat(resp.floors().get(0).rooms().get(0).widthMm()).isEqualByComparingTo("4730");
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void aSCHEDULEwithRoomsAndNoGeometryIsNotWorthFourMoreCalls() throws Exception {
+        // Ten rooms and no dimensions is what a rooms TABLE looks like, not a failed read. The first
+        // version of the gate fired on «rooms > 0 and no geometry» and paid four vision calls to
+        // enlarge a page that has nothing to enlarge — twice per set, once per floor.
+        given(extractor.requestJson(anyList(), anyString(), any(Map.class)))
+                .willReturn(ROOMS_WITHOUT_GEOMETRY.replace("ОБМІРНИЙ ПЛАН", "Експлікація приміщень"));
+
+        service.parse(ownerId, objectId, ProjectImportService.Kind.ROOM_SCHEDULE,
+                "3_експлікація 1п.pdf", "application/pdf", textPdf());
+
+        verify(extractor, times(1)).requestJson(anyList(), anyString(), any(Map.class));
     }
 
     @Test

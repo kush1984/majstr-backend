@@ -166,8 +166,16 @@ public class ProjectImportService {
                     e.getMessage());
             return wholePageJson;
         }
-        String instruction = instruction(kind) + "\n\nThe whole sheet has already been read at low "
-                + "resolution and its rooms are: " + String.join("; ", inventory) + ".\n"
+        // With no inventory the anchoring sentence must not read "its rooms are: ." — an empty list
+        // presented as the sheet's contents tells the model there are no rooms, on the very sheets
+        // where it has to find them itself (a measure plan whose table lives in another file).
+        String anchor = inventory.isEmpty()
+                ? "The whole sheet was read at low resolution and NO rooms could be made out — the "
+                + "table may be on a different sheet entirely. Identify the rooms in this fragment "
+                + "YOURSELF, from the numbered circles, names or areas printed inside them."
+                : "The whole sheet has already been read at low resolution and its rooms are: "
+                + String.join("; ", inventory) + ".";
+        String instruction = instruction(kind) + "\n\n" + anchor + "\n"
                 + "You are now looking at ONE FRAGMENT of that same sheet, enlarged, so that the "
                 + "dimension chains are legible. Extract the GEOMETRY that was unreadable before — "
                 + "gabarits, ceiling heights, openings — for the rooms visible in this fragment. "
@@ -227,8 +235,12 @@ public class ProjectImportService {
                 if (room.widthMm() != null && room.lengthMm() != null) withGeometry++;
             }
         }
+        // Only a DRAWING can hide dimensions worth another look — by our label, or by the stamp the
+        // model just read off it. A pure schedule with ten rooms and no geometry is not a failed
+        // read, it is a table: firing four vision calls at it (which the first rule did, on «rooms >
+        // 0») paid for enlarging a page that has nothing to enlarge.
         boolean drawing = kind == Kind.PLAN_MEASURE || looksLikeAPlan(review.sheetTitle());
-        boolean needed = withGeometry == 0 && (rooms > 0 || drawing);
+        boolean needed = withGeometry == 0 && drawing;
         // Logged either way: "why did the fragments not run" cost a round trip to answer once.
         log.info("Whole-page pass: kind={} sheet='{}' rooms={} withGeometry={} → fragments={}",
                 kind, review.sheetTitle(), rooms, withGeometry, needed);
