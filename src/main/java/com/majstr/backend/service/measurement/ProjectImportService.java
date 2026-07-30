@@ -768,13 +768,17 @@ public class ProjectImportService {
               - A PHOTOGRAPHED sheet (shot at an angle) — read ONLY the printed labels, tables and
                 symbols. NEVER take a dimension off a photo: perspective distorts distances. A size
                 with no printed figure beside it is unknown (0), never an estimate.
-              - NUMBERS — different conventions, do not confuse them:
-                • a SPACE is a THOUSANDS group inside a dimension chain, in millimetres:
-                  «5 000» = 5000 mm, «1 385» = 1385 mm. NEVER read it as 5, nor as 5.000.
-                • a COMMA **or a DOT** is the DECIMAL separator — studios differ and both appear:
-                  «2,7» and «2.7» are both 2.7 m; «12,53 м²» and «12.63 m²» are both an area.
-                Ignore a stray superscript «²»/«2» after an area and «мм»/«mm»/«м» unit suffixes —
-                report just the number.
+              - NUMBERS. Dimensions are drawn in MILLIMETRES with no unit printed, and by convention
+                with NO thousands separator — «3500», not «3 500». So a space between digits usually
+                separates TWO figures of a chain, not a thousands group. Some studios do write
+                «5 000» anyway, so decide by PLAUSIBILITY, never by the space alone: a wall segment
+                is roughly 100–20000 mm, so «3 250» is 3250 (3 is not a wall), while «800 2 874 800»
+                is three figures — 800, 2874, 800 — and not one enormous one.
+                • A COMMA **or a DOT** is the DECIMAL separator; studios differ and both appear on
+                  one sheet. «2,7» and «2.7» are both 2.7. A comma is NEVER a thousands separator.
+                • «45,2/62,8» is not a dimension — a fraction printed for a flat is житлова площа
+                  over корисна/загальна. Report them as areas, never as a size.
+                Ignore a stray superscript «²»/«2» after an area and «мм»/«mm»/«м» suffixes.
               - READ THE SHEET'S OWN UNIT LEGEND when it has one («розміри вказані в міліметрах,
                 відмітки в метрах») — it tells you which figures are mm and which are metres.
               - The sheet's own TITLE / stamp outranks the file name. A file named «обмірний
@@ -812,18 +816,43 @@ public class ProjectImportService {
               - HEIGHTS. Two notations cover most sheets, and a studio uses one or the other; if you
                 find NEITHER, look for a third in the legend before concluding the sheet has none —
                 a height written some other way is still a height:
-                (a) DIRECT: «H=2700», «H 2700», «H-2700», the Cyrillic «Н=2700», optional trailing
-                    «*» — the room's ceiling height in MILLIMETRES. «Нпр=…» is an opening's height,
-                    «Нпд=…» a window sill, «Ндв=…» a door leaf, «Нвк=…» a window — NOT ceilings.
-                (b) LEVEL MARKS («відмітки»), usually in METRES with a dot or comma: «відмітка
-                    стелі» 2.93, «відмітка підлоги» 0.00, «відмітка верха прорізу» 2.28, «відмітка
-                    низа прорізу» 0.82. Convert to mm:
+                (a) DIRECT: «H=2700», «H 2700», «H-2700», the Cyrillic «Н=2700» (both the Latin H and
+                    the Cyrillic Н are used, and they look identical) — the room's ceiling height in
+                    MILLIMETRES.
+                    «Нпр», «Нпд», «Ндв», «Нвк» are STUDIO SHORTHAND, not a standard: no norm defines
+                    them, and «Нпд» in particular is read as підвіконня by some and підлоги by
+                    others. Take their meaning from THIS sheet's legend. If the legend does not
+                    define a mark, transcribe it verbatim into the note and flag the field rather
+                    than expanding it from habit — the wrong expansion silently moves a window.
+                    SANITY BAND: a habitable room's ceiling is 2.5 m or more by ДБН (2.1 m is
+                    allowed for a corridor or a bathroom), and above ~4 m in a flat is unusual. A
+                    "ceiling" outside 2.0–4.5 m is almost certainly something else — flag it.
+                (b) LEVEL MARKS («відмітки»), in METRES, conventionally with THREE decimals, counted
+                    from 0.000 = the finished floor of the ground storey («рівень чистої підлоги»):
+                    below it is negative, above it positive. On a PLAN they sit in a small rectangle
+                    or on a shelf; the triangle-with-shelf symbol belongs to sections and elevations.
+                    «відмітка стелі» 2.930, «відмітка підлоги» 0.000, «відмітка верха прорізу» 2.280,
+                    «відмітка низа прорізу» 0.820. Convert to mm:
                       ceilingHmm = (ceiling mark − floor mark) × 1000  → 2930
                       an opening's hMm = (top mark − bottom mark) × 1000  → 1460
                       sillMm = (bottom mark − floor mark) × 1000  → 820
                     This subtraction is the ONE arithmetic you are asked to do (see the next rule):
                     it is exact, not an estimate. Say «з відміток» in the note so it is traceable.
                 Relative drops («опуск від нуля стелі», «-0,15 від стелі») are NOT ceiling heights.
+              - AREAS ARE NOT ALL THE SAME AREA, and the difference is money:
+                • «в осях» is measured centreline-to-centreline and includes half a wall on each
+                  side; «у чистоті»/«в світлі» is the clear inner contour a finisher actually works
+                  on. The first runs 10–15 % larger. If the sheet says which basis it used, put that
+                  in the note; if it does not say, say THAT in the note — the master is pricing
+                  plaster by the metre and 12 % is his margin.
+                • «загальна площа» includes balconies and loggias with coefficients that changed
+                  with the norms; «житлова» counts habitable rooms only; «корисна» is not even a ДБН
+                  apartment term. Report the printed figure for what it is called and NEVER
+                  recompute or reconcile one from another.
+                • The sum of the room areas legitimately differs from the printed total for exactly
+                  those reasons. Do not adjust either to make them agree.
+                • Обмірні роботи are recorded to the nearest centimetre and drawn in millimetres, so
+                  a 10–20 mm disagreement between a chain and a table is normal and not an error.
               - Designer remarks like «без запасу на порізку», «уточнити на місці» → add to warnings
                 verbatim.
               - Notation you can't be sure of (e.g. Нпд/Нпр next to windows) → transcribe as written
@@ -849,7 +878,10 @@ public class ProjectImportService {
                    totals.totalAreaM2;
                (b) LABELS printed inside the rooms on the plan — a numbered circle, a name, an area
                    like «12.63 m²» typeset in the room. This is just as valid as a table: many
-                   studios print no table at all;
+                   studios print no table at all.
+                   ⚠️ The area is conventionally set in the room's BOTTOM-RIGHT corner and
+                   UNDERLINED, with the unit left off entirely — so an underlined «17,69» alone in a
+                   corner is that room's area in m², not a dimension. Two decimals is the norm;
                (c) numbered circles ALONE, with no name and no area.
                A room from the inventory MUST appear in the output even when you find no geometry
                for it. If the sheet has none of (a)(b)(c) it has no rooms — return "floors": [] and
@@ -925,8 +957,14 @@ public class ProjectImportService {
                opening out entirely rather than pairing a number with a guess — but if you can see
                the gap and the height is nowhere printed, report the width with hMm 0 and flag it
                (see below): the room is then one tap from complete instead of missing a hole.
+               ⚠️ On a proper working drawing the opening's HEIGHT is not on the plan at all — the
+               plan carries its width, and the height lives in the specification or on a section.
+               Interior studios often break that and write «800×2100» beside the opening instead.
+               A legacy mark can also encode the size in DECIMETRES: «ДГ 24-15ПП» is a door 2400 mm
+               high and 1500 mm wide, not 24 by 15.
                Sources, in order: a doors/windows SPECIFICATION table on this sheet (rows keyed like
-               «Д 01», «ДЗ 02», «В 07», «Д-1», «W1») OUTRANKS everything — take the sizes from it and
+               «Д 01», «ДЗ 02», «В 07», «Д-1», «W1» — these keys are the studio's own, not a
+               standard, so read them off its table) OUTRANKS everything — take the sizes from it and
                set confidence "high"; then per-opening markings, which THIS studio may write as
                «Нпр»/«Ндв»/«Нвк»/«Нпд» or in some other shorthand its legend defines; then level
                marks; sizes taken off the chains alone are "medium".
