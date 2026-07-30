@@ -774,8 +774,12 @@ public class ProjectImportService {
                 «5 000» anyway, so decide by PLAUSIBILITY, never by the space alone: a wall segment
                 is roughly 100–20000 mm, so «3 250» is 3250 (3 is not a wall), while «800 2 874 800»
                 is three figures — 800, 2874, 800 — and not one enormous one.
-                • A COMMA **or a DOT** is the DECIMAL separator; studios differ and both appear on
-                  one sheet. «2,7» and «2.7» are both 2.7. A comma is NEVER a thousands separator.
+                • A COMMA or a DOT is the DECIMAL separator in METRE values; studios differ and both
+                  appear on one sheet. «2,7» and «2.7» are both 2.7 m.
+                • BUT IN A MILLIMETRE VALUE A COMMA CAN BE A THOUSANDS SEPARATOR: «Н=2,100 мм» is
+                  2100 mm, not 2.1. The unit settles it — «мм» after the figure, or a magnitude that
+                  only makes sense in millimetres. The same document can carry «2.93» meaning metres
+                  and «2,100 мм» meaning millimetres, a few centimetres apart on the page.
                 • «45,2/62,8» is not a dimension — a fraction printed for a flat is житлова площа
                   over корисна/загальна. Report them as areas, never as a size.
                 Ignore a stray superscript «²»/«2» after an area and «мм»/«mm»/«м» suffixes.
@@ -816,12 +820,17 @@ public class ProjectImportService {
               - HEIGHTS. Two notations cover most sheets, and a studio uses one or the other; if you
                 find NEITHER, look for a third in the legend before concluding the sheet has none —
                 a height written some other way is still a height:
-                (a) DIRECT: «H=2700», «H 2700», «H-2700», the Cyrillic «Н=2700» (both the Latin H and
-                    the Cyrillic Н are used, and they look identical) — the room's ceiling height in
-                    MILLIMETRES.
+                (a) DIRECT: «H=2700», «H 2700», «H-2700», «H-1 300», the Cyrillic «Н=2700» (both the
+                    Latin H and the Cyrillic Н are used, mixed within ONE document, and they look
+                    identical) — the room's ceiling height in MILLIMETRES.
+                    ⚠️ THE HYPHEN IS NOT A MINUS. «H-850мм» means a height of 850 mm; on real sheets
+                    the hyphen form outnumbers the «=» form several times over. A height is never
+                    negative.
                     «Нпр», «Нпд», «Ндв», «Нвк» are STUDIO SHORTHAND, not a standard: no norm defines
-                    them, and «Нпд» in particular is read as підвіконня by some and підлоги by
-                    others. Take their meaning from THIS sheet's legend. If the legend does not
+                    them, «Нпд» is read as підвіконня by some and підлоги by others, and in Ukrainian
+                    surveying «Нпр» means something else entirely (висота проміжної точки). Other
+                    studios use a different family altogether — «В.П.», «В.О.», «В.Д.» — with no
+                    legend at all. Take the meaning from THIS sheet's legend. If the legend does not
                     define a mark, transcribe it verbatim into the note and flag the field rather
                     than expanding it from habit — the wrong expansion silently moves a window.
                     SANITY BAND: a habitable room's ceiling is 2.5 m or more by ДБН (2.1 m is
@@ -829,8 +838,11 @@ public class ProjectImportService {
                     "ceiling" outside 2.0–4.5 m is almost certainly something else — flag it.
                 (b) LEVEL MARKS («відмітки»), in METRES, conventionally with THREE decimals, counted
                     from 0.000 = the finished floor of the ground storey («рівень чистої підлоги»):
-                    below it is negative, above it positive. On a PLAN they sit in a small rectangle
-                    or on a shelf; the triangle-with-shelf symbol belongs to sections and elevations.
+                    below it is negative, above it positive — but the «+» is routinely left off, so
+                    an unsigned mark above zero is positive. Three decimals is the norm and two are
+                    common («2.93»), with a dot in practice even though the norm says comma: accept
+                    «0,000», «0.000», «0.00» and «±0.000» alike. On a PLAN the mark sits in a small
+                    rectangle; the chevron-on-a-shelf symbol belongs to sections and elevations.
                     «відмітка стелі» 2.930, «відмітка підлоги» 0.000, «відмітка верха прорізу» 2.280,
                     «відмітка низа прорізу» 0.820. Convert to mm:
                       ceilingHmm = (ceiling mark − floor mark) × 1000  → 2930
@@ -921,10 +933,24 @@ public class ProjectImportService {
                - wallSegmentsMm / perimeterMm — only figures PRINTED as such; never sum or measure
                  them yourself.
                - A sloped / mansard ceiling («скоси»), a niche or a ledge → describe it in that
-                 room's note. Walls there are approximate and the master must check on site.
+                 room's note. Walls there are approximate and the master must check on site. For a
+                 mansard, ДБН counts only the floor under a clear height of ≥1.5 m (at a 30° slope),
+                 1.1 m (45°) or 0.5 m (60°) — so a printed mansard area may already exclude part of
+                 the floor. Report what is printed and say in the note that it is a mansard.
             3. HEIGHTS — both notations from the HARD RULES (direct «H=2700» and level marks
                «відмітка стелі 2.93»). Per-room → ceilingHmm. A single height stated for the whole
                floor in the stamp or the notes → ceilingHeights, keyed by the floor label.
+               ⚠️ A CEILING PLAN OFTEN REDEFINES ZERO. The title block says 0.000 is the finished
+               FLOOR, and then the ceiling sheet's own legend silently makes 0.000 the ceiling
+               itself, so «-0.150» there is a 150 mm DROP of a plasterboard soffit, not a level
+               below the floor. Read that sheet's legend before taking any mark off it, and if the
+               legend does not say, treat a small negative on a ceiling sheet as a drop and flag it.
+               ⚠️ A MEASURED HEIGHT IS AS-FOUND, not a finished one. A survey records what is there
+               now, usually to the bare slab and screed — one real sheet states «виміри взяті без
+               умови врахування вирівнювання», another prints 2720 and 2350 for the same room with
+               and without insulation. Say in the note when the sheet states the basis; never treat
+               a measured height as a compliance figure. And «висота поверху» is a different
+               quantity again — floor to the NEXT floor, slab included.
                WHERE TO LOOK, in this order: this sheet's rooms → its stamp and notes → a ceilings
                plan → an installation plan → room elevations. A set states the ceiling height on
                whichever of those the studio prefers, and finding none on the measure plan says
