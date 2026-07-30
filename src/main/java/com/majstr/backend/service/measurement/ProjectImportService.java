@@ -782,6 +782,10 @@ public class ProjectImportService {
                   which one to check.
               - "uncertain" holds FIELD NAMES of that room: "areaM2", "widthMm", "lengthMm",
                 "perimeterMm", "ceilingHmm", "openings". Empty list = everything reported is solid.
+              - WHERE a figure came from decides its confidence, and say the source in the note:
+                a specification table or a printed schedule → "high"; counted or read off the
+                drawing's own chains and symbols → "medium"; carried over from a neighbouring room
+                or otherwise assumed → "low", and the note must say it was assumed and why.
               - Do NOT compute areas, perimeters or lengths INTO THE OUTPUT — the system computes
                 geometry from the figures you transcribe. (Multiplying privately to CHECK your own
                 reading is expected; just never report a computed number as if it were printed.)
@@ -855,8 +859,15 @@ public class ProjectImportService {
                  WHEN NO AREA IS PRINTED ANYWHERE there is nothing to check against — that is
                  normal on a plain measure plan. Report the chains you read and name widthMm /
                  lengthMm in "uncertain". The system computes the area from them.
-               - An L-shaped room (a rectangle with one cut-out corner): also cutWidthMm ×
-                 cutDepthMm of the cut, from the chains.
+               - A room that is NOT a rectangle — an L, a T, a corridor around a corner, a niche:
+                 • widthMm × lengthMm stay the room's BOUNDING BOX, which is what its walls follow;
+                 • when the cut is a single clean corner, also give cutWidthMm × cutDepthMm;
+                 • and in EVERY such case transcribe the contour into wallSegmentsMm — each printed
+                   segment of the room's outline, IN ORDER around it. That is a transcription, not a
+                   computation, and it is what makes an irregular room's perimeter exact instead of
+                   approximate. A T-shaped room's perimeter does not depend on where the branch sits,
+                   so the segment list settles it; if the contour cannot be followed, leave it empty
+                   rather than inventing segments.
                  ⚠️ THE AREA TELLS YOU WHEN TO LOOK FOR ONE. If widthMm × lengthMm comes out
                  BIGGER than the room's printed area, the room is not a rectangle — a corridor
                  wrapping a corner, a niche, a boxed-in riser. Follow the room's contour on the
@@ -872,6 +883,14 @@ public class ProjectImportService {
             3. HEIGHTS — both notations from the HARD RULES (direct «H=2700» and level marks
                «відмітка стелі 2.93»). Per-room → ceilingHmm. A single height stated for the whole
                floor in the stamp or the notes → ceilingHeights, keyed by the floor label.
+               WHERE TO LOOK, in this order: this sheet's rooms → its stamp and notes → a ceilings
+               plan → an installation plan → room elevations. A set states the ceiling height on
+               whichever of those the studio prefers, and finding none on the measure plan says
+               nothing about the project. If it is nowhere on THIS sheet, leave 0 and name
+               "ceilingHmm" in "uncertain" — another sheet may carry it, and the system merges them.
+               ⚠️ «H=» (capital) is the CEILING; «h=» (small) is an installation height of a
+               fitting above the finished floor — a socket, a switch, a bracket. They look alike and
+               mean different things; never report an «h=» as a room's ceiling.
             4. OPENINGS — every window and door on a room's walls: kind "вікно"/"двері",
                wMm = printed width, hMm = the opening's height, sillMm = the window sill.
                HOW TO FIND ONE WHEN NOTHING IS LABELLED. Many sheets mark no opening sizes at all —
@@ -912,6 +931,12 @@ public class ProjectImportService {
             6. sheetTitle — this sheet's own title from its stamp, as printed («ОБМІРНИЙ ПЛАН»,
                «ПЛАН ПІДЛОГ», «02_обмірний план»). This is how the system learns what it actually
                sent, when our own label was wrong.
+            7. warnings — say what this sheet does NOT contain, in Ukrainian, whenever it is
+               something a master would look for: «на аркуші немає специфікації вікон», «висоти
+               стель не вказані», «площі є тільки для зон покриттів, не для кімнат». Missing data is
+               the NORMAL state of these sets, not an edge case, and a stated absence is worth more
+               than a silent zero — it tells him what to measure on site instead of leaving him to
+               discover the hole at the estimate stage.
             """ + COMMON_RULES;
 
     private static final String SCHEDULE_PROMPT = """
