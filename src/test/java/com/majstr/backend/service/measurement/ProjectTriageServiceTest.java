@@ -149,6 +149,34 @@ class ProjectTriageServiceTest {
 
     @Test
     @SuppressWarnings("unchecked")
+    void aSheetTheModelFORGOTisStillOfferedToTheMaster() {
+        // «Return exactly one entry per sheet» is a request in a prompt, not a guarantee, and
+        // dropping a row from a 44-item list is an ordinary thing for a model to do. A sheet with
+        // no verdict is a sheet nobody reads — which is EXACTLY the failure this whole pass exists
+        // to remove, and it would come back one layer higher.
+        String json = """
+                {"sheets":[{"id":"1","title":"ОБМІРНИЙ ПЛАН","kind":"PLAN_MEASURE","floor":"1",
+                 "version":"AFTER","hasRoomTable":true,"hasDimensions":true,
+                 "hasOpeningSizes":true,"worthReading":true,"note":""}]}""";
+        given(extractor.requestJson(anyList(), anyString(), any(Map.class))).willReturn(json);
+
+        ProjectTriageResponse resp = service.triage(ownerId, objectId, request(
+                new ProjectTriageRequest.Sheet("1", "p3.pdf", "ОБМІРНИЙ ПЛАН"),
+                new ProjectTriageRequest.Sheet("2", "p4.pdf", "Експлікація приміщень")));
+
+        assertThat(resp.sheets()).extracting(ProjectTriageResponse.Sheet::id)
+                .as("обидва аркуші мають повернутись, навіть якщо модель згадала один")
+                .containsExactlyInAnyOrder("1", "2");
+        ProjectTriageResponse.Sheet forgotten = resp.sheets().stream()
+                .filter(s -> s.id().equals("2")).findFirst().orElseThrow();
+        // Ticked by default, for the same reason the prompt says so: a sheet wrongly read costs one
+        // call and is shown to the master anyway; a sheet wrongly skipped is invisible.
+        assertThat(forgotten.worthReading()).isTrue();
+        assertThat(forgotten.note()).contains("не вдалося розпізнати");
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
     void theCallCarriesEVERYsheetAsTextWithItsIdAndBothEndsOfIt() {
         given(extractor.requestJson(anyList(), anyString(), any(Map.class)))
                 .willReturn("{\"sheets\":[]}");

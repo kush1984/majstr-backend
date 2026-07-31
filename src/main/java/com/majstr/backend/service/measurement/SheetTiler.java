@@ -42,6 +42,17 @@ final class SheetTiler {
      */
     static final int DPI = 200;
     /**
+     * What a fragment's long edge should come out as, in pixels.
+     *
+     * <p>Just above the 1568 px the provider keeps, so the fragment survives its downscale intact
+     * and not one pixel more is paid for. This is what {@link #dpiFor} solves the DPI from, and it
+     * is why a bigger sheet does NOT cost more memory: nine fragments of an A0 cover 396 mm each,
+     * which at a flat 200 DPI would be 3118 px — over twice what the provider keeps, rendered from
+     * a 236 MB page image, and then thrown away. Solving for the fragment instead bounds the whole
+     * page at ~74 MB whatever the paper, while every fragment still clears 1568 px.</p>
+     */
+    private static final int TARGET_TILE_PX = 1700;
+    /**
      * How much PAPER one fragment may cover, in millimetres — roughly an A5 patch.
      *
      * <p>The grid used to be a fixed 2×2, which silently meant "assume A3". It is not always A3: a
@@ -86,8 +97,11 @@ final class SheetTiler {
                 if (cols >= rows) cols--;
                 else rows--;
             }
-            log.info("Sheet {}x{} mm → {}x{} fragments at {} DPI", widthMm, heightMm, cols, rows, DPI);
-            BufferedImage full = new PDFRenderer(doc).renderImageWithDPI(0, DPI, ImageType.RGB);
+            int dpi = dpiFor(widthMm, heightMm, cols, rows);
+            log.info("Sheet {}x{} mm → {}x{} fragments at {} DPI (~{} MB page image)",
+                    widthMm, heightMm, cols, rows, dpi,
+                    Math.round(widthMm / 25.4 * dpi * (heightMm / 25.4 * dpi) * 4 / 1048576));
+            BufferedImage full = new PDFRenderer(doc).renderImageWithDPI(0, dpi, ImageType.RGB);
             return cut(full, instruction, cols, rows);
         } catch (Exception e) {
             // Rendering is an optimisation, never a gate: the whole-page call already happened.
@@ -95,6 +109,24 @@ final class SheetTiler {
                     e.getMessage());
             return List.of();
         }
+    }
+
+    /**
+     * The DPI at which the LARGEST fragment lands near {@link #TARGET_TILE_PX}, never above
+     * {@link #DPI}.
+     *
+     * <p>The cap is what keeps an A3 sheet behaving exactly as before (its 210 mm fragment wants
+     * 206 DPI, so it stays at 200). The solve is what stops an A1 or an A0 from rendering a
+     * 118–236 MB page image whose extra pixels the provider immediately discards — the container
+     * runs on a fraction of its RAM as heap, so that was an out-of-memory waiting for the first
+     * master to upload a технічний паспорт.</p>
+     */
+    private static int dpiFor(int widthMm, int heightMm, int cols, int rows) {
+        double longestTileMm = Math.max((double) widthMm / cols, (double) heightMm / rows);
+        if (longestTileMm <= 0) {
+            return DPI;
+        }
+        return Math.min(DPI, (int) Math.ceil(TARGET_TILE_PX * 25.4 / longestTileMm));
     }
 
     private static List<List<AiInput>> cut(BufferedImage full, String instruction, int cols, int rows) {

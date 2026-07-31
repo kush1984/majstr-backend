@@ -97,6 +97,23 @@ class SheetTilerTest {
     }
 
     @Test
+    void aBIGGERsheetDoesNotCostMOREmemory_whileEveryFragmentStillBeatsTheDownscale() throws Exception {
+        // The two properties have to hold TOGETHER, which is the whole reason the DPI is solved
+        // from the fragment rather than fixed. At a flat 200 DPI an A0 page image is ~236 MB — on a
+        // container whose heap is a fraction of its RAM, that is an OOM waiting for the first
+        // технічний паспорт — and its fragments come out at 3118 px, over twice what the provider
+        // keeps, so every one of those megabytes was rendered to be thrown away.
+        for (List<AiInput> fragment : SheetTiler.tiles(a1Sheet(), "read it")) {
+            BufferedImage img = decode(fragment.get(0));
+            assertThat(Math.max(img.getWidth(), img.getHeight()))
+                    .as("a fragment below the provider's 1568 px means we rendered for nothing")
+                    .isGreaterThan(1568)
+                    // …and not wastefully far above it either.
+                    .isLessThan(2600);
+        }
+    }
+
+    @Test
     void eachFragmentSaysWhichPartOfTheSheetItIs() throws Exception {
         // Without this the model cannot tell a top-left corner from a bottom-right one, and rooms
         // get matched to the chains of a different part of the plan.

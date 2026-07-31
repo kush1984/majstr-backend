@@ -18,6 +18,12 @@ import java.util.UUID;
 public record AdminUserDetail(
         UUID id,
         String email,
+        // Name, phone and company: who this actually is, and how to reach them. The screen used to
+        // identify a master by email alone, which is the one detail you cannot ring when a paying
+        // customer has a problem.
+        String fullName,
+        String phone,
+        String companyName,
         boolean emailVerified,
         Set<Trade> trades,
         Plan plan,

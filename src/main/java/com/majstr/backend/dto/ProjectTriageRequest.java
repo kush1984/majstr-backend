@@ -1,5 +1,6 @@
 package com.majstr.backend.dto;
 
+import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotEmpty;
 import jakarta.validation.constraints.Size;
 
@@ -15,7 +16,11 @@ import java.util.List;
  * stay candidates on their own evidence.</p>
  */
 public record ProjectTriageRequest(
-        @NotEmpty @Size(max = 60) List<Sheet> sheets
+        // `List<@Valid Sheet>`, not `List<Sheet>`: bean validation does NOT descend into a
+        // collection's elements on its own, so without the element annotation the per-sheet
+        // @Size caps below are declared and never enforced — 60 sheets of unbounded text would be
+        // accepted and buffered.
+        @NotEmpty @Size(max = 60) List<@Valid Sheet> sheets
 ) {
     /**
      * @param id   the client's own handle for this sheet — echoed back untouched, never interpreted

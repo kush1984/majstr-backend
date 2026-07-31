@@ -22,7 +22,9 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 /**
  * One cheap pass that reads a whole documentation set's TITLES and says what each sheet is.
@@ -129,6 +131,38 @@ public class ProjectTriageService {
                         bool(m.get("worthReading")),
                         str(m.get("note"))));
             }
+        }
+        return withAnythingTheModelForgot(out, req);
+    }
+
+    /**
+     * A sheet we sent and did not get back is put in the answer anyway, as worth reading.
+     *
+     * <p>The prompt asks for exactly one entry per sheet, and that is a request, not a guarantee —
+     * a model dropping a row from a 44-item list is an ordinary thing for it to do. Without this,
+     * such a sheet reaches the client with no verdict at all, and a sheet with no verdict is a
+     * sheet that never gets read: <b>precisely the failure this whole triage pass exists to
+     * remove</b>, reintroduced one layer higher up.</p>
+     *
+     * <p>It defaults to {@code worthReading = true} for the same reason the prompt does: a sheet
+     * wrongly read costs one call and is shown to the master anyway, while a sheet wrongly skipped
+     * is invisible. The note says the sheet was not classified, so the master can see why it is
+     * ticked without a title.</p>
+     */
+    private List<ProjectTriageResponse.Sheet> withAnythingTheModelForgot(
+            List<ProjectTriageResponse.Sheet> answered, ProjectTriageRequest req) {
+        Set<String> got = answered.stream().map(ProjectTriageResponse.Sheet::id).collect(Collectors.toSet());
+        List<ProjectTriageResponse.Sheet> out = new ArrayList<>(answered);
+        for (ProjectTriageRequest.Sheet sheet : req.sheets()) {
+            if (got.contains(sheet.id())) {
+                continue;
+            }
+            log.warn("Triage did not answer for sheet '{}' ({}) — kept as worth reading",
+                    sheet.id(), sheet.name());
+            out.add(new ProjectTriageResponse.Sheet(
+                    sheet.id(), null, "OTHER", null, "UNKNOWN",
+                    false, false, false, true,
+                    "Аркуш не вдалося розпізнати — перевірте, чи він потрібен"));
         }
         return out;
     }

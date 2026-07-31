@@ -109,6 +109,9 @@ public class AdminUserService {
         return new AdminUserDetail(
                 user.getId(),
                 user.getEmail(),
+                user.getFullName(),
+                user.getPhone(),
+                user.getCompanyName(),
                 user.isEmailVerified(),
                 new LinkedHashSet<>(user.getTrades()),
                 user.getPlan(),

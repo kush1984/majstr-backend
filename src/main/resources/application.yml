@@ -185,7 +185,7 @@ app:
     #   AI_FLOW_PROJECT_DOCS=anthropic:claude-opus-4-8
     flows:
       estimate: ${AI_FLOW_ESTIMATE:}
-      receipt: ${AI_FLOW_RECEIPT:}
+      receipt: ${AI_FLOW_RECEIPT:anthropic:claude-sonnet-5}
       sketch: ${AI_FLOW_SKETCH:}
       electrical: ${AI_FLOW_ELECTRICAL:}
       project-docs: ${AI_FLOW_PROJECT_DOCS:}
@@ -208,7 +208,7 @@ app:
     # "unavailable" (503) instead of running, since the call is synchronous. Opus 4.8
     # is chosen for table/number OCR accuracy; the uploaded file is never persisted.
     api-key: ${ANTHROPIC_API_KEY:}
-    model: ${ANTHROPIC_MODEL:claude-opus-5}
+    model: ${ANTHROPIC_MODEL:claude-opus-4-8}
     max-tokens: ${ANTHROPIC_MAX_TOKENS:8000}
   sentry:
     # Error monitoring. DSN is env only and blank in local dev (then Sentry is

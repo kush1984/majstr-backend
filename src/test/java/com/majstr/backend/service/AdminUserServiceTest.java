@@ -102,6 +102,12 @@ class AdminUserServiceTest {
 
         AdminUserDetail d = adminUserService.detail(id);
 
+        // How to reach this master. The screen identified them by email alone, which is the one
+        // detail you cannot ring when a paying customer has a problem.
+        assertThat(d.fullName()).isEqualTo("Name");
+        assertThat(d.phone()).isEqualTo("+380671234567");
+        assertThat(d.companyName()).isEqualTo("Co");
+
         assertThat(d.clientsCount()).isEqualTo(4);
         assertThat(d.projectsCount()).isEqualTo(3);
         assertThat(d.estimates().total()).isEqualTo(3); // 2 draft + 1 signed
@@ -121,6 +127,7 @@ class AdminUserServiceTest {
                 .id(id)
                 .email(email)
                 .fullName("Name")
+                .phone("+380671234567")
                 .companyName("Co")
                 .trades(new LinkedHashSet<>(Set.of(Trade.BUILDER)))
                 .plan(plan)

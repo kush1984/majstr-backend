@@ -38,4 +38,8 @@ USER appuser
 # EXPOSE is documentation only — Railway routes to $PORT, which Spring binds via
 # server.port=${PORT:8080}.
 EXPOSE 8080
-ENTRYPOINT ["java", "-jar", "/app/app.jar"]
+# MaxRAMPercentage, because the default is 25% — on a 512 MB container that is a 128 MB heap while
+# the other 384 MB sit unused. One page image of a large drawing is tens of megabytes on its own
+# (see SheetTiler), so the default turned a perfectly sized container into an out-of-memory. 75%
+# leaves room for the JVM's own non-heap use.
+ENTRYPOINT ["java", "-XX:MaxRAMPercentage=75.0", "-jar", "/app/app.jar"]

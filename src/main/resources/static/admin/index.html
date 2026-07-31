@@ -654,7 +654,12 @@
         };
         document.getElementById('detailTitle').textContent = d.email;
         document.getElementById('detailBody').innerHTML = `
-            <p>Email: ${yn(d.emailVerified)} &nbsp; Трейди: ${(d.trades || []).join(', ') || '—'}</p>
+            <p><b>${escapeHtml(d.fullName || '—')}</b>${d.companyName ? ' <span class="muted">· ' + escapeHtml(d.companyName) + '</span>' : ''}</p>
+            <p>Телефон: ${d.phone
+                ? '<a href="tel:' + encodeURIComponent(d.phone) + '"><b>' + escapeHtml(d.phone) + '</b></a>'
+                : '<span class="muted">—</span>'}
+               &nbsp;·&nbsp; Email: <a href="mailto:${encodeURIComponent(d.email)}">${escapeHtml(d.email)}</a> ${yn(d.emailVerified)}</p>
+            <p>Трейди: ${(d.trades || []).join(', ') || '—'}</p>
             <p>План: <span class="badge ${d.plan}">${d.plan}</span> &nbsp; Роль: <span class="badge ${d.role}">${d.role}</span></p>
             <p>Джерело:
                <input id="src-input" value="${escapeHtml(d.referralSource || 'DIRECT')}" style="max-width:150px">
