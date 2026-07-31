@@ -31,6 +31,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -252,7 +253,35 @@ public class EstimateTemplateService {
                                            UUID templateId,
                                            EstimateCreateRequest req,
                                            UUID ownerId) {
-        EstimateTemplate template = loadAccessible(templateId, ownerId);
+        return applyToProject(projectId, List.of(templateId), req, ownerId);
+    }
+
+    /**
+     * The same, from SEVERAL templates at once. A real job is rarely one bundle — a bathroom is
+     * «Санвузол» plus «Підлога плиткою», and before this the master applied one and typed the
+     * rest.
+     *
+     * <p>Positions are concatenated in the order the templates were picked, then <b>de-duplicated
+     * by lowercased name</b> — the same key the catalog price lookup below already uses, so a
+     * position that resolves to one catalog row can only produce one line. First occurrence wins,
+     * which keeps the earliest-picked template's unit and ordering. Without this, overlapping
+     * bundles (every tiling bundle carries «Ґрунтівка поверхні») would produce an estimate with
+     * the same work billed three times, which the client would see.</p>
+     *
+     * <p>Every template is ownership-checked individually, and the estimate limit is checked once
+     * — this creates ONE estimate however many bundles feed it.</p>
+     */
+    @Transactional
+    public EstimateResponse applyToProject(UUID projectId,
+                                           List<UUID> templateIds,
+                                           EstimateCreateRequest req,
+                                           UUID ownerId) {
+        if (templateIds == null || templateIds.isEmpty()) {
+            throw new ResourceNotFoundException("No estimate template given");
+        }
+        List<EstimateTemplate> templates = templateIds.stream().distinct()
+                .map(id -> loadAccessible(id, ownerId))
+                .toList();
         Project project = projectService.loadOwned(projectId, ownerId);
         limitService.requireCanAddEstimate(ownerId, projectId);
 
@@ -267,21 +296,28 @@ public class EstimateTemplateService {
                 .notes(normalize(req.notes()))
                 .build());
 
-        List<EstimateTemplateItem> templateItems =
-                templateItemRepository.findByTemplateIdOrderBySortOrderAscIdAsc(templateId);
+        Set<String> seen = new HashSet<>();
         List<EstimateItem> toSave = new ArrayList<>();
-        for (EstimateTemplateItem ti : templateItems) {
-            CatalogItem match = catalog.get(ti.getName().toLowerCase());
-            toSave.add(EstimateItem.builder()
-                    .estimate(estimate)
-                    .type(match != null ? match.getType() : ti.getType())
-                    .name(ti.getName())
-                    .category(match != null ? match.getCategory() : null)
-                    .unit(match != null ? match.getUnit() : ti.getUnit())
-                    .quantity(BigDecimal.ZERO) // empty — master fills per object
-                    .unitPrice(match != null ? match.getDefaultPrice() : BigDecimal.ZERO)
-                    .sortOrder(ti.getSortOrder())
-                    .build());
+        for (EstimateTemplate template : templates) {
+            for (EstimateTemplateItem ti : templateItemRepository
+                    .findByTemplateIdOrderBySortOrderAscIdAsc(template.getId())) {
+                if (!seen.add(ti.getName().trim().toLowerCase())) {
+                    continue; // already contributed by an earlier template
+                }
+                CatalogItem match = catalog.get(ti.getName().toLowerCase());
+                toSave.add(EstimateItem.builder()
+                        .estimate(estimate)
+                        .type(match != null ? match.getType() : ti.getType())
+                        .name(ti.getName())
+                        .category(match != null ? match.getCategory() : null)
+                        .unit(match != null ? match.getUnit() : ti.getUnit())
+                        .quantity(BigDecimal.ZERO) // empty — master fills per object
+                        .unitPrice(match != null ? match.getDefaultPrice() : BigDecimal.ZERO)
+                        // Renumbered across the whole result: each template starts its own
+                        // sortOrder at 0, so keeping them would interleave the bundles.
+                        .sortOrder(toSave.size())
+                        .build());
+            }
         }
         estimateItemRepository.saveAll(toSave);
         projectRepository.incrementEstimatesCreated(projectId); // lifetime churn counter

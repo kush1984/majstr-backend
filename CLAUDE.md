@@ -370,7 +370,7 @@ the normal `403 *_LIMIT_REACHED` code.
 `hibernate.ddl-auto: validate`. Never put schema changes in entity
 annotations expecting Hibernate to apply them. Add a new
 `V<N>__<desc>.sql` under `src/main/resources/db/migration/` — **check the highest existing
-number first** (`ls` the directory and sort numerically; the latest is **V77**). Never edit an
+number first** (`ls` the directory and sort numerically; the latest is **V84**). Never edit an
 applied migration: Flyway checksums it and a changed file fails startup. Trades live
 in the `user_trades` collection table (one row per `(user_id, trade)`,
 mapped via `User.trades` `@ElementCollection`); it has a `CHECK`
@@ -530,6 +530,27 @@ Guarded by `SeedCatalogInvariantsIntegrationTest` and
 `CatalogCleanupOnLegacyDataIntegrationTest` — these run the migrations against real Postgres,
 which is the only place this class of SQL can be verified.
 
+**V81–V84 removed materials and rebuilt the tiling catalog** — see
+[docs/iteration-tiling-catalog-rebuild.md](docs/iteration-tiling-catalog-rebuild.md). Three facts
+that outlive that iteration:
+
+- **The default catalog is works-only, in every trade** (V81). `ItemType.MATERIAL` still exists
+  and estimates still split works/materials — only *picking* a material from our list is gone,
+  because receipt-photo import supplies the real price and a stale guess competing with a real
+  number is worse than no guess. Don't reintroduce default materials without deciding that again.
+- **V83 is the first migration to delete rows from a live master's own catalog.** Anything of
+  that kind must be fenced the same four ways: never touch `estimate_items`; delete only
+  `source = 'LIBRARY'`; keep a row whose price the master changed (compare against the price we
+  shipped, captured *before* the templates are deleted); and never touch a master-built template.
+- **A migration that rewrites a master's catalog must tell them.** `catalog_update_notices` holds
+  one pending notice per master, read once on app entry via `GET /api/catalog/update-notice`.
+  Silent rewriting of the thing a master quotes from reads as data loss.
+
+Both are covered by `MaterialRemovalOnLiveDataIntegrationTest` and
+`TilingCatalogRebuildOnLiveDataIntegrationTest`, which use the "second database migrated to the
+version before the change" pattern — the only way to test a DATA migration, since the normal
+slice runs every migration against an empty schema before any test row exists.
+
 ### Estimate line order is explicit, and categories are a grouping of it
 
 `PATCH /api/estimates/{id}/items/order` (`EstimateItemsOrderRequest` →
@@ -538,6 +559,24 @@ inside a category **and between categories**. Signed estimates are rejected like
 item write. `EstimatePdfService` renders the same grouping, so what the master arranged is what
 the client receives — if you change ordering on one side, change it on the other or the PDF
 silently disagrees with the app.
+
+### One estimate from SEVERAL templates
+
+`POST /api/projects/{id}/estimates/from-templates?ids=a,b,c` (`applyToProject` with a `List<UUID>`;
+the single-id endpoint and overload stay). A real job is rarely one bundle — a bathroom is
+«Санвузол» plus «Підлога плиткою».
+
+Positions are concatenated in the order the templates were picked, then **de-duplicated by
+lowercased name** — the same key the catalog price lookup uses, so a position that resolves to one
+catalog row can only produce one line. First occurrence wins (keeps the earliest bundle's unit and
+wording), `sortOrder` is renumbered across the whole result because each template counts its own
+from 0. Every template is ownership-checked individually; the estimate limit is checked **once**,
+because this creates one estimate however many bundles feed it.
+
+Bundles overlap by design (every tiling bundle carries «Ґрунтівка поверхні» and the always-billed
+four), so the dedup is not a nicety — without it the client sees the same work billed three times.
+`useApplyTemplate` replays the identical rule offline; one uncached bundle out of several is a
+refusal, not a partial apply.
 
 ### Album takeoff (`service/album/`) — built and tested, NOT yet exposed
 

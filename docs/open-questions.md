@@ -999,6 +999,14 @@ one-line summary — keep the item in the file as a record.
   **best-guess trades** (per section) — the master will fine-tune them (e.g. ГІДРОІЗОЛЯЦІЯ,
   ЗВУКОІЗОЛЯЦІЯ are debatable) via the admin catalog/template editor, or a follow-up migration.
   A single-trade tag still covers all 23. Not blocking.
+- **Update (multi-template selection, 2026-07-31):** the motivating case — "квартира під ключ"
+  spanning several trades — is now **reachable without changing the data model**: an estimate can
+  be built from SEVERAL bundles at once
+  (`POST /api/projects/{id}/estimates/from-templates?ids=a,b,c`), deduplicated by name, so a
+  master picks tiling + plumbing + electrical bundles and gets one estimate. That is arguably
+  better than a cross-trade template: the master chooses which trades this particular flat needs,
+  instead of us guessing a fixed combination. **What stays open** is only the *filter* question —
+  a single-trade tag still decides which bundles are offered to whom. Lower priority than before.
 
 ### Tetris default catalog: punctuation-stripped names + market-price gap
 - **Status:** OPEN — **but only the PRICE half now.** The names/duplicates half was fixed by
@@ -1020,6 +1028,46 @@ one-line summary — keep the item in the file as a record.
   the pre-existing 355, that's the broader "market-price updates for existing catalog items"
   opt-in-diff work (see that item) — never a silent overwrite. Low priority; templates resolve and
   read fine today.
+- **Update (tiling rebuild, V82–V84, 2026-07-31):** for **TILING this item is moot** — the whole
+  trade was replaced rather than repaired (167 works, 11 categories, sourced from a real published
+  price list), so no tetris-era wording or price survives there. The other trades still carry the
+  pre-rebuild catalogs, so the item stays OPEN for them. Note the rebuild also demonstrated the
+  answer to the "silent overwrite" worry: a master's LIBRARY row is only removed if its price still
+  equals what WE shipped, and they are told what changed
+  (`catalog_update_notices`). See [iteration-tiling-catalog-rebuild.md](iteration-tiling-catalog-rebuild.md).
+
+### Rebuild the remaining trades' catalogs the way tiling was rebuilt
+- **Status:** OPEN
+- **Since:** Tiling-catalog rebuild (2026-07-31)
+- **Context:** V82–V84 replaced the tiling catalog with 167 works read off a real published price
+  list, and the exercise surfaced **10 positions no published list carries** — carrying, rubbish
+  removal, covering with film, cleaning up, the warranty callout, measuring and drawing the layout.
+  Those generalise: every trade carries rubbish away. The user called this out explicitly as
+  reusable ("за тих 10 позицій це класна знахідка і вона нам пригодиться по інших трейдах").
+- **Notes / options:** Per trade, the same four steps — find a real price list, rebuild the
+  catalog at a new `added_in_version`, push to existing masters with a notice, rewrite the
+  bundles. The machinery now exists and is tested; what does not exist is a vetted source per
+  trade. Open sub-question: whether the "always-billed four" belong in **every** trade's bundles
+  or only tiling's.
+- **Convention to carry:** categories are **sentence case** («Підготовчі роботи»), never the source
+  price list's CAPS, and never a repeat of the trade name.
+  `SeedCatalogInvariantsIntegrationTest` enforces both — a rebuilt trade that imports a supplier's
+  capitalisation verbatim will fail the build, which is the intended outcome.
+
+### How materials come back after V81
+- **Status:** OPEN
+- **Since:** Material removal (V81, 2026-07-31)
+- **Context:** V81 removed materials from the default catalog in every trade, on the grounds that
+  we shipped invented prices nobody maintains while receipt-photo import supplies the real price
+  from the shop. That closes the *after-purchase* case cleanly. It does **not** cover a master
+  pricing a job **before** buying anything — they now have nothing to pick from and must type each
+  material by hand.
+- **Notes / options:** (a) leave it — materials are often the client's problem, not the
+  contractor's; (b) a materials list with **no prices at all**, so the name is reusable and the
+  number is always the master's; (c) per-master learned materials, built from what their own
+  receipt imports have already produced (no invention, no shared price). (c) is the only one that
+  produces a real number without us guessing, but it needs usage data we do not have yet.
+  Deliberately deferred — the user's words were «наразі викидай повністю, лишаємо суто роботи».
 
 ### Bulk-assign trade to the "Інше" (OTHER) catalog pile
 - **Status:** OPEN

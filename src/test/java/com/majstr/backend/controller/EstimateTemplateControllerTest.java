@@ -143,4 +143,23 @@ class EstimateTemplateControllerTest {
                 .andExpect(jsonPath("$.id", is(estimateId.toString())))
                 .andExpect(jsonPath("$.projectId", is(projectId.toString())));
     }
+
+    @Test
+    void createFromTemplates_passesEveryPickedTemplateInOrder() throws Exception {
+        UUID projectId = UUID.randomUUID();
+        UUID first = UUID.randomUUID();
+        UUID second = UUID.randomUUID();
+        UUID estimateId = UUID.randomUUID();
+        given(templateService.applyToProject(eq(projectId), eq(List.of(first, second)), any(), eq(userId)))
+                .willReturn(new EstimateResponse(estimateId, projectId, "Санвузол",
+                        EstimateStatus.DRAFT, null, null, null, null, List.of(),
+                        BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, null, BigDecimal.ZERO));
+
+        mockMvc.perform(post("/api/projects/{p}/estimates/from-templates", projectId)
+                        .param("ids", first.toString(), second.toString())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{}"))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.id", is(estimateId.toString())));
+    }
 }

@@ -1,5 +1,6 @@
 package com.majstr.backend.controller;
 
+import com.majstr.backend.dto.CatalogUpdateNoticeResponse;
 import com.majstr.backend.entity.Role;
 import com.majstr.backend.entity.Trade;
 import com.majstr.backend.entity.User;
@@ -142,5 +143,37 @@ class CatalogControllerTest {
 
         verify(userRepository).findWithTradesById(userId);
         verify(userRepository, never()).findById(any());
+    }
+
+    @Test
+    void updateNotice_reportsThePendingCatalogChange() throws Exception {
+        given(catalogTemplateService.pendingUpdateNotice(userId))
+                .willReturn(new CatalogUpdateNoticeResponse(true, 167, 4));
+
+        mockMvc.perform(get("/api/catalog/update-notice"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.pending", is(true)))
+                .andExpect(jsonPath("$.added", is(167)))
+                .andExpect(jsonPath("$.removed", is(4)));
+    }
+
+    @Test
+    void updateNotice_isPlainOkWhenThereIsNothingToShow() throws Exception {
+        given(catalogTemplateService.pendingUpdateNotice(userId))
+                .willReturn(CatalogUpdateNoticeResponse.NONE);
+
+        // 200 with pending=false, not 404 — this is the answer on nearly every app open and an
+        // error status here would make the PWA log an error every single time it starts.
+        mockMvc.perform(get("/api/catalog/update-notice"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.pending", is(false)));
+    }
+
+    @Test
+    void dismissUpdateNotice_answers204() throws Exception {
+        mockMvc.perform(post("/api/catalog/update-notice/dismiss"))
+                .andExpect(status().isNoContent());
+
+        verify(catalogTemplateService).dismissUpdateNotice(userId);
     }
 }

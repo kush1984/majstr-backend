@@ -5,16 +5,20 @@ import com.majstr.backend.entity.CatalogItemSource;
 import com.majstr.backend.entity.CatalogTemplate;
 import com.majstr.backend.entity.Trade;
 import com.majstr.backend.entity.User;
+import com.majstr.backend.dto.CatalogUpdateNoticeResponse;
 import com.majstr.backend.repository.CatalogItemRepository;
 import com.majstr.backend.repository.CatalogTemplateRepository;
+import com.majstr.backend.repository.CatalogUpdateNoticeRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.UUID;
 import java.util.stream.Collectors;
 
 /**
@@ -34,6 +38,28 @@ public class CatalogTemplateService {
 
     private final CatalogTemplateRepository templateRepository;
     private final CatalogItemRepository catalogRepository;
+    private final CatalogUpdateNoticeRepository noticeRepository;
+
+    /**
+     * The pending "we changed your catalog" notice for this master, or
+     * {@link CatalogUpdateNoticeResponse#NONE}. Written by a catalog migration, not by any code
+     * path here — see {@link com.majstr.backend.entity.CatalogUpdateNotice}.
+     */
+    @Transactional(readOnly = true)
+    public CatalogUpdateNoticeResponse pendingUpdateNotice(UUID userId) {
+        return noticeRepository.findByUserIdAndDismissedAtIsNull(userId)
+                .map(n -> new CatalogUpdateNoticeResponse(
+                        true, n.getPositionsAdded(), n.getPositionsRemoved()))
+                .orElse(CatalogUpdateNoticeResponse.NONE);
+    }
+
+    /** Idempotent: dismissing an already-dismissed or absent notice is a no-op, so a retry from
+     *  an offline client can never fail. */
+    @Transactional
+    public void dismissUpdateNotice(UUID userId) {
+        noticeRepository.findByUserIdAndDismissedAtIsNull(userId)
+                .ifPresent(n -> n.setDismissedAt(Instant.now()));
+    }
 
     @Transactional
     public int seedForUser(User user) {

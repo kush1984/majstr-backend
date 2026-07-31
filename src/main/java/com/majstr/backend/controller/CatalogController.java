@@ -4,6 +4,7 @@ import com.majstr.backend.dto.AddTemplatesRequest;
 import com.majstr.backend.dto.CatalogItemRequest;
 import com.majstr.backend.dto.CatalogItemResponse;
 import com.majstr.backend.dto.CatalogResetResponse;
+import com.majstr.backend.dto.CatalogUpdateNoticeResponse;
 import com.majstr.backend.dto.TemplateUpdatesResponse;
 import com.majstr.backend.entity.ItemType;
 import com.majstr.backend.exception.ResourceNotFoundException;
@@ -137,5 +138,20 @@ public class CatalogController {
                 .orElseThrow(() -> new ResourceNotFoundException("User not found: " + principal.id()));
         int added = catalogTemplateService.addNewFromCatalog(user);
         return new CatalogResetResponse(added);
+    }
+
+    @Operation(summary = "The pending 'your catalog was updated' notice, if any",
+            description = "Written by a catalog migration that changed this master's own catalog "
+                    + "without them asking. Answers pending=false when there is nothing to show.")
+    @GetMapping("/update-notice")
+    public CatalogUpdateNoticeResponse updateNotice(@AuthenticationPrincipal UserPrincipal principal) {
+        return catalogTemplateService.pendingUpdateNotice(principal.id());
+    }
+
+    @Operation(summary = "Mark the catalog-update notice as seen")
+    @PostMapping("/update-notice/dismiss")
+    public ResponseEntity<Void> dismissUpdateNotice(@AuthenticationPrincipal UserPrincipal principal) {
+        catalogTemplateService.dismissUpdateNotice(principal.id());
+        return ResponseEntity.noContent().build();
     }
 }

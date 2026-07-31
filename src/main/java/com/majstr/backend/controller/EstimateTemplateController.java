@@ -26,6 +26,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
@@ -122,6 +123,20 @@ public class EstimateTemplateController {
             @Valid @RequestBody EstimateCreateRequest req,
             @AuthenticationPrincipal UserPrincipal principal) {
         EstimateResponse created = templateService.applyToProject(projectId, templateId, req, principal.id());
+        return ResponseEntity.status(HttpStatus.CREATED).body(created);
+    }
+
+    @Operation(summary = "Create ONE new estimate in the project from SEVERAL templates",
+            description = "Positions are concatenated in the given order and de-duplicated by "
+                    + "name, so overlapping bundles never bill the same work twice. Counts as a "
+                    + "single estimate against the plan limit.")
+    @PostMapping("/api/projects/{projectId}/estimates/from-templates")
+    public ResponseEntity<EstimateResponse> createFromTemplates(
+            @PathVariable UUID projectId,
+            @RequestParam("ids") List<UUID> templateIds,
+            @Valid @RequestBody EstimateCreateRequest req,
+            @AuthenticationPrincipal UserPrincipal principal) {
+        EstimateResponse created = templateService.applyToProject(projectId, templateIds, req, principal.id());
         return ResponseEntity.status(HttpStatus.CREATED).body(created);
     }
 }

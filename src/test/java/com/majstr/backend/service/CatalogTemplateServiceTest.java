@@ -1,14 +1,17 @@
 package com.majstr.backend.service;
 
+import com.majstr.backend.dto.CatalogUpdateNoticeResponse;
 import com.majstr.backend.entity.CatalogItem;
 import com.majstr.backend.entity.CatalogItemSource;
 import com.majstr.backend.entity.CatalogTemplate;
+import com.majstr.backend.entity.CatalogUpdateNotice;
 import com.majstr.backend.entity.ItemType;
 import com.majstr.backend.entity.Trade;
 import com.majstr.backend.entity.Unit;
 import com.majstr.backend.entity.User;
 import com.majstr.backend.repository.CatalogItemRepository;
 import com.majstr.backend.repository.CatalogTemplateRepository;
+import com.majstr.backend.repository.CatalogUpdateNoticeRepository;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
@@ -19,10 +22,12 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import java.math.BigDecimal;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.verify;
@@ -32,7 +37,50 @@ class CatalogTemplateServiceTest {
 
     @Mock CatalogTemplateRepository templateRepository;
     @Mock CatalogItemRepository catalogRepository;
+    @Mock CatalogUpdateNoticeRepository noticeRepository;
     @InjectMocks CatalogTemplateService catalogTemplateService;
+
+    @Test
+    void pendingUpdateNotice_reportsWhatTheMigrationRecorded() {
+        UUID userId = UUID.randomUUID();
+        given(noticeRepository.findByUserIdAndDismissedAtIsNull(userId))
+                .willReturn(Optional.of(CatalogUpdateNotice.builder()
+                        .userId(userId).positionsAdded(167).positionsRemoved(4).build()));
+
+        assertThat(catalogTemplateService.pendingUpdateNotice(userId))
+                .isEqualTo(new CatalogUpdateNoticeResponse(true, 167, 4));
+    }
+
+    @Test
+    void pendingUpdateNotice_isNotAnErrorWhenThereIsNothingToSay() {
+        UUID userId = UUID.randomUUID();
+        given(noticeRepository.findByUserIdAndDismissedAtIsNull(userId)).willReturn(Optional.empty());
+
+        // The normal answer on nearly every app open, so it must not be an exception or a 404.
+        assertThat(catalogTemplateService.pendingUpdateNotice(userId))
+                .isEqualTo(CatalogUpdateNoticeResponse.NONE);
+    }
+
+    @Test
+    void dismissUpdateNotice_stampsTheNotice() {
+        UUID userId = UUID.randomUUID();
+        CatalogUpdateNotice notice = CatalogUpdateNotice.builder().userId(userId).build();
+        given(noticeRepository.findByUserIdAndDismissedAtIsNull(userId)).willReturn(Optional.of(notice));
+
+        catalogTemplateService.dismissUpdateNotice(userId);
+
+        assertThat(notice.getDismissedAt()).isNotNull();
+    }
+
+    @Test
+    void dismissUpdateNotice_isANoOpWhenNothingIsPending() {
+        UUID userId = UUID.randomUUID();
+        given(noticeRepository.findByUserIdAndDismissedAtIsNull(userId)).willReturn(Optional.empty());
+
+        // An offline client may replay the dismiss; a second one must not fail.
+        assertThatCode(() -> catalogTemplateService.dismissUpdateNotice(userId))
+                .doesNotThrowAnyException();
+    }
 
     @Test
     void seedForUser_copiesEveryTemplateForTradeIntoUserLibrary() {

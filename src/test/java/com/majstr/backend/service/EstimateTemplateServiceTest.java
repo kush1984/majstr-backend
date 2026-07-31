@@ -124,6 +124,67 @@ class EstimateTemplateServiceTest {
     }
 
     @Test
+    void applyToProject_fromSeveralTemplates_billsAnOverlappingPositionOnce() {
+        UUID first = UUID.randomUUID();
+        UUID second = UUID.randomUUID();
+        UUID projectId = UUID.randomUUID();
+        UUID estimateId = UUID.randomUUID();
+
+        EstimateTemplate bathroom = EstimateTemplate.builder().id(first).isDefault(true).build();
+        EstimateTemplate floor = EstimateTemplate.builder().id(second).isDefault(true).build();
+        given(templateRepository.findById(first)).willReturn(Optional.of(bathroom));
+        given(templateRepository.findById(second)).willReturn(Optional.of(floor));
+        Project project = Project.builder().id(projectId).build();
+        given(projectService.loadOwned(projectId, ownerId)).willReturn(project);
+        given(catalogRepository.findByOwnerIdOrderByNameAsc(ownerId)).willReturn(List.of());
+        Estimate saved = Estimate.builder().id(estimateId).project(project).build();
+        given(estimateRepository.save(any())).willReturn(saved);
+
+        // Both bundles carry the primer — every tiling bundle does. Case differs on purpose.
+        given(templateItemRepository.findByTemplateIdOrderBySortOrderAscIdAsc(first)).willReturn(List.of(
+                templateItem(bathroom, "Ґрунтівка поверхні", Unit.M2, 0),
+                templateItem(bathroom, "Укладання плитки 300х600", Unit.M2, 1)));
+        given(templateItemRepository.findByTemplateIdOrderBySortOrderAscIdAsc(second)).willReturn(List.of(
+                templateItem(floor, "ҐРУНТІВКА ПОВЕРХНІ", Unit.M2, 0),
+                templateItem(floor, "Стяжка маякова цементна", Unit.M2, 1)));
+        given(estimateService.get(estimateId, ownerId)).willReturn(stubResponse(estimateId, projectId));
+
+        service.applyToProject(projectId, List.of(first, second),
+                new EstimateCreateRequest(null, null, "Санвузол"), ownerId);
+
+        ArgumentCaptor<List<EstimateItem>> captor = ArgumentCaptor.forClass(List.class);
+        verify(estimateItemRepository).saveAll(captor.capture());
+        List<EstimateItem> items = captor.getValue();
+
+        assertThat(items).extracting(EstimateItem::getName)
+                .as("спільна позиція не має потрапити в кошторис двічі — клієнт це побачить")
+                .containsExactly("Ґрунтівка поверхні", "Укладання плитки 300х600",
+                        "Стяжка маякова цементна");
+        assertThat(items).extracting(EstimateItem::getSortOrder)
+                .as("порядок наскрізний — інакше шаблони перемішались би між собою")
+                .containsExactly(0, 1, 2);
+        // One estimate, so one limit check, however many bundles were picked.
+        verify(limitService).requireCanAddEstimate(ownerId, projectId);
+    }
+
+    @Test
+    void applyToProject_fromSeveralTemplates_rejectsIfAnyOfThemIsNotMine() {
+        UUID mine = UUID.randomUUID();
+        UUID foreignId = UUID.randomUUID();
+        given(templateRepository.findById(mine))
+                .willReturn(Optional.of(EstimateTemplate.builder().id(mine).isDefault(true).build()));
+        given(templateRepository.findById(foreignId)).willReturn(Optional.of(EstimateTemplate.builder()
+                .id(foreignId).isDefault(false)
+                .owner(User.builder().id(UUID.randomUUID()).build()).build()));
+
+        assertThatThrownBy(() -> service.applyToProject(UUID.randomUUID(), List.of(mine, foreignId),
+                new EstimateCreateRequest(null, null, null), ownerId))
+                .as("одного чужого шаблону досить, щоб відхилити весь запит")
+                .isInstanceOf(AccessDeniedException.class);
+        verify(estimateRepository, never()).save(any());
+    }
+
+    @Test
     void applyToProject_rejectsAnotherMastersOwnTemplate() {
         UUID templateId = UUID.randomUUID();
         User otherOwner = User.builder().id(UUID.randomUUID()).build();

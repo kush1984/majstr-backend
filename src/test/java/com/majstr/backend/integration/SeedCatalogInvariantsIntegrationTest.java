@@ -112,6 +112,11 @@ class SeedCatalogInvariantsIntegrationTest extends IntegrationTestBase {
                 .as("дві категорії, що різняться лише регістром, читаються як дві різні секції")
                 .isEmpty();
 
+        // No per-trade exceptions here on purpose. The rebuilt tiling catalog (V82) briefly shipped
+        // its 11 categories in the source price list's own CAPS, which would have meant one
+        // convention for tiling and another everywhere else — visible to any master working in two
+        // trades. They were converted to sentence case instead of carving a hole in this rule: an
+        // invariant with an exception list stops being an invariant.
         assertThat(jdbc.queryForList(
                 "SELECT DISTINCT category FROM catalog_templates "
                         + "WHERE category = upper(category) AND category ~ '[Ѐ-ӿ]' AND category <> 'ЗІЗ'",
@@ -132,10 +137,23 @@ class SeedCatalogInvariantsIntegrationTest extends IntegrationTestBase {
         // `> 0` to `>= 0`; such a row silently produces a zero line in an estimate. The zero-priced
         // positions that remain are known and listed in seed-audit/potrebuyut-ciny.csv — this test
         // pins the count so a NEW one has to be a deliberate decision, not an accident.
-        Integer zeroPriced = jdbc.queryForObject(
-                "SELECT count(*) FROM catalog_templates WHERE suggested_price = 0", Integer.class);
-        assertThat(zeroPriced)
+        //
+        // TILING is counted SEPARATELY rather than folded into a bigger allowance, because the
+        // rebuilt tiling catalog (V82) ships 18 deliberate zeros — jobs that are quoted per object
+        // («договірна»), where an invented number is worse than a blank the master fills in once.
+        // Raising the single bound to 19 would have retired the guard for every other trade; two
+        // bounds keep it, and pin the deliberate set exactly.
+        assertThat(jdbc.queryForObject(
+                "SELECT count(*) FROM catalog_templates WHERE suggested_price = 0 AND trade <> 'TILING'",
+                Integer.class))
                 .as("позиція з ціною 0 дає нульовий рядок у кошторисі; нових бути не повинно")
                 .isNotNull().isLessThanOrEqualTo(1);
+
+        assertThat(jdbc.queryForObject(
+                "SELECT count(*) FROM catalog_templates WHERE suggested_price = 0 AND trade = 'TILING'",
+                Integer.class))
+                .as("18 «договірних» позицій плитки — рівно стільки, скільки вирішили; 19-та має "
+                        + "бути рішенням, а не опискою в наступному сіді")
+                .isEqualTo(18);
     }
 }
