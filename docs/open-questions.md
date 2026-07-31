@@ -532,7 +532,9 @@ one-line summary — keep the item in the file as a record.
 ## Business logic
 
 ### Version 1.0.0 — ships with the first paying user
-- **Status:** OPEN
+- **Status:** RESOLVED (2026-07-31) — the first subscription was bought (299 ₴, monobank, CHECKOUT),
+  so the milestone the version was waiting on has happened and the PWA went `0.47.0 → 1.0.0`.
+  From here: minor = feature iteration, patch = fixes, same rhythm as before.
 - **Since:** 2026-07-23 (user decision)
 - **Context:** The product is functionally 1.0-ready (real masters on prod, self-serve PRO
   checkout, portal signing, offline, imports), but the user chose a business milestone over a
@@ -540,6 +542,12 @@ one-line summary — keep the item in the file as a record.
 - **Notes / options:** Stay on `0.x` until the FIRST real payment lands; the next release after
   that becomes `1.0.0` (then minor = feature iteration, patch = fixes — same rhythm as now).
   The open-questions skill carries the same rule so it isn't forgotten at bump time.
+- **Postscript worth keeping:** the payment landed and **the admin dashboard did not change**,
+  because «Конверсія в платні» was `(PRO + TEAM) / total` — a plan-column metric that counts
+  trials and admin grants as revenue. Fixed in the same iteration (see
+  [iteration-first-subscription.md](iteration-first-subscription.md)). The general lesson: a
+  business metric derived from a state that several non-business paths can set is not measuring
+  the business.
 
 ### Exact FREE limit numbers + monetization model
 - **Status:** OPEN

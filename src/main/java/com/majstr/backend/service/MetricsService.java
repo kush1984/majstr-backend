@@ -5,18 +5,22 @@ import com.majstr.backend.dto.MetricsGrowthResponse;
 import com.majstr.backend.dto.MetricsOverviewResponse;
 import com.majstr.backend.dto.SourceBreakdownResponse;
 import com.majstr.backend.dto.SourceCount;
+import com.majstr.backend.dto.SubscriptionBreakdown;
 import com.majstr.backend.entity.EstimateStatus;
+import com.majstr.backend.entity.Payment;
 import com.majstr.backend.entity.Plan;
 import com.majstr.backend.entity.Role;
 import com.majstr.backend.entity.UpgradeEventType;
 import com.majstr.backend.entity.User;
 import com.majstr.backend.repository.EstimateRepository;
 import com.majstr.backend.repository.EstimateShareLinkRepository;
+import com.majstr.backend.repository.PaymentRepository;
 import com.majstr.backend.repository.ProjectRepository;
 import com.majstr.backend.repository.ReferralRewardRepository;
 import com.majstr.backend.repository.UpgradeEventRepository;
 import com.majstr.backend.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -48,8 +52,11 @@ import java.util.stream.Collectors;
 public class MetricsService {
 
     private static final int ACTIVE_WINDOW_DAYS = 30;
+    /** Enough to see the last day's activity at a glance; the full list lives in the users screen. */
+    private static final int RECENT_PAYMENTS = 10;
 
     private final UserRepository userRepository;
+    private final PaymentRepository paymentRepository;
     private final ProjectRepository projectRepository;
     private final EstimateRepository estimateRepository;
     private final EstimateShareLinkRepository shareLinkRepository;
@@ -78,11 +85,13 @@ public class MetricsService {
         userRepository.countGroupByPlan()
                 .forEach(row -> planDistribution.put(row.getPlan(), row.getTotal()));
 
-        long paid = planDistribution.getOrDefault(Plan.PRO, 0L)
-                + planDistribution.getOrDefault(Plan.TEAM, 0L);
+        SubscriptionBreakdown subscriptions = subscriptions(now, monthAgo);
+        // From REAL payments, not from the plan column. (PRO + TEAM) / total counted a five-day
+        // trial and an admin grant as revenue, so the figure was identical the day before and the
+        // day after the first paying customer — the one day it had to move.
         BigDecimal conversion = total == 0
                 ? BigDecimal.ZERO
-                : BigDecimal.valueOf(paid)
+                : BigDecimal.valueOf(subscriptions.everPaid())
                     .multiply(BigDecimal.valueOf(100))
                     .divide(BigDecimal.valueOf(total), 2, RoundingMode.HALF_UP);
 
@@ -101,6 +110,7 @@ public class MetricsService {
                 active30d,
                 planDistribution,
                 conversion,
+                subscriptions,
                 new MetricsOverviewResponse.ChurnSummary(
                         activeLastMonth.size(),
                         stillActive,
@@ -109,6 +119,70 @@ public class MetricsService {
                 userRepository.countAutoRenewUsers(),
                 referralRewardRepository.countAllRewards()
         );
+    }
+
+    /**
+     * Bought vs trial vs admin-granted, plus the money.
+     *
+     * <p>The classification order is the whole point: {@code paid} is checked FIRST, so a master who
+     * took the trial and then bought counts as a customer rather than as a trialist. The other two
+     * are only reachable when there is no successful payment at all.</p>
+     *
+     * <p>{@code payingNow} additionally requires the plan to still be live, which is what separates
+     * a subscriber from someone who paid once in March. Both numbers are reported because only the
+     * pair distinguishes growth from churn.</p>
+     */
+    private SubscriptionBreakdown subscriptions(Instant now, Instant monthAgo) {
+        Set<UUID> everPaidIds = paymentRepository.findEverPaidUserIds();
+        long payingNow = 0;
+        long onTrial = 0;
+        long granted = 0;
+        for (User u : userRepository.findOnPaidPlan()) {
+            if (everPaidIds.contains(u.getId())) {
+                // A dateless plan on a payer is an admin top-up over a real purchase; still paying.
+                if (u.getPlanExpiresAt() == null || u.getPlanExpiresAt().isAfter(now)) {
+                    payingNow++;
+                }
+            } else if (u.getTrialStartedAt() != null) {
+                onTrial++;
+            } else {
+                granted++;
+            }
+        }
+        return new SubscriptionBreakdown(
+                payingNow,
+                paymentRepository.countEverPaid(),
+                onTrial,
+                granted,
+                paymentRepository.countSuccessfulPayments(),
+                paymentRepository.sumRevenue(),
+                paymentRepository.sumRevenueSince(monthAgo),
+                recentPayments());
+    }
+
+    /** The newest successful payments with the payer's name — one extra query for the whole page. */
+    private List<SubscriptionBreakdown.RecentPayment> recentPayments() {
+        List<Payment> payments = paymentRepository.findRecentSuccessful(PageRequest.of(0, RECENT_PAYMENTS));
+        if (payments.isEmpty()) {
+            return List.of();
+        }
+        Map<UUID, User> payers = userRepository
+                .findByIdIn(payments.stream().map(Payment::getUserId).collect(Collectors.toSet()))
+                .stream().collect(Collectors.toMap(User::getId, u -> u));
+        List<SubscriptionBreakdown.RecentPayment> out = new ArrayList<>(payments.size());
+        for (Payment p : payments) {
+            User payer = payers.get(p.getUserId());
+            out.add(new SubscriptionBreakdown.RecentPayment(
+                    payer == null ? "—" : payer.getEmail(),
+                    payer == null ? null : payer.getFullName(),
+                    p.getAmount(),
+                    String.valueOf(p.getPlan()),
+                    String.valueOf(p.getPeriod()),
+                    String.valueOf(p.getKind()),
+                    p.getDays(),
+                    p.getPaidAt()));
+        }
+        return out;
     }
 
     /**

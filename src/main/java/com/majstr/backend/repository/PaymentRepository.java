@@ -2,15 +2,18 @@ package com.majstr.backend.repository;
 
 import com.majstr.backend.entity.Payment;
 import com.majstr.backend.entity.PaymentKind;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
+import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 
 @Repository
@@ -57,4 +60,56 @@ public interface PaymentRepository extends JpaRepository<Payment, UUID> {
             WHERE p.id = :id AND p.status <> com.majstr.backend.entity.PaymentStatus.SUCCESS
             """)
     int claimForGrant(@Param("id") UUID id, @Param("paidAt") Instant paidAt);
+
+    // ---- admin metrics -----------------------------------------------------
+    //
+    // A SUCCESS payment is the ONLY honest evidence that money changed hands. The dashboard used
+    // to call PRO+TEAM "платні", which counts a 5-day trial and an admin grant as revenue — a
+    // number that would not have moved on the day the first real 299 ₴ arrived. Everything below
+    // is keyed on the payments table for exactly that reason.
+
+    /** Masters who have EVER paid — the denominator-free headline number. */
+    @Query("""
+            SELECT COUNT(DISTINCT p.userId) FROM Payment p
+            WHERE p.status = com.majstr.backend.entity.PaymentStatus.SUCCESS
+            """)
+    long countEverPaid();
+
+    /** The ids, so the plan split can tell a bought PRO from a trial one without a query per user. */
+    @Query("""
+            SELECT DISTINCT p.userId FROM Payment p
+            WHERE p.status = com.majstr.backend.entity.PaymentStatus.SUCCESS
+            """)
+    Set<UUID> findEverPaidUserIds();
+
+    @Query("""
+            SELECT COUNT(p) FROM Payment p
+            WHERE p.status = com.majstr.backend.entity.PaymentStatus.SUCCESS
+            """)
+    long countSuccessfulPayments();
+
+    /**
+     * Gross revenue in the account's currency. COALESCE because SUM over no rows is NULL, and a
+     * null here would render as an empty tile rather than as «0 ₴» — on the day before the first
+     * payment those look identical and mean different things.
+     */
+    @Query("""
+            SELECT COALESCE(SUM(p.amount), 0) FROM Payment p
+            WHERE p.status = com.majstr.backend.entity.PaymentStatus.SUCCESS
+            """)
+    BigDecimal sumRevenue();
+
+    @Query("""
+            SELECT COALESCE(SUM(p.amount), 0) FROM Payment p
+            WHERE p.status = com.majstr.backend.entity.PaymentStatus.SUCCESS AND p.paidAt >= :after
+            """)
+    BigDecimal sumRevenueSince(@Param("after") Instant after);
+
+    /** The last few, newest first — «хто саме заплатив», which no aggregate can answer. */
+    @Query("""
+            SELECT p FROM Payment p
+            WHERE p.status = com.majstr.backend.entity.PaymentStatus.SUCCESS
+            ORDER BY p.paidAt DESC
+            """)
+    List<Payment> findRecentSuccessful(Pageable pageable);
 }

@@ -168,6 +168,14 @@
                     </div>
                 </section>
 
+                <h2>Підписки та гроші</h2>
+                <section class="card">
+                    <div class="grid" id="subs">
+                        <div class="stat"><div class="label">Завантаження…</div></div>
+                    </div>
+                    <div id="recentPayments"></div>
+                </section>
+
                 <h2>Воронка активації — де відвалюються майстри</h2>
                 <section class="card">
                     <div class="grid" id="funnel">
@@ -517,21 +525,65 @@
         const resp = await api('/admin/metrics/overview');
         if (resp.status === 401 || resp.status === 403) { logout(); return; }
         const m = await resp.json();
+        // The plan tiles stay a plain count of the plan column — that is all they can honestly be.
+        // What those plans are MADE of (bought / trial / granted) is its own section, because the
+        // split is across all paid plans and attributing a share of it to PRO specifically would be
+        // a number nobody computed.
         const planRows = Object.entries(m.planDistribution)
             .map(([plan, n]) => `<div class="stat"><div class="label">План ${plan}</div><div class="value">${n}</div></div>`)
             .join('');
+        renderSubscriptions(m.subscriptions);
         document.getElementById('overview').innerHTML = `
             <div class="stat"><div class="label">Усього користувачів</div><div class="value">${numberFormat.format(m.usersTotal)}</div></div>
             <div class="stat"><div class="label">Нових сьогодні</div><div class="value">${m.usersNewToday}</div></div>
             <div class="stat"><div class="label">Нових за тиждень</div><div class="value">${m.usersNewThisWeek}</div></div>
             <div class="stat"><div class="label">Нових за місяць</div><div class="value">${m.usersNewThisMonth}</div></div>
             <div class="stat"><div class="label">Активних (30 днів)</div><div class="value">${m.usersActive30d}</div></div>
-            <div class="stat"><div class="label">Конверсія в платні</div><div class="value">${m.conversionRatePercent}%</div></div>
+            <div class="stat"><div class="label">Конверсія в платні</div><div class="value">${m.conversionRatePercent}%</div><div class="sub">хто реально заплатив</div></div>
             <div class="stat"><div class="label">Churn (з минулого місяця)</div><div class="value">${m.churn.churned}</div><div class="sub">з ${m.churn.activeLastMonth} активних</div></div>
             <div class="stat"><div class="label">Автопродовження увімк.</div><div class="value">${m.autoRenewUsers}</div><div class="sub">MRR-сигнал</div></div>
             <div class="stat"><div class="label">Реферальні винагороди</div><div class="value">${m.referralRewards}</div><div class="sub">майстер→майстер</div></div>
             ${planRows}
         `;
+    }
+
+    const moneyFormat = new Intl.NumberFormat('uk-UA', { maximumFractionDigits: 0 });
+
+    /**
+     * Bought vs trial vs admin-granted, and the money.
+     *
+     * The tile that matters is «Платять зараз». Before this the dashboard could only say «План
+     * PRO: 2», which counts a five-day trial and a staff grant as customers — so the day the first
+     * real subscription arrived, nothing on this screen changed.
+     */
+    function renderSubscriptions(s) {
+        const box = document.getElementById('subs');
+        if (!s) { box.innerHTML = '<p class="muted">Немає даних.</p>'; return; }
+        box.innerHTML = `
+            <div class="stat"><div class="label">Платять зараз</div><div class="value">${s.payingNow}</div><div class="sub">активна куплена підписка</div></div>
+            <div class="stat"><div class="label">Платили колись</div><div class="value">${s.everPaid}</div><div class="sub">разом із тими, хто не продовжив</div></div>
+            <div class="stat"><div class="label">На пробному PRO</div><div class="value">${s.onTrial}</div><div class="sub">ще не платили</div></div>
+            <div class="stat"><div class="label">Видано адміном</div><div class="value">${s.granted}</div><div class="sub">без оплати</div></div>
+            <div class="stat"><div class="label">Дохід усього</div><div class="value">${moneyFormat.format(s.revenueTotal || 0)} ₴</div><div class="sub">${s.successfulPayments} успішних платежів</div></div>
+            <div class="stat"><div class="label">Дохід за 30 днів</div><div class="value">${moneyFormat.format(s.revenue30d || 0)} ₴</div></div>
+        `;
+        const recent = s.recent || [];
+        const el = document.getElementById('recentPayments');
+        if (recent.length === 0) {
+            el.innerHTML = '<p class="muted" style="margin-top:14px">Оплат ще не було.</p>';
+            return;
+        }
+        el.innerHTML = '<table style="margin-top:14px"><thead><tr><th>Коли</th><th>Майстер</th><th>Сума</th>'
+            + '<th>План</th><th>Період</th><th title="CHECKOUT — оплатив сам; AUTO_RENEW — списання за токеном">Тип</th></tr></thead><tbody>'
+            + recent.map(p => `<tr>
+                <td>${p.paidAt ? new Date(p.paidAt).toLocaleString('uk-UA') : '—'}</td>
+                <td>${escapeHtml(p.fullName || p.email || '—')}<div class="muted" style="font-size:11px">${escapeHtml(p.email || '')}</div></td>
+                <td><b>${moneyFormat.format(p.amount)} ₴</b></td>
+                <td>${escapeHtml(p.plan)}</td>
+                <td>${p.days} дн.</td>
+                <td>${p.kind === 'AUTO_RENEW' ? 'автопродовження' : 'оплатив сам'}</td>
+            </tr>`).join('')
+            + '</tbody></table>';
     }
 
     async function loadFunnel() {

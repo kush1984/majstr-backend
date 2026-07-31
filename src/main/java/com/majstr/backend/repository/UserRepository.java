@@ -15,6 +15,7 @@ import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
 import java.time.Instant;
+import java.util.Collection;
 import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
@@ -223,6 +224,19 @@ public interface UserRepository extends JpaRepository<User, UUID> {
     /** How many masters have auto-renew on (MRR signal for the admin). */
     @Query("SELECT COUNT(u) FROM User u WHERE u.autoRenew = true")
     long countAutoRenewUsers();
+
+    /**
+     * Everyone currently on a paid plan, for the admin's bought / trial / granted split.
+     *
+     * <p>Only the paid population, never the whole table: the split has to classify each of these
+     * against the payments table, and pulling 130 FREE rows to discard them all is the kind of scan
+     * that is fine at this size and is not fine later.</p>
+     */
+    @Query("SELECT u FROM User u WHERE u.plan <> com.majstr.backend.entity.Plan.FREE")
+    List<User> findOnPaidPlan();
+
+    /** Names for the admin's "who paid" list — one query for the whole page of payments. */
+    List<User> findByIdIn(Collection<UUID> ids);
 
     /** Registrations grouped by referral source (masters only) — the admin
      *  by-source report. One grouped query, no N+1. */
