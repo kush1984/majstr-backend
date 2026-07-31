@@ -187,10 +187,16 @@ public class ProjectTriageService {
                 ⚠️ NEVER take it from a room's name: a floor-1 schedule may list a room called
                 «Коридор 2 поверху», and that says nothing about the sheet.
               - version: AFTER if this is the layout after remodelling («після перепланування»,
-                «после перепланировки», «проектне рішення», «proposed»); EXISTING if it is the
-                current one («до перепланування», «існуючий стан», «as-is»); UNKNOWN if the sheet
-                does not say. A set routinely carries BOTH versions of the same plan with almost
-                identical titles — telling them apart is one of the two reasons this pass exists.
+                «после перепланировки», «проектне рішення», «планувальне рішення», «проектований
+                план», «proposed»); EXISTING if it is the current one («до перепланування»,
+                «існуючий стан», «as-is», and the survey itself — «обмірний план», «обмірювальний
+                план», «план обміру», «обмерный план»); UNKNOWN if the sheet does not say. A set
+                routinely carries BOTH versions of the same plan with almost identical titles —
+                telling them apart is one of the two reasons this pass exists.
+                ⚠️ MOST SETS NAME THE WORK, NOT THE STATE, and that is not the same distinction:
+                «План/Схема демонтажу» shows what is being removed and «План/Схема монтажу» the new
+                partitions only. Neither is a layout version — leave those UNKNOWN and say in the
+                note what the sheet is, rather than filing a demolition plan as EXISTING.
               - hasRoomTable / hasDimensions / hasOpeningSizes: what data is actually on the sheet —
                 a rooms table with areas; dimension chains; a doors/windows specification or
                 per-opening sizes.
@@ -207,6 +213,20 @@ public class ProjectTriageService {
             RULES:
               - Language varies and one set often mixes Ukrainian, Russian and English. Match on
                 MEANING, never on the spelling of one language.
+              - THE SHEET CODE OFTEN NAMES THE TRADE, and it does so the same way in every studio,
+                which makes it worth more than any wording. A code reads
+                «contract-building-МАРКА» («2345-12-АР») or just the mark with a sheet number
+                («АР-03», «АІ-12», «ОВ-1»), and the mark is the discipline:
+                  worth reading — АР архітектурні рішення, АІ інтер'єри, АБ архітектурно-будівельні;
+                  another trade — ОВ опалення/вентиляція, ВК водопровід і каналізація, ЕМ/ЕО/ЕТР/ЕЗ
+                  електрика (kind ELECTRICAL), КБ/КМ/КД/КМД конструкції, ГП/ГТ генплан, ТХ/ТК
+                  технологія, СЗ/РТ зв'язок, ПС/ОС/ПГ сигналізація і пожежогасіння, АД/КЗ дороги,
+                  ПОБ організація будівництва, К кошторис.
+                ⚠️ «ЕП» is ambiguous: as a STAGE it means ескізний проект, as a MARK електропостачання.
+                Stage codes — ЕП, ТЕО, ТЕР, П, РП, Р — sit in their own field and are NOT disciplines.
+                ⚠️ The mark is a HINT, not a verdict. Many studios print no code at all, and a small
+                one may mark every sheet АР. A sheet with an «other trade» mark that still shows a
+                rooms table or dimension chains is worthReading TRUE — the data outranks the code.
               - Return EXACTLY one entry per sheet you were given, in the same order, with the same
                 ids. Do not drop a sheet because it looks useless — say so with worthReading false.
               - Judge only from the text in front of you. Do not use anything you may know about a

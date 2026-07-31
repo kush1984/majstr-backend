@@ -811,8 +811,20 @@ public class ProjectImportService {
                 printed marks is transcription in another unit, not an estimate.
               - Do NOT measure anything off the drawing by eye or scale; only read printed figures.
               - The floor is NOT determined from a table's contents (schedules repeat identically on
-                every sheet) — leave floor "" unless the sheet's own title/stamp names it
-                («Обмірний план приміщень 1 поверх», «Експлікація приміщень 2 поверх»).
+                every sheet) — leave floor "" unless the sheet's own title/stamp names it. That
+                title is a field of the stamp («найменування зображень»), and it names the storey in
+                ONE OF THREE ways, only the first of which is a plain floor number:
+                (a) THE FLOOR ITSELF — «Обмірний план приміщень 1 поверх», «Експлікація 2 поверх».
+                (b) THE FINISHED-FLOOR LEVEL INSTEAD OF A NUMBER — «План на відм. 0,000». Zero is
+                    the ground storey by definition, so that one is floor 1; any other mark
+                    («План на відм. +3,000») depends on storey heights you cannot know. Transcribe
+                    such a mark into the note and leave floor "" unless the sheet also says which
+                    storey it is — never turn a level mark into a floor number by arithmetic.
+                (c) A RANGE — «План 2-9 поверхів» is ONE drawing standing for eight identical
+                    storeys. Report the range as printed («2-9»); never quietly keep only its first
+                    number, and never treat such a sheet as belonging to a single floor.
+                ⚠️ «План 3-3» is NOT floor 3. A doubled number is the SECTION PLANE the plan is cut
+                on — it says nothing about the storey, and the floor stays "".
               - roomsOnThisSheet: the room NUMBERS actually drawn/marked on THIS sheet's plan (the
                 numbered circles, or the numbers printed beside the stamp). This is what tells which
                 rooms belong to this floor when the table itself is identical on every sheet. If the
@@ -891,10 +903,20 @@ public class ProjectImportService {
                (b) LABELS printed inside the rooms on the plan — a numbered circle, a name, an area
                    like «12.63 m²» typeset in the room. This is just as valid as a table: many
                    studios print no table at all.
-                   ⚠️ The area is conventionally set in the room's BOTTOM-RIGHT corner and
-                   UNDERLINED, with the unit left off entirely — so an underlined «17,69» alone in a
-                   corner is that room's area in m², not a dimension. Two decimals is the norm;
-               (c) numbered circles ALONE, with no name and no area.
+                   ⚠️ The area is set in the room's BOTTOM-RIGHT corner and UNDERLINED (a normative
+                   requirement, not a habit), with the unit left off entirely and two decimals — so
+                   an underlined «17,69» in a corner is that room's area in m², not a dimension.
+                   For flats the same corner may carry a FRACTION, житлова over корисна.
+                   Note also that a rooms table is normally NOT made for residential buildings, so
+                   names printed directly in the rooms are the usual case, not a shortcoming;
+               (c) numbered circles ALONE, with no name and no area — but ⚠️ A CIRCLED NUMBER IS
+                   USUALLY NOT A ROOM. The standard puts circles on other things: Ø5 mm marks the
+                   POSITION OF A DOOR OR GATE opening, Ø7 mm the TYPE OF FLOOR, Ø6–12 mm a
+                   COORDINATION AXIS (those carry digits along one side and letters along the
+                   other). A room's own number is normally plain, sitting above its underlined area.
+                   Circling room numbers is a studio habit, so decide from the legend and from what
+                   the number sits next to — a circled number with a floor finish named beside it is
+                   a floor type, and reading it as a room invents rooms that do not exist.
                A room from the inventory MUST appear in the output even when you find no geometry
                for it. If the sheet has none of (a)(b)(c) it has no rooms — return "floors": [] and
                say what the sheet is in sheetTitle. Never invent rooms to fill the output.
@@ -932,6 +954,12 @@ public class ProjectImportService {
                  do not drop them: they are the room's bounding box, which is what its WALLS follow.
                - wallSegmentsMm / perimeterMm — only figures PRINTED as such; never sum or measure
                  them yourself.
+               - HOW THE OUTER CHAINS ARE BUILT, so a figure is not taken from the wrong one: the
+                 innermost chain carries openings, piers AND WALL THICKNESSES; the next runs between
+                 adjacent axes; the outermost is the overall size between the extreme axes. A small
+                 figure of 60–250 mm inside the innermost chain is a wall or partition THICKNESS,
+                 not a pier and not an opening. A survey of an existing flat often has no axes at
+                 all, so expect fewer chains there — sometimes one, plus loose internal dimensions.
                - A sloped / mansard ceiling («скоси»), a niche or a ledge → describe it in that
                  room's note. Walls there are approximate and the master must check on site. For a
                  mansard, ДБН counts only the floor under a clear height of ≥1.5 m (at a 30° slope),
@@ -972,13 +1000,24 @@ public class ProjectImportService {
                the openings are drawn, and their widths are segments of the wall's dimension chain.
                A number on its own cannot tell you which segment that is («800» is a door leaf on
                one wall and a pier on the next), so read the WALL, not the chain:
-                 • a DOOR is a gap in the wall's hatching with a leaf arc (a quarter circle) or a
-                   sliding/folding symbol across it;
+                 • a DOOR is a gap in the wall's hatching with the leaf drawn across it — the
+                   standard's own symbol is a thin rectangle plus a straight line at about 45°, and
+                   the quarter-circle swing arc everybody draws is CAD habit rather than a norm, so
+                   expect either or both; sliding and folding doors have their own symbols;
                  • a WINDOW is a gap crossed by 2–4 thin parallel lines;
                  • an OPEN PASSAGE («без дверей», «арка») is a gap with neither an arc nor lines —
                    kind "двері" with toFloor true, since it interrupts the skirting the same way;
                  • the chain then CONFIRMS the width: the sub-pattern «pier — gap — pier»
                    («800 2 874 800») lines up with the drawn gap, and the middle figure is wMm.
+               ⚠️ AN OPENING CAN BE DRAWN IN ORDER TO DISAPPEAR. Where a sheet shows a remodelling,
+               the standard carries two separate marks for exactly this: an opening TO BE CUT in an
+               existing wall («проріз, який належить пробити») and one TO BE FILLED IN («який
+               належить закласти», with the infill material named beside it). Both are drawn as
+               openings; the second one will NOT exist when the work is done, and counting it leaves
+               a hole in a wall the master is about to build solid. When a mark, a hatch or a note
+               says an opening is being closed, leave it out of openings and say so in the room's
+               note. When you cannot tell which of the two a mark means, report the opening and name
+               "openings" in "uncertain" — the sheet's own legend is what settles it.
                Take a width only when you can see WHICH gap it spans. If you cannot, leave the
                opening out entirely rather than pairing a number with a guess — but if you can see
                the gap and the height is nowhere printed, report the width with hMm 0 and flag it
@@ -988,9 +1027,13 @@ public class ProjectImportService {
                Interior studios often break that and write «800×2100» beside the opening instead.
                A legacy mark can also encode the size in DECIMETRES: «ДГ 24-15ПП» is a door 2400 mm
                high and 1500 mm wide, not 24 by 15.
-               Sources, in order: a doors/windows SPECIFICATION table on this sheet (rows keyed like
-               «Д 01», «ДЗ 02», «В 07», «Д-1», «W1» — these keys are the studio's own, not a
-               standard, so read them off its table) OUTRANKS everything — take the sizes from it and
+               Sources, in order: a doors/windows SPECIFICATION table on this sheet OUTRANKS
+               everything. Its normative shape is «Поз. | Позначення | Найменування | Кільк. | Маса»
+               where Поз. is a PLAIN INTEGER matching the circled mark on the plan, Позначення is a
+               product standard (ГОСТ/ТУ/серія) and Найменування is the factory marka — «ДВГ 21-15»,
+               «ОГД 18.12-2». Those markas encode the size in DECIMETRES: ДВГ 21-15 is 2100×1500 mm.
+               Keys like «Д-1», «ДЗ», «В-1», «ОК-1» are office habit, not a standard, so read
+               whatever this table uses. Any of these OUTRANKS everything — take the sizes from it and
                set confidence "high"; then per-opening markings, which THIS studio may write as
                «Нпр»/«Ндв»/«Нвк»/«Нпд» or in some other shorthand its legend defines; then level
                marks; sizes taken off the chains alone are "medium".
@@ -1040,6 +1083,20 @@ public class ProjectImportService {
             a revision letter. The base geometry is the one that will EXIST after the work — that is
             what gets finished and what the schedule's areas belong to. Say in the first room's note
             which version this sheet is, in the sheet's own words, so the master can tell.
+            ⚠️ MOST SETS DO NOT SAY «до/після» AT ALL. The commoner Ukrainian pairing names the
+            WORK rather than the state, and the two are not the same thing:
+              • «Обмірний план» / «Обмірювальний план» / «План обміру» / «Обмерный план» — the
+                survey of what is there NOW: the existing layout;
+              • «План демонтажу» / «Схема демонтажу» / «План демонтажа» — what is being REMOVED. It
+                is neither version: its walls are the ones about to disappear, so never take it as
+                the layout that will exist;
+              • «План монтажу» / «Схема монтажу» / «План монтажу перегородок» / «План возводимых
+                перегородок» — the NEW partitions only, often without the rooms that stay;
+              • «Планувальне рішення» / «Проектований план» / «План після перепланування» /
+                «План после перепланировки» — the finished layout.
+            A sheet may combine two of these («План демонтажу та монтажу»). Report what its own
+            title says, do not force it into a до/після pair, and if the title names only the work
+            and not the state, say that in the note instead of deciding for the master.
             """ + SHEET_CORE;
 
     private static final String COVERINGS_PROMPT = """
