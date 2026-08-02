@@ -352,21 +352,37 @@ public class SketchImportService {
     // ---- prompt + schema ------------------------------------------------------
 
     private static final String SKETCH_PROMPT = """
-            You read a photographed sheet a Ukrainian builder measured a flat from. It is ONE OF TWO
-            KINDS, and you must tell which before anything else:
+            You read a photographed sheet a Ukrainian builder measured a flat from. It is ONE OF
+            THREE KINDS, and naming the kind is the first thing you do, because they use DIFFERENT
+            UNITS and different labels — reading one by the other's rules is how a sheet comes back
+            wrong rather than empty:
 
             (A) A HAND-DRAWN sketch (кроки): a plan or wall elevation with sizes written by hand,
                 possibly several rooms on one sheet. Abbreviations are common (ст.=стіна/wall,
                 стл.=стеля/ceiling, підл.=підлога/floor, пер.=перегородка/partition,
                 відк.=відкоси/reveals). Dimension arrows link a number to a side.
 
-            (B) A PRINTED FLOOR PLAN photographed on paper — a технічний паспорт / поверховий план
-                from БТІ, or a designer's plan. Printed line work, a header like «7 ПОВЕРХ» and
-                «Масштаб 1:100», numbered rooms. This kind used to come back empty because the sheet
-                was read as if it had to be hand-drawn; it does not.
+            (B) A PRINTED DESIGNER'S PLAN — a sheet out of a дизайн-проєкт or a working set:
+                printed line work, dimension CHAINS along the outside, room names spelled out with
+                an UNDERLINED area in the corner, often a title block or a stamp. THIS IS THE
+                COMMONEST printed sheet our masters photograph. Its sizes are in MILLIMETRES with no
+                unit printed — «3500», «4730» — the ordinary construction convention.
 
-            ON A PRINTED PLAN, READ IT LIKE THIS (the rules below are Постанова КМУ № 488 of
-            12.05.2023, so they hold for every Ukrainian technical passport, not just this one):
+            (C) A ТЕХНІЧНИЙ ПАСПОРТ / БТІ floor plan. Recognise it by POSITIVE evidence, not by
+                elimination — at least two of: rooms labelled with a FRACTION of number over area
+                set in the middle of the room; every size a small number with TWO decimals (1,97 /
+                3,26) instead of bare millimetres; «h=2,50» beside a room; a header «Масштаб 1:100»
+                with «ПОВЕРХ»; a БТІ title block with «Нач. БТІ / Виконав / Перевірив» and a stamp.
+                If you see none of that, it is (B) — do not apply the passport rules below to a
+                designer's sheet, because its «3500» is millimetres and has no second decimal to
+                read.
+
+            KINDS (A) AND (B) USE MILLIMETRES; only (C) uses metres. When a sheet genuinely mixes
+            them, the printed unit or the legend decides, never a habit.
+
+            IF AND ONLY IF THE SHEET IS KIND (C), READ IT LIKE THIS (the rules are Постанова КМУ
+            № 488 of 12.05.2023, so they hold for every Ukrainian technical passport, not just one
+            office's):
               - Every room carries a FRACTION set in its middle: a NUMBER over its AREA (п.63).
                 «7/4,3» is room 7 of 4,3 m². The area always carries ONE decimal (п.72); the
                 numerator comes in four shapes and they do NOT mean the same thing:
@@ -394,15 +410,20 @@ public class SketchImportService {
               - The ceiling height is written «h=2,50» — but the SAME field appears as «h=2.71»
                 (Latin lowercase, dot), «Н=2,49» (Cyrillic capital, comma) and «H=2850» (millimetres)
                 on real passports from different offices. All four are the same thing.
-              - ⚠️ A BALCONY OR LOGGIA AREA IS REDUCED BY A COEFFICIENT — 0,3 balcony/terrace, 0,5
-                loggia, 0,8 glazed balcony, 1,0 veranda — but ONLY where the sheet totals up the
-                flat's площа. On the PLAN itself the balcony carries an ordinary fraction with its
-                RAW area, like any other room, so take it at face value. It is the CHARACTERISTICS /
-                ЕКСПЛІКАЦІЯ sheet that prints «(30%)» or «k=1,0» beside a figure: a number marked
-                that way is an accounting area, not a floor anyone will tile — report it, set its
-                confidence low, and name the coefficient in the note. Never apply or undo one.
-              - The floor may be a ROMAN numeral («Поверх III») and a room may be named in prose
-                («1-а кімната») rather than numbered.
+              - ⚠️⚠️ A BALCONY, LOGGIA, TERRACE OR VERANDA AREA IS PRINTED ALREADY REDUCED by a
+                coefficient — 0,3 balcony/terrace, 0,5 loggia, 0,8 glazed balcony, 1,0 glazed
+                loggia/veranda (п.73; Додаток 8 says «площа якого З УРАХУВАННЯМ ВІДПОВІДНОГО
+                КОЕФІЦІЄНТА становить 3 кв. метри»). «Балкон — 1,6» is about 5 m² of real floor;
+                reading it as 1,6 understates that room THREEFOLD.
+                Spot the room by its NAME — балкон / лоджія / тераса / веранда — not by a marker:
+                a few offices write «(30%)» or «k=1,0», most print a bare number, and the current
+                official form has no coefficient column at all. Report the printed figure unchanged,
+                force its confidence LOW, and say in the note that the real floor is larger and must
+                be measured. Never divide it back out — glazed and unglazed differ and the sheet
+                rarely says which.
+              - The floor may be a ROMAN numeral («Поверх III») — that is one office's style for the
+                FLOOR field, not the Roman numbering of shared premises, so it is never a room. A
+                room may also be named in prose («1-а кімната») rather than numbered.
               - A size under 1 metre MAY BE LEFT OFF the drawing entirely (п.60). So a gap in a
                 chain is lawful and normal — report what is printed and leave the rest 0; never
                 close a chain by inventing the missing piece.

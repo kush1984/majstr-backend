@@ -787,15 +787,22 @@ public class ProjectImportService {
                   large ⇒ житлова/загальна for the whole flat. Otherwise it is a room label, and
                   NEITHER half is ever a length.
                 Ignore a stray superscript «²»/«2» after an area and «мм»/«mm»/«м» suffixes.
-              - A ТЕХНІЧНИЙ ПАСПОРТ / БТІ FLOOR PLAN breaks the millimetre convention above: its
-                chains are printed in METRES with TWO decimals — 1,97 / 3,26 / 5,42 / 7,74 — and
-                «h=2,50» beside a room is the ceiling height in metres. Recognise the sheet by that
-                shape (values 1–20 with two decimals, rooms labelled number-over-area, a header like
-                «7 ПОВЕРХ» and «Масштаб 1:100» or «1:200»). Read those as metres and convert:
-                3,26 → 3260 mm. On such a sheet «250» would be nonsense as millimetres, so do not
-                force the mm rule onto it.
-                Its conventions are fixed by Постанова КМУ № 488 of 12.05.2023, so they hold for
-                every Ukrainian technical passport:
+              - ⚠️ A ТЕХНІЧНИЙ ПАСПОРТ / БТІ FLOOR PLAN IS THE ONE SHEET THAT BREAKS THE MILLIMETRE
+                CONVENTION ABOVE, and the block that follows applies TO IT ALONE. Everything else in
+                this prompt — designer's plans, working drawings, обмірні плани, specifications —
+                keeps the millimetre rules. Most sheets you will see are NOT passports.
+                IDENTIFY IT BY POSITIVE EVIDENCE, at least two of: rooms labelled with a FRACTION of
+                number over area set in the middle of the room; sizes as small numbers with TWO
+                decimals (1,97 / 3,26 / 5,42) where a designer's sheet would print bare millimetres;
+                «h=2,50»; a header «ПОВЕРХ» with «Масштаб 1:100» or «1:200»; a БТІ title block
+                («Нач. БТІ / Виконав / Перевірив») with a stamp and signatures.
+                If you cannot find two, IT IS NOT A PASSPORT — read the sheet by the rules above and
+                skip this block entirely. Applying it to a designer's plan turns «3500» millimetres
+                into 3500 metres, or hunts for a number/area fraction that was never printed.
+                On a sheet you HAVE identified: read the chains as metres and convert (3,26 → 3260
+                mm); «250» there would be nonsense as millimetres. Its conventions are fixed by
+                Постанова КМУ № 488 of 12.05.2023, so they hold for every Ukrainian passport, not
+                just the office that issued this one:
                 • THE ROOM LABEL'S NUMERATOR has four shapes and they differ: «7/4,3» ⇒ room 7 (п.63);
                   «34 – 7 / 4,3» ⇒ apartment 34, ROOM 7 — the room number is AFTER the dash (п.67);
                   «III / 12,4» ⇒ a допоміжне приміщення, stairwell or shared corridor, numbered in
@@ -809,16 +816,35 @@ public class ProjectImportService {
                   chain is normal, so report what is printed and never close it with an invented
                   figure.
                 • A circled number by the entrance door is the FLAT number (п.55), not a room.
-                • ⚠️ A BALCONY OR LOGGIA AREA IS REDUCED BY A COEFFICIENT — 0,3 balcony/terrace,
-                  0,5 loggia, 0,8 glazed balcony, 1,0 veranda (п.73) — but ONLY where the sheet
-                  TOTALS the flat's площа. On the PLAN the balcony carries an ordinary fraction with
-                  its RAW area like any other room, so take that at face value. It is the
-                  ЕКСПЛІКАЦІЯ / ХАРАКТЕРИСТИКА sheet that prints «(30%)» or «k=1,0» next to a
-                  figure: a number marked that way is an accounting area, not a floor anyone will
-                  tile — report it, name it in "uncertain", say which coefficient was printed, and
-                  never apply or undo one yourself.
-                • The floor may be written in ROMAN numerals — «Поверх III» is the 3rd floor — and a
-                  room may be named in prose instead of numbered: «1-а кімната», «2-а кімната».
+                • LINE WEIGHT NAMES THE STRUCTURE (п.59): a DOUBLE line is a partition, an enclosed
+                  veranda, a gallery or a vestibule; a SINGLE outline is a balcony, loggia, terrace
+                  or open gallery; a DOTTED line is a level change — a pit, a podium, a pool. So an
+                  unnamed room drawn as a single outline is a balcony, which is exactly the room
+                  whose printed area is already reduced.
+                • ⚠️⚠️ A BALCONY, LOGGIA, TERRACE OR VERANDA AREA IS PRINTED ALREADY REDUCED BY A
+                  COEFFICIENT — 0,3 balcony/terrace, 0,5 loggia, 0,8 glazed balcony, 1,0 glazed
+                  loggia/veranda (п.73). Додаток 8 states it outright: «балкон, площа якого З
+                  УРАХУВАННЯМ ВІДПОВІДНОГО КОЕФІЦІЄНТА становить 3 кв. метри». So «Балкон — 1,6» is
+                  about 5 m² of actual floor, and reading it as 1,6 m² understates that room
+                  THREEFOLD.
+                  RECOGNISE THE ROW BY ITS PURPOSE — балкон / лоджія / тераса / веранда — NOT by a
+                  marker, because usually there is none: a few offices write «Балкон (30%)» or
+                  «(k=1,0)», most print a bare number, and THE CURRENT OFFICIAL FORM CARRIES NO
+                  COEFFICIENT COLUMN AT ALL.
+                  Report the printed figure UNCHANGED, name "areaM2" in "uncertain", and say in the
+                  note that it is a reduced area so the real floor is larger and must be measured.
+                  Do NOT divide it back out: glazed and unglazed take different coefficients and the
+                  sheet rarely says which, so a computed number would look precise and be wrong.
+                • THE ЕКСПЛІКАЦІЯ CHANGED SHAPE IN 2023 and both forms carry about eleven columns,
+                  so count is no guide — read the headings. The OLD one (наказ 127, Додаток 4) has a
+                  dedicated «літніх, неопалюваних приміщень» column holding the balconies; the NEW
+                  one (Постанова 488, Додаток 3) has no such column and folds them into «допоміжна».
+                  On the new form a balcony is therefore indistinguishable from a pantry by column
+                  alone — its «Функціональне призначення» text is the only thing that identifies it.
+                • The floor may be written in ROMAN numerals — «Поверх III» is the 3rd floor. That is
+                  one office's house style for the FLOOR field and has nothing to do with the Roman
+                  numbering of shared premises below; do not read «Поверх III» as a room. A room may
+                  also be named in prose instead of numbered: «1-а кімната», «2-а кімната».
                 • INK COLOUR CARRIES MEANING on a hand-finished sheet (the rule ran 2001–2023, so
                   most paper passports in circulation). Drawing and room fractions are BLACK;
                   anything else is a statement: RED and circled by a front door = the APARTMENT
