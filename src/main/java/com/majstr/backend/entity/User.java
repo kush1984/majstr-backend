@@ -192,6 +192,17 @@ public class User {
     @Column(name = "renew_reminder_sent_at")
     private Instant renewReminderSentAt;
 
+    /**
+     * When the "your trial is ending" reminder last went out.
+     *
+     * <p>Compared against TODAY, not against the billing cycle — unlike {@link #renewReminderSentAt}
+     * this reminder repeats, once a day over the trial's last three days. A trial running out is
+     * the master losing features he is actively using, and that is worth saying more than once;
+     * the field exists so a job restart on the same day cannot say it twice.</p>
+     */
+    @Column(name = "trial_reminder_sent_at")
+    private Instant trialReminderSentAt;
+
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
 

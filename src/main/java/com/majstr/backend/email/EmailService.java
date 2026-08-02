@@ -24,6 +24,9 @@ public interface EmailService {
     /** Auto-renew T-3 warning: "we'll charge {amount} on {chargeDate}; disable in your profile". */
     void sendRenewReminderEmail(User user, Instant chargeDate, BigDecimal amount);
 
+    /** «Пробний PRO закінчується» — sent once a day over the trial's last days. */
+    void sendTrialEndingEmail(User user, Instant endsAt, long daysLeft);
+
     /** Auto-renew receipt: "payment received, PRO active until {until}". */
     void sendRenewReceiptEmail(User user, Instant until, BigDecimal amount);
 

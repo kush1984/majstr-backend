@@ -4,6 +4,8 @@ import com.majstr.backend.dto.AddCatalogItemsBatchRequest;
 import com.majstr.backend.dto.CountInEconomyRequest;
 import com.majstr.backend.dto.EstimateConsolidateRequest;
 import com.majstr.backend.dto.EstimateCreateRequest;
+import com.majstr.backend.dto.EstimateDuplicateRequest;
+import com.majstr.backend.dto.EstimateItemsDeleteRequest;
 import com.majstr.backend.dto.EstimateItemFromCatalogRequest;
 import com.majstr.backend.dto.EstimateItemRequest;
 import com.majstr.backend.dto.EstimateItemsOrderRequest;
@@ -232,5 +234,33 @@ public class EstimateController {
                                            @AuthenticationPrincipal UserPrincipal principal) {
         estimateService.deleteItem(estimateId, itemId, principal.id());
         return ResponseEntity.noContent().build();
+    }
+
+    @Operation(summary = "Delete SEVERAL lines at once",
+            description = "One request, one transaction — trimming a 167-position template is 130 "
+                    + "deletions, and as many separate calls each carries its own chance of failing "
+                    + "on a phone. Idempotent: ids already gone are skipped. Lines copied into a "
+                    + "duplicate of this estimate go with them, unless that duplicate is SIGNED.")
+    // POST, not DELETE-with-a-body: a request body on DELETE is legal but proxies and some HTTP
+    // clients drop it, and losing the list silently would delete nothing while reporting success.
+    @PostMapping("/api/estimates/{estimateId}/items/delete")
+    public ResponseEntity<Void> deleteItems(@PathVariable UUID estimateId,
+                                            @Valid @RequestBody EstimateItemsDeleteRequest req,
+                                            @AuthenticationPrincipal UserPrincipal principal) {
+        estimateService.deleteItems(estimateId, req.itemIds(), principal.id());
+        return ResponseEntity.noContent().build();
+    }
+
+    @Operation(summary = "Duplicate an estimate, marking the chosen lines up",
+            description = "The бригадир's two-price workflow: the source keeps the crew's prices, "
+                    + "the copy carries the client's. Only the markup counts as earnings in the "
+                    + "object economy, and the source stops counting so wages are not reported as "
+                    + "income. itemIds omitted = every WORK line, materials untouched.")
+    @PostMapping("/api/estimates/{estimateId}/duplicate")
+    public ResponseEntity<EstimateResponse> duplicate(@PathVariable UUID estimateId,
+                                                      @Valid @RequestBody EstimateDuplicateRequest req,
+                                                      @AuthenticationPrincipal UserPrincipal principal) {
+        return ResponseEntity.status(HttpStatus.CREATED)
+                .body(estimateService.duplicate(estimateId, req, principal.id()));
     }
 }

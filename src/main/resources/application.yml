@@ -246,7 +246,13 @@ app:
     # Days after expiry before the daily job downgrades PRO → FREE (late-renew window).
     grace-days: ${BILLING_GRACE_DAYS:3}
     # Length of the self-serve one-time PRO trial (opt-in, no card required).
-    trial-days: ${BILLING_TRIAL_DAYS:5}
+    # 15, not the original 5: five days is barely one object. A master signs up, takes a job, and
+    # the trial is over before he has run a single estimate through to a client signature — which
+    # is the moment PRO is meant to prove itself.
+    trial-days: ${BILLING_TRIAL_DAYS:15}
+    # How many days before the trial ends to start reminding — one notification per day, so at 3
+    # the master hears about it on T-3, T-2 and T-1.
+    trial-reminder-days: ${BILLING_TRIAL_REMINDER_DAYS:3}
     # Where monobank redirects the payer back (PWA) and where it POSTs the result
     # (this backend — must be reachable from the internet: prod, or a tunnel in dev).
     return-url: ${BILLING_RETURN_URL:http://localhost:5173/billing/return}

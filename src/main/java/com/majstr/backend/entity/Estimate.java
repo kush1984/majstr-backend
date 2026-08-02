@@ -71,6 +71,21 @@ public class Estimate {
     @Column(name = "count_in_economy", nullable = false)
     private boolean countInEconomy = true;
 
+    /**
+     * The estimate this one was duplicated from — the бригадир's master-price sheet.
+     *
+     * <p>{@code ON DELETE SET NULL}: deleting the master-price estimate must not take the client's
+     * (possibly signed) one with it. The duplicate keeps working without it — every figure the
+     * economy needs is on its own lines.</p>
+     */
+    @Column(name = "duplicated_from_id")
+    private UUID duplicatedFromId;
+
+    /** The markup applied at duplication, <b>for display only</b> («+15%»). Never recompute money
+     *  from it — see {@link EstimateItem#getSourceUnitPrice()} for why it stops being true. */
+    @Column(name = "markup_percent", precision = 5, scale = 2)
+    private BigDecimal markupPercent;
+
     /** Whether this estimate shows on the object's client portal. The master
      *  picks the set explicitly in the share sheet — nothing is shared by
      *  default. Distinct from legacy per-estimate share links, which stay

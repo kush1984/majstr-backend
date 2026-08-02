@@ -57,7 +57,7 @@ class BillingServiceTest {
     private BillingProperties props(String token, boolean allowDevSim) {
         return new BillingProperties(token, "https://api.monobank.ua",
                 new BigDecimal("299"), 30, new BigDecimal("1494"), new BigDecimal("2748"), 3,
-                "http://ret", "http://hook", allowDevSim, 3, 30, 5);
+                "http://ret", "http://hook", allowDevSim, 3, 30, 15, 3);
     }
 
     private BillingService service(BillingProperties props) {
@@ -364,12 +364,16 @@ class BillingServiceTest {
         User user = verifiedFreeUser(uid);
         given(userRepository.findWithTradesById(uid)).willReturn(Optional.of(user));
 
-        User result = service(props("tok")).startTrial(uid);
+        BillingProperties props = props("tok");
+        User result = service(props).startTrial(uid);
 
         assertThat(result.getPlan()).isEqualTo(Plan.PRO);
         assertThat(result.getTrialStartedAt()).isNotNull();
+        // Read from the config rather than hardcoded: this assertion said «5» and broke the day the
+        // trial was lengthened to 15, which is a test failing for a decision it was never about.
+        // What it exists to prove is that startTrial grants exactly what is configured.
         assertThat(result.getPlanExpiresAt()).isCloseTo(
-                Instant.now().plus(5, ChronoUnit.DAYS), within60s());
+                Instant.now().plus(props.trialDays(), ChronoUnit.DAYS), within60s());
     }
 
     @Test

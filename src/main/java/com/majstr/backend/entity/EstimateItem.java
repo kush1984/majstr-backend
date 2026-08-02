@@ -59,6 +59,31 @@ public class EstimateItem {
     @Column(name = "unit_price", nullable = false, precision = 15, scale = 2)
     private BigDecimal unitPrice;
 
+    /**
+     * What this line cost in the estimate it was duplicated FROM — the foreman's own cost.
+     *
+     * <p>Null on an ordinary estimate. Also null on a line ADDED to a duplicate afterwards, and
+     * that null is meaningful: nobody is paid for it downstream, so the whole line is margin.</p>
+     *
+     * <p>This, not the estimate's {@code markupPercent}, is what the object economy subtracts.
+     * A percent stops describing the sheet the moment the master marks up only some lines, edits
+     * one price, or deletes the parent — this survives all three, because the earning is always
+     * the same subtraction against a figure that was true when the copy was made.</p>
+     */
+    @Column(name = "source_unit_price", precision = 15, scale = 2)
+    private BigDecimal sourceUnitPrice;
+
+    /**
+     * The line this was copied from, so a deletion in the master-price estimate reaches its twin.
+     *
+     * <p>Trimming happens in the parent — that is where the 167-position template was applied — and
+     * a copy that kept the removed lines would silently undo the work. Deletion flows one way only:
+     * parent to duplicate, never back, because the duplicate is the client's sheet and the master
+     * edits it on purpose.</p>
+     */
+    @Column(name = "source_item_id")
+    private UUID sourceItemId;
+
     @Column(name = "sort_order", nullable = false)
     private int sortOrder;
 

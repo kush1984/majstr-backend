@@ -18,6 +18,10 @@ public interface EstimateRepository extends JpaRepository<Estimate, UUID> {
 
     List<Estimate> findByProjectIdOrderByCreatedAtDesc(UUID projectId);
 
+    /** Every client-price copy made from this estimate — read when the parent's lines are deleted,
+     *  so the same positions go from the copies too. */
+    List<Estimate> findByDuplicatedFromId(UUID duplicatedFromId);
+
     /** Portal sections, oldest first — so «Кошторис 1» stays first as new ones are added. */
     List<Estimate> findByProjectIdAndPortalVisibleTrueOrderByCreatedAtAsc(UUID projectId);
 
@@ -138,9 +142,25 @@ public interface EstimateRepository extends JpaRepository<Estimate, UUID> {
             """, nativeQuery = true)
     BigDecimal sumIncomeCounted(@Param("projectId") UUID projectId);
 
-    /** Works (labour) subtotal of the counted estimates — the master's earnings base. */
+    /**
+     * Works (labour) subtotal of the counted estimates — the master's earnings base.
+     *
+     * <p><b>A duplicate earns only its markup.</b> When an estimate was copied from another with a
+     * markup (the бригадир's two-price workflow), the lower price is what he PAYS his crew and only
+     * the difference is his. Counting the client-facing total would report his crew's wages as his
+     * income — on a 100 000 ₴ object at +15 % that is 100 000 ₴ of imaginary earnings instead of
+     * 15 000 ₴ of real ones.</p>
+     *
+     * <p>The subtraction is per LINE, against the price stored on that line when it was copied, and
+     * NOT against the parent estimate: the parent may have been deleted, half its lines may have
+     * been marked up while the rest passed through at cost, and either sheet may have been edited
+     * since. {@code COALESCE(source_unit_price, 0)} is what makes a line ADDED to the duplicate
+     * afterwards count in full — nobody downstream is paid for it, so all of it is margin.</p>
+     */
     @Query(value = """
-            SELECT COALESCE(SUM(ROUND(i.quantity * i.unit_price, 2)), 0)
+            SELECT COALESCE(SUM(ROUND(i.quantity *
+                     CASE WHEN e.duplicated_from_id IS NULL THEN i.unit_price
+                          ELSE i.unit_price - COALESCE(i.source_unit_price, 0) END, 2)), 0)
             FROM estimates e JOIN estimate_items i ON i.estimate_id = e.id
             WHERE e.project_id = :projectId AND e.count_in_economy = true AND e.status <> 'REJECTED' AND i.type = 'WORK'
             """, nativeQuery = true)

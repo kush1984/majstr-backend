@@ -2,6 +2,7 @@ package com.majstr.backend.service;
 
 import com.majstr.backend.dto.AddCatalogItemsBatchRequest;
 import com.majstr.backend.dto.EstimateCreateRequest;
+import com.majstr.backend.dto.EstimateDuplicateRequest;
 import com.majstr.backend.dto.EstimateItemFromCatalogRequest;
 import com.majstr.backend.dto.EstimateItemRequest;
 import com.majstr.backend.dto.EstimateItemResponse;
@@ -28,6 +29,7 @@ import com.majstr.backend.repository.EstimateItemRepository;
 import com.majstr.backend.repository.EstimateRepository;
 import com.majstr.backend.repository.ProjectRepository;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -37,6 +39,7 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -46,6 +49,7 @@ import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
+@Slf4j
 public class EstimateService {
 
     /** Money is rounded to two decimal places (kopiykas) using HALF_UP. */
@@ -151,6 +155,95 @@ public class EstimateService {
      * checked on the target project and on each source estimate; the FREE per-project
      * estimate cap applies like any create.
      */
+    /**
+     * Copy an estimate, marking the chosen lines up — the foreman's two-price workflow.
+     *
+     * <p>A бригадир quotes his crew one price and the client another, and keeps the difference.
+     * Until now that meant typing the estimate twice and an object economy with no way to tell
+     * which figure was his: counting both said he earned his crew's wages as well as his margin.</p>
+     *
+     * <p><b>Every copied line records what it cost in the source</b> ({@code sourceUnitPrice}),
+     * whether it was marked up or not. That single field is what the economy subtracts, and it is
+     * deliberately not "the markup percent on the estimate": the percent stops being true the
+     * moment the master marks up only some lines, edits one price afterwards, adds a line the crew
+     * is not paid for, or deletes the source. The subtraction survives all four.</p>
+     *
+     * <p>The SOURCE stops counting in the economy here. It is what the foreman pays out, so leaving
+     * it counted would report his crew's wages as his income — and this is the one automatic edit
+     * to another estimate in the whole service, so it is stated rather than buried: the master can
+     * switch it back on the estimate list if his object really works the other way.</p>
+     *
+     * <p>Not copied: the deposit (money already received against the source, not against this copy)
+     * and portal visibility (nothing is ever shared by default). Measurement links ARE copied —
+     * unlike a consolidation, this is the same object's same lines, so they still resolve.</p>
+     */
+    @Transactional
+    public EstimateResponse duplicate(UUID estimateId, EstimateDuplicateRequest req, UUID ownerId) {
+        Estimate source = loadOwned(estimateId, ownerId);
+        UUID projectId = source.getProject().getId();
+        limitService.requireCanAddEstimate(ownerId, projectId);
+
+        List<EstimateItem> sourceItems = itemRepository.findByEstimateIdOrderBySortOrderAscIdAsc(estimateId);
+        Set<UUID> toMarkUp = req.itemIds() == null
+                ? sourceItems.stream().filter(i -> i.getType() == ItemType.WORK)
+                        .map(EstimateItem::getId).collect(Collectors.toSet())
+                : new HashSet<>(req.itemIds());
+
+        Estimate copy = estimateRepository.save(Estimate.builder()
+                .project(source.getProject())
+                .name(duplicateName(req.name(), source.getName(), req.markupPercent()))
+                .validUntil(source.getValidUntil())
+                .notes(source.getNotes())
+                .duplicatedFromId(source.getId())
+                .markupPercent(req.markupPercent())
+                .build());
+        projectRepository.incrementEstimatesCreated(projectId); // lifetime churn counter
+
+        BigDecimal factor = BigDecimal.ONE.add(req.markupPercent().movePointLeft(2));
+        List<EstimateItem> copies = new ArrayList<>(sourceItems.size());
+        for (EstimateItem item : sourceItems) {
+            boolean marked = toMarkUp.contains(item.getId());
+            copies.add(EstimateItem.builder()
+                    .estimate(copy)
+                    .type(item.getType())
+                    .name(item.getName())
+                    .category(item.getCategory())
+                    .unit(item.getUnit())
+                    .quantity(item.getQuantity())
+                    .unitPrice(marked ? markedUp(item.getUnitPrice(), factor) : item.getUnitPrice())
+                    // Recorded on EVERY line, not just the marked-up ones: a line passed through at
+                    // cost earns nothing today, and if the master later raises its price by hand
+                    // that difference is real margin the economy should see.
+                    .sourceUnitPrice(item.getUnitPrice())
+                    .sourceItemId(item.getId())
+                    .sortOrder(item.getSortOrder())
+                    .measurementRefs(item.getMeasurementRefs())
+                    .quantityManual(item.isQuantityManual())
+                    .build());
+        }
+        itemRepository.saveAll(copies);
+        source.setCountInEconomy(false);
+
+        return toResponse(copy, itemRepository.findByEstimateIdOrderBySortOrderAscIdAsc(copy.getId()));
+    }
+
+    /** Whole hryvnia. The client sees round numbers, and the economy reads the prices as stored,
+     *  so nothing is lost to the rounding — it becomes part of the margin either way. */
+    private static BigDecimal markedUp(BigDecimal price, BigDecimal factor) {
+        return price.multiply(factor).setScale(0, RoundingMode.HALF_UP);
+    }
+
+    /** «Санвузол» → «Санвузол +15%», so the two are tellable apart in a list of variants. */
+    private static String duplicateName(String requested, String sourceName, BigDecimal percent) {
+        String explicit = normalize(requested);
+        if (explicit != null) {
+            return explicit;
+        }
+        String suffix = " +" + percent.stripTrailingZeros().toPlainString() + "%";
+        String base = normalize(sourceName);
+        return base == null ? "Кошторис" + suffix : base + suffix;
+    }
+
     @Transactional
     public EstimateResponse consolidate(UUID projectId, String name, List<UUID> estimateIds, UUID ownerId) {
         Project project = projectService.loadOwned(projectId, ownerId);
@@ -597,11 +690,65 @@ public class EstimateService {
 
     @Transactional
     public void deleteItem(UUID estimateId, UUID itemId, UUID ownerId) {
+        deleteItems(estimateId, List.of(itemId), ownerId);
+    }
+
+    /**
+     * Remove several lines at once — one request, one transaction.
+     *
+     * <p><b>Why not just call the single delete N times.</b> A master who applies «УСІ ПЛИТОЧНІ
+     * РОБОТИ» gets 167 positions and keeps perhaps thirty. One-at-a-time that is 130 taps and, on a
+     * phone, 130 queued operations each with its own chance of failing on a bad connection —
+     * leaving an estimate half-trimmed with no way to tell which half. One operation either
+     * happened or did not.</p>
+     *
+     * <p>Idempotent by construction: ids already gone are simply not found. A replayed offline
+     * delete is a no-op, never a 404.</p>
+     */
+    @Transactional
+    public void deleteItems(UUID estimateId, List<UUID> itemIds, UUID ownerId) {
         requireNotSigned(loadOwned(estimateId, ownerId));
-        // Idempotent: a replayed offline delete of an already-gone item is a no-op, not a 404.
-        itemRepository.findById(itemId)
+        if (itemIds == null || itemIds.isEmpty()) {
+            return;
+        }
+        List<EstimateItem> doomed = itemRepository.findAllById(itemIds).stream()
                 .filter(i -> i.getEstimate().getId().equals(estimateId))
-                .ifPresent(itemRepository::delete);
+                .toList();
+        if (doomed.isEmpty()) {
+            return;
+        }
+        cascadeIntoDuplicates(estimateId, doomed.stream().map(EstimateItem::getId).toList());
+        itemRepository.deleteAll(doomed);
+    }
+
+    /**
+     * A line removed from the master-price estimate is removed from its client copies too.
+     *
+     * <p>One direction only. Trimming happens in the parent — that is where a big template was
+     * applied — and a copy that kept the removed positions would silently undo the work and put
+     * them back in front of the client. The reverse is deliberately NOT true: the duplicate is the
+     * client's sheet, and what the master takes out of it there is a decision about that sheet
+     * alone.</p>
+     *
+     * <p><b>A SIGNED copy is skipped.</b> Its signature certifies an exact set of lines and totals,
+     * and that outranks convenience — this is why the cascade lives here and not in a database
+     * {@code ON DELETE CASCADE}, which could not know about it. The parent's line still goes; the
+     * signed copy keeps its own, its {@code sourceItemId} falls to NULL, and the money is
+     * unaffected because the economy reads the price stored on the copy's own line.</p>
+     */
+    private void cascadeIntoDuplicates(UUID parentEstimateId, List<UUID> deletedItemIds) {
+        for (Estimate copy : estimateRepository.findByDuplicatedFromId(parentEstimateId)) {
+            if (copy.getStatus() == EstimateStatus.SIGNED) {
+                log.info("Estimate {} is signed — its lines are left alone by the parent's deletion",
+                        copy.getId());
+                continue;
+            }
+            List<EstimateItem> twins = itemRepository.findByEstimateIdAndSourceItemIdIn(
+                    copy.getId(), deletedItemIds);
+            if (!twins.isEmpty()) {
+                itemRepository.deleteAll(twins);
+            }
+        }
     }
 
     // ---- helpers -----------------------------------------------------------

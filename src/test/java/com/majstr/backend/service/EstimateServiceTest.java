@@ -2,6 +2,7 @@ package com.majstr.backend.service;
 
 import com.majstr.backend.dto.AddCatalogItemsBatchRequest;
 import com.majstr.backend.dto.EstimateCreateRequest;
+import com.majstr.backend.dto.EstimateDuplicateRequest;
 import com.majstr.backend.dto.EstimateItemFromCatalogRequest;
 import com.majstr.backend.dto.EstimateItemRequest;
 import com.majstr.backend.dto.EstimateItemsOrderRequest;
@@ -937,10 +938,12 @@ class EstimateServiceTest {
     void deleteItem_absentItem_isIdempotentNoOp() {
         UUID itemId = UUID.randomUUID();
         given(estimateRepository.findById(estimateId)).willReturn(Optional.of(ownedEstimate(ownerId)));
-        given(itemRepository.findById(itemId)).willReturn(Optional.empty());
+        // deleteItem now delegates to the bulk path, so the lookup it makes is findAllById — the
+        // single-item route stayed a route rather than a second implementation of the same rules.
+        given(itemRepository.findAllById(List.of(itemId))).willReturn(List.of());
 
         assertThatCode(() -> estimateService.deleteItem(estimateId, itemId, ownerId)).doesNotThrowAnyException();
-        verify(itemRepository, never()).delete(any(EstimateItem.class));
+        verify(itemRepository, never()).deleteAll(anyList());
     }
 
     private Estimate ownedEstimate(UUID userId) {
@@ -1071,5 +1074,140 @@ class EstimateServiceTest {
         return new EstimateItemsOrderRequest(java.util.Arrays.stream(items)
                 .map(i -> new EstimateItemsOrderRequest.Line(i.getId(), i.getCategory()))
                 .toList());
+    }
+
+    // ---- duplicate with a markup (the бригадир's two prices) -------------------------------------
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void duplicate_marksUpTheWORKSbyDEFAULTandLEAVESmaterialsAlone() {
+        // A foreman marks up his labour. Materials are bought at cost and passed through, so
+        // marking them up by default would inflate the client's estimate in a way he never asked
+        // for — he ticks a material himself if he wants one raised.
+        EstimateItem work = item(ItemType.WORK, "Укладання плитки", "10", "350");
+        EstimateItem material = item(ItemType.MATERIAL, "Клей", "5", "400");
+        givenItems(work, material);
+        given(estimateRepository.save(any(Estimate.class))).willAnswer(inv -> inv.getArgument(0));
+
+        estimateService.duplicate(estimateId,
+                new EstimateDuplicateRequest(null, new BigDecimal("15"), null), ownerId);
+
+        ArgumentCaptor<List<EstimateItem>> saved = ArgumentCaptor.forClass(List.class);
+        verify(itemRepository).saveAll(saved.capture());
+        List<EstimateItem> copies = saved.getValue();
+        // 350 × 1.15 = 402.5 → whole hryvnia, because that is what a client is quoted.
+        assertThat(copies.get(0).getUnitPrice()).isEqualByComparingTo("403");
+        assertThat(copies.get(1).getUnitPrice()).as("матеріал лишається за собівартістю")
+                .isEqualByComparingTo("400");
+        // EVERY line records what it cost, marked up or not: a passthrough line earns nothing today,
+        // and if the master raises it by hand later that difference is real margin.
+        assertThat(copies.get(0).getSourceUnitPrice()).isEqualByComparingTo("350");
+        assertThat(copies.get(1).getSourceUnitPrice()).isEqualByComparingTo("400");
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void duplicate_marksUpONLYtheLINESaskedFor() {
+        EstimateItem chosen = item(ItemType.WORK, "Обрана", "1", "100");
+        EstimateItem other = item(ItemType.WORK, "Не обрана", "1", "100");
+        givenItems(chosen, other);
+        given(estimateRepository.save(any(Estimate.class))).willAnswer(inv -> inv.getArgument(0));
+
+        estimateService.duplicate(estimateId,
+                new EstimateDuplicateRequest(null, new BigDecimal("20"), List.of(chosen.getId())),
+                ownerId);
+
+        ArgumentCaptor<List<EstimateItem>> saved = ArgumentCaptor.forClass(List.class);
+        verify(itemRepository).saveAll(saved.capture());
+        assertThat(saved.getValue().get(0).getUnitPrice()).isEqualByComparingTo("120");
+        assertThat(saved.getValue().get(1).getUnitPrice()).isEqualByComparingTo("100");
+    }
+
+    @Test
+    void duplicate_stopsTheSOURCEfromCountingInTheEconomy() {
+        // The source is what the foreman PAYS. Left counted, the object economy would report his
+        // crew's wages as his income — the exact double-count this feature exists to remove.
+        Estimate source = ownedEstimate(ownerId);
+        given(estimateRepository.findById(estimateId)).willReturn(Optional.of(source));
+        given(itemRepository.findByEstimateIdOrderBySortOrderAscIdAsc(estimateId))
+                .willReturn(new ArrayList<>());
+        given(estimateRepository.save(any(Estimate.class))).willAnswer(inv -> inv.getArgument(0));
+        assertThat(source.isCountInEconomy()).isTrue();
+
+        estimateService.duplicate(estimateId,
+                new EstimateDuplicateRequest(null, new BigDecimal("10"), null), ownerId);
+
+        assertThat(source.isCountInEconomy()).isFalse();
+    }
+
+    // ---- deleting many lines at once, and the cascade into the copies ---------------------------
+
+    /**
+     * A line that really belongs to the estimate under test.
+     *
+     * `deleteItems` filters on `item.getEstimate()`, which the plain {@link #item} helper leaves
+     * null — fine for the reorder tests, which never look at it, and an NPE here. The link is NOT
+     * NULL in the database, so the realistic object is the one worth testing against; making the
+     * service tolerate a null there would only have hidden this.
+     */
+    private EstimateItem ownedLine(String name, String price) {
+        EstimateItem line = item(ItemType.WORK, name, "1", price);
+        line.setEstimate(ownedEstimate(ownerId));
+        return line;
+    }
+
+    /** deleteItems reads findAllById, never the ordered list — stubbing that would be unused. */
+    private void givenOwnedEstimate() {
+        given(estimateRepository.findById(estimateId)).willReturn(Optional.of(ownedEstimate(ownerId)));
+    }
+
+    @Test
+    void deleteItems_removesTheTWINSinAnUNSIGNEDduplicate() {
+        // Trimming happens in the master-price sheet — that is where a 167-position template was
+        // applied. A copy that kept the removed positions would put them back in front of the client.
+        EstimateItem parentLine = ownedLine("Зайва", "100");
+        givenOwnedEstimate();
+        UUID copyId = UUID.randomUUID();
+        Estimate copy = Estimate.builder().id(copyId).status(EstimateStatus.DRAFT)
+                .duplicatedFromId(estimateId).build();
+        EstimateItem twin = item(ItemType.WORK, "Зайва", "1", "115");
+        given(estimateRepository.findByDuplicatedFromId(estimateId)).willReturn(List.of(copy));
+        given(itemRepository.findAllById(List.of(parentLine.getId()))).willReturn(List.of(parentLine));
+        given(itemRepository.findByEstimateIdAndSourceItemIdIn(copyId, List.of(parentLine.getId())))
+                .willReturn(List.of(twin));
+
+        estimateService.deleteItems(estimateId, List.of(parentLine.getId()), ownerId);
+
+        verify(itemRepository).deleteAll(List.of(twin));
+        verify(itemRepository).deleteAll(List.of(parentLine));
+    }
+
+    @Test
+    void deleteItems_leavesASIGNEDduplicateALONE() {
+        // A signature certifies an exact set of lines and totals. That outranks the convenience of
+        // keeping the two sheets in step — and it is why the cascade is here and not an ON DELETE
+        // CASCADE in the database, which could not know the copy was signed.
+        EstimateItem parentLine = ownedLine("Зайва", "100");
+        givenOwnedEstimate();
+        Estimate signedCopy = Estimate.builder().id(UUID.randomUUID())
+                .status(EstimateStatus.SIGNED).duplicatedFromId(estimateId).build();
+        given(estimateRepository.findByDuplicatedFromId(estimateId)).willReturn(List.of(signedCopy));
+        given(itemRepository.findAllById(List.of(parentLine.getId()))).willReturn(List.of(parentLine));
+
+        estimateService.deleteItems(estimateId, List.of(parentLine.getId()), ownerId);
+
+        verify(itemRepository, never()).findByEstimateIdAndSourceItemIdIn(any(), any());
+        verify(itemRepository).deleteAll(List.of(parentLine));
+    }
+
+    @Test
+    void deleteItems_ignoresIdsThatAreAlreadyGone() {
+        // The offline queue replays; a second delete of the same lines must be a no-op, not a 404.
+        givenOwnedEstimate();
+        given(itemRepository.findAllById(anyList())).willReturn(List.of());
+
+        estimateService.deleteItems(estimateId, List.of(UUID.randomUUID()), ownerId);
+
+        verify(itemRepository, never()).deleteAll(anyList());
     }
 }

@@ -226,6 +226,31 @@ public interface UserRepository extends JpaRepository<User, UUID> {
     long countAutoRenewUsers();
 
     /**
+     * Masters whose TRIAL ends within the window and who have not been told about it today.
+     *
+     * <p>The exclusions are the whole query. A master who has <b>paid</b> is on a subscription, not
+     * a trial — telling him his trial is ending would be both wrong and alarming, and he is only
+     * caught here at all because a trial he took months ago left {@code trialStartedAt} set
+     * forever. A master already back on FREE has nothing ending. And {@code trialReminderSentAt}
+     * is compared against the START OF TODAY rather than being cleared: this reminder repeats
+     * daily, so "already sent" can only ever mean "already sent today".</p>
+     */
+    @Query("""
+            SELECT u FROM User u
+            WHERE u.trialStartedAt IS NOT NULL
+              AND u.plan <> com.majstr.backend.entity.Plan.FREE
+              AND u.planExpiresAt IS NOT NULL
+              AND u.planExpiresAt > :now AND u.planExpiresAt <= :cutoff
+              AND (u.trialReminderSentAt IS NULL OR u.trialReminderSentAt < :startOfToday)
+              AND NOT EXISTS (
+                  SELECT 1 FROM Payment p
+                  WHERE p.userId = u.id AND p.status = com.majstr.backend.entity.PaymentStatus.SUCCESS)
+            """)
+    List<User> findTrialEndingReminderDue(@Param("now") Instant now,
+                                          @Param("cutoff") Instant cutoff,
+                                          @Param("startOfToday") Instant startOfToday);
+
+    /**
      * Everyone currently on a paid plan, for the admin's bought / trial / granted split.
      *
      * <p>Only the paid population, never the whole table: the split has to classify each of these

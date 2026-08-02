@@ -94,6 +94,20 @@ public class ResendEmailService implements EmailService {
 
     @Override
     @Async
+    public void sendTrialEndingEmail(User user, Instant endsAt, long daysLeft) {
+        String upgradeUrl = props.appUrl() + "/profile";
+        if (!props.isConfigured()) {
+            log.warn("RESEND_API_KEY not set — skipping trial-ending email to {} ({} day(s) left)",
+                    user.getEmail(), daysLeft);
+            return;
+        }
+        send(user.getEmail(),
+                daysLeft == 1 ? "Пробний PRO закінчується завтра" : "Пробний PRO: лишилось днів — " + daysLeft,
+                trialEndingHtml(daysLeft, fmt(endsAt), upgradeUrl));
+    }
+
+    @Override
+    @Async
     public void sendRenewReceiptEmail(User user, Instant until, BigDecimal amount) {
         if (!props.isConfigured()) {
             log.warn("RESEND_API_KEY not set — skipping renew receipt to {} (until {})", user.getEmail(), fmt(until));
@@ -202,6 +216,34 @@ public class ResendEmailService implements EmailService {
                 """.formatted(
                         clientName == null || clientName.isBlank() ? "" : ", " + clientName,
                         contractorName, projectName, shareUrl, shareUrl, shareUrl);
+    }
+
+    /**
+     * Names what he LOSES, not what we sell. A master on day 12 of a trial is already using the
+     * import and the object economy; «продовжте підписку» means nothing next to «ці функції
+     * вимкнуться». No price here on purpose — the tariff lives on one screen, and repeating it in
+     * an email is one more place to forget to update it.
+     */
+    private static String trialEndingHtml(long daysLeft, String endsAt, String upgradeUrl) {
+        String lead = daysLeft == 1
+                ? "Завтра (<b>%s</b>) закінчується ваш пробний період Majstr PRO.".formatted(endsAt)
+                : "Ваш пробний період Majstr PRO закінчується <b>%s</b> — лишилось днів: <b>%d</b>."
+                        .formatted(endsAt, daysLeft);
+        return """
+                <div style="font-family:Arial,sans-serif;max-width:480px;margin:0 auto;color:#1a1a1a">
+                  <h2 style="color:#F26B1F">Пробний PRO закінчується</h2>
+                  <p>%s</p>
+                  <p>Після цього вимкнуться функції PRO — необмежені обʼєкти й кошториси,
+                     економіка обʼєкта, імпорт кошторисів і чеків. <b>Ваші дані нікуди не зникнуть</b>:
+                     обʼєкти, кошториси й каталог лишаться на місці, просто частина дій стане
+                     недоступною, доки не оформите підписку.</p>
+                  <p style="margin:24px 0">
+                    <a href="%s" style="background:#F26B1F;color:#fff;text-decoration:none;
+                       padding:12px 24px;border-radius:8px;display:inline-block;font-weight:bold">Оформити PRO</a>
+                  </p>
+                  <p style="font-size:13px;color:#666">Посилання: <a href="%s">%s</a></p>
+                </div>
+                """.formatted(lead, upgradeUrl, upgradeUrl, upgradeUrl);
     }
 
     private static String renewReminderHtml(String amount, String chargeDate, String manageUrl) {

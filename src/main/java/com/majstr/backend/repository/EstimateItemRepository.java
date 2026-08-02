@@ -5,6 +5,7 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.stereotype.Repository;
 
+import java.util.Collection;
 import java.util.List;
 import java.util.UUID;
 
@@ -12,6 +13,10 @@ import java.util.UUID;
 public interface EstimateItemRepository extends JpaRepository<EstimateItem, UUID> {
 
     List<EstimateItem> findByEstimateIdOrderBySortOrderAscIdAsc(UUID estimateId);
+
+    /** The lines of a duplicate copied from the given parent lines — the cascade delete reads this
+     *  to find each removed position's twin in the client-price copy. */
+    List<EstimateItem> findByEstimateIdAndSourceItemIdIn(UUID estimateId, Collection<UUID> sourceItemIds);
 
     /**
      * Every distinct line name that has ever been written into an estimate, with how often.

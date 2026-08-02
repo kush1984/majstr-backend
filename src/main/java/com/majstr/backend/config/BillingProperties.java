@@ -41,7 +41,11 @@ public record BillingProperties(
         // PRO days granted per master→master referral reward (referrer's first-payment bonus).
         int referralRewardDays,
         // Length of the self-serve one-time PRO trial (opt-in, no card).
-        int trialDays
+        int trialDays,
+        // How many days before a trial ends the daily reminder starts. One per day from here on,
+        // deliberately unlike the auto-renew reminder's single T-N mail: a trial ending is the
+        // master losing features he is using, and that is worth saying more than once.
+        int trialReminderDays
 ) {
     public boolean isConfigured() {
         return monobankToken != null && !monobankToken.isBlank();
