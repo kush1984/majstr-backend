@@ -13,11 +13,22 @@ import java.util.List;
  * parse time. Each element carries our normalized {@code payload} (the same shape the manual
  * editor uses) so the review screen can render the identical diagram beside the photo.
  *
+ * @param sheetKind  {@code HAND_DRAWN} or {@code PRINTED_PLAN} — what the sheet turned out to BE,
+ *                   which decides whether this reading is the answer at all. A printed plan (a
+ *                   designer's sheet or a технічний паспорт) belongs on the project-import
+ *                   conveyor: there the printed AREA is reconciled against the gabarits, several
+ *                   sheets are merged into one set of rooms, and every room is guaranteed a floor,
+ *                   a ceiling and four walls even when nothing was legible. None of that exists on
+ *                   this path — it was built for кроки — so a plan read here comes back as chain
+ *                   products, with rooms missing their walls and the printed areas discarded. The
+ *                   client uses this field to hand the same files to the import flow instead of
+ *                   showing a review built on the wrong machinery.
  * @param rooms      recognised rooms, each with measured elements
  * @param unitGuess  the unit the sketch's numbers are in (MM/CM/M) — the review's default
  * @param warnings   sheet-level notes ("scale not given", "part unreadable")
  */
 public record SketchParseResponse(
+        String sheetKind,
         List<Room> rooms,
         String unitGuess,
         List<String> warnings

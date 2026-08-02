@@ -88,7 +88,7 @@ class SketchImportServiceTest {
     @Test
     void mapsARectangularCeilingInCentimetres() {
         SketchParseResponse resp = parseWith("""
-                {"rooms":[{"name":"Спальня","confidence":"high","items":[
+                {"sheetKind":"HAND_DRAWN","rooms":[{"name":"Спальня","confidence":"high","items":[
                   {"type":"SURFACE","name":"Стеля","unit":"M2","confidence":"high","note":"",
                    "planes":[{"shape":"rect","mode":"","values":{"a":300,"b":250,"c":0,"d":0,"h":0}}],
                    "openings":[],
@@ -124,7 +124,7 @@ class SketchImportServiceTest {
     @Test
     void unreadableSizeLeavesResultNullAndForcesLowConfidence() {
         SketchParseResponse resp = parseWith("""
-                {"rooms":[{"name":"","confidence":"high","items":[
+                {"sheetKind":"HAND_DRAWN","rooms":[{"name":"","confidence":"high","items":[
                   {"type":"SURFACE","name":"Стеля","unit":"M2","confidence":"high","note":"розмір нерозбірливий",
                    "planes":[{"shape":"rect","mode":"","values":{"a":300,"b":0,"c":0,"d":0,"h":0}}],
                    "openings":[],
@@ -144,7 +144,7 @@ class SketchImportServiceTest {
     void dropsAnUnknownShapeAndConvertsPartitionToMetres() {
         // A partition read in centimetres: 250×120×30 cm, default faces (2 sides + end).
         SketchParseResponse resp = parseWith("""
-                {"rooms":[{"name":"Санвузол","confidence":"medium","items":[
+                {"sheetKind":"HAND_DRAWN","rooms":[{"name":"Санвузол","confidence":"medium","items":[
                   {"type":"PARTITION","name":"Перегородка","unit":"M2","confidence":"medium","note":"",
                    "planes":[],"openings":[],
                    "partition":{"H":250,"W":120,"D":30,"faces":{"left":true,"right":true,"end":true,"top":false}},
@@ -160,7 +160,7 @@ class SketchImportServiceTest {
     @Test
     void surfaceWithOnlyUnknownShapesHasNoResult() {
         SketchParseResponse resp = parseWith("""
-                {"rooms":[{"name":"Кухня","confidence":"low","items":[
+                {"sheetKind":"HAND_DRAWN","rooms":[{"name":"Кухня","confidence":"low","items":[
                   {"type":"SURFACE","name":"Стеля","unit":"M2","confidence":"high","note":"",
                    "planes":[{"shape":"hexagon","mode":"","values":{"a":300,"b":250,"c":0,"d":0,"h":0}}],
                    "openings":[],
@@ -178,9 +178,32 @@ class SketchImportServiceTest {
     @Test
     void parseIsGatedBySketchImportFeature() {
         parseWith("""
-                {"rooms":[],"unitGuess":"м","warnings":[]}""");
+                {"sheetKind":"HAND_DRAWN","rooms":[],"unitGuess":"м","warnings":[]}""");
         verify(featureGuard).requireFeature(any(User.class), eq(Feature.SKETCH_IMPORT));
         verify(projectService).loadOwned(objectId, ownerId);
+    }
+
+    @Test
+    void aPrintedPlanIsNamedRatherThanRead() {
+        // The recogniser names a printed plan and stops — no rooms — because the import conveyor is
+        // what reconciles printed areas against gabarits and guarantees each room its walls.
+        SketchParseResponse resp = parseWith("""
+                {"sheetKind":"PRINTED_PLAN","rooms":[],"unitGuess":"м",
+                 "warnings":["технічний паспорт, читаю через імпорт проєкту"]}""");
+
+        assertThat(resp.sheetKind()).isEqualTo("PRINTED_PLAN");
+        assertThat(resp.rooms()).isEmpty();
+    }
+
+    @Test
+    void aMissingSheetKindLeansTowardsTheImportConveyor() {
+        // The default leans away from кроки on purpose. A model that omits the field must not
+        // quietly get the sketch treatment: reading a printed plan as кроки is the exact failure
+        // this field exists to stop, and it is the one that reached production.
+        SketchParseResponse resp = parseWith("""
+                {"rooms":[],"unitGuess":"м","warnings":[]}""");
+
+        assertThat(resp.sheetKind()).isEqualTo("PRINTED_PLAN");
     }
 
     @Test
@@ -190,7 +213,7 @@ class SketchImportServiceTest {
         // sizes on another, which is the whole reason a set is picked at once.
         given(extractor.requestJson(anyList(), any(), any()))
                 .willReturn("""
-                        {"rooms":[],"unitGuess":"м","warnings":[]}""");
+                        {"sheetKind":"HAND_DRAWN","rooms":[],"unitGuess":"м","warnings":[]}""");
 
         service.parse(ownerId, objectId,
                 List.of(sheet("floor-1.jpg"), sheet("floor-2.jpg"), sheet("schedule.jpg")));
@@ -209,7 +232,7 @@ class SketchImportServiceTest {
     void aSingleSheetIsSentWithNoSheetLabelling() {
         given(extractor.requestJson(anyList(), any(), any()))
                 .willReturn("""
-                        {"rooms":[],"unitGuess":"м","warnings":[]}""");
+                        {"sheetKind":"HAND_DRAWN","rooms":[],"unitGuess":"м","warnings":[]}""");
 
         service.parse(ownerId, objectId, List.of(sheet("plan.jpg")));
 

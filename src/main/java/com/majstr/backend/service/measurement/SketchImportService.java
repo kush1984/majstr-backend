@@ -160,7 +160,12 @@ public class SketchImportService {
             String s = str(w);
             if (s != null) warnings.add(s);
         }
-        return new SketchParseResponse(rooms, unitGuess, warnings);
+        // Anything but a clear HAND_DRAWN goes to the import conveyor. Defaulting the other way
+        // would mean a model that forgot the field silently gets the кроки treatment, which is the
+        // failure this field exists to stop.
+        String kind = "HAND_DRAWN".equalsIgnoreCase(String.valueOf(str(root.get("sheetKind"))))
+                ? "HAND_DRAWN" : "PRINTED_PLAN";
+        return new SketchParseResponse(kind, rooms, unitGuess, warnings);
     }
 
     @SuppressWarnings("unchecked")
@@ -377,6 +382,19 @@ public class SketchImportService {
                 designer's sheet, because its «3500» is millimetres and has no second decimal to
                 read.
 
+            REPORT THE KIND IN "sheetKind", AND IT DECIDES HOW MUCH WORK TO DO:
+              • (A) → "HAND_DRAWN". Read the sheet fully, as described below. This path exists for
+                кроки and handles them well.
+              • (B) or (C) → "PRINTED_PLAN". STOP after naming it: return "rooms": [] and put one
+                line in warnings saying what the sheet is. Do NOT transcribe it here.
+                This is not laziness — a printed plan is passed to the project-import flow, which
+                reconciles each room's PRINTED AREA against its dimension chains, merges several
+                sheets into one set of rooms, and guarantees every room a floor, a ceiling and four
+                walls even where nothing was legible. This path has none of that: it can only return
+                the shapes you draw, so a plan read here loses the printed areas (there is nowhere
+                to put them) and leaves rooms without walls. Naming the sheet is worth more than
+                reading it badly.
+
             KINDS (A) AND (B) USE MILLIMETRES; only (C) uses metres. When a sheet genuinely mixes
             them, the printed unit or the legend decides, never a habit.
 
@@ -549,6 +567,7 @@ public class SketchImportService {
     }
 
     private static final Map<String, Object> SCHEMA = obj(
-            List.of("rooms", "unitGuess", "warnings"),
-            Map.of("rooms", arr(roomSchema()), "unitGuess", STRING, "warnings", arr(STRING)));
+            List.of("sheetKind", "rooms", "unitGuess", "warnings"),
+            Map.of("sheetKind", STRING, "rooms", arr(roomSchema()),
+                    "unitGuess", STRING, "warnings", arr(STRING)));
 }
