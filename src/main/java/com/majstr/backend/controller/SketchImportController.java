@@ -22,6 +22,8 @@ import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.UUID;
 
 /**
@@ -39,20 +41,34 @@ public class SketchImportController {
 
     private final SketchImportService sketchService;
 
-    @Operation(summary = "Parse a room-sketch photo — returns a review proposal (no write)")
+    /**
+     * The parameter stays named {@code file} and becomes an ARRAY on purpose: Spring binds a
+     * repeated form field of that name straight into it, so a client sending one photo is a
+     * one-element array and keeps working unchanged. A master measuring a flat photographs a sheet
+     * per floor, or a plan and its schedule — making him do that one call at a time, with a separate
+     * review each, was the reason he could not get a whole flat in.
+     */
+    @Operation(summary = "Parse room-sketch photos — returns one review proposal (no write)")
     @PostMapping(value = "/parse", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public SketchParseResponse parse(@PathVariable UUID id,
-                                     @RequestParam("file") MultipartFile file,
+                                     @RequestParam("file") MultipartFile[] files,
                                      @AuthenticationPrincipal UserPrincipal principal) {
-        if (file == null || file.isEmpty()) {
-            throw new CatalogImportException("error.import.empty");
-        }
+        List<SketchImportService.Upload> uploads = new ArrayList<>();
         try {
-            return sketchService.parse(principal.id(), id, file.getOriginalFilename(),
-                    file.getContentType(), file.getBytes());
+            for (MultipartFile file : files == null ? new MultipartFile[0] : files) {
+                if (file == null || file.isEmpty()) {
+                    continue;
+                }
+                uploads.add(new SketchImportService.Upload(
+                        file.getOriginalFilename(), file.getContentType(), file.getBytes()));
+            }
         } catch (IOException e) {
             throw new CatalogImportException("error.import.unreadable");
         }
+        if (uploads.isEmpty()) {
+            throw new CatalogImportException("error.import.empty");
+        }
+        return sketchService.parse(principal.id(), id, uploads);
     }
 
     @Operation(summary = "Commit the confirmed sketch — creates rooms + measured elements")

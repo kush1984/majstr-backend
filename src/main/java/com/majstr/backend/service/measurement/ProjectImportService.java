@@ -782,7 +782,55 @@ public class ProjectImportService {
                   and «2,100 мм» meaning millimetres, a few centimetres apart on the page.
                 • «45,2/62,8» is not a dimension — a fraction printed for a flat is житлова площа
                   over корисна/загальна. Report them as areas, never as a size.
+                • «7/4,3» INSIDE A ROOM IS A DIFFERENT FRACTION: a NUMBER over an AREA. Two
+                  fractions, one slash — tell them apart by the top half. TWO DECIMAL NUMBERS, both
+                  large ⇒ житлова/загальна for the whole flat. Otherwise it is a room label, and
+                  NEITHER half is ever a length.
                 Ignore a stray superscript «²»/«2» after an area and «мм»/«mm»/«м» suffixes.
+              - A ТЕХНІЧНИЙ ПАСПОРТ / БТІ FLOOR PLAN breaks the millimetre convention above: its
+                chains are printed in METRES with TWO decimals — 1,97 / 3,26 / 5,42 / 7,74 — and
+                «h=2,50» beside a room is the ceiling height in metres. Recognise the sheet by that
+                shape (values 1–20 with two decimals, rooms labelled number-over-area, a header like
+                «7 ПОВЕРХ» and «Масштаб 1:100» or «1:200»). Read those as metres and convert:
+                3,26 → 3260 mm. On such a sheet «250» would be nonsense as millimetres, so do not
+                force the mm rule onto it.
+                Its conventions are fixed by Постанова КМУ № 488 of 12.05.2023, so they hold for
+                every Ukrainian technical passport:
+                • THE ROOM LABEL'S NUMERATOR has four shapes and they differ: «7/4,3» ⇒ room 7 (п.63);
+                  «34 – 7 / 4,3» ⇒ apartment 34, ROOM 7 — the room number is AFTER the dash (п.67);
+                  «III / 12,4» ⇒ a допоміжне приміщення, stairwell or shared corridor, numbered in
+                  ROMAN numerals (п.65); «1а / 8,2» ⇒ a room split off room 1 (п.63). On a sheet
+                  drawn for one flat as a standalone object a bare «N/S» is the APARTMENT number
+                  instead (п.66) — one for the whole drawing, not one per room.
+                • The area in that fraction always carries ONE decimal (п.72), the chains TWO (п.60).
+                • A number may be pulled OUT of a cramped room on a leader line (виносна лінія,
+                  п.62) — follow the line, do not assign it to whichever room it happens to sit in.
+                • A dimension UNDER 1 METRE may lawfully be left off the sheet (п.60): a gap in a
+                  chain is normal, so report what is printed and never close it with an invented
+                  figure.
+                • A circled number by the entrance door is the FLAT number (п.55), not a room.
+                • ⚠️ A BALCONY OR LOGGIA AREA IS REDUCED BY A COEFFICIENT — 0,3 balcony/terrace,
+                  0,5 loggia, 0,8 glazed balcony, 1,0 veranda (п.73) — but ONLY where the sheet
+                  TOTALS the flat's площа. On the PLAN the balcony carries an ordinary fraction with
+                  its RAW area like any other room, so take that at face value. It is the
+                  ЕКСПЛІКАЦІЯ / ХАРАКТЕРИСТИКА sheet that prints «(30%)» or «k=1,0» next to a
+                  figure: a number marked that way is an accounting area, not a floor anyone will
+                  tile — report it, name it in "uncertain", say which coefficient was printed, and
+                  never apply or undo one yourself.
+                • The floor may be written in ROMAN numerals — «Поверх III» is the 3rd floor — and a
+                  room may be named in prose instead of numbered: «1-а кімната», «2-а кімната».
+                • INK COLOUR CARRIES MEANING on a hand-finished sheet (the rule ran 2001–2023, so
+                  most paper passports in circulation). Drawing and room fractions are BLACK;
+                  anything else is a statement: RED and circled by a front door = the APARTMENT
+                  number, not a correction; BLUE = a ceiling height; RED over the line work or a
+                  figure struck through in red = a recorded change, the struck-through value
+                  SUPERSEDED by the one beside it; GREEN = a SECOND, later round of changes, so
+                  green is the newer of the two. Unauthorised work is marked by a STAMP
+                  («Збудовано самовільно»), never by colour — do not read red as "illegal".
+                • Room numbers restart from 1 IN EACH FLAT, clockwise from that flat's own front
+                  door (п.68) — so one floor sheet legitimately carries several rooms numbered «1».
+                  That is why the «34 – 7» form exists. Roman numerals instead run building-wide,
+                  from the entrance up through every floor (п.65).
               - READ THE SHEET'S OWN UNIT LEGEND when it has one («розміри вказані в міліметрах,
                 відмітки в метрах») — it tells you which figures are mm and which are metres.
               - The sheet's own TITLE / stamp outranks the file name. A file named «обмірний
@@ -907,6 +955,9 @@ public class ProjectImportService {
                    requirement, not a habit), with the unit left off entirely and two decimals — so
                    an underlined «17,69» in a corner is that room's area in m², not a dimension.
                    For flats the same corner may carry a FRACTION, житлова over корисна.
+                   On a ТЕХНІЧНИЙ ПАСПОРТ / БТІ plan the label is instead a fraction of NUMBER over
+                   AREA set in the middle of the room — «7/4.3» is room 7 of 4,3 m². That IS a room
+                   inventory, the commonest one on such sheets; take every such fraction as a room.
                    Note also that a rooms table is normally NOT made for residential buildings, so
                    names printed directly in the rooms are the usual case, not a shortcoming;
                (c) numbered circles ALONE, with no name and no area — but ⚠️ A CIRCLED NUMBER IS

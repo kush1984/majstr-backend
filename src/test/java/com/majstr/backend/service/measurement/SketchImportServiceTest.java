@@ -8,6 +8,7 @@ import com.majstr.backend.entity.MeasurementType;
 import com.majstr.backend.entity.Plan;
 import com.majstr.backend.entity.Unit;
 import com.majstr.backend.entity.User;
+import com.majstr.backend.exception.CatalogImportException;
 import com.majstr.backend.feature.Feature;
 import com.majstr.backend.feature.FeatureGuard;
 import com.majstr.backend.repository.UserRepository;
@@ -16,10 +17,12 @@ import com.majstr.backend.config.AiFlowsProperties;
 import com.majstr.backend.config.AnthropicProperties;
 import com.majstr.backend.config.OpenAiProperties;
 import com.majstr.backend.service.ai.AiExtractors;
+import com.majstr.backend.service.ai.AiInput;
 import com.majstr.backend.service.ai.JsonExtractor;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import tools.jackson.databind.JsonNode;
@@ -31,6 +34,7 @@ import java.util.Optional;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.eq;
@@ -72,9 +76,13 @@ class SketchImportServiceTest {
                 .willReturn(Optional.of(User.builder().id(ownerId).plan(Plan.PRO).build()));
     }
 
+    private static SketchImportService.Upload sheet(String filename) {
+        return new SketchImportService.Upload(filename, "image/jpeg", new byte[]{1, 2, 3});
+    }
+
     private SketchParseResponse parseWith(String json) {
         given(extractor.requestJson(anyList(), any(), any())).willReturn(json);
-        return service.parse(ownerId, objectId, "sketch.jpg", "image/jpeg", new byte[]{1, 2, 3});
+        return service.parse(ownerId, objectId, List.of(sheet("sketch.jpg")));
     }
 
     @Test
@@ -173,6 +181,67 @@ class SketchImportServiceTest {
                 {"rooms":[],"unitGuess":"м","warnings":[]}""");
         verify(featureGuard).requireFeature(any(User.class), eq(Feature.SKETCH_IMPORT));
         verify(projectService).loadOwned(objectId, ownerId);
+    }
+
+    @Test
+    void everySheetGoesIntoONEcallSoTheModelCanReadThemAgainstEachOther() {
+        // A flat arrives as a page per floor plus its schedule. One call per sheet would give the
+        // master a separate review each and no way for the model to carry a name from one to the
+        // sizes on another, which is the whole reason a set is picked at once.
+        given(extractor.requestJson(anyList(), any(), any()))
+                .willReturn("""
+                        {"rooms":[],"unitGuess":"м","warnings":[]}""");
+
+        service.parse(ownerId, objectId,
+                List.of(sheet("floor-1.jpg"), sheet("floor-2.jpg"), sheet("schedule.jpg")));
+
+        ArgumentCaptor<List<AiInput>> content = ArgumentCaptor.forClass(List.class);
+        verify(extractor).requestJson(content.capture(), any(), any());
+        assertThat(content.getValue().stream().filter(AiInput.Image.class::isInstance)).hasSize(3);
+        // Each image announced before it, so the model can tell them apart at all.
+        assertThat(content.getValue().stream()
+                .filter(AiInput.Text.class::isInstance)
+                .map(i -> ((AiInput.Text) i).text()))
+                .contains("SHEET 1 OF 3:", "SHEET 2 OF 3:", "SHEET 3 OF 3:");
+    }
+
+    @Test
+    void aSingleSheetIsSentWithNoSheetLabelling() {
+        given(extractor.requestJson(anyList(), any(), any()))
+                .willReturn("""
+                        {"rooms":[],"unitGuess":"м","warnings":[]}""");
+
+        service.parse(ownerId, objectId, List.of(sheet("plan.jpg")));
+
+        ArgumentCaptor<List<AiInput>> content = ArgumentCaptor.forClass(List.class);
+        verify(extractor).requestJson(content.capture(), any(), any());
+        assertThat(content.getValue().stream()
+                .filter(AiInput.Text.class::isInstance)
+                .map(i -> ((AiInput.Text) i).text()))
+                .noneMatch(t -> t.startsWith("SHEET"));
+    }
+
+    @Test
+    void aBatchOverTheSheetCapIsRefusedRatherThanPaidFor() {
+        List<SketchImportService.Upload> tooMany =
+                java.util.stream.IntStream.rangeClosed(1, 11)
+                        .mapToObj(i -> sheet("p" + i + ".jpg"))
+                        .toList();
+
+        assertThatThrownBy(() -> service.parse(ownerId, objectId, tooMany))
+                .isInstanceOf(CatalogImportException.class)
+                .hasMessage("error.import.too-many-pages");
+    }
+
+    @Test
+    void aNonImageAmongTheSheetsIsRefusedBeforeAnythingIsSent() {
+        List<SketchImportService.Upload> mixed = List.of(
+                sheet("plan.jpg"),
+                new SketchImportService.Upload("notes.txt", "text/plain", new byte[]{1}));
+
+        assertThatThrownBy(() -> service.parse(ownerId, objectId, mixed))
+                .isInstanceOf(CatalogImportException.class)
+                .hasMessage("error.import.unsupported");
     }
 
     @Test
