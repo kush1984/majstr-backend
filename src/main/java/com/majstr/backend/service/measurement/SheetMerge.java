@@ -4,9 +4,11 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * Folds several readings of the SAME sheet into one — the whole page, then its fragments.
@@ -35,6 +37,27 @@ final class SheetMerge {
     /** Figures a fragment may contribute, in mm — everything geometric, nothing textual. */
     private static final List<String> GEOMETRY =
             List.of("widthMm", "lengthMm", "cutWidthMm", "cutDepthMm", "perimeterMm", "ceilingHmm");
+    /**
+     * Extents of the WHOLE room, where two fragments disagreeing means one of them saw only part of
+     * it — so the larger reading is the one closer to the truth.
+     *
+     * <p>A fragment is a CROP. Any whole-room extent it reports is therefore a lower bound: it can
+     * miss a metre of corridor that continues past the seam, but it cannot invent one. Keeping the
+     * first arrival instead broke exactly one shape, and broke it completely — an L-shaped corridor
+     * wraps a corner, so it is the room most likely to straddle a seam, and each fragment sees one
+     * arm. First-wins then stored ONE ARM as the room's gabarits, which is smaller than the printed
+     * area, and the client's checksum rejects a room whose width × length comes out under its area.
+     * Result: the corridor arrived with no geometry at all.</p>
+     *
+     * <p>This applies ONLY between fragments. A figure the WHOLE PAGE produced is not a lower bound
+     * — that pass saw the entire room — so it still wins outright, which is what stops a fragment's
+     * misread «5 000» thousands-group from overwriting a legible 3545.</p>
+     *
+     * <p>Deliberately excluded: {@code ceilingHmm} (two different heights is a real conflict, not a
+     * crop), and {@code cutWidthMm}/{@code cutDepthMm} (a cut is a local feature — the bigger of two
+     * readings of it means nothing).</p>
+     */
+    private static final List<String> EXTENTS = List.of("widthMm", "lengthMm", "perimeterMm");
     /** Above this relative gap, two readings are not one figure misrounded — one of them is wrong. */
     private static final BigDecimal TOLERANCE = new BigDecimal("0.02");
 
@@ -53,11 +76,21 @@ final class SheetMerge {
         List<String> warnings = strings(out.get("warnings"));
 
         Map<String, Map<String, Object>> byKey = new LinkedHashMap<>();
+        // Which extents the WHOLE PAGE already resolved. Those are authoritative — a later fragment
+        // may flag them but never raise them; see EXTENTS.
+        Map<String, Set<String>> pageOwned = new LinkedHashMap<>();
         for (Map<String, Object> floor : floors) {
             for (Object ro : list(floor.get("rooms"))) {
                 if (ro instanceof Map<?, ?> rm) {
                     @SuppressWarnings("unchecked") Map<String, Object> room = (Map<String, Object>) rm;
-                    byKey.putIfAbsent(roomKey(room), room);
+                    String key = roomKey(room);
+                    if (byKey.putIfAbsent(key, room) == null) {
+                        Set<String> owned = new LinkedHashSet<>();
+                        for (String field : EXTENTS) {
+                            if (positive(room.get(field)) != null) owned.add(field);
+                        }
+                        pageOwned.put(key, owned);
+                    }
                 }
             }
         }
@@ -85,9 +118,11 @@ final class SheetMerge {
                         if (!warnings.contains(warn)) warnings.add(warn);
                         targetFloor(floors, fm).add(added);
                         byKey.put(key, added);
+                        pageOwned.put(key, new LinkedHashSet<>());
                         continue;
                     }
-                    foldRoom(target, incoming);
+                    foldRoom(target, incoming,
+                            pageOwned.getOrDefault(key, Set.<String>of()));
                 }
             }
             mergeCeilingHeights(out, fragment);
@@ -105,7 +140,8 @@ final class SheetMerge {
 
     // ---- one room ---------------------------------------------------------------
 
-    private static void foldRoom(Map<String, Object> target, Map<String, Object> incoming) {
+    private static void foldRoom(Map<String, Object> target, Map<String, Object> incoming,
+                                 Set<String> pageOwned) {
         for (String field : GEOMETRY) {
             BigDecimal mine = positive(target.get(field));
             BigDecimal theirs = positive(incoming.get(field));
@@ -117,8 +153,19 @@ final class SheetMerge {
             }
             if (disagrees(mine, theirs)) {
                 markUncertain(target, field);
-                appendNote(target, "фрагмент дає " + plain(theirs) + " замість " + plain(mine)
-                        + " — перепровірте " + field);
+                boolean betweenFragments = EXTENTS.contains(field) && !pageOwned.contains(field);
+                if (betweenFragments && theirs.compareTo(mine) > 0) {
+                    // Both readings came from crops, and a crop cannot see MORE of the room than
+                    // there is — so the larger one saw more of it. Still flagged: the master gets the
+                    // better number and the reason to check it.
+                    target.put(field, theirs);
+                    appendNote(target, "фрагменти дають " + plain(mine) + " і " + plain(theirs)
+                            + " — узято більше (фрагмент бачить лише частину кімнати), перепровірте "
+                            + field);
+                } else {
+                    appendNote(target, "фрагмент дає " + plain(theirs) + " замість " + plain(mine)
+                            + " — перепровірте " + field);
+                }
             }
         }
         if (positive(target.get("areaM2")) == null && positive(incoming.get("areaM2")) != null) {

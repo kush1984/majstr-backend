@@ -110,6 +110,33 @@ class SheetMergeTest {
         assertThat(SheetMerge.positive(r.get("widthMm"))).isEqualByComparingTo("3545");
         assertThat(objs(r.get("uncertain"))).contains("widthMm");
         assertThat(r.get("note").toString()).contains("5000").contains("widthMm");
+        // The guard on the fragment-vs-fragment rule below: a whole-page reading is NOT a crop —
+        // that pass saw the entire room — so a bigger fragment figure is a misread, not more room.
+        assertThat(r.get("note").toString()).doesNotContain("узято більше");
+    }
+
+    @Test
+    void anLshapedCorridorSplitAcrossTWOfragmentsKeepsItsBOUNDINGbox() {
+        // The reported failure on Дубляни: the Г-shaped corridor came back with no geometry at all.
+        // It is the room most likely to straddle a seam — it wraps a corner — so each fragment sees
+        // one arm. Keeping the first arrival stored ONE ARM as the gabarits, which is smaller than
+        // the printed area, and the client rejects a room whose width × length is under its area.
+        // Both readings here are crops, and a crop cannot see more of the room than exists, so the
+        // larger one saw more of it.
+        Map<String, Object> base = sheet("ОБМІРНИЙ ПЛАН",
+                List.of(room("6", "Коридор", "areaM2", 7.56)));
+        Map<String, Object> armOne = sheet("",
+                List.of(room("6", "Коридор", "widthMm", 1200, "lengthMm", 4000)));
+        Map<String, Object> armTwo = sheet("",
+                List.of(room("6", "Коридор", "widthMm", 3500, "lengthMm", 1100)));
+
+        Map<String, Object> r = firstRoom(SheetMerge.mergeGeometry(base, List.of(armOne, armTwo)));
+
+        assertThat(SheetMerge.positive(r.get("widthMm"))).isEqualByComparingTo("3500");
+        assertThat(SheetMerge.positive(r.get("lengthMm"))).isEqualByComparingTo("4000");
+        // Never silently: the master is still told the two fragments disagreed.
+        assertThat(objs(r.get("uncertain"))).contains("widthMm", "lengthMm");
+        assertThat(r.get("note").toString()).contains("узято більше");
     }
 
     @Test
