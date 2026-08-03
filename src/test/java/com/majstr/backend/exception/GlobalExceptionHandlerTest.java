@@ -8,6 +8,7 @@ import org.springframework.context.MessageSource;
 import org.springframework.context.support.ResourceBundleMessageSource;
 import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.http.HttpMethod;
+import org.springframework.http.converter.HttpMessageNotWritableException;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -140,6 +141,46 @@ class GlobalExceptionHandlerTest {
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.status", is(404)))
                 .andExpect(jsonPath("$.message", is("Запис не знайдено")));
+    }
+
+    /**
+     * A client that hangs up mid-response is not a fault of ours, and Sentry saw one as a 500
+     * (JAVA-SPRING-BOOT-G, «GET /api/catalog», Broken pipe). It arrives wrapped several layers
+     * deep, which is the whole difficulty: matching the outermost type finds nothing.
+     */
+    @Test
+    void aClientHangingUpMidResponseIsRecognisedThroughTheWholeCauseChain() {
+        // The real chain off the production event, outermost first.
+        Exception real = new HttpMessageNotWritableException("Could not write JSON",
+                new IllegalStateException("ServletOutputStream failed to write",
+                        new java.io.IOException("Broken pipe")));
+
+        assertThat(GlobalExceptionHandler.isClientDisconnect(real)).isTrue();
+        // The other wording the same event produces, on a different container / OS.
+        assertThat(GlobalExceptionHandler.isClientDisconnect(
+                new java.io.IOException("Connection reset by peer"))).isTrue();
+    }
+
+    @Test
+    void aGenuineFailureIsStillAFiveHundred_soTheQuietPathCannotSwallowRealBugs() {
+        // The guard above must not widen into "any IOException is the client's fault". A disk or
+        // an upstream that fails mid-write is ours, and it has to keep reaching Sentry.
+        assertThat(GlobalExceptionHandler.isClientDisconnect(
+                new java.io.IOException("No space left on device"))).isFalse();
+        assertThat(GlobalExceptionHandler.isClientDisconnect(
+                new IllegalStateException("something else entirely"))).isFalse();
+    }
+
+    @Test
+    void aCyclicCauseChainTerminatesInsteadOfHangingTheRequestThread() {
+        // Throwable refuses a cause pointing at ITSELF, but nothing stops two wrappers holding
+        // each other — and an unbounded walk over that never returns. A hung request thread would
+        // be a far worse bug than the log noise this whole guard exists to remove.
+        Exception a = new IllegalStateException("a");
+        Exception b = new IllegalStateException("b", a);
+        a.initCause(b);
+
+        assertThat(GlobalExceptionHandler.isClientDisconnect(a)).isFalse();
     }
 
     @Test

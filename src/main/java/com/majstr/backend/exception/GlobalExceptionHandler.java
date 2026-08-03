@@ -30,6 +30,8 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.multipart.MaxUploadSizeExceededException;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
 
+import java.io.IOException;
+import java.util.Locale;
 import java.util.stream.Collectors;
 
 /**
@@ -324,10 +326,52 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ErrorResponse> handleAny(Exception ex, HttpServletRequest req) {
+        if (isClientDisconnect(ex)) {
+            // Nothing failed here — the peer went away while we were writing. Same reasoning as the
+            // quiet 404 above: not an application fault, so no ERROR stack trace and no Sentry.
+            // Returning null is the point, not a shortcut: there is no socket left to write to, and
+            // an error body would only be a second failed write on the same dead connection.
+            log.debug("Client disconnected during {} {}", req.getMethod(), req.getRequestURI());
+            return null;
+        }
         log.error("Unhandled exception at {} {}", req.getMethod(), req.getRequestURI(), ex);
         reportToSentry(ex, req);
         // Generic message only — the stack trace stays in the server log, never in the body.
         return build(HttpStatus.INTERNAL_SERVER_ERROR, msg("error.internal"), req);
+    }
+
+    /**
+     * Did the CLIENT hang up mid-response?
+     *
+     * <p>It arrives deeply wrapped — {@code HttpMessageNotWritableException → JacksonIOException →
+     * AsyncRequestNotUsableException → ClientAbortException → IOException: Broken pipe} — so the
+     * whole cause chain is walked; matching only the outermost type would miss every real case.</p>
+     *
+     * <p>Matched by class NAME and message rather than by importing the types: {@code
+     * ClientAbortException} is Tomcat's own, and a servlet container is not something an exception
+     * handler should be compiled against. A phone that locks its screen, switches from wifi to
+     * mobile data, or backgrounds the app mid-request produces exactly this, which is why it turns
+     * up on the biggest payload we serve (the catalog) first.</p>
+     */
+    static boolean isClientDisconnect(Throwable ex) {
+        // Bounded rather than "walk until null": a cause chain CAN be cyclic (two wrappers each
+        // holding the other), and an unbounded walk would hang the request thread — a worse
+        // outcome than the log noise this exists to remove. No real chain is 20 deep.
+        Throwable t = ex;
+        for (int depth = 0; t != null && depth < 20; depth++, t = t.getCause()) {
+            String type = t.getClass().getSimpleName();
+            if (type.equals("ClientAbortException") || type.equals("AsyncRequestNotUsableException")) {
+                return true;
+            }
+            String message = t.getMessage();
+            if (t instanceof IOException && message != null) {
+                String lower = message.toLowerCase(Locale.ROOT);
+                if (lower.contains("broken pipe") || lower.contains("connection reset by peer")) {
+                    return true;
+                }
+            }
+        }
+        return false;
     }
 
     /**
