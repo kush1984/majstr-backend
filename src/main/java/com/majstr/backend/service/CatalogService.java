@@ -2,6 +2,7 @@ package com.majstr.backend.service;
 
 import com.majstr.backend.dto.CatalogItemRequest;
 import com.majstr.backend.dto.CatalogItemResponse;
+import com.majstr.backend.dto.CatalogItemsOrderRequest;
 import com.majstr.backend.entity.CatalogItem;
 import com.majstr.backend.entity.CatalogItemSource;
 import com.majstr.backend.entity.ItemType;
@@ -17,20 +18,30 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.Comparator;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
 public class CatalogService {
 
-    // "Без категорії" (null) sorts last; otherwise case-insensitive by
-    // category, then name — a flat list the client can group by category.
-    private static final Comparator<CatalogItem> BY_CATEGORY_THEN_NAME =
-            Comparator.comparing(CatalogItem::getCategory,
-                            Comparator.nullsLast(String.CASE_INSENSITIVE_ORDER))
-                    .thenComparing(CatalogItem::getName, String.CASE_INSENSITIVE_ORDER);
+    /**
+     * The master's own arrangement (V87), with the id as a tie-break so the order is total and a
+     * list never comes back shuffled between two identical reads.
+     *
+     * <p>This replaced sorting by category-then-name. Alphabetical order is the right DEFAULT — and
+     * it is exactly what V87 backfilled into {@code sort_order}, so nothing moved on the first read
+     * after the migration — but it stops being the truth the moment he drags something. A derived
+     * sort key cannot express «спочатку те, що я роблю щодня».</p>
+     */
+    private static final Comparator<CatalogItem> BY_MASTERS_ORDER =
+            Comparator.comparingInt(CatalogItem::getSortOrder)
+                    .thenComparing(CatalogItem::getId);
 
     private final CatalogItemRepository catalogRepository;
     private final UserRepository userRepository;
@@ -88,6 +99,11 @@ public class CatalogService {
                 // The master typed this themselves — the only rows the admin insight screens
                 // treat as evidence about what our defaults are missing.
                 .source(CatalogItemSource.MANUAL)
+                // At the END of his catalog, never inserted alphabetically. Once he arranges the
+                // list himself, dropping a new position into the middle by name would move it away
+                // from where he was looking when he added it. The client groups by category, so a
+                // position whose category already exists still appears inside that group.
+                .sortOrder(catalogRepository.nextSortOrder(ownerId))
                 .build();
         return CatalogItemResponse.from(catalogRepository.save(item));
     }
@@ -98,7 +114,7 @@ public class CatalogService {
                 ? catalogRepository.findByOwnerIdOrderByNameAsc(ownerId)
                 : catalogRepository.findByOwnerIdAndTypeOrderByNameAsc(ownerId, type);
         return items.stream()
-                .sorted(BY_CATEGORY_THEN_NAME)
+                .sorted(BY_MASTERS_ORDER)
                 .map(CatalogItemResponse::from)
                 .toList();
     }
@@ -170,6 +186,64 @@ public class CatalogService {
             }
             catalogRepository.delete(item);
         });
+    }
+
+    /**
+     * Delete many positions at once — the master clearing out a trade he does not do.
+     *
+     * <p>Scoped to the owner in the query itself, so an id belonging to someone else matches
+     * nothing rather than throwing: this arrives from a screen where the master ticked rows he can
+     * see, and a partial failure halfway through a list of 200 would leave him guessing what
+     * survived. Returns how many actually went, which is what the client reports back to him.</p>
+     *
+     * <p>Idempotent for the same reason single delete is — the offline outbox replays it.</p>
+     *
+     * <p><b>Estimates are untouched by design.</b> An estimate line holds its own name, unit and
+     * price with no FK to the catalog, so deleting a position never rewrites work already quoted.
+     * Templates reference positions BY NAME and look the price up here, so a template applied after
+     * this comes back with a zero price for what is gone — which is why the screen warns before
+     * a large deletion rather than after.</p>
+     */
+    @Transactional
+    public int deleteItems(List<UUID> ids, UUID ownerId) {
+        if (ids == null || ids.isEmpty()) {
+            return 0;
+        }
+        return catalogRepository.deleteByOwnerIdAndIdIn(ownerId, ids);
+    }
+
+    /**
+     * Persist the arrangement the master dragged into place.
+     *
+     * <p>Mirrors {@code EstimateService.reorderItems} line for line, including the part that is
+     * easy to miss: anything the request never mentioned keeps its relative order AFTER the rest.
+     * The client can legitimately send a subset — a stale list, or a position created on another
+     * device since — and dropping those would silently delete them from the order.</p>
+     */
+    @Transactional
+    public List<CatalogItemResponse> reorderItems(CatalogItemsOrderRequest req, UUID ownerId) {
+        List<CatalogItem> existing = catalogRepository.findByOwnerIdOrderBySortOrderAscIdAsc(ownerId);
+        Map<UUID, CatalogItem> byId = existing.stream()
+                .collect(Collectors.toMap(CatalogItem::getId, i -> i));
+
+        int position = 0;
+        Set<UUID> placed = new LinkedHashSet<>();
+        for (CatalogItemsOrderRequest.Line line : req.items()) {
+            CatalogItem item = byId.get(line.id());
+            if (item == null || !placed.add(line.id())) {
+                continue;   // gone since the arrangement was captured, or listed twice
+            }
+            item.setSortOrder(position++);
+            item.setCategory(normalizeCategory(line.category()));
+        }
+        for (CatalogItem item : existing) {
+            if (!placed.contains(item.getId())) {
+                item.setSortOrder(position++);
+            }
+        }
+        return catalogRepository.findByOwnerIdOrderBySortOrderAscIdAsc(ownerId).stream()
+                .map(CatalogItemResponse::from)
+                .toList();
     }
 
     CatalogItem loadOwned(UUID id, UUID ownerId) {

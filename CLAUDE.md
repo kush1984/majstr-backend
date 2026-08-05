@@ -346,6 +346,13 @@ Status mapping:
 - 429 — emitted directly by `LoginRateLimitFilter` / `RegisterRateLimitFilter`
   (does **not** go through the advice — the filters write the response
   themselves, bypassing Spring MVC)
+- **no response at all** — the CLIENT hung up mid-write (`Broken pipe` / `Connection reset by peer`).
+  `GlobalExceptionHandler.isClientDisconnect` walks the WHOLE cause chain (it arrives four wrappers
+  deep: `HttpMessageNotWritableException → JacksonIOException → AsyncRequestNotUsableException →
+  ClientAbortException → IOException`) and returns `null` — debug log, **no Sentry**, no body,
+  because there is no socket left to write to. Same rationale as the quiet 404 for scanner probes.
+  The walk is depth-bounded: a cyclic cause chain would otherwise hang the request thread. Do NOT
+  widen it to "any IOException" — a disk or upstream failing mid-write is ours and must stay a 500.
 - 500 — fallback, with a logged stack trace; also reported to Sentry
   (env-gated on `SENTRY_DSN`, endpoint tag + opaque user id, no PII)
 
@@ -370,7 +377,7 @@ the normal `403 *_LIMIT_REACHED` code.
 `hibernate.ddl-auto: validate`. Never put schema changes in entity
 annotations expecting Hibernate to apply them. Add a new
 `V<N>__<desc>.sql` under `src/main/resources/db/migration/` — **check the highest existing
-number first** (`ls` the directory and sort numerically; the latest is **V84**). Never edit an
+number first** (`ls` the directory and sort numerically; the latest is **V88**). Never edit an
 applied migration: Flyway checksums it and a changed file fails startup. Trades live
 in the `user_trades` collection table (one row per `(user_id, trade)`,
 mapped via `User.trades` `@ElementCollection`); it has a `CHECK`
@@ -463,6 +470,54 @@ estimate through `EstimateService.createFromImport` (respects the FREE estimate 
 `SYSTEM_PROMPT` tells the model to use sentinels (0 / empty string) for unreadable
 values rather than guessing — mapped back to null + a review flag server-side.
 
+### A photographed sheet is CLASSIFIED before it is read (`sheetKind`)
+
+`SketchParseResponse.sheetKind` is `HAND_DRAWN` or `PRINTED_PLAN`, and it decides **whether the
+reading is the answer at all**. `POST /api/projects/{id}/measurements/sketch/parse` takes an ARRAY
+of sheets (parameter still named `file`, so one photo is a one-element list), and:
+
+- **`HAND_DRAWN`** — кроки, read fully as before. That path was built for them and handles them well.
+- **`PRINTED_PLAN`** — a designer's sheet or a технічний паспорт. **Named and nothing more:** `rooms`
+  comes back empty *by design* and the PWA hands the same files to the project-import flow.
+
+Why: the sketch schema is rooms → items → planes with **no field for a room's area**, so a printed
+plan read there loses the printed areas and has to multiply chains instead — which produced areas
+wrong by 8 % and 16 % in production, plus rooms with no walls and duplicated rooms across two photos
+of one sheet. The import conveyor reconciles each printed area against its gabarits, merges sheets,
+and guarantees every room a floor + ceiling + four walls. None of that exists on the sketch path.
+
+**The default leans to `PRINTED_PLAN`, including when the field is missing entirely** — a model that
+forgets it must not quietly get the кроки treatment, which is the exact failure the field exists to
+stop. Deploy consequence: the backend shipping AHEAD of the PWA makes an old client show «Не вдалося
+нічого прочитати» on a printed plan, so ship together or PWA first.
+
+Passport conventions (Постанова КМУ № 488) are gated behind **positive evidence** — at least two of:
+number-over-area fraction, two-decimal sizes, «h=2,50», «Масштаб 1:100» with «ПОВЕРХ», a БТІ title
+block. A passport is the ONE sheet in metres; applying its rules to a designer's plan turns «3500»
+millimetres into 3500 metres. See [docs/iteration-import-quality.md](docs/iteration-import-quality.md).
+
+### An estimate can be duplicated with a markup (the бригадир's two prices)
+
+`POST /api/estimates/{id}/duplicate` copies an estimate and raises SELECTED lines by a percent —
+works ticked by default, materials not. The **parent** holds master prices, the **duplicate** holds
+client prices, and the object economy counts only the difference:
+
+```sql
+CASE WHEN e.duplicated_from_id IS NULL THEN i.unit_price
+     ELSE i.unit_price - COALESCE(i.source_unit_price, 0) END
+```
+
+**The source price lives on the LINE (`estimate_items.source_unit_price`), not as one percent on the
+estimate** (V85). A single percent breaks on all four things that actually happen afterwards: the
+markup applies to selected lines only, the parent can be deleted, a price can be edited in the copy,
+and a line can be added that the crew is never paid for. NULL source on an added line correctly means
+"all of it is margin". `estimates.markup_percent` is kept as a **label only** — nothing computes from
+it. Duplicating sets `countInEconomy = false` on the parent.
+
+`DELETE /api/estimates/{id}/items` deletes many lines at once and **cascades parent → duplicate,
+never the reverse** (a line the crew is not doing cannot survive in the client copy; SIGNED copies
+are skipped). See [docs/iteration-duplicate-with-markup.md](docs/iteration-duplicate-with-markup.md).
+
 ### Consolidated estimate, receipt import, and object photos
 
 Three related capabilities added together (docs/iteration-consolidated-receipts-photos.md):
@@ -551,6 +606,52 @@ Both are covered by `MaterialRemovalOnLiveDataIntegrationTest` and
 version before the change" pattern — the only way to test a DATA migration, since the normal
 slice runs every migration against an empty schema before any test row exists.
 
+### «%» is a share OF something, and the line amount is STORED (V88)
+
+A `PERCENT` line used to multiply like any other unit: 10 × 500 = 5 000 ₴, printed as
+«10 % · 500 ₴/%» — five hundred hryvnia for one percent. It is now a percentage of a **base**, and
+`quantity` holds the percent (10 = 10 %).
+
+| base | where it comes from |
+|---|---|
+| `MANUAL` | a sum typed by hand — lives in `unitPrice` |
+| `POSITION` | another line of the same estimate (`percent_base_item_id`) |
+| `TOTAL` | the estimate's own subtotal, before any TOTAL line |
+
+**A percent of a percent is forbidden**, and that is the whole cycle protection: the base picker
+offers ordinary lines only, so no chain can close on itself. There is no graph to walk and no cycle
+detection to get wrong.
+
+**`estimate_items.line_total` is stored, written by the server on every write, never accepted from a
+request.** Six native aggregates (dashboard, object economy, project cards) compute a total with one
+`SUM`, and a percentage OF THE SUBTOTAL cannot be expressed that way — the row depends on the total
+and the total on the row. Two consequences are features rather than side effects: a **read never
+recomputes**, so a SIGNED estimate cannot drift behind the client's back; and «backend = frontend»
+became a comparison of one number instead of two formulas.
+
+**The three-step pass** lives in `EstimateMath.recalculate` and nowhere else: ordinary lines →
+percentages of a line / of a hand-typed sum → percentages of the TOTAL, all measured against the
+same base (compounding them would make the answer depend on entry order).
+
+⚠️ **`useEstimate.recomputeLines` in the PWA mirrors THAT PASS — change the two together.** This is
+the second mirrored formula in the project (the first is `MeasurementCalc` ↔ `measurementCalc.ts`),
+and the same rule applies. The client computes for DISPLAY only.
+
+**A deleted base does not zero the line.** The FK is `ON DELETE SET NULL`; the service also sets
+`base_detached`, the amount stays, and the row says «база видалена». Manual wins over automatic —
+the rule `quantityManual` already follows in measurements.
+
+**A PERCENT position's catalog price IS the percent.** V82 shipped nine of them into the live tiling
+catalog («…(плюс % до м.кв.)» at 88, 33, 50, 76, 45…), so adding one from the catalog or through a
+template maps `defaultPrice` → `quantity` and defaults the base to `POSITION`. Copying it into
+`unitPrice` would produce «база 33 ₴», which is nonsense.
+
+**In a duplicate the markup lands exactly once.** Base is a material or MANUAL (never marked up) →
+the PERCENT itself is raised (20 % → 26 % at +30 %); base is a marked-up work, or TOTAL → the percent
+is left alone because the base already grew. `source_unit_price` on such a row holds the ORIGINAL
+PERCENT, and the economy query reaches the base to work out what the crew's sheet charged for it.
+See [docs/iteration-percent-base.md](docs/iteration-percent-base.md).
+
 ### Estimate line order is explicit, and categories are a grouping of it
 
 `PATCH /api/estimates/{id}/items/order` (`EstimateItemsOrderRequest` →
@@ -594,6 +695,13 @@ INDEPENDENT product flows so a master only pays for what their trade needs:
   **`RoomSurfaceCalc`**.
 - **`ElectroTakeoffService`** — «електрика», for electricians. Runs only the electrical passes
   (inventory + points per floor + lighting/groups + heating/panel) then **`ElectroTakeoffCalc`**.
+
+- **`CableJournalBuilder`** — a КАБЕЛЬНИЙ ЖУРНАЛ (ДСТУ Б А.2.4-24 Форма 6) built from the SAME
+  device list the electrical takeoff counts: the data was already there, only the reading along the
+  cable was missing. Pure Java, no LLM. **Both length columns are left empty on purpose** —
+  ДСТУ Б А.2.4-21 §5.13 requires a «надбавка на вигини, повороти і відходи» and no Ukrainian norm
+  quantifies it, so an invented figure would be copied straight into an order. Also unreachable:
+  nothing calls it either.
 
 Neither pays for the other's passes. Thanks to prompt caching, if both run on the same album
 within the cache TTL the second reads the document from cache (~10% of input price).
@@ -761,4 +869,6 @@ These are intentional gaps to be aware of (don't claim they exist):
 **Recently shipped — do NOT describe these as missing** (this list has been wrong before):
 integration tests (Testcontainers slice, see *Testing*), billing/payments (monobank checkout,
 auto-renew, yearly tariff, PRO trial), password reset, client messages with attachments +
-retention, album takeoff, offline-first authoring for everything except photos.
+retention, album takeoff, offline-first authoring for everything except photos, estimate
+duplication with a per-line markup, bulk deletion of estimate lines, the 15-day PRO trial with its
+daily T-3…T-1 reminder, and multi-sheet photo recognition with `sheetKind` classification.

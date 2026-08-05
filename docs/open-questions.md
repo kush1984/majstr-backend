@@ -46,6 +46,13 @@ one-line summary — keep the item in the file as a record.
 - **Related:** the electrical measurements UI is separately parked behind
   `ELECTRICAL_MEASUREMENTS_ENABLED=false`, so exposing the electrical flow is also a product
   decision, not only a plumbing one.
+- **Update (2026-08-03):** the unreachable surface **grew**. `CableJournalBuilder` (a КАБЕЛЬНИЙ
+  ЖУРНАЛ per ДСТУ Б А.2.4-24 Форма 6, built from the device list the electrical takeoff already
+  counts) is complete and tested against a real reconciled project, and nothing calls it either. It
+  needs no job runner of its own — it is pure Java over an existing `AlbumExtraction`, so it comes
+  free with whatever endpoint the electrical flow eventually gets — but it does mean this item now
+  covers three deliverables rather than two, and that a second thing has been written that no master
+  can reach.
 
 ### Offline-first follow-ups (Phase 1 shipped; these are the deferred pieces)
 - **Status:** IN_PROGRESS (2026-07-26) — the offline programme resumed. **O3 shipped** (see
@@ -629,6 +636,12 @@ one-line summary — keep the item in the file as a record.
   email (same `renewReminderSentAt` dedup so it fires once per cycle), click-through to
   `/profile`. Cheap to add, reuses the existing push plumbing; deferred to keep the V40
   surface small. Consider only after we see whether email alone is enough.
+- **Update (2026-08-03, trial iteration):** the pattern now exists next door and can be copied
+  verbatim. `TrialReminderService` sends push **and** email daily over the last three days of a
+  trial, stamped with `users.trial_reminder_sent_at`. It is deliberately a **separate `@Scheduled`
+  bean** rather than a branch inside `AutoRenewService`: a bug in a reminder must not be able to
+  reach a path that charges cards. Doing the same here means a third bean or a shared helper — not
+  folding this into the charge job. Still OPEN because the auto-renew half was not touched.
 
 ### Auto-renew: recurring-charge clause in the public offer
 - **Status:** OPEN
@@ -1446,6 +1459,30 @@ one-line summary — keep the item in the file as a record.
 - **Notes / options:** A per-note `SHARED` toggle (mirror the photo visibility model) surfacing
   shared notes on the portal. Requires care — the default must stay PRIVATE and the share must be
   explicit and per-note. Build only if asked; the privacy default is the safe v1.
+
+### Nothing shows WHAT differs between a parent estimate and its marked-up copy
+- **Status:** OPEN
+- **Since:** Duplicate-with-markup iteration (2026-08-03)
+- **Context:** A бригадир now keeps two estimates for one job — his crew's prices and the client's.
+  Comparing them means reading both, line by line, and the interesting lines are exactly the ones
+  that diverged: a price he edited after duplicating, a line added to the copy that the crew is not
+  paid for (`source_unit_price IS NULL`), a line deleted from the copy. The data to answer this is
+  already stored per line; nothing displays it.
+- **Notes / options:** A diff view on the copy — «змінено проти батьківського» — driven by
+  `source_unit_price` and `source_item_id`, which is exactly what those columns record. Same shape
+  as the long-standing "what changed since the client last signed" gap on `reopen`, and the two
+  should probably be one component rather than two.
+
+### The "up to 10 sheets" cap is written in three places
+- **Status:** OPEN
+- **Since:** Import-quality run (2026-08-03)
+- **Context:** `ProjectImportService.MAX_PDF_PAGES`, `SketchReviewSheet.MAX_SHEETS`, and the literal
+  «до 10 аркушів» inside `error.import.too-many-pages` in both message bundles. `SketchImportService`
+  already borrows the backend constant, so the server side is one number — but the PWA's copy and
+  the message text are independent, and changing the cap means remembering all three.
+- **Notes / options:** Low priority while the number is stable. If it moves: serve the cap from
+  `/api/plan/limits` (the PWA already reads that for every other cap) and make the message take it
+  as a `{0}` argument rather than spelling it out.
 
 ---
 

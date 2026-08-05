@@ -81,6 +81,18 @@ public class CatalogItem {
     @Column(name = "source", nullable = false, length = 20)
     private CatalogItemSource source = CatalogItemSource.MANUAL;
 
+    /**
+     * The master's own arrangement, 0-based within HIS catalog (V87).
+     *
+     * <p>Replaces sorting by category-then-name at read time. Categories have no rows of their own
+     * here either — a group IS the run of positions sharing a category, ordered by the first of
+     * them — so dragging a whole category is the same write as dragging one position. Same model
+     * as {@code EstimateItem.sortOrder}, deliberately: the two screens now behave identically and
+     * the client shares one piece of arithmetic between them.</p>
+     */
+    @Column(name = "sort_order", nullable = false)
+    private int sortOrder;
+
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
 

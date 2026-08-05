@@ -161,7 +161,7 @@ class EstimateServiceTest {
 
         EstimateItemRequest req = new EstimateItemRequest(
                 ItemType.WORK, "Plastering", "  Walls  ", Unit.M2,
-                new BigDecimal("25.000"), new BigDecimal("180.00"), 1, null, false);
+                new BigDecimal("25.000"), new BigDecimal("180.00"), 1, null, false, null, null);
 
         var resp = estimateService.addItem(estimateId, req, ownerId);
 
@@ -184,7 +184,7 @@ class EstimateServiceTest {
         EstimateItemRequest req = new EstimateItemRequest(
                 ItemType.WORK, "Стеля", null, Unit.M2,
                 new BigDecimal("999.000"), // client preview — must be ignored
-                new BigDecimal("100.00"), 0, refs, false);
+                new BigDecimal("100.00"), 0, refs, false, null, null);
 
         var resp = estimateService.addItem(estimateId, req, ownerId);
 
@@ -203,7 +203,7 @@ class EstimateServiceTest {
         List<UUID> refs = List.of(UUID.randomUUID());
         EstimateItemRequest req = new EstimateItemRequest(
                 ItemType.WORK, "Стеля", null, Unit.M2,
-                new BigDecimal("42.000"), new BigDecimal("100.00"), 0, refs, true); // manual
+                new BigDecimal("42.000"), new BigDecimal("100.00"), 0, refs, true, null, null); // manual
 
         var resp = estimateService.addItem(estimateId, req, ownerId);
 
@@ -220,7 +220,7 @@ class EstimateServiceTest {
 
         EstimateItemRequest req = new EstimateItemRequest(
                 ItemType.WORK, "X", null, Unit.PIECE,
-                new BigDecimal("1.000"), new BigDecimal("1.00"), 0, null, false);
+                new BigDecimal("1.000"), new BigDecimal("1.00"), 0, null, false, null, null);
 
         assertThatThrownBy(() -> estimateService.addItem(estimateId, req, ownerId))
                 .isInstanceOf(AccessDeniedException.class);
@@ -334,7 +334,7 @@ class EstimateServiceTest {
 
         EstimateItemRequest req = new EstimateItemRequest(
                 ItemType.WORK, "X", null, Unit.PIECE,
-                new BigDecimal("1.000"), new BigDecimal("1.00"), 0, null, false);
+                new BigDecimal("1.000"), new BigDecimal("1.00"), 0, null, false, null, null);
 
         assertThatThrownBy(() -> estimateService.addItem(estimateId, req, ownerId))
                 .isInstanceOf(EstimateSignedException.class);
@@ -346,7 +346,7 @@ class EstimateServiceTest {
 
         EstimateItemRequest req = new EstimateItemRequest(
                 ItemType.WORK, "X", null, Unit.PIECE,
-                new BigDecimal("1.000"), new BigDecimal("1.00"), 0, null, false);
+                new BigDecimal("1.000"), new BigDecimal("1.00"), 0, null, false, null, null);
 
         assertThatThrownBy(() -> estimateService.updateItem(estimateId, UUID.randomUUID(), req, ownerId))
                 .isInstanceOf(EstimateSignedException.class);
@@ -894,7 +894,7 @@ class EstimateServiceTest {
 
         var resp = estimateService.addItem(estimateId, new EstimateItemRequest(
                 ItemType.WORK, "Робота", null, Unit.M2,
-                new BigDecimal("2"), new BigDecimal("100"), 0, null, false), ownerId, requestedId);
+                new BigDecimal("2"), new BigDecimal("100"), 0, null, false, null, null), ownerId, requestedId);
 
         assertThat(resp.id()).isEqualTo(requestedId);
     }
@@ -911,7 +911,7 @@ class EstimateServiceTest {
 
         var resp = estimateService.addItem(estimateId, new EstimateItemRequest(
                 ItemType.WORK, "Дубль", null, Unit.M2,
-                new BigDecimal("9"), new BigDecimal("9"), 0, null, false), ownerId, requestedId);
+                new BigDecimal("9"), new BigDecimal("9"), 0, null, false, null, null), ownerId, requestedId);
 
         assertThat(resp.id()).isEqualTo(requestedId);
         assertThat(resp.name()).isEqualTo("Вже є");
@@ -930,7 +930,7 @@ class EstimateServiceTest {
 
         assertThatThrownBy(() -> estimateService.addItem(estimateId, new EstimateItemRequest(
                 ItemType.WORK, "X", null, Unit.M2,
-                new BigDecimal("1"), new BigDecimal("1"), 0, null, false), ownerId, requestedId))
+                new BigDecimal("1"), new BigDecimal("1"), 0, null, false, null, null), ownerId, requestedId))
                 .isInstanceOf(AccessDeniedException.class);
     }
 
@@ -965,6 +965,10 @@ class EstimateServiceTest {
                 .unit(Unit.PIECE)
                 .quantity(new BigDecimal(qty))
                 .unitPrice(new BigDecimal(price))
+                // The STORED amount (V88). Reads sum this column and compute nothing — that is what
+                // keeps a signed estimate from drifting — so a fixture without it totals to zero.
+                .lineTotal(new BigDecimal(qty).multiply(new BigDecimal(price))
+                        .setScale(2, java.math.RoundingMode.HALF_UP))
                 .sortOrder(0)
                 .build();
     }

@@ -2,7 +2,10 @@ package com.majstr.backend.controller;
 
 import com.majstr.backend.dto.AddTemplatesRequest;
 import com.majstr.backend.dto.CatalogItemRequest;
+import com.majstr.backend.dto.CatalogBulkDeleteRequest;
+import com.majstr.backend.dto.CatalogBulkDeleteResponse;
 import com.majstr.backend.dto.CatalogItemResponse;
+import com.majstr.backend.dto.CatalogItemsOrderRequest;
 import com.majstr.backend.dto.CatalogResetResponse;
 import com.majstr.backend.dto.CatalogUpdateNoticeResponse;
 import com.majstr.backend.dto.TemplateUpdatesResponse;
@@ -23,6 +26,7 @@ import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -57,7 +61,8 @@ public class CatalogController {
                 .body(catalogService.create(req, principal.id(), entityId));
     }
 
-    @Operation(summary = "List my catalog items (sorted by category, then name), optionally filtered by type")
+    @Operation(summary = "List my catalog items in MY OWN arrangement (V87 sort_order; "
+            + "alphabetical until I drag something), optionally filtered by type")
     @GetMapping
     public List<CatalogItemResponse> list(@RequestParam(required = false) ItemType type,
                                           @AuthenticationPrincipal UserPrincipal principal) {
@@ -94,6 +99,23 @@ public class CatalogController {
                                        @AuthenticationPrincipal UserPrincipal principal) {
         catalogService.delete(id, principal.id());
         return ResponseEntity.noContent().build();
+    }
+
+    // "/items" and "/{id}" both match DELETE /api/catalog/items — Spring picks the literal segment
+    // over the template, which is what we want, but it is the kind of precedence worth stating
+    // rather than rediscovering from a 400 that says "items is not a UUID".
+    @Operation(summary = "Delete several catalog items at once — returns how many actually went")
+    @DeleteMapping("/items")
+    public CatalogBulkDeleteResponse deleteItems(@Valid @RequestBody CatalogBulkDeleteRequest req,
+                                                 @AuthenticationPrincipal UserPrincipal principal) {
+        return new CatalogBulkDeleteResponse(catalogService.deleteItems(req.ids(), principal.id()));
+    }
+
+    @Operation(summary = "Persist the master's own arrangement of his catalog")
+    @PatchMapping("/items/order")
+    public List<CatalogItemResponse> reorder(@Valid @RequestBody CatalogItemsOrderRequest req,
+                                             @AuthenticationPrincipal UserPrincipal principal) {
+        return catalogService.reorderItems(req, principal.id());
     }
 
     @Operation(summary = "Add starter templates for the user's trade. " +

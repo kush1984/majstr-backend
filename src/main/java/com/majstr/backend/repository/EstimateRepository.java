@@ -70,7 +70,7 @@ public interface EstimateRepository extends JpaRepository<Estimate, UUID> {
      */
     @Query(value = """
             SELECT le.project_id, le.status,
-                   COALESCE(SUM(ROUND(i.quantity * i.unit_price, 2)), 0) AS total
+                   COALESCE(SUM(i.line_total), 0) AS total
             FROM (
                 SELECT DISTINCT ON (e.project_id) e.id, e.project_id, e.status
                 FROM estimates e
@@ -89,7 +89,7 @@ public interface EstimateRepository extends JpaRepository<Estimate, UUID> {
     @Query(value = """
             SELECT COALESCE(SUM(t.total), 0) FROM (
                 SELECT le.project_id,
-                       COALESCE(SUM(ROUND(i.quantity * i.unit_price, 2)), 0) AS total
+                       COALESCE(SUM(i.line_total), 0) AS total
                 FROM (
                     SELECT DISTINCT ON (e.project_id) e.id, e.project_id
                     FROM estimates e
@@ -113,7 +113,7 @@ public interface EstimateRepository extends JpaRepository<Estimate, UUID> {
      * object-economy summary; one aggregate query, no N+1.
      */
     @Query(value = """
-            SELECT COALESCE(SUM(ROUND(i.quantity * i.unit_price, 2)), 0)
+            SELECT COALESCE(SUM(i.line_total), 0)
             FROM estimates e JOIN estimate_items i ON i.estimate_id = e.id
             WHERE e.project_id = :projectId AND e.status <> 'REJECTED'
             """, nativeQuery = true)
@@ -121,7 +121,7 @@ public interface EstimateRepository extends JpaRepository<Estimate, UUID> {
 
     /** Same, restricted to SIGNED estimates — the "of which signed" figure. */
     @Query(value = """
-            SELECT COALESCE(SUM(ROUND(i.quantity * i.unit_price, 2)), 0)
+            SELECT COALESCE(SUM(i.line_total), 0)
             FROM estimates e JOIN estimate_items i ON i.estimate_id = e.id
             WHERE e.project_id = :projectId AND e.status = 'SIGNED'
             """, nativeQuery = true)
@@ -136,7 +136,7 @@ public interface EstimateRepository extends JpaRepository<Estimate, UUID> {
      *  variants as earnings until the owner unticked them by hand (V67 patches the data;
      *  this guard makes it impossible to re-introduce).</p> */
     @Query(value = """
-            SELECT COALESCE(SUM(ROUND(i.quantity * i.unit_price, 2)), 0)
+            SELECT COALESCE(SUM(i.line_total), 0)
             FROM estimates e JOIN estimate_items i ON i.estimate_id = e.id
             WHERE e.project_id = :projectId AND e.count_in_economy = true AND e.status <> 'REJECTED'
             """, nativeQuery = true)
@@ -156,19 +156,57 @@ public interface EstimateRepository extends JpaRepository<Estimate, UUID> {
      * been marked up while the rest passed through at cost, and either sheet may have been edited
      * since. {@code COALESCE(source_unit_price, 0)} is what makes a line ADDED to the duplicate
      * afterwards count in full — nobody downstream is paid for it, so all of it is margin.</p>
+     *
+     * <p><b>A percentage line earns too, and reaching its base is the only way to see it.</b> Two
+     * shapes, both real. Base is a MATERIAL (never marked up): the copy carries a raised PERCENT —
+     * 20 % becomes 26 % at +30 % — so 5 000 ₴ of шафа yields 1 300 against the parent's 1 000, and
+     * the margin is 300. Base is a WORK: the percent is left alone because the base itself grew, so
+     * 20 % of 1 300 is 260 against the parent's 200, and the margin is 60. Subtracting per unit
+     * price would report ZERO in the second case and nothing sensible in the first — a percentage
+     * has no price to subtract. Hence {@code source_unit_price} holding the ORIGINAL PERCENT on
+     * these rows, and the LEFT JOIN that finds what the crew's sheet charged for the base.</p>
      */
     @Query(value = """
-            SELECT COALESCE(SUM(ROUND(i.quantity *
-                     CASE WHEN e.duplicated_from_id IS NULL THEN i.unit_price
-                          ELSE i.unit_price - COALESCE(i.source_unit_price, 0) END, 2)), 0)
-            FROM estimates e JOIN estimate_items i ON i.estimate_id = e.id
+            SELECT COALESCE(SUM(
+                CASE
+                    -- An ordinary estimate: the master keeps what the line charges.
+                    WHEN e.duplicated_from_id IS NULL THEN i.line_total
+                    -- A duplicate, ordinary line: the difference between the two prices.
+                    WHEN i.unit <> 'PERCENT'
+                        THEN ROUND(i.quantity * (i.unit_price - COALESCE(i.source_unit_price, 0)), 2)
+                    -- A duplicate, percentage line: what it charges minus what the crew's sheet
+                    -- charged for it. source_unit_price holds the ORIGINAL PERCENT here, so the
+                    -- crew's amount is that percent of the crew's own base — which is why the base
+                    -- has to be reached rather than guessed.
+                    ELSE i.line_total - ROUND(COALESCE(i.source_unit_price, 0) / 100 * COALESCE(
+                        CASE i.percent_base_kind
+                            -- A hand-typed sum is not marked up, so both sheets share it.
+                            WHEN 'MANUAL' THEN i.unit_price
+                            -- The base line carries its own crew price.
+                            WHEN 'POSITION'
+                                THEN ROUND(b.quantity * COALESCE(b.source_unit_price, b.unit_price), 2)
+                            -- Measured against the crew's ordinary subtotal. Deliberately ordinary
+                            -- lines only: a percentage of the whole sheet is an overhead on the
+                            -- work, and folding other percentages into its base would make two
+                            -- TOTAL lines depend on each other — the thing EstimateMath refuses to
+                            -- do when it computes them all against one base.
+                            WHEN 'TOTAL' THEN (
+                                SELECT COALESCE(SUM(ROUND(o.quantity
+                                        * COALESCE(o.source_unit_price, o.unit_price), 2)), 0)
+                                FROM estimate_items o
+                                WHERE o.estimate_id = i.estimate_id AND o.unit <> 'PERCENT')
+                        END, 0), 2)
+                END), 0)
+            FROM estimates e
+            JOIN estimate_items i ON i.estimate_id = e.id
+            LEFT JOIN estimate_items b ON b.id = i.percent_base_item_id
             WHERE e.project_id = :projectId AND e.count_in_economy = true AND e.status <> 'REJECTED' AND i.type = 'WORK'
             """, nativeQuery = true)
     BigDecimal sumWorksCounted(@Param("projectId") UUID projectId);
 
     /** Materials subtotal of the counted estimates — passthrough, not earnings (reference). */
     @Query(value = """
-            SELECT COALESCE(SUM(ROUND(i.quantity * i.unit_price, 2)), 0)
+            SELECT COALESCE(SUM(i.line_total), 0)
             FROM estimates e JOIN estimate_items i ON i.estimate_id = e.id
             WHERE e.project_id = :projectId AND e.count_in_economy = true AND e.status <> 'REJECTED' AND i.type = 'MATERIAL'
             """, nativeQuery = true)

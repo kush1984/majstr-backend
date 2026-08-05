@@ -17,6 +17,8 @@ public record CatalogItemResponse(
         ItemType type,
         Unit unit,
         BigDecimal defaultPrice,
+        /** The master's own arrangement within his catalog (V87) — what the client renders by. */
+        int sortOrder,
         Instant createdAt
 ) {
     public static CatalogItemResponse from(CatalogItem item) {
@@ -28,6 +30,7 @@ public record CatalogItemResponse(
                 item.getType(),
                 item.getUnit(),
                 item.getDefaultPrice(),
+                item.getSortOrder(),
                 item.getCreatedAt()
         );
     }

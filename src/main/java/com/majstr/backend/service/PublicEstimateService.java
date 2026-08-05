@@ -351,8 +351,12 @@ public class PublicEstimateService {
     }
 
     private PublicEstimateItemView toItemView(EstimateItem item) {
-        BigDecimal line = item.getQuantity().multiply(item.getUnitPrice())
-                .setScale(MONEY_SCALE, MONEY_ROUNDING);
+        // The STORED amount (V88). The portal is what the client signs: re-deriving the arithmetic
+        // in a seventh place is how the page a client agrees to ends up disagreeing with the PDF
+        // beside it, and a percentage of the estimate's own subtotal cannot be derived per row.
+        BigDecimal line = item.getLineTotal() == null
+                ? BigDecimal.ZERO.setScale(MONEY_SCALE, MONEY_ROUNDING)
+                : item.getLineTotal();
         return new PublicEstimateItemView(
                 item.getType(),
                 item.getName(),

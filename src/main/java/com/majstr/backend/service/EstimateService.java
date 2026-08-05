@@ -17,6 +17,7 @@ import com.majstr.backend.entity.EstimateItem;
 import com.majstr.backend.entity.ItemType;
 import com.majstr.backend.entity.EstimateStatus;
 import com.majstr.backend.entity.MeasurementRefs;
+import com.majstr.backend.entity.PercentBaseKind;
 import com.majstr.backend.entity.Project;
 import com.majstr.backend.entity.Unit;
 import com.majstr.backend.service.measurement.MeasurementService;
@@ -143,7 +144,7 @@ public class EstimateService {
                     .build());
         }
         itemRepository.saveAll(items);
-        return toResponse(saved, itemRepository.findByEstimateIdOrderBySortOrderAscIdAsc(saved.getId()));
+        return recalculatedResponse(saved);
     }
 
     /**
@@ -200,21 +201,35 @@ public class EstimateService {
         projectRepository.incrementEstimatesCreated(projectId); // lifetime churn counter
 
         BigDecimal factor = BigDecimal.ONE.add(req.markupPercent().movePointLeft(2));
+        Map<UUID, EstimateItem> sourceById = sourceItems.stream()
+                .collect(Collectors.toMap(EstimateItem::getId, i -> i));
         List<EstimateItem> copies = new ArrayList<>(sourceItems.size());
         for (EstimateItem item : sourceItems) {
             boolean marked = toMarkUp.contains(item.getId());
+            // A PERCENT line is marked up on the PERCENT, not on the price — and only when its base
+            // is not marked up itself. See markedUpPercent for the whole argument; the short of it
+            // is that the markup must land exactly once.
+            boolean percent = item.getUnit() == Unit.PERCENT;
             copies.add(EstimateItem.builder()
                     .estimate(copy)
                     .type(item.getType())
                     .name(item.getName())
                     .category(item.getCategory())
                     .unit(item.getUnit())
-                    .quantity(item.getQuantity())
-                    .unitPrice(marked ? markedUp(item.getUnitPrice(), factor) : item.getUnitPrice())
+                    .quantity(percent && marked
+                            ? markedUpPercent(item, sourceById, toMarkUp, factor)
+                            : item.getQuantity())
+                    .unitPrice(marked && !percent ? markedUp(item.getUnitPrice(), factor) : item.getUnitPrice())
                     // Recorded on EVERY line, not just the marked-up ones: a line passed through at
                     // cost earns nothing today, and if the master later raises its price by hand
                     // that difference is real margin the economy should see.
-                    .sourceUnitPrice(item.getUnitPrice())
+                    // On a PERCENT line this records the ORIGINAL PERCENT rather than a price:
+                    // that is what the crew's sheet charged, and it is the figure the economy has
+                    // to measure the client's sheet against.
+                    .sourceUnitPrice(percent ? item.getQuantity() : item.getUnitPrice())
+                    .percentBaseKind(item.getPercentBaseKind())
+                    .percentBaseItemId(item.getPercentBaseItemId())
+                    .baseDetached(item.isBaseDetached())
                     .sourceItemId(item.getId())
                     .sortOrder(item.getSortOrder())
                     .measurementRefs(item.getMeasurementRefs())
@@ -222,9 +237,30 @@ public class EstimateService {
                     .build());
         }
         itemRepository.saveAll(copies);
+
+        // ⚠️ A percentage line copied verbatim would still point at the PARENT's line. Left that
+        // way it measures against an estimate it is not part of — EstimateMath would find no base
+        // in its own list, treat the line as detached, and freeze it at nothing. Re-point every
+        // base at the copy that came from the same source line.
+        //
+        // AFTER saveAll, and that ordering is load-bearing: a copy has no id until it is persisted,
+        // so building this map first collected null values and Collectors.toMap rejects those. The
+        // rows are managed here, so the re-pointing is flushed by dirty checking.
+        Map<UUID, UUID> copyBySourceId = copies.stream()
+                .filter(c -> c.getSourceItemId() != null && c.getId() != null)
+                .collect(Collectors.toMap(EstimateItem::getSourceItemId, EstimateItem::getId));
+        for (EstimateItem c : copies) {
+            if (c.getPercentBaseItemId() != null) {
+                UUID inCopy = copyBySourceId.get(c.getPercentBaseItemId());
+                c.setPercentBaseItemId(inCopy);
+                // The base did not make it into the copy at all — say so rather than silently
+                // measuring against nothing.
+                c.setBaseDetached(c.isBaseDetached() || inCopy == null);
+            }
+        }
         source.setCountInEconomy(false);
 
-        return toResponse(copy, itemRepository.findByEstimateIdOrderBySortOrderAscIdAsc(copy.getId()));
+        return recalculatedResponse(copy);
     }
 
     /** Whole hryvnia. The client sees round numbers, and the economy reads the prices as stored,
@@ -285,7 +321,7 @@ public class EstimateService {
             }
         }
         itemRepository.saveAll(copies);
-        return toResponse(consolidated, itemRepository.findByEstimateIdOrderBySortOrderAscIdAsc(consolidated.getId()));
+        return recalculatedResponse(consolidated);
     }
 
     @Transactional(readOnly = true)
@@ -391,7 +427,7 @@ public class EstimateService {
     public EstimateResponse setCountInEconomy(UUID estimateId, boolean value, UUID ownerId) {
         Estimate estimate = loadOwned(estimateId, ownerId);
         estimate.setCountInEconomy(value);
-        return toResponse(estimate, itemRepository.findByEstimateIdOrderBySortOrderAscIdAsc(estimateId));
+        return recalculatedResponse(estimate);
     }
 
     @Transactional(readOnly = true)
@@ -457,11 +493,13 @@ public class EstimateService {
                 .unit(req.unit())
                 .quantity(r.quantity())
                 .unitPrice(req.unitPrice())
+                .percentBaseKind(percentKindOf(req))
+                .percentBaseItemId(validBaseItemId(estimateId, req))
                 .measurementRefs(r.refs())
                 .quantityManual(r.manual())
                 .sortOrder(req.sortOrder() == null ? 0 : req.sortOrder())
                 .build();
-        return EstimateItemResponse.from(itemRepository.save(item));
+        return savedItemResponse(estimate, item);
     }
 
     /**
@@ -520,6 +558,15 @@ public class EstimateService {
         }
         requireNotSigned(estimate);
         CatalogItem source = catalogService.loadOwned(catalogItemId, ownerId);
+        // A PERCENT position carries its PERCENT in the catalog's price column, not a price. Our
+        // own seed data says so out loud — «Укладання плитки по діагоналі (плюс % до м.кв.)» with
+        // default_price 33 means 33 %, and V82 shipped nine of these into the live tiling catalog.
+        // Copying that into unitPrice would produce «база 33 ₴», which is nonsense.
+        //
+        // The base is left EMPTY on purpose: only the master knows which line this надбавка is a
+        // percentage of. POSITION is the right default because the wording («плюс % до м.кв.»)
+        // means "of the m² work this is an extra on".
+        boolean percent = source.getUnit() == Unit.PERCENT;
         // Copy the category from the catalog item so the estimate can group too.
         EstimateItem item = EstimateItem.builder()
                 .id(requestedId)
@@ -528,11 +575,12 @@ public class EstimateService {
                 .name(source.getName())
                 .category(source.getCategory())
                 .unit(source.getUnit())
-                .quantity(req.quantity())
-                .unitPrice(source.getDefaultPrice())
+                .quantity(percent ? source.getDefaultPrice() : req.quantity())
+                .unitPrice(percent ? BigDecimal.ZERO : source.getDefaultPrice())
+                .percentBaseKind(percent ? PercentBaseKind.POSITION : null)
                 .sortOrder(req.sortOrder() == null ? 0 : req.sortOrder())
                 .build();
-        return EstimateItemResponse.from(itemRepository.save(item));
+        return savedItemResponse(estimate, item);
     }
 
     /**
@@ -563,7 +611,7 @@ public class EstimateService {
             fresh.add(e);
         }
         if (fresh.isEmpty()) {
-            return toResponse(estimate, itemRepository.findByEstimateIdOrderBySortOrderAscIdAsc(estimateId));
+            return recalculatedResponse(estimate);
         }
         requireNotSigned(estimate);
         List<EstimateItem> toSave = new ArrayList<>();
@@ -582,7 +630,7 @@ public class EstimateService {
                     .build());
         }
         itemRepository.saveAll(toSave);
-        return toResponse(estimate, itemRepository.findByEstimateIdOrderBySortOrderAscIdAsc(estimateId));
+        return recalculatedResponse(estimate);
     }
 
     /**
@@ -612,7 +660,7 @@ public class EstimateService {
                     .build());
         }
         itemRepository.saveAll(toSave);
-        return toResponse(estimate, itemRepository.findByEstimateIdOrderBySortOrderAscIdAsc(estimateId));
+        return recalculatedResponse(estimate);
     }
 
     @Transactional
@@ -630,11 +678,26 @@ public class EstimateService {
         Resolved r = resolveQuantity(estimate, req);
         item.setQuantity(r.quantity());
         item.setUnitPrice(req.unitPrice());
+        item.setPercentBaseKind(percentKindOf(req));
+        item.setPercentBaseItemId(validBaseItemId(estimateId, req));
+        // Re-attaching a base is how the master undoes a detach; choosing one again means he wants
+        // the live link back, and leaving the flag set would silently keep the amount frozen.
+        item.setBaseDetached(item.getPercentBaseKind() == PercentBaseKind.POSITION
+                && item.getPercentBaseItemId() == null);
         item.setMeasurementRefs(r.refs());
         item.setQuantityManual(r.manual());
         if (req.sortOrder() != null) {
             item.setSortOrder(req.sortOrder());
         }
+        // The edited row is included explicitly for the same reason the added one is: the query
+        // need not see pending changes, and an update that answered with a stale amount would be
+        // contradicted by the very next read.
+        List<EstimateItem> items =
+                new ArrayList<>(itemRepository.findByEstimateIdOrderBySortOrderAscIdAsc(estimateId));
+        if (items.stream().noneMatch(i -> item.getId() != null && item.getId().equals(i.getId()))) {
+            items.add(item);
+        }
+        EstimateMath.recalculate(items);
         return EstimateItemResponse.from(item);
     }
 
@@ -685,7 +748,7 @@ public class EstimateService {
                 item.setSortOrder(position++);
             }
         }
-        return toResponse(estimate, itemRepository.findByEstimateIdOrderBySortOrderAscIdAsc(estimateId));
+        return recalculatedResponse(estimate);
     }
 
     @Transactional
@@ -718,7 +781,28 @@ public class EstimateService {
             return;
         }
         cascadeIntoDuplicates(estimateId, doomed.stream().map(EstimateItem::getId).toList());
+        detachPercentagesPointingAt(estimateId, doomed.stream().map(EstimateItem::getId).toList());
         itemRepository.deleteAll(doomed);
+        EstimateMath.recalculate(itemRepository.findByEstimateIdOrderBySortOrderAscIdAsc(estimateId));
+    }
+
+    /**
+     * A percentage line whose base is being deleted keeps its money and loses its link.
+     *
+     * <p>The FK is {@code ON DELETE SET NULL}, so the database would quietly leave a percentage
+     * pointing at nothing — and the next recalculation would have no base to measure against.
+     * Marking it detached here is what turns that into a statement: the last computed amount stays
+     * (the master is charging for this work; zeroing it would be data loss dressed up as tidiness),
+     * the recalculation leaves it alone, and the row can say «база видалена» so he picks a new one
+     * or types a sum.</p>
+     */
+    private void detachPercentagesPointingAt(UUID estimateId, List<UUID> deletedItemIds) {
+        Set<UUID> gone = new HashSet<>(deletedItemIds);
+        for (EstimateItem item : itemRepository.findByEstimateIdOrderBySortOrderAscIdAsc(estimateId)) {
+            if (item.getPercentBaseItemId() != null && gone.contains(item.getPercentBaseItemId())) {
+                item.setBaseDetached(true);
+            }
+        }
     }
 
     /**
@@ -784,17 +868,134 @@ public class EstimateService {
         return item;
     }
 
+    /**
+     * Recompute every line, persist the amounts, and answer with the result — the WRITE path.
+     *
+     * <p>Every mutating method ends here, and nothing else recalculates. That split is the guarantee
+     * the percentage feature needed: a read never rewrites anything, so a SIGNED estimate — which no
+     * mutating method will touch, {@code requireNotSigned} sees to that — cannot drift behind the
+     * client's back. The entities are managed, so the new {@code lineTotal}s are flushed by dirty
+     * checking; the client never sends that field and it is never read from a request.</p>
+     */
+    /**
+     * Save one line, recompute the estimate, and answer with that line.
+     *
+     * <p>The recalculation is not optional even for a single row: adding a line moves the subtotal,
+     * and every «% від усього кошторису» line is measured against it. Returning the row without it
+     * would hand the client a number the next read contradicts.</p>
+     */
+    /** Only a PERCENT line has a base; anything else records none, whatever the client sent. */
+    private static PercentBaseKind percentKindOf(EstimateItemRequest req) {
+        if (req.unit() != Unit.PERCENT) {
+            return null;
+        }
+        return req.percentBaseKind() == null ? PercentBaseKind.MANUAL : req.percentBaseKind();
+    }
+
+    /**
+     * The named base, but only if it is an ORDINARY line of THIS estimate.
+     *
+     * <p>This is the entire cycle protection the feature has, and it is enough: a percentage may
+     * never point at a percentage, so no chain of them can close on itself. There is no graph to
+     * walk and no cycle detection to get wrong. A base that fails the check is dropped to null
+     * rather than rejected — the client filters the picker the same way, so a value arriving here
+     * means a stale screen, not an argument worth a 400.</p>
+     */
+    private UUID validBaseItemId(UUID estimateId, EstimateItemRequest req) {
+        if (percentKindOf(req) != PercentBaseKind.POSITION || req.percentBaseItemId() == null) {
+            return null;
+        }
+        return itemRepository.findById(req.percentBaseItemId())
+                .filter(base -> base.getEstimate().getId().equals(estimateId))
+                .filter(base -> base.getUnit() != Unit.PERCENT)
+                .map(EstimateItem::getId)
+                .orElse(null);
+    }
+
+    /**
+     * The percent a duplicated «%» line should carry, so the markup lands EXACTLY ONCE.
+     *
+     * <p>Multiplying the amount is not an option — a percentage has no price to raise — and leaving
+     * it alone is a hole in the whole two-price mechanic. Worked example: шафа 5 000 (material),
+     * монтаж «20 % від шафи» = 1 000 (work), markup +30 %. Materials are not marked up, so the base
+     * stays 5 000; if the percent also stays 20 %, the copy still charges 1 000 and the work the
+     * foreman meant to sell dearer sells at cost. The more percentage work an estimate holds, the
+     * less of the duplicate mechanic survives.</p>
+     *
+     * <p>So the rule is about where the markup already landed:</p>
+     * <ul>
+     *   <li><b>base is a MATERIAL</b> (not marked up) → raise the percent: 20 % × 1,3 = 26 %,
+     *       giving 1 300 against the parent's 1 000;</li>
+     *   <li><b>base is a WORK that is being marked up</b> → leave the percent; it already applies
+     *       to a base that grew, and raising both would mark the line up twice;</li>
+     *   <li><b>MANUAL base</b> → a sum typed by hand is not marked up, so treat it like a material
+     *       and raise the percent;</li>
+     *   <li><b>TOTAL base</b> → the subtotal already contains the marked-up works, so leave it.</li>
+     * </ul>
+     */
+    private static BigDecimal markedUpPercent(EstimateItem item,
+                                              Map<UUID, EstimateItem> sourceById,
+                                              Set<UUID> toMarkUp,
+                                              BigDecimal factor) {
+        PercentBaseKind kind = item.getPercentBaseKind() == null
+                ? PercentBaseKind.MANUAL : item.getPercentBaseKind();
+        boolean baseAlreadyMarkedUp = switch (kind) {
+            case TOTAL -> true;
+            case MANUAL -> false;
+            case POSITION -> {
+                EstimateItem base = item.getPercentBaseItemId() == null
+                        ? null : sourceById.get(item.getPercentBaseItemId());
+                yield base != null && toMarkUp.contains(base.getId());
+            }
+        };
+        return baseAlreadyMarkedUp
+                ? item.getQuantity()
+                : item.getQuantity().multiply(factor).setScale(QUANTITY_SCALE, MONEY_ROUNDING);
+    }
+
+    private EstimateItemResponse savedItemResponse(Estimate estimate, EstimateItem item) {
+        // Recalculate BEFORE saving. The other order looked equivalent and was not: the INSERT then
+        // carried line_total = NULL, which the NOT NULL column rejects outright — a percentage line
+        // could not be added at all. It also has to be this way round for the answer to be right,
+        // since adding a line moves the subtotal every «% від усього кошторису» is measured against.
+        //
+        // The new row is added to the list explicitly rather than trusted to come back from the
+        // query: save() need not flush, so the SELECT can legitimately not see it yet.
+        List<EstimateItem> items =
+                new ArrayList<>(itemRepository.findByEstimateIdOrderBySortOrderAscIdAsc(estimate.getId()));
+        if (items.stream().noneMatch(i -> item.getId() != null && item.getId().equals(i.getId()))) {
+            items.add(item);
+        }
+        EstimateMath.recalculate(items);
+        return EstimateItemResponse.from(itemRepository.save(item));
+    }
+
+    EstimateResponse recalculatedResponse(Estimate estimate) {
+        List<EstimateItem> items =
+                itemRepository.findByEstimateIdOrderBySortOrderAscIdAsc(estimate.getId());
+        EstimateMath.recalculate(items);
+        return toResponse(estimate, items);
+    }
+
+    /**
+     * The READ path: sums what is stored, and computes nothing.
+     *
+     * <p>Line amounts are written by {@link #recalculatedResponse}. A percentage of the subtotal
+     * cannot be derived per row anyway — the row depends on the total and the total on the row —
+     * which is exactly why {@code line_total} is a column (V88).</p>
+     */
     EstimateResponse toResponse(Estimate estimate, List<EstimateItem> items) {
         List<EstimateItemResponse> itemDtos = items.stream()
                 .map(EstimateItemResponse::from)
                 .toList();
-        // Round per line first, then sum — keeps the user-visible math
-        // consistent: line totals add up to subtotals, subtotals add up to total.
+        // Amounts are already rounded per line, so subtotals add up to the total exactly — the
+        // arithmetic a master can check by hand.
         BigDecimal worksSubtotal = BigDecimal.ZERO.setScale(MONEY_SCALE, MONEY_ROUNDING);
         BigDecimal materialsSubtotal = BigDecimal.ZERO.setScale(MONEY_SCALE, MONEY_ROUNDING);
         for (EstimateItem item : items) {
-            BigDecimal lineTotal = item.getQuantity().multiply(item.getUnitPrice())
-                    .setScale(MONEY_SCALE, MONEY_ROUNDING);
+            BigDecimal lineTotal = item.getLineTotal() == null
+                    ? BigDecimal.ZERO.setScale(MONEY_SCALE, MONEY_ROUNDING)
+                    : item.getLineTotal();
             if (item.getType() == ItemType.WORK) {
                 worksSubtotal = worksSubtotal.add(lineTotal);
             } else {

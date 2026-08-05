@@ -389,6 +389,9 @@ class PublicEstimateServiceTest {
                 .unit(Unit.M2)
                 .quantity(new BigDecimal("25.500"))
                 .unitPrice(new BigDecimal("180.00"))
+                // The stored amount (V88): the portal reads it and computes nothing, because a read
+                // must never rewrite what a client has already signed.
+                .lineTotal(new BigDecimal("4590.00"))
                 .sortOrder(0)
                 .build();
     }
@@ -402,6 +405,7 @@ class PublicEstimateServiceTest {
                 .unit(Unit.KG)
                 .quantity(new BigDecimal("120.000"))
                 .unitPrice(new BigDecimal("18.50"))
+                .lineTotal(new BigDecimal("2220.00"))
                 .sortOrder(1)
                 .build();
     }

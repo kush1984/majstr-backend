@@ -10,9 +10,11 @@ import com.majstr.backend.entity.Estimate;
 import com.majstr.backend.entity.EstimateItem;
 import com.majstr.backend.entity.EstimateTemplate;
 import com.majstr.backend.entity.EstimateTemplateItem;
+import com.majstr.backend.entity.PercentBaseKind;
 import com.majstr.backend.entity.Project;
 import com.majstr.backend.entity.TemplateTradeOverride;
 import com.majstr.backend.entity.Trade;
+import com.majstr.backend.entity.Unit;
 import com.majstr.backend.entity.User;
 import com.majstr.backend.exception.ResourceNotFoundException;
 import com.majstr.backend.feature.LimitService;
@@ -285,9 +287,15 @@ public class EstimateTemplateService {
         Project project = projectService.loadOwned(projectId, ownerId);
         limitService.requireCanAddEstimate(ownerId, projectId);
 
-        // Master's catalog by lowercased name → price/type/unit at apply-time.
+        // Master's catalog by NORMALISED name → price/type/unit at apply-time.
+        //
+        // One key function for all three uses below (map, dedup, lookup). They used to disagree —
+        // the map and the lookup lowercased without trimming while the dedup trimmed — so a name
+        // differing by one space matched nothing and the line arrived priced at ZERO, silently.
+        // Nothing is broken today (all 167 tiling names align on both sides), but a bundle line and
+        // a catalog position are joined BY NAME and nothing enforces that they stay identical.
         Map<String, CatalogItem> catalog = catalogRepository.findByOwnerIdOrderByNameAsc(ownerId).stream()
-                .collect(Collectors.toMap(c -> c.getName().toLowerCase(), c -> c, (a, b) -> a));
+                .collect(Collectors.toMap(c -> nameKey(c.getName()), c -> c, (a, b) -> a));
 
         Estimate estimate = estimateRepository.save(Estimate.builder()
                 .project(project)
@@ -301,18 +309,26 @@ public class EstimateTemplateService {
         for (EstimateTemplate template : templates) {
             for (EstimateTemplateItem ti : templateItemRepository
                     .findByTemplateIdOrderBySortOrderAscIdAsc(template.getId())) {
-                if (!seen.add(ti.getName().trim().toLowerCase())) {
+                if (!seen.add(nameKey(ti.getName()))) {
                     continue; // already contributed by an earlier template
                 }
-                CatalogItem match = catalog.get(ti.getName().toLowerCase());
+                CatalogItem match = catalog.get(nameKey(ti.getName()));
+                Unit unit = match != null ? match.getUnit() : ti.getUnit();
+                BigDecimal catalogPrice = match != null ? match.getDefaultPrice() : BigDecimal.ZERO;
+                // A PERCENT position's catalog "price" IS the percent — see percentQuantity.
+                boolean percent = unit == Unit.PERCENT;
                 toSave.add(EstimateItem.builder()
                         .estimate(estimate)
                         .type(match != null ? match.getType() : ti.getType())
                         .name(ti.getName())
                         .category(match != null ? match.getCategory() : null)
-                        .unit(match != null ? match.getUnit() : ti.getUnit())
-                        .quantity(BigDecimal.ZERO) // empty — master fills per object
-                        .unitPrice(match != null ? match.getDefaultPrice() : BigDecimal.ZERO)
+                        .unit(unit)
+                        // Ordinary line: empty, the master fills it per object. PERCENT line: the
+                        // percent comes from the catalog, because a template carries NO price at
+                        // all — leaving it zero would deliver «0 % від …», which is not a надбавка.
+                        .quantity(percent ? catalogPrice : BigDecimal.ZERO)
+                        .unitPrice(percent ? BigDecimal.ZERO : catalogPrice)
+                        .percentBaseKind(percent ? PercentBaseKind.POSITION : null)
                         // Renumbered across the whole result: each template starts its own
                         // sortOrder at 0, so keeping them would interleave the bundles.
                         .sortOrder(toSave.size())
@@ -366,4 +382,23 @@ public class EstimateTemplateService {
     private static String normalize(String s) {
         return s == null || s.isBlank() ? null : s.trim();
     }
+/**
+     * The one key a bundle line and a catalog position are matched on.
+     *
+     * <p>They are joined BY NAME and nothing enforces that the two spellings stay identical, so a
+     * name differing by a single space matched nothing — and the line arrived priced at ZERO, with
+     * no error anywhere. Three call sites used to disagree about this key: the map and the lookup
+     * lowercased without trimming while the dedup trimmed. Collapsing runs of whitespace and the
+     * stray space after an opening bracket («( плюс % до м.кв.») makes the join survive the
+     * untidiness real seed data has. V88 normalises the stored names too; this is the belt to that
+     * migration's braces.</p>
+     */
+    static String nameKey(String name) {
+        if (name == null) {
+            return "";
+        }
+        return name.replaceAll("\\s+", " ").replace("( ", "(").replace(" )", ")")
+                .trim().toLowerCase();
+    }
 }
+

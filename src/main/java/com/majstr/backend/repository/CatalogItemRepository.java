@@ -4,10 +4,12 @@ import com.majstr.backend.entity.CatalogItem;
 import com.majstr.backend.entity.ItemType;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
+import java.util.Collection;
 import java.util.List;
 import java.util.UUID;
 
@@ -71,6 +73,24 @@ public interface CatalogItemRepository extends JpaRepository<CatalogItem, UUID> 
 
     /** Catalog size for one owner — admin user detail ("did they fill their catalog?"). */
     long countByOwnerId(UUID ownerId);
+
+    /**
+     * Where a new position goes: one past the end of this owner's catalog.
+     *
+     * <p>{@code COALESCE(MAX + 1, 0)} rather than a count, because a count is wrong the moment
+     * anything has been deleted — two positions would claim the same slot and the list order would
+     * depend on the id tie-break rather than on the master.</p>
+     */
+    @Query("SELECT COALESCE(MAX(c.sortOrder) + 1, 0) FROM CatalogItem c WHERE c.owner.id = :ownerId")
+    int nextSortOrder(UUID ownerId);
+
+    /** The owner's whole catalog in HIS order — what the reorder and bulk-delete paths work over. */
+    List<CatalogItem> findByOwnerIdOrderBySortOrderAscIdAsc(UUID ownerId);
+
+    /** Bulk delete, scoped to the owner: an id belonging to someone else simply matches nothing. */
+    @Modifying
+    @Query("DELETE FROM CatalogItem c WHERE c.owner.id = :ownerId AND c.id IN :ids")
+    int deleteByOwnerIdAndIdIn(UUID ownerId, Collection<UUID> ids);
 
     /** Distinct, non-empty categories for a contractor — feeds the category picker. */
     @Query("""

@@ -16,6 +16,8 @@ import com.majstr.backend.entity.Client;
 import com.majstr.backend.entity.Estimate;
 import com.majstr.backend.entity.EstimateItem;
 import com.majstr.backend.entity.ItemType;
+import com.majstr.backend.entity.Unit;
+import com.majstr.backend.entity.PercentBaseKind;
 import com.majstr.backend.entity.Project;
 import com.majstr.backend.entity.User;
 import com.majstr.backend.feature.Feature;
@@ -36,6 +38,7 @@ import java.util.List;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.UUID;
 import java.util.Locale;
 import java.util.Optional;
 
@@ -162,6 +165,12 @@ public class EstimatePdfService {
         addColumnHeader(table, "Ціна");
         addColumnHeader(table, "Сума");
 
+        // Every line by id, so a percentage row can name the line it is measured against.
+        Map<UUID, EstimateItem> byId = new LinkedHashMap<>();
+        for (EstimateItem item : items) {
+            byId.put(item.getId(), item);
+        }
+
         Map<String, List<EstimateItem>> sections = new LinkedHashMap<>();
         for (EstimateItem item : items) {
             String category = item.getCategory() == null ? "" : item.getCategory().trim();
@@ -175,13 +184,15 @@ public class EstimatePdfService {
             }
             BigDecimal sectionTotal = BigDecimal.ZERO;
             for (EstimateItem item : section.getValue()) {
-                BigDecimal lineTotal = item.getQuantity().multiply(item.getUnitPrice())
-                        .setScale(MONEY_SCALE, MONEY_ROUNDING);
+                BigDecimal lineTotal = amountOf(item);
                 sectionTotal = sectionTotal.add(lineTotal);
                 table.addCell(textCell(item.getName(), Element.ALIGN_LEFT));
                 table.addCell(textCell(UnitLabel.ua(item.getUnit()), Element.ALIGN_CENTER));
                 table.addCell(textCell(formatQuantity(item.getQuantity()), Element.ALIGN_RIGHT));
-                table.addCell(textCell(formatMoney(item.getUnitPrice()), Element.ALIGN_RIGHT));
+                // A percentage has no price per unit. «500 ₴/%» meant nothing to the client and
+                // «0,00» would read as free work, so the cell says what the percentage is OF —
+                // the same wording the app and the portal show, so the three cannot disagree.
+                table.addCell(textCell(priceCell(item, byId), Element.ALIGN_RIGHT));
                 table.addCell(textCell(formatMoney(lineTotal), Element.ALIGN_RIGHT));
             }
             if (sectioned) {
@@ -348,12 +359,42 @@ public class EstimatePdfService {
                 : String.format(UA, "%,." + stripped.scale() + "f", stripped);
     }
 
+    /**
+     * The line's money — the amount the server stored (V88), never recomputed here.
+     *
+     * <p>The PDF is the document a client is quoted from. Re-deriving the arithmetic in a second
+     * place is how a printed sheet ends up disagreeing with the screen it was printed from, and a
+     * percentage of the estimate's own subtotal cannot be derived per row at all.</p>
+     */
+    private static BigDecimal amountOf(EstimateItem item) {
+        return item.getLineTotal() == null
+                ? BigDecimal.ZERO.setScale(MONEY_SCALE, MONEY_ROUNDING)
+                : item.getLineTotal();
+    }
+
+    /** What goes in the price column: a price, or — for «%» — what the percentage is measured OF. */
+    private String priceCell(EstimateItem item, Map<UUID, EstimateItem> byId) {
+        if (item.getUnit() != Unit.PERCENT) {
+            return formatMoney(item.getUnitPrice());
+        }
+        PercentBaseKind kind = item.getPercentBaseKind() == null
+                ? PercentBaseKind.MANUAL : item.getPercentBaseKind();
+        return switch (kind) {
+            case MANUAL -> "від " + formatMoney(item.getUnitPrice());
+            case TOTAL -> "від суми кошторису";
+            case POSITION -> {
+                EstimateItem base = item.getPercentBaseItemId() == null
+                        ? null : byId.get(item.getPercentBaseItemId());
+                yield base == null ? "база видалена" : "від «" + base.getName() + "»";
+            }
+        };
+    }
+
     private Totals computeTotals(List<EstimateItem> items) {
         BigDecimal works = BigDecimal.ZERO.setScale(MONEY_SCALE, MONEY_ROUNDING);
         BigDecimal materials = BigDecimal.ZERO.setScale(MONEY_SCALE, MONEY_ROUNDING);
         for (EstimateItem item : items) {
-            BigDecimal line = item.getQuantity().multiply(item.getUnitPrice())
-                    .setScale(MONEY_SCALE, MONEY_ROUNDING);
+            BigDecimal line = amountOf(item);
             if (item.getType() == ItemType.WORK) {
                 works = works.add(line);
             } else {

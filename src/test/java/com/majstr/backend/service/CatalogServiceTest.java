@@ -2,6 +2,7 @@ package com.majstr.backend.service;
 
 import com.majstr.backend.dto.CatalogItemRequest;
 import com.majstr.backend.dto.CatalogItemResponse;
+import com.majstr.backend.dto.CatalogItemsOrderRequest;
 import com.majstr.backend.entity.CatalogItem;
 import com.majstr.backend.entity.ItemType;
 import com.majstr.backend.entity.Trade;
@@ -154,19 +155,29 @@ class CatalogServiceTest {
     }
 
     @Test
-    void listForOwner_groupsByCategoryThenName_withUncategorizedLast() {
+    void listForOwner_returnsTheMastersOwnArrangement_notAlphabeticalOrder() {
+        // This test USED to assert category-then-name, and that contract was deliberately replaced
+        // in V87. Alphabetical is still the DEFAULT — the migration backfilled exactly that into
+        // sort_order, so nothing moved for anyone — but it stops being the truth the moment the
+        // master drags something, and a list that re-sorts itself alphabetically afterwards would
+        // simply throw his arrangement away on every read.
         given(catalogRepository.findByOwnerIdOrderByNameAsc(ownerId)).willReturn(List.of(
-                item("Плитка", "Клей"),
-                item(null, "Розетка"),
-                item("Електрика", "Кабель"),
-                item("Електрика", "Автомат")
+                ordered("Клей", "Плитка", 3),
+                ordered("Розетка", null, 0),
+                ordered("Кабель", "Електрика", 2),
+                ordered("Автомат", "Електрика", 1)
         ));
 
         List<CatalogItemResponse> list = catalogService.listForOwner(ownerId, null);
 
-        // Електрика (Автомат, Кабель) -> Плитка (Клей) -> "Без категорії" (Розетка)
         assertThat(list).extracting(CatalogItemResponse::name)
-                .containsExactly("Автомат", "Кабель", "Клей", "Розетка");
+                .containsExactly("Розетка", "Автомат", "Кабель", "Клей");
+    }
+
+    private CatalogItem ordered(String name, String category, int sortOrder) {
+        CatalogItem i = item(category, name);
+        i.setSortOrder(sortOrder);
+        return i;
     }
 
     @Test
@@ -281,5 +292,77 @@ class CatalogServiceTest {
                 .unit(Unit.M)
                 .defaultPrice(new BigDecimal("1.00"))
                 .build();
+    }
+
+    // ---- the master's own arrangement (V87) -------------------------------------------------
+
+    private CatalogItem owned(String name, String category, int sortOrder) {
+        CatalogItem i = item(category, name);
+        i.setOwner(User.builder().id(ownerId).build());
+        i.setSortOrder(sortOrder);
+        return i;
+    }
+
+    @Test
+    void reorderRenumbersFromZeroAndCarriesTheCategoryWithEachPosition() {
+        CatalogItem a = owned("Ґрунтівка", "Підготовка", 0);
+        CatalogItem b = owned("Плитка", "Укладання", 1);
+        given(catalogRepository.findByOwnerIdOrderBySortOrderAscIdAsc(ownerId))
+                .willReturn(List.of(a, b));
+
+        catalogService.reorderItems(new CatalogItemsOrderRequest(List.of(
+                new CatalogItemsOrderRequest.Line(b.getId(), "Укладання"),
+                new CatalogItemsOrderRequest.Line(a.getId(), "Укладання"))), ownerId);
+
+        assertThat(b.getSortOrder()).isZero();
+        assertThat(a.getSortOrder()).isEqualTo(1);
+        // Dragging INTO another group is the same operation — the position is re-filed, not just moved.
+        assertThat(a.getCategory()).isEqualTo("Укладання");
+    }
+
+    @Test
+    void aPositionTheRequestNeverMentionedKeepsItsPlaceAfterTheRest() {
+        // The client can legitimately send a subset: a stale list, or a position created on another
+        // device since. Dropping those would silently delete them from the order.
+        CatalogItem listed = owned("Плитка", "Укладання", 0);
+        CatalogItem unknownToTheClient = owned("Нова з іншого пристрою", "Укладання", 1);
+        given(catalogRepository.findByOwnerIdOrderBySortOrderAscIdAsc(ownerId))
+                .willReturn(List.of(listed, unknownToTheClient));
+
+        catalogService.reorderItems(new CatalogItemsOrderRequest(List.of(
+                new CatalogItemsOrderRequest.Line(listed.getId(), "Укладання"))), ownerId);
+
+        assertThat(listed.getSortOrder()).isZero();
+        assertThat(unknownToTheClient.getSortOrder()).isEqualTo(1);
+    }
+
+    @Test
+    void anIdListedTwiceOrAlreadyGoneIsSkippedRatherThanCollidingOnASlot() {
+        CatalogItem a = owned("Ґрунтівка", "Підготовка", 0);
+        given(catalogRepository.findByOwnerIdOrderBySortOrderAscIdAsc(ownerId))
+                .willReturn(List.of(a));
+
+        catalogService.reorderItems(new CatalogItemsOrderRequest(List.of(
+                new CatalogItemsOrderRequest.Line(a.getId(), "Підготовка"),
+                new CatalogItemsOrderRequest.Line(a.getId(), "Підготовка"),
+                new CatalogItemsOrderRequest.Line(UUID.randomUUID(), "Зникла"))), ownerId);
+
+        assertThat(a.getSortOrder()).isZero();
+    }
+
+    @Test
+    void bulkDeleteIsScopedToTheOwnerAndReportsWhatActuallyWent() {
+        List<UUID> ids = List.of(UUID.randomUUID(), UUID.randomUUID());
+        // One of the two was already gone (another device, or a replayed offline delete).
+        given(catalogRepository.deleteByOwnerIdAndIdIn(ownerId, ids)).willReturn(1);
+
+        assertThat(catalogService.deleteItems(ids, ownerId)).isEqualTo(1);
+    }
+
+    @Test
+    void bulkDeleteOfNothingTouchesTheDatabaseAtAll() {
+        // `IN ()` is not valid SQL, and an empty tick-list is a normal thing for a screen to send.
+        assertThat(catalogService.deleteItems(List.of(), ownerId)).isZero();
+        verify(catalogRepository, never()).deleteByOwnerIdAndIdIn(any(), any());
     }
 }

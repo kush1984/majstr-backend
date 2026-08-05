@@ -56,8 +56,49 @@ public class EstimateItem {
     @Column(name = "quantity", nullable = false, precision = 15, scale = 3)
     private BigDecimal quantity;
 
+    /**
+     * Price per unit — and, for a {@code PERCENT} line whose base is {@link PercentBaseKind#MANUAL},
+     * the base sum itself («10 % від 500 ₴»). No new money column: the two readings never coexist
+     * on one row.
+     */
     @Column(name = "unit_price", nullable = false, precision = 15, scale = 2)
     private BigDecimal unitPrice;
+
+    /**
+     * The computed amount of this line, in hryvnia (V88). <b>Written by the server on every write,
+     * never accepted from a request.</b>
+     *
+     * <p>Stored rather than derived because a percentage OF THE SUBTOTAL cannot be expressed as one
+     * SQL aggregate — the row depends on the total and the total on the row — and six native
+     * queries (dashboard, object economy, project cards) do exactly one aggregate each. See
+     * {@code EstimateMath} for the three-step pass that fills it.</p>
+     */
+    @Column(name = "line_total", nullable = false, precision = 15, scale = 2)
+    private BigDecimal lineTotal;
+
+    /** For {@code unit = PERCENT}: what this is a percentage OF. Null on every other row. */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "percent_base_kind", length = 20)
+    private PercentBaseKind percentBaseKind;
+
+    /**
+     * The line this percentage is measured against ({@link PercentBaseKind#POSITION}).
+     *
+     * <p>A plain id rather than an association: the FK is {@code ON DELETE SET NULL}, and the row
+     * survives its base on purpose — deleting «Шафа» must not delete «Доставка 10 %» along with it.
+     * The master keeps the last computed amount and is told the base is gone.</p>
+     */
+    @Column(name = "percent_base_item_id")
+    private UUID percentBaseItemId;
+
+    /**
+     * The live link is off: either the master typed the amount himself, or the base was deleted.
+     *
+     * <p>Manual wins over automatic — the same rule {@code quantityManual} follows in measurements.
+     * A detached line keeps whatever it last computed and is never recalculated.</p>
+     */
+    @Column(name = "base_detached", nullable = false)
+    private boolean baseDetached;
 
     /**
      * What this line cost in the estimate it was duplicated FROM — the foreman's own cost.
@@ -104,6 +145,14 @@ public class EstimateItem {
     void onCreate() {
         if (id == null) {
             id = UUID.randomUUID();
+        }
+        // line_total is NOT NULL, and Hibernate writes the column explicitly — so the DEFAULT 0 in
+        // the migration never applies and a row built before EstimateMath has run would be rejected
+        // by the database. Every bulk path (import, duplicate, consolidate, template apply) saves
+        // first and recalculates after, which is exactly that case. Zero here is a placeholder the
+        // recalculation immediately overwrites, never a number anyone sees.
+        if (lineTotal == null) {
+            lineTotal = BigDecimal.ZERO;
         }
     }
 }
