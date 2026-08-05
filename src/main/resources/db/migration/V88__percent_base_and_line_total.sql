@@ -78,16 +78,45 @@ CREATE INDEX IF NOT EXISTS idx_estimate_items_estimate_line_total
 UPDATE catalog_templates SET name = btrim(regexp_replace(regexp_replace(name, '\s+', ' ', 'g'), '\(\s+', '(', 'g'))
 WHERE name <> btrim(regexp_replace(regexp_replace(name, '\s+', ' ', 'g'), '\(\s+', '(', 'g'));
 
-UPDATE catalog_items SET name = btrim(regexp_replace(regexp_replace(name, '\s+', ' ', 'g'), '\(\s+', '(', 'g'))
-WHERE name <> btrim(regexp_replace(regexp_replace(name, '\s+', ' ', 'g'), '\(\s+', '(', 'g'));
+-- COLLISION-SAFE, because catalog_items is a MASTER'S OWN data, not our curated seed. The unique
+-- index ux_catalog_items_owner_name_type_unit keys on lower(TRIM(name)) — TRIM strips only the ENDS,
+-- it does not collapse internal runs — so a master can legitimately hold «Монтаж  решітки» (double
+-- space) beside the normal «Монтаж решітки»: two distinct keys today. Collapsing every row blindly
+-- merges those two keys and violates the index (seen in production). So a row is normalised only when
+-- nothing else would land on the same (owner, key, type, unit): if a canonical sibling already
+-- exists the whole group is left alone, and within a group that would collapse together only the
+-- lowest-id row is normalised. The rest keep their (cosmetic) extra space and their distinct key.
+WITH normalized AS (
+    SELECT id, owner_id, type, unit,
+           name AS old_name,
+           btrim(regexp_replace(regexp_replace(name, '\s+', ' ', 'g'), '\(\s+', '(', 'g')) AS new_name
+    FROM catalog_items
+),
+winners AS (
+    SELECT DISTINCT ON (owner_id, lower(new_name), type, unit) id
+    FROM normalized n
+    WHERE old_name <> new_name
+      AND NOT EXISTS (
+          SELECT 1 FROM normalized c
+          WHERE c.owner_id = n.owner_id AND c.type = n.type AND c.unit = n.unit
+            AND lower(c.new_name) = lower(n.new_name)
+            AND c.old_name = c.new_name  -- a sibling is ALREADY canonical → skip the whole group
+      )
+    ORDER BY owner_id, lower(new_name), type, unit, id
+)
+UPDATE catalog_items ci
+SET name = btrim(regexp_replace(regexp_replace(ci.name, '\s+', ' ', 'g'), '\(\s+', '(', 'g'))
+FROM winners w
+WHERE ci.id = w.id;
 
 UPDATE estimate_template_items SET name = btrim(regexp_replace(regexp_replace(name, '\s+', ' ', 'g'), '\(\s+', '(', 'g'))
 WHERE name <> btrim(regexp_replace(regexp_replace(name, '\s+', ' ', 'g'), '\(\s+', '(', 'g'));
 
--- ⚠️ catalog_items is normalised for EVERY row, including a master's own — unlike the semantic
--- rename below, which touches only rows we gave him. Collapsing a double space is not a change of
--- meaning, and leaving his side un-normalised while both of ours move is exactly how the link
--- breaks for him alone.
+-- ⚠️ catalog_items is normalised on the master's OWN rows too (not only the ones we gave him),
+-- because leaving his side un-normalised while both of ours move is how the bundle→catalog name link
+-- breaks for him alone. The one exception is the collision guard above: a row whose normalised name
+-- would duplicate an existing key keeps its spacing — a broken link on one stray position is a lesser
+-- harm than a failed migration, and it only ever affects a name the master typed twice himself.
 
 -- ============ THEN: the two names that still say «коефіцієнт» ==================
 CREATE TEMP TABLE percent_renames (old_name TEXT, new_name TEXT) ON COMMIT DROP;
