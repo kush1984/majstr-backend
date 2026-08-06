@@ -8,6 +8,7 @@ import com.majstr.backend.dto.EstimateItemRequest;
 import com.majstr.backend.dto.EstimateItemsOrderRequest;
 import com.majstr.backend.dto.EstimateResponse;
 import com.majstr.backend.dto.EstimateUpdateRequest;
+import com.majstr.backend.dto.EstimateItemResponse;
 import com.majstr.backend.entity.CatalogItem;
 import com.majstr.backend.entity.Estimate;
 import com.majstr.backend.exception.EstimateSignedException;
@@ -15,8 +16,12 @@ import com.majstr.backend.exception.InvalidEstimateStatusException;
 import com.majstr.backend.entity.EstimateItem;
 import com.majstr.backend.entity.EstimateStatus;
 import com.majstr.backend.entity.ItemType;
+import com.majstr.backend.entity.PercentBaseKind;
+import com.majstr.backend.entity.PhotoSource;
+import com.majstr.backend.entity.PhotoVisibility;
 import com.majstr.backend.entity.Plan;
 import com.majstr.backend.entity.Project;
+import com.majstr.backend.entity.ProjectPhoto;
 import com.majstr.backend.entity.Unit;
 import com.majstr.backend.entity.User;
 import com.majstr.backend.exception.LimitExceededException;
@@ -25,7 +30,9 @@ import com.majstr.backend.feature.LimitService;
 import com.majstr.backend.service.measurement.MeasurementService;
 import com.majstr.backend.repository.EstimateItemRepository;
 import com.majstr.backend.repository.EstimateRepository;
+import com.majstr.backend.repository.ProjectPhotoRepository;
 import com.majstr.backend.repository.ProjectRepository;
+import com.majstr.backend.storage.StorageService;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
@@ -34,6 +41,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.security.access.AccessDeniedException;
 
+import java.io.ByteArrayInputStream;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -62,6 +70,9 @@ class EstimateServiceTest {
     @Mock private CatalogService catalogService;
     @Mock private LimitService limitService;
     @Mock private MeasurementService measurementService;
+    @Mock private EstimatePdfService pdfService;
+    @Mock private ProjectPhotoRepository photoRepository;
+    @Mock private StorageService storage;
 
     @InjectMocks private EstimateService estimateService;
 
@@ -138,6 +149,38 @@ class EstimateServiceTest {
 
         assertThatThrownBy(() -> estimateService.renderPdf(estimateId, ownerId))
                 .isInstanceOf(com.majstr.backend.exception.EmailNotVerifiedException.class);
+    }
+
+    @Test
+    void renderPdf_embedsOnlyPhotosOfThisEstimatesProject() throws Exception {
+        Estimate estimate = ownedEstimate(ownerId);
+        estimate.getProject().getOwner().setEmailVerified(true);
+        given(estimateRepository.findById(estimateId)).willReturn(Optional.of(estimate));
+        given(itemRepository.findByEstimateIdOrderBySortOrderAscIdAsc(estimateId)).willReturn(List.of());
+
+        UUID ownId = UUID.randomUUID();
+        UUID foreignId = UUID.randomUUID();
+        ProjectPhoto own = ProjectPhoto.builder()
+                .id(ownId).projectId(projectId).storageKey("photos/a.jpg")
+                .source(PhotoSource.RECEIPT).visibility(PhotoVisibility.PRIVATE).estimateId(estimateId)
+                .build();
+        // Only a photo of THIS estimate's project resolves; a foreign id returns empty.
+        given(photoRepository.findByIdAndProjectId(ownId, projectId)).willReturn(Optional.of(own));
+        given(photoRepository.findByIdAndProjectId(foreignId, projectId)).willReturn(Optional.empty());
+        given(storage.open("photos/a.jpg"))
+                .willReturn(Optional.of(new ByteArrayInputStream(new byte[]{9, 9, 9})));
+
+        ArgumentCaptor<EstimatePdfService.PdfModel> captor =
+                ArgumentCaptor.forClass(EstimatePdfService.PdfModel.class);
+        given(pdfService.render(captor.capture())).willReturn(new byte[]{1});
+
+        // Ask for a FOREIGN id AND an owned one — only the owned photo is embedded, so a crafted
+        // request can never pull another owner's photo into the PDF.
+        estimateService.renderPdf(estimateId, ownerId, List.of(foreignId, ownId));
+
+        List<byte[]> embedded = captor.getValue().receiptImages();
+        assertThat(embedded).hasSize(1);
+        assertThat(embedded.get(0)).containsExactly(9, 9, 9);
     }
 
     @Test
@@ -693,6 +736,76 @@ class EstimateServiceTest {
         // so its sources keep counting (no double-count).
         assertThat(savedConsolidated[0].isCountInEconomy()).isFalse(); // rollup excluded
         assertThat(source.isCountInEconomy()).isTrue();                // sources still count
+    }
+
+    @Test
+    void consolidate_recordsSourceLineageSoTheRollupCanOfferTheirReceipts() {
+        UUID srcA = UUID.randomUUID();
+        UUID srcB = UUID.randomUUID();
+        UUID consolidatedId = UUID.randomUUID();
+        given(projectService.loadOwned(projectId, ownerId)).willReturn(ownedProject(ownerId));
+        given(estimateRepository.save(any(Estimate.class))).willAnswer(inv -> {
+            Estimate e = inv.getArgument(0);
+            e.setId(consolidatedId);
+            e.setStatus(EstimateStatus.DRAFT);
+            e.setCreatedAt(Instant.now());
+            e.setUpdatedAt(Instant.now());
+            return e;
+        });
+        given(estimateRepository.findById(srcA)).willReturn(Optional.of(sourceEstimate(srcA, ownerId)));
+        given(estimateRepository.findById(srcB)).willReturn(Optional.of(sourceEstimate(srcB, ownerId)));
+        given(itemRepository.findByEstimateIdOrderBySortOrderAscIdAsc(srcA)).willReturn(List.of());
+        given(itemRepository.findByEstimateIdOrderBySortOrderAscIdAsc(srcB)).willReturn(List.of());
+        given(itemRepository.findByEstimateIdOrderBySortOrderAscIdAsc(consolidatedId)).willReturn(List.of());
+
+        EstimateResponse resp = estimateService.consolidate(projectId, "Зведений", List.of(srcA, srcB), ownerId);
+
+        // The rollup remembers its sources, so its PDF can later offer their receipts (which stay
+        // on the sources — the line items are copied by value, the receipts are not).
+        assertThat(resp.sourceEstimateIds()).containsExactlyInAnyOrder(srcA, srcB);
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void consolidate_freezesAPercentLineAtItsSourceAmountInsteadOfZeroing() {
+        // Regression: a naive copy dropped percent_base_kind, so a «−10 % від кошторису» discount
+        // landed as MANUAL-of-0 and recomputed to 0,00 ₴ — the discount silently vanished and the
+        // rollup total no longer matched the sum of its sources.
+        UUID src = UUID.randomUUID();
+        UUID consolidatedId = UUID.randomUUID();
+        given(projectService.loadOwned(projectId, ownerId)).willReturn(ownedProject(ownerId));
+        given(estimateRepository.save(any(Estimate.class))).willAnswer(inv -> {
+            Estimate e = inv.getArgument(0);
+            e.setId(consolidatedId);
+            e.setStatus(EstimateStatus.DRAFT);
+            e.setCreatedAt(Instant.now());
+            e.setUpdatedAt(Instant.now());
+            return e;
+        });
+        given(estimateRepository.findById(src)).willReturn(Optional.of(sourceEstimate(src, ownerId)));
+        EstimateItem work = item(ItemType.WORK, "Мурування", "1", "1000"); // 1000,00
+        EstimateItem discount = EstimateItem.builder()
+                .id(UUID.randomUUID()).type(ItemType.WORK).name("Знижка")
+                .unit(Unit.PERCENT).quantity(new BigDecimal("-10.000")).unitPrice(BigDecimal.ZERO)
+                .percentBaseKind(PercentBaseKind.TOTAL).lineTotal(new BigDecimal("-100.00")).sortOrder(1)
+                .build();
+        given(itemRepository.findByEstimateIdOrderBySortOrderAscIdAsc(src)).willReturn(List.of(work, discount));
+        List<EstimateItem>[] saved = new List[1];
+        given(itemRepository.saveAll(anyList())).willAnswer(inv -> {
+            saved[0] = inv.getArgument(0);
+            return saved[0];
+        });
+        given(itemRepository.findByEstimateIdOrderBySortOrderAscIdAsc(consolidatedId)).willAnswer(inv -> saved[0]);
+
+        EstimateResponse resp = estimateService.consolidate(projectId, "Зведений", List.of(src), ownerId);
+
+        // The discount survived the merge: 1000 − 100 = 900, not 1000.
+        assertThat(resp.total()).isEqualByComparingTo("900.00");
+        EstimateItemResponse frozen = resp.items().stream()
+                .filter(i -> i.unit() == Unit.PERCENT).findFirst().orElseThrow();
+        assertThat(frozen.lineTotal()).isEqualByComparingTo("-100.00"); // frozen at the source amount
+        // Reconstructed base for display: −100 × 100 / −10 = 1000 → reads «−10 % від 1000,00 ₴».
+        assertThat(frozen.unitPrice()).isEqualByComparingTo("1000.00");
     }
 
     @Test

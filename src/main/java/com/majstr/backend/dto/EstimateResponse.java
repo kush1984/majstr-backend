@@ -24,5 +24,8 @@ public record EstimateResponse(
         /** Deposit paid up front (завдаток); null = none. */
         BigDecimal depositAmount,
         /** total − deposit, clamped at 0 (залишок). Equals total when no deposit. */
-        BigDecimal balance
+        BigDecimal balance,
+        /** For a consolidated estimate: the ids of the estimates it was rolled up from (empty
+         *  otherwise). Lets the client offer those sources' receipts when building the PDF. */
+        List<UUID> sourceEstimateIds
 ) {}

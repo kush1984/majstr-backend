@@ -19,6 +19,7 @@ import com.majstr.backend.entity.EstimateStatus;
 import com.majstr.backend.entity.MeasurementRefs;
 import com.majstr.backend.entity.PercentBaseKind;
 import com.majstr.backend.entity.Project;
+import com.majstr.backend.entity.ProjectPhoto;
 import com.majstr.backend.entity.Unit;
 import com.majstr.backend.service.measurement.MeasurementService;
 import com.majstr.backend.exception.EmailNotVerifiedException;
@@ -28,7 +29,9 @@ import com.majstr.backend.exception.ResourceNotFoundException;
 import com.majstr.backend.feature.LimitService;
 import com.majstr.backend.repository.EstimateItemRepository;
 import com.majstr.backend.repository.EstimateRepository;
+import com.majstr.backend.repository.ProjectPhotoRepository;
 import com.majstr.backend.repository.ProjectRepository;
+import com.majstr.backend.storage.StorageService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.access.AccessDeniedException;
@@ -36,6 +39,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.io.IOException;
+import java.io.InputStream;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.Instant;
@@ -67,6 +71,8 @@ public class EstimateService {
     private final EstimatePdfService pdfService;
     private final LimitService limitService;
     private final MeasurementService measurementService;
+    private final ProjectPhotoRepository photoRepository;
+    private final StorageService storage;
 
     // ---- estimates ---------------------------------------------------------
 
@@ -313,27 +319,65 @@ public class EstimateService {
         // picker, a retried request) would otherwise copy its items twice and silently
         // inflate the rollup's total. Note this is NOT item-level dedup — merging equal
         // POSITIONS from different estimates stays deliberate plain concat.
-        for (UUID sourceId : new LinkedHashSet<>(estimateIds)) {
+        Set<UUID> sourceIds = new LinkedHashSet<>(estimateIds);
+        for (UUID sourceId : sourceIds) {
             Estimate source = loadOwned(sourceId, ownerId);
             if (!source.getProject().getId().equals(projectId)) {
                 throw new AccessDeniedException("Estimate does not belong to project " + projectId);
             }
             // Sources keep counting (the rollup above is the excluded one instead).
             for (EstimateItem item : itemRepository.findByEstimateIdOrderBySortOrderAscIdAsc(sourceId)) {
-                copies.add(EstimateItem.builder()
-                        .estimate(consolidated)
-                        .type(item.getType())
-                        .name(item.getName())
-                        .category(item.getCategory())
-                        .unit(item.getUnit())
-                        .quantity(item.getQuantity())
-                        .unitPrice(item.getUnitPrice())
-                        .sortOrder(sortOrder++)
-                        .build());
+                copies.add(copyForConsolidation(consolidated, item, sortOrder++));
             }
         }
         itemRepository.saveAll(copies);
+        // Remember the lineage: the sources keep their receipts, and this is how the rollup offers
+        // them for its PDF (all validated above, so store the whole set).
+        consolidated.setConsolidationSourceIds(sourceIds);
         return recalculatedResponse(consolidated);
+    }
+
+    /**
+     * One source line copied into a consolidated rollup.
+     *
+     * <p>An ordinary line is a plain by-value copy — {@code quantity × unitPrice} recomputes to the
+     * same amount. A <b>percentage</b> line cannot stay live: «% від позиції» points at a base line
+     * that is not in the rollup, and «% від кошторису» would re-measure the MERGED subtotal (a bigger
+     * number than the source's). So it is <b>frozen</b> at the exact amount it contributed in its
+     * source — {@code baseDetached} keeps that {@code lineTotal} through every recalculation — and
+     * presented as a percent of that source sum (MANUAL, {@code unitPrice} reconstructed from the
+     * amount) so it reads «−10 % від 5 000 ₴» rather than «база видалена». The frozen amount is exact;
+     * only the reconstructed base is display-rounded.</p>
+     */
+    private EstimateItem copyForConsolidation(Estimate consolidated, EstimateItem item, int sortOrder) {
+        EstimateItem.EstimateItemBuilder copy = EstimateItem.builder()
+                .estimate(consolidated)
+                .type(item.getType())
+                .name(item.getName())
+                .category(item.getCategory())
+                .unit(item.getUnit())
+                .quantity(item.getQuantity())
+                .unitPrice(item.getUnitPrice())
+                .sortOrder(sortOrder);
+        if (item.getUnit() == Unit.PERCENT) {
+            BigDecimal amount = item.getLineTotal() == null
+                    ? BigDecimal.ZERO.setScale(MONEY_SCALE, MONEY_ROUNDING)
+                    : item.getLineTotal();
+            copy.lineTotal(amount)
+                    .baseDetached(true)
+                    .percentBaseKind(PercentBaseKind.MANUAL)
+                    .unitPrice(reconstructPercentBase(amount, item.getQuantity()));
+        }
+        return copy.build();
+    }
+
+    /** The sum a frozen percentage was OF, from its amount and rate: {@code amount × 100 / percent}
+     *  (display only — the money is the stored {@code lineTotal}). Zero rate → zero, no divide. */
+    private static BigDecimal reconstructPercentBase(BigDecimal amount, BigDecimal percent) {
+        if (percent.signum() == 0) {
+            return BigDecimal.ZERO.setScale(MONEY_SCALE, MONEY_ROUNDING);
+        }
+        return amount.multiply(new BigDecimal("100")).divide(percent, MONEY_SCALE, MONEY_ROUNDING);
     }
 
     @Transactional(readOnly = true)
@@ -444,21 +488,39 @@ public class EstimateService {
 
     @Transactional(readOnly = true)
     public byte[] renderPdf(UUID estimateId, UUID ownerId) throws IOException, DocumentException {
+        return renderPdf(estimateId, ownerId, List.of());
+    }
+
+    /**
+     * Owner download, optionally with a chosen set of receipt photos appended as a «ЧЕКИ» section.
+     * Only receipts genuinely linked to THIS estimate are embedded — any other id is silently
+     * dropped, so a crafted request can never pull a foreign estimate's (or another owner's) photo
+     * into the PDF.
+     */
+    @Transactional(readOnly = true)
+    public byte[] renderPdf(UUID estimateId, UUID ownerId, List<UUID> receiptPhotoIds)
+            throws IOException, DocumentException {
         Estimate estimate = loadOwned(estimateId, ownerId);
         // The PDF is a client-facing deliverable — gate it behind a verified email
         // (even on FREE) so a throwaway account can't churn out finished estimates.
         if (!estimate.getProject().getOwner().isEmailVerified()) {
             throw new EmailNotVerifiedException("error.email-not-verified");
         }
-        return renderPdf(estimate);
+        return renderPdf(estimate, loadPdfImages(estimate, receiptPhotoIds));
     }
 
     /**
      * Used by both authenticated and public flows. Caller has already
-     * validated access (ownership or share-link token).
+     * validated access (ownership or share-link token). Never includes receipts — those are the
+     * master's private records and only ride the owner download.
      */
     @Transactional(readOnly = true)
     public byte[] renderPdf(Estimate estimate) throws IOException, DocumentException {
+        return renderPdf(estimate, List.of());
+    }
+
+    private byte[] renderPdf(Estimate estimate, List<byte[]> receiptImages)
+            throws IOException, DocumentException {
         Project project = estimate.getProject();
         List<EstimateItem> items = itemRepository.findByEstimateIdOrderBySortOrderAscIdAsc(estimate.getId());
         return pdfService.render(new EstimatePdfService.PdfModel(
@@ -466,8 +528,35 @@ public class EstimateService {
                 project,
                 project.getClient(),
                 estimate,
-                items
+                items,
+                receiptImages
         ));
+    }
+
+    /**
+     * Bytes of the requested photos, in the caller's order, dropping any id that is not a photo of
+     * THIS estimate's project (the ownership guarantee — a crafted id can't pull another owner's
+     * photo) or whose file is missing. Accepts both receipts and plain progress photos: a master
+     * sometimes saves a receipt as an ordinary photo, and may attach it to the PDF from there.
+     */
+    private List<byte[]> loadPdfImages(Estimate estimate, List<UUID> photoIds) throws IOException {
+        if (photoIds == null || photoIds.isEmpty()) {
+            return List.of();
+        }
+        UUID projectId = estimate.getProject().getId();
+        List<byte[]> images = new ArrayList<>();
+        for (UUID id : photoIds) {
+            ProjectPhoto photo = photoRepository.findByIdAndProjectId(id, projectId).orElse(null);
+            if (photo == null) {
+                continue; // not a photo of this estimate's project — never embed a foreign photo
+            }
+            try (InputStream in = storage.open(photo.getStorageKey()).orElse(null)) {
+                if (in != null) {
+                    images.add(in.readAllBytes());
+                }
+            }
+        }
+        return images;
     }
 
     // ---- items -------------------------------------------------------------
@@ -1039,7 +1128,8 @@ public class EstimateService {
                 materialsSubtotal,
                 total,
                 deposit,
-                balance
+                balance,
+                List.copyOf(estimate.getConsolidationSourceIds())
         );
     }
 

@@ -1,6 +1,8 @@
 package com.majstr.backend.entity;
 
+import jakarta.persistence.CollectionTable;
 import jakarta.persistence.Column;
+import jakarta.persistence.ElementCollection;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
@@ -22,6 +24,8 @@ import lombok.Setter;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.util.LinkedHashSet;
+import java.util.Set;
 import java.util.UUID;
 
 @Entity
@@ -85,6 +89,18 @@ public class Estimate {
      *  from it — see {@link EstimateItem#getSourceUnitPrice()} for why it stops being true. */
     @Column(name = "markup_percent", precision = 5, scale = 2)
     private BigDecimal markupPercent;
+
+    /**
+     * For a <b>consolidated</b> estimate: the estimates it was rolled up from. Empty for an ordinary
+     * estimate. Line items are copied by value; the sources keep their receipts, and this lineage is
+     * how the consolidated estimate offers those source receipts for its PDF. See V90.
+     */
+    @Builder.Default
+    @ElementCollection(fetch = FetchType.LAZY)
+    @CollectionTable(name = "estimate_consolidation_sources",
+            joinColumns = @JoinColumn(name = "consolidated_estimate_id"))
+    @Column(name = "source_estimate_id", nullable = false)
+    private Set<UUID> consolidationSourceIds = new LinkedHashSet<>();
 
     /** Whether this estimate shows on the object's client portal. The master
      *  picks the set explicitly in the share sheet — nothing is shared by

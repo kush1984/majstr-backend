@@ -201,6 +201,6 @@ class ProjectPhotoServiceTest {
     private EstimateResponse estimateResponse(UUID projectId, String name) {
         BigDecimal zero = BigDecimal.ZERO;
         return new EstimateResponse(estimateId, projectId, name, EstimateStatus.DRAFT,
-                null, null, Instant.now(), Instant.now(), List.of(), zero, zero, zero, null, zero);
+                null, null, Instant.now(), Instant.now(), List.of(), zero, zero, zero, null, zero, List.of());
     }
 }

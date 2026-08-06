@@ -73,6 +73,7 @@ public class EstimatePdfService {
             addItemsTable(document, "МАТЕРІАЛИ", model.materialItems());
             addTotals(document, model);
             addNotesAndSignatures(document, model);
+            addReceipts(document, model.receiptImages());
         } finally {
             document.close();
         }
@@ -276,6 +277,39 @@ public class EstimatePdfService {
         doc.add(signatures);
     }
 
+    /**
+     * Receipts the master chose to attach, as a «ЧЕКИ» appendix on its own page(s) at the end — the
+     * master's own record, not part of the priced tables (embedding an image mid-table is unreadable).
+     * Each receipt is scaled to fit the printable area, so a tall photo lands about one per page. A
+     * corrupt image is skipped, never fatal — the estimate PDF still renders.
+     */
+    private void addReceipts(Document doc, List<byte[]> receiptImages) throws DocumentException {
+        if (receiptImages == null || receiptImages.isEmpty()) {
+            return;
+        }
+        doc.newPage();
+        Paragraph heading = new Paragraph("ЧЕКИ", fonts.bold(12));
+        heading.setSpacingAfter(8);
+        doc.add(heading);
+
+        int n = 0;
+        for (byte[] bytes : receiptImages) {
+            n++;
+            try {
+                Image image = Image.getInstance(bytes);
+                image.scaleToFit(500, 640);
+                image.setAlignment(Element.ALIGN_CENTER);
+                Paragraph caption = new Paragraph("Чек " + n, fonts.regular(9));
+                caption.setSpacingBefore(6);
+                caption.setSpacingAfter(2);
+                doc.add(caption);
+                doc.add(image);
+            } catch (Exception e) {
+                log.warn("Could not embed receipt image {} in PDF: {}", n, e.getMessage());
+            }
+        }
+    }
+
     // ------------------------------------------------------------------- helpers
 
     private Optional<Image> tryLoadLogo(String key) {
@@ -414,7 +448,9 @@ public class EstimatePdfService {
             Project project,
             Client client,
             Estimate estimate,
-            List<EstimateItem> items
+            List<EstimateItem> items,
+            /** Receipt photo bytes to append as a «ЧЕКИ» section; empty for the portal / no-receipt path. */
+            List<byte[]> receiptImages
     ) {
         public List<EstimateItem> workItems() {
             return items.stream().filter(i -> i.getType() == ItemType.WORK).toList();

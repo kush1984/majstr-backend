@@ -134,7 +134,7 @@ class EstimateTemplateControllerTest {
         given(templateService.applyToProject(eq(projectId), eq(templateId), any(), eq(userId)))
                 .willReturn(new EstimateResponse(estimateId, projectId, "Кухня",
                         EstimateStatus.DRAFT, null, null, null, null, List.of(),
-                        BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, null, BigDecimal.ZERO));
+                        BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, null, BigDecimal.ZERO, List.of()));
 
         mockMvc.perform(post("/api/projects/{p}/estimates/from-template/{t}", projectId, templateId)
                         .contentType(MediaType.APPLICATION_JSON)
@@ -153,7 +153,7 @@ class EstimateTemplateControllerTest {
         given(templateService.applyToProject(eq(projectId), eq(List.of(first, second)), any(), eq(userId)))
                 .willReturn(new EstimateResponse(estimateId, projectId, "Санвузол",
                         EstimateStatus.DRAFT, null, null, null, null, List.of(),
-                        BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, null, BigDecimal.ZERO));
+                        BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, null, BigDecimal.ZERO, List.of()));
 
         mockMvc.perform(post("/api/projects/{p}/estimates/from-templates", projectId)
                         .param("ids", first.toString(), second.toString())

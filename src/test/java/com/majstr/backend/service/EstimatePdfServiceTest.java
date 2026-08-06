@@ -142,7 +142,8 @@ class EstimatePdfServiceTest {
                 .sortOrder(1)
                 .build();
 
-        return new EstimatePdfService.PdfModel(contractor, project, client, estimate, List.of(work, material));
+        return new EstimatePdfService.PdfModel(contractor, project, client, estimate,
+                List.of(work, material), List.of());
     }
 
     // ---- sections -------------------------------------------------------------------------------
@@ -180,6 +181,42 @@ class EstimatePdfServiceTest {
         assertThat(text).contains("Штукатурка стін");   // the lines themselves still render
     }
 
+    // ---- receipts appendix ----------------------------------------------------------------------
+
+    /** A 1×1 PNG — a valid image OpenPDF can embed, without needing a fixture file. */
+    private static final byte[] TINY_PNG = java.util.Base64.getDecoder().decode(
+            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAC0lEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==");
+
+    @Test
+    void render_appendsReceiptsSectionWhenImagesGiven() throws Exception {
+        given(featureGuard.isEnabled(org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.eq(Feature.BRANDED_PDF))).willReturn(false);
+        EstimatePdfService.PdfModel base = sampleModel();
+        EstimatePdfService.PdfModel withReceipts = new EstimatePdfService.PdfModel(
+                base.contractor(), base.project(), base.client(), base.estimate(), base.items(),
+                List.of(TINY_PNG, TINY_PNG));
+
+        String text = textOf(pdfService.render(withReceipts));
+
+        assertThat(text).contains("ЧЕКИ").contains("Чек 1").contains("Чек 2");
+    }
+
+    @Test
+    void render_skipsACorruptReceiptWithoutFailing() throws Exception {
+        // A receipt that isn't a decodable image must not 500 the whole PDF — the appendix skips it.
+        given(featureGuard.isEnabled(org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.eq(Feature.BRANDED_PDF))).willReturn(false);
+        EstimatePdfService.PdfModel base = sampleModel();
+        EstimatePdfService.PdfModel withReceipts = new EstimatePdfService.PdfModel(
+                base.contractor(), base.project(), base.client(), base.estimate(), base.items(),
+                List.of(new byte[]{1, 2, 3}));
+
+        String text = textOf(pdfService.render(withReceipts));
+
+        assertThat(text).contains("ЧЕКИ");     // the section heading still renders
+        assertThat(text).doesNotContain("Чек 1"); // the corrupt image adds no caption/image
+    }
+
     private static String textOf(byte[] pdf) throws Exception {
         try (var doc = org.apache.pdfbox.Loader.loadPDF(pdf)) {
             return new org.apache.pdfbox.text.PDFTextStripper().getText(doc);
@@ -200,7 +237,7 @@ class EstimatePdfServiceTest {
                 sectionItem(estimate, ItemType.WORK, "Грунтування", "Підготовка", "10", "40.00", 2),
                 sectionItem(estimate, ItemType.MATERIAL, "Клей", "Плитка", "10", "25.00", 3));
         return new EstimatePdfService.PdfModel(
-                base.contractor(), base.project(), base.client(), estimate, items);
+                base.contractor(), base.project(), base.client(), estimate, items, List.of());
     }
 
     private EstimateItem sectionItem(Estimate estimate, ItemType type, String name, String category,

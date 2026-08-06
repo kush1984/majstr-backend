@@ -97,12 +97,17 @@ Spring Boot 4 removed all test-slice annotations (`@WebMvcTest`, `@DataJpaTest`,
   be green **before any push** — keep `master` green. **Claude cannot run Gradle in its sandbox**
   (loopback socket blocked). So: Claude writes the tests, **the user runs `./gradlew build` locally and
   confirms green**, then Claude pushes. Red → user pastes output, Claude fixes to green first.
-- **PWA gate: `npm run build` (not `tsc --noEmit`) + `npx vitest run`.** The real type check is
-  `tsc -b` inside `npm run build`; a bare `tsc --noEmit` checks a looser program and has let errors
-  through. `npx vite build` alone doesn't type-check at all.
-- **Offline/service-worker changes need `npm run test:e2e:offline`.** The normal e2e runs on the Vite
-  dev server where the SW is DISABLED, so no dev-based test sees an SW regression. When adding one,
-  verify it fails without the fix — check the SOURCE, not the minified `dist/sw.js`.
+- **PWA gate = MIRROR CI's `verify` job, in order** (`majstr-pwa/.github/workflows/ci.yml`):
+  `npm run lint` → `npx tsc -b` → `npm run typecheck:tests` → `npx vitest run` → `npx vite build`.
+  Two steps are easy to forget and each has reddened CI on its own: **`npm run lint`**
+  (`eslint --max-warnings 0` — a stray `!`/`as` is a HARD error) and **`npm run typecheck:tests`**
+  (a SEPARATE, stricter tsconfig that type-checks the TEST files — `npm run build`'s `tsc -b` does
+  **not**). `tsc --noEmit` checks a looser program and `vite build` doesn't type-check at all —
+  neither substitutes. "build + vitest were green" is NOT the gate; lint + test-typecheck are.
+- **Offline/service-worker changes also need `npm run test:e2e:offline`** (CI runs the shell spec).
+  The normal e2e runs on the Vite dev server where the SW is DISABLED, so no dev-based test sees an
+  SW regression. When adding one, verify it fails without the fix — check the SOURCE, not the
+  minified `dist/sw.js`.
 
 ## Not implemented yet (don't claim these exist)
 

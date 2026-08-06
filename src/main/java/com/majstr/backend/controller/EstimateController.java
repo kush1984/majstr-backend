@@ -39,6 +39,7 @@ import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.io.IOException;
@@ -127,12 +128,13 @@ public class EstimateController {
         return estimateService.setCountInEconomy(id, req.countInEconomy(), principal.id());
     }
 
-    @Operation(summary = "Download the estimate as a PDF")
+    @Operation(summary = "Download the estimate as a PDF, optionally appending chosen receipt photos")
     @GetMapping(value = "/api/estimates/{id}/pdf", produces = MediaType.APPLICATION_PDF_VALUE)
     public ResponseEntity<byte[]> pdf(@PathVariable UUID id,
+                                      @RequestParam(name = "receipts", required = false) List<UUID> receipts,
                                       @AuthenticationPrincipal UserPrincipal principal)
             throws IOException, DocumentException {
-        byte[] body = estimateService.renderPdf(id, principal.id());
+        byte[] body = estimateService.renderPdf(id, principal.id(), receipts == null ? List.of() : receipts);
         return ResponseEntity.ok()
                 .contentType(MediaType.APPLICATION_PDF)
                 .header(HttpHeaders.CONTENT_DISPOSITION,

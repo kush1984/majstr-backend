@@ -1504,6 +1504,24 @@ one-line summary — keep the item in the file as a record.
   8 MB server cap + client downscale; a **fullscreen lightbox** (tap-to-view, prev/next, Esc) —
   functionally complete now. Deferred: **swipe** gesture in the lightbox (arrows/chevrons only for
   now); a future move to PRO-only would be a one-line `PlanConfig` edit.
+- **Update (receipts-in-estimate iteration, 2026-08-06):** receipts moved OUT of the object «Фото» tab
+  and are surfaced under the estimate's **Materials** section (orphan receipts — estimate deleted —
+  stay in «Фото» so they can't be lost). Receipts can be **embedded in the estimate PDF** (owner
+  download only, `?receipts=` → a «ЧЕКИ» appendix; any project photo is embeddable, so a receipt saved
+  as a plain photo works too). A **consolidated** estimate offers its source estimates' receipts (V90
+  `estimate_consolidation_sources`; receipts stay on the sources). See
+  [iteration-receipts-in-estimate.md](iteration-receipts-in-estimate.md).
+
+### Promote a plain photo to a receipt permanently («Це чек»)
+- **Status:** OPEN
+- **Since:** Receipts-in-estimate iteration (2026-08-06)
+- **Context:** At PDF time a master can attach an object photo that is really a receipt (ad-hoc, per
+  that PDF). A *permanent* «Це чек» — relinking the MANUAL photo to the estimate as `source = RECEIPT`
+  so it then lives under Materials and is default-selected next time — was deferred: `ProjectPhoto.source`
+  is `updatable = false`, so it needs that lifted (or a re-create) plus a small PATCH endpoint.
+- **Notes / options:** Add `PATCH …/photos/{id}` support for `source`+`estimateId` (or a dedicated
+  `…/as-receipt` action), make `source` mutable, invalidate the photos + estimate caches. Convenience
+  only — the ad-hoc PDF pick already covers the actual need; build if masters ask.
 
 ### AI_ASSISTANT
 - **Status:** OPEN
