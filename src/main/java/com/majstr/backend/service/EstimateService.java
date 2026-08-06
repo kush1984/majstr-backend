@@ -190,17 +190,24 @@ public class EstimateService {
                         .map(EstimateItem::getId).collect(Collectors.toSet())
                 : new HashSet<>(req.itemIds());
 
+        // The request carries an UNSIGNED magnitude + a direction; from here everything runs off the
+        // SIGNED percent, so a discount is markup with a minus and no branch of the copy logic below
+        // has to know which it is. Stored signed too (the column is a label — nothing computes from
+        // it), so the economy hint and the «… −15%» name read the direction straight off it.
+        BigDecimal signedPercent = req.discount() ? req.markupPercent().negate() : req.markupPercent();
+
         Estimate copy = estimateRepository.save(Estimate.builder()
                 .project(source.getProject())
-                .name(duplicateName(req.name(), source.getName(), req.markupPercent()))
+                .name(duplicateName(req.name(), source.getName(), signedPercent))
                 .validUntil(source.getValidUntil())
                 .notes(source.getNotes())
                 .duplicatedFromId(source.getId())
-                .markupPercent(req.markupPercent())
+                .markupPercent(signedPercent)
                 .build());
         projectRepository.incrementEstimatesCreated(projectId); // lifetime churn counter
 
-        BigDecimal factor = BigDecimal.ONE.add(req.markupPercent().movePointLeft(2));
+        // discount → factor < 1 (1 − p/100); markup → factor > 1 (1 + p/100). Same multiply either way.
+        BigDecimal factor = BigDecimal.ONE.add(signedPercent.movePointLeft(2));
         Map<UUID, EstimateItem> sourceById = sourceItems.stream()
                 .collect(Collectors.toMap(EstimateItem::getId, i -> i));
         List<EstimateItem> copies = new ArrayList<>(sourceItems.size());
@@ -269,13 +276,18 @@ public class EstimateService {
         return price.multiply(factor).setScale(0, RoundingMode.HALF_UP);
     }
 
-    /** «Санвузол» → «Санвузол +15%», so the two are tellable apart in a list of variants. */
-    private static String duplicateName(String requested, String sourceName, BigDecimal percent) {
+    /**
+     * «Санвузол» → «Санвузол +15%» (markup) or «Санвузол -15%» (discount), so the two are tellable
+     * apart in a list of variants. Only a fallback: the PWA composes the name itself and passes it,
+     * so {@code requested} is normally set — see the duplicate-onConfirm note in the editor.
+     */
+    private static String duplicateName(String requested, String sourceName, BigDecimal signedPercent) {
         String explicit = normalize(requested);
         if (explicit != null) {
             return explicit;
         }
-        String suffix = " +" + percent.stripTrailingZeros().toPlainString() + "%";
+        String sign = signedPercent.signum() < 0 ? " -" : " +";
+        String suffix = sign + signedPercent.abs().stripTrailingZeros().toPlainString() + "%";
         String base = normalize(sourceName);
         return base == null ? "Кошторис" + suffix : base + suffix;
     }
@@ -930,7 +942,10 @@ public class EstimateService {
      *       to a base that grew, and raising both would mark the line up twice;</li>
      *   <li><b>MANUAL base</b> → a sum typed by hand is not marked up, so treat it like a material
      *       and raise the percent;</li>
-     *   <li><b>TOTAL base</b> → the subtotal already contains the marked-up works, so leave it.</li>
+     *   <li><b>TOTAL base</b> → a «% від кошторису» line is always left alone. A WORK one rides the
+     *       works subtotal the markup already grew; a MATERIAL one measures the materials subtotal,
+     *       which passes through at cost — so the percent passes through at cost too, like the
+     *       materials it is a share of. Margin on such a line is a manual edit in the copy.</li>
      * </ul>
      */
     private static BigDecimal markedUpPercent(EstimateItem item,
@@ -940,6 +955,9 @@ public class EstimateService {
         PercentBaseKind kind = item.getPercentBaseKind() == null
                 ? PercentBaseKind.MANUAL : item.getPercentBaseKind();
         boolean baseAlreadyMarkedUp = switch (kind) {
+            // A «% від кошторису» is left alone: a WORK one rides the works subtotal the markup grew,
+            // a MATERIAL one passes through at cost like the materials it measures (margin there is a
+            // manual edit in the copy).
             case TOTAL -> true;
             case MANUAL -> false;
             case POSITION -> {

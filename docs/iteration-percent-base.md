@@ -78,7 +78,8 @@ survives.
 |---|---|---|
 | material / `MANUAL` | the **percent** is raised: 20 % → 26 % | the base does not move, so the line must |
 | marked-up work | the percent is **left alone** | the base already grew; raising both marks it up twice |
-| `TOTAL` | left alone | the subtotal already contains the marked-up works |
+| `TOTAL`, WORK line | left alone | the works subtotal it measures already contains the marked-up works |
+| `TOTAL`, MATERIAL line | left alone | the materials subtotal passes through at cost, so its percent passes through too |
 
 `source_unit_price` on such a row holds the **original percent**, and the economy query reaches the
 base through a `LEFT JOIN` to work out what the crew's sheet charged. Both shapes then report real
@@ -104,10 +105,51 @@ nothing.
 written. That is why V88 needs no rescue step: the backfill (`line_total = quantity × unit_price`) is
 right for every row without exception, and no estimate, signed or not, changes by a hryvnia.
 
+## The model, simplified — «Від позиції» / «Від кошторису», per type (2026-08)
+
+PWA `1.6.1 → 1.7.0`. A follow-up wave settled the shape of the whole feature, after the first
+negative-percent cut proved too loose to explain on site.
+
+**«Своя сума» (`MANUAL`) is retired from the product.** A hand-typed base was never worth a mode of
+its own. The editor now offers exactly two bases — **«Від позиції»** (`POSITION`, a markup on one
+line) and **«Від кошторису»** (`TOTAL`). The enum value survives and `EstimateMath` still reads a
+legacy `MANUAL`/null-kind row from `unit_price` (V88 shipped hours earlier, so any stray row keeps its
+number), but nothing new is created with it.
+
+**«Від кошторису» is measured against the line's OWN type.** A WORK percent measures the works
+subtotal, a MATERIAL percent the materials subtotal — the split the master already reads on the black
+summary card and in the PDF. Reading the *whole* subtotal instead was the «косячок» a master caught:
+a preview off by exactly the other type's total. `EstimateMath.recalculate` step 3 now computes a
+`worksBase` and a `materialsBase` and each `TOTAL` line takes its type's; the PWA mirror
+`useEstimate.recomputeLines` and the `ItemForm` preview do the same, so «backend = frontend» holds.
+
+**Direction is per base, and it is not called «націнка/знижка».**
+
+- **«Від позиції» is a markup — always `> 0`.** No sign choice: it is the shape of the catalog's own
+  «…(плюс % до м.кв.)» positions.
+- **«Від кошторису» may be `+` or `−`, never `0`.** A `−` is a discount off that type's subtotal, its
+  `line_total` negative, lowering the total / economy («дав знижку — менше заробив»). The master picks
+  the sign with a bare **+/− toggle** — no «націнка/знижка» wording; the field stays a positive
+  magnitude, because the mobile decimal keypad has no minus key. Editing reads the stored sign.
+
+The guards, relaxed for `PERCENT` only and tightened to the new rule:
+
+- **DB** — V29's `CHECK (quantity >= 0)` is `CHECK (quantity >= 0 OR unit = 'PERCENT')` in **V89**
+  (kept — a `TOTAL` percent needs the minus). Every other unit still rejects a negative.
+- **DTO** — `EstimateItemRequest.quantity` has no `@DecimalMin`; `isQuantityUsable()` requires
+  `!= 0` for a `TOTAL` percent, `> 0` for «Від позиції» and every other line.
+- **Duplicate** — `markedUpPercent` leaves every «Від кошторису» percent alone: a WORK one rides the
+  works subtotal the markup grew, a MATERIAL one passes through at cost like the materials it measures
+  (the copy is editable if the master wants margin on that specific line).
+
 ## Tests
 
 - `EstimateMathTest` — the three steps, several TOTAL lines against one base, the live link, manual
-  detach, a deleted base keeping its amount, per-line rounding (33,33 % three times is 99,99).
+  detach, a deleted base keeping its amount, per-line rounding (33,33 % three times is 99,99), a
+  **negative percent lowering the total** (−15 % of 1 000 → −150, total 850), and **per-type scoping**
+  (a WORK 10 % measures works, a MATERIAL −5 % measures materials — never each other's subtotal).
 - `ObjectEconomyQueriesIntegrationTest` — both duplicate shapes, against real Postgres, because that
   is the only place this SQL can be verified.
-- PWA `percentMath.test.ts` — the wording, including that «₴/%» appears in none of the three kinds.
+- PWA `AddItemSheet.test.tsx` — the «Від кошторису» preview base is the same-type subtotal excluding
+  existing % lines, the `−` toggle submits a negative percent, and a MATERIAL % ignores the works
+  subtotal. `percentMath.test.ts` — the wording, including that «₴/%» appears in none of the kinds.

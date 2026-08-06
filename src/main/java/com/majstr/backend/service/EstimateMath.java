@@ -26,7 +26,9 @@ import java.util.UUID;
  * <ol>
  *   <li>ordinary lines: {@code quantity × unitPrice};</li>
  *   <li>percentages of a LINE or of a hand-typed sum;</li>
- *   <li>percentages of the TOTAL, all measured against the sum of steps 1 and 2.</li>
+ *   <li>percentages of the ESTIMATE («% від кошторису»), each measured against the subtotal of its
+ *       OWN type — a WORK percent against the works subtotal, a MATERIAL percent against the
+ *       materials subtotal (steps 1 and 2, of that type).</li>
  * </ol>
  *
  * <p><b>Why a percent of a percent is forbidden.</b> The base can only ever be an ordinary line or
@@ -34,9 +36,12 @@ import java.util.UUID;
  * graph to walk, no cycle detection to write and get wrong, only a filter on what the picker
  * offers. It also makes step 2 order-independent within itself.</p>
  *
- * <p><b>Why several TOTAL lines share one base.</b> «Транспортні 20 %» and «Непередбачені 10 %»
- * both measure the same estimate. Compounding them would make the result depend on which was
- * entered first, which nobody could explain to a client.</p>
+ * <p><b>Why several «% від кошторису» lines share one base per type.</b> «Транспортні 20 %» and
+ * «Непередбачені 10 %» both measure the same works subtotal. Compounding them would make the result
+ * depend on which was entered first, which nobody could explain to a client. The base is split by
+ * type because the estimate is: the black summary card and the PDF keep works and materials apart,
+ * so a «% від кошторису» must measure the same subtotal the master is looking at. Such a line may be
+ * SIGNED — a minus is a discount off that subtotal («дав знижку — менше заробив»).</p>
  *
  * <p>The PWA mirrors this pass in {@code useEstimate.recompute} so an offline estimate shows the
  * right numbers before it syncs. <b>The mirror must be changed in the same commit as this file</b> —
@@ -82,11 +87,19 @@ final class EstimateMath {
             item.setLineTotal(percentAmount(item, baseFor(item, amountById)));
         }
 
-        // 3. Percentages of the TOTAL — every one of them against the SAME base.
-        BigDecimal baseForTotals = sumOf(items, i -> kindOf(i) != PercentBaseKind.TOTAL);
+        // 3. Percentages of the ESTIMATE — «% від кошторису». Each is measured against the subtotal
+        //    of its OWN type (works or materials), so it moves the same number the master sees split
+        //    on the summary card. Every percent of one type shares that type's base — compounding
+        //    would make the answer depend on entry order. The percent may be signed: a minus is a
+        //    discount off that subtotal.
+        BigDecimal worksBase = sumOf(items,
+                i -> kindOf(i) != PercentBaseKind.TOTAL && i.getType() == ItemType.WORK);
+        BigDecimal materialsBase = sumOf(items,
+                i -> kindOf(i) != PercentBaseKind.TOTAL && i.getType() == ItemType.MATERIAL);
         for (EstimateItem item : items) {
             if (item.getUnit() == Unit.PERCENT && kindOf(item) == PercentBaseKind.TOTAL) {
-                item.setLineTotal(percentAmount(item, baseForTotals));
+                BigDecimal base = item.getType() == ItemType.WORK ? worksBase : materialsBase;
+                item.setLineTotal(percentAmount(item, base));
             }
         }
 

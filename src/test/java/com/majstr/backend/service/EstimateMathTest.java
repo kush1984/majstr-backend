@@ -125,6 +125,44 @@ class EstimateMathTest {
     }
 
     @Test
+    void aNegativePercentIsADiscount_andItLowersTheTotal() {
+        // «дав знижку — менше заробив»: a negative percent line is a discount off its base, its
+        // line amount comes out negative, and the subtotal drops by exactly that. No clamp anywhere.
+        EstimateItem work = line("Робота", Unit.M2, "1", "1000");
+        EstimateItem discount = line("Знижка", Unit.PERCENT, "-15", "0");
+        discount.setPercentBaseKind(PercentBaseKind.TOTAL);
+
+        EstimateMath.Totals totals = EstimateMath.recalculate(List.of(work, discount));
+
+        assertThat(discount.getLineTotal()).isEqualByComparingTo("-150.00"); // −15 % of 1 000
+        assertThat(totals.total()).isEqualByComparingTo("850.00");
+    }
+
+    @Test
+    void aPercentOfTheEstimateMeasuresOnlyItsOwnType() {
+        // «% від кошторису» is split by type: a WORK percent moves the works subtotal, a MATERIAL
+        // percent the materials subtotal — the same split the master reads on the summary card. A
+        // WORK 10 % measuring 3 000 (works + materials) instead of 1 000 would be the «косячок».
+        EstimateItem work = line("Робота", Unit.M2, "1", "1000");        // WORK 1 000
+        EstimateItem material = line("Плитка", Unit.M2, "1", "2000");    // MATERIAL 2 000
+        material.setType(ItemType.MATERIAL);
+        EstimateItem worksMarkup = line("Складність", Unit.PERCENT, "10", "0");
+        worksMarkup.setPercentBaseKind(PercentBaseKind.TOTAL);           // +10 % of works only
+        EstimateItem materialsDiscount = line("Знижка", Unit.PERCENT, "-5", "0");
+        materialsDiscount.setType(ItemType.MATERIAL);
+        materialsDiscount.setPercentBaseKind(PercentBaseKind.TOTAL);     // −5 % of materials only
+
+        EstimateMath.Totals totals = EstimateMath.recalculate(
+                List.of(work, material, worksMarkup, materialsDiscount));
+
+        assertThat(worksMarkup.getLineTotal()).isEqualByComparingTo("100.00");        // 10 % of 1 000
+        assertThat(materialsDiscount.getLineTotal()).isEqualByComparingTo("-100.00"); // −5 % of 2 000
+        assertThat(totals.works()).isEqualByComparingTo("1100.00");
+        assertThat(totals.materials()).isEqualByComparingTo("1900.00");
+        assertThat(totals.total()).isEqualByComparingTo("3000.00");
+    }
+
+    @Test
     void ordinaryLinesAreUntouched_andTheSubtotalsStillSplitByType() {
         EstimateItem work = line("Робота", Unit.M2, "25", "180");
         EstimateItem material = line("Плитка", Unit.M2, "10", "500");

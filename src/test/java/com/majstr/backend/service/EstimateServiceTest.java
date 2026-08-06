@@ -1094,7 +1094,7 @@ class EstimateServiceTest {
         given(estimateRepository.save(any(Estimate.class))).willAnswer(inv -> inv.getArgument(0));
 
         estimateService.duplicate(estimateId,
-                new EstimateDuplicateRequest(null, new BigDecimal("15"), null), ownerId);
+                new EstimateDuplicateRequest(null, new BigDecimal("15"), false, null), ownerId);
 
         ArgumentCaptor<List<EstimateItem>> saved = ArgumentCaptor.forClass(List.class);
         verify(itemRepository).saveAll(saved.capture());
@@ -1118,7 +1118,7 @@ class EstimateServiceTest {
         given(estimateRepository.save(any(Estimate.class))).willAnswer(inv -> inv.getArgument(0));
 
         estimateService.duplicate(estimateId,
-                new EstimateDuplicateRequest(null, new BigDecimal("20"), List.of(chosen.getId())),
+                new EstimateDuplicateRequest(null, new BigDecimal("20"), false, List.of(chosen.getId())),
                 ownerId);
 
         ArgumentCaptor<List<EstimateItem>> saved = ArgumentCaptor.forClass(List.class);
@@ -1139,9 +1139,37 @@ class EstimateServiceTest {
         assertThat(source.isCountInEconomy()).isTrue();
 
         estimateService.duplicate(estimateId,
-                new EstimateDuplicateRequest(null, new BigDecimal("10"), null), ownerId);
+                new EstimateDuplicateRequest(null, new BigDecimal("10"), false, null), ownerId);
 
         assertThat(source.isCountInEconomy()).isFalse();
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void duplicate_discount_SUBTRACTStheDiscountFromWorks_leavesMaterials_andStoresSignedPercent() {
+        // Уцінка is markup mirrored: the SAME copy, only the works go DOWN by the percent. The stored
+        // markup_percent is negative so the name «… -15%» and the economy hint read the direction.
+        EstimateItem work = item(ItemType.WORK, "Укладання плитки", "10", "350");
+        EstimateItem material = item(ItemType.MATERIAL, "Клей", "5", "400");
+        givenItems(work, material);
+        ArgumentCaptor<Estimate> savedCopy = ArgumentCaptor.forClass(Estimate.class);
+        given(estimateRepository.save(savedCopy.capture())).willAnswer(inv -> inv.getArgument(0));
+
+        estimateService.duplicate(estimateId,
+                new EstimateDuplicateRequest(null, new BigDecimal("15"), true, null), ownerId);
+
+        ArgumentCaptor<List<EstimateItem>> saved = ArgumentCaptor.forClass(List.class);
+        verify(itemRepository).saveAll(saved.capture());
+        List<EstimateItem> copies = saved.getValue();
+        // 350 × 0.85 = 297.5 → 298 whole hryvnia; the material stays at cost.
+        assertThat(copies.get(0).getUnitPrice()).isEqualByComparingTo("298");
+        assertThat(copies.get(1).getUnitPrice()).as("матеріал лишається за собівартістю")
+                .isEqualByComparingTo("400");
+        // Source price recorded on every line, exactly as for a markup.
+        assertThat(copies.get(0).getSourceUnitPrice()).isEqualByComparingTo("350");
+        assertThat(savedCopy.getValue().getMarkupPercent())
+                .as("знак несе напрямок — уцінка зберігається відʼємною")
+                .isEqualByComparingTo("-15");
     }
 
     // ---- deleting many lines at once, and the cascade into the copies ---------------------------

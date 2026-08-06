@@ -37,6 +37,22 @@ NULL there correctly means "none of this is passed on to the crew" — the whole
 `estimates.markup_percent` is still stored, but only as a **label**: it is what the list says
 («в економіку йде тільки націнка +15%») and what names the copy. Nothing computes from it.
 
+### Націнка ↔ Уцінка (markup or discount) — 2026-08
+
+The dialog now offers **Націнка / Уцінка**: a discount is the exact same mechanic mirrored — same
+copy, same `source_unit_price` on every line, same "parent stops counting" — only the factor is
+`1 − p/100` instead of `1 + p/100`. The request carries an **unsigned** magnitude
+(`markupPercent ≥ 0`) plus a boolean `discount`, so the direction is an explicit choice the master
+made, never a stray minus (the old DTO comment warned exactly about a silent negative). From the
+service down everything runs off the **signed** percent, so no branch of the copy logic knows which
+it is; `markup_percent` is **stored signed** (negative for a discount — the column is a label, the
+`NUMERIC(5,2)` already allows it, no migration), which is what lets the copy name («… -15%») and the
+economy hint read the direction straight off it. A discount is capped at **100 %** (`@AssertTrue` →
+400) — more would drive prices to zero or below. For a discount the economy difference is naturally
+negative, and the PWA says so («Дубль з уцінкою −15%: в економіку піде різниця (відʼємна)») rather
+than hiding it. `markedUpPercent` (the PERCENT-line rule) needed no change — it already multiplies
+by the same `factor`.
+
 ### The economy query
 
 ```sql

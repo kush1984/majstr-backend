@@ -4,7 +4,6 @@ import com.majstr.backend.entity.ItemType;
 import com.majstr.backend.entity.PercentBaseKind;
 import com.majstr.backend.entity.Unit;
 import jakarta.validation.constraints.AssertTrue;
-import jakarta.validation.constraints.DecimalMin;
 import jakarta.validation.constraints.Digits;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
@@ -20,9 +19,14 @@ public record EstimateItemRequest(
         @NotBlank @Size(max = 255) String name,
         @Size(max = 100) String category,
         @NotNull Unit unit,
-        /** For {@code unit = PERCENT} this is THE PERCENT (10 = 10 %), not a count. */
-        @NotNull @DecimalMin(value = "0.001", message = "quantity must be greater than 0")
-        @Digits(integer = 12, fraction = 3) BigDecimal quantity,
+        /**
+         * For {@code unit = PERCENT} this is THE PERCENT (10 = 10 %), not a count — and a
+         * «% від кошторису» line may be NEGATIVE, which is a discount (-15 = −15 % off that subtotal).
+         * Range is enforced in {@link #isQuantityUsable()} because it depends on the base: only a
+         * TOTAL-base percent allows a minus, every other line must be positive (a «-3 шт» line is a
+         * data-entry bug, not a discount).
+         */
+        @NotNull @Digits(integer = 12, fraction = 3) BigDecimal quantity,
         /**
          * Price per unit — or, on a {@code PERCENT} line with a {@link PercentBaseKind#MANUAL}
          * base, the base sum itself.
@@ -78,5 +82,25 @@ public record EstimateItemRequest(
     @AssertTrue(message = "percentBaseItemId is only valid with percentBaseKind = POSITION")
     public boolean isBaseItemConsistent() {
         return percentBaseItemId == null || percentBaseKind == PercentBaseKind.POSITION;
+    }
+
+    /**
+     * How far a percent may swing depends on what it is a percent OF. «Від позиції» is a markup on a
+     * single line — always positive. «Від кошторису» ({@link PercentBaseKind#TOTAL}) measures the
+     * works- or materials-subtotal and MAY be negative — a minus is a discount off it. Zero is
+     * meaningless either way, so it is rejected too. Every non-percent unit must be a positive count
+     * (a «-3 шт» line is a data-entry bug, not a discount).
+     */
+    @AssertTrue(message = "quantity must be greater than 0 (a «% від кошторису» line may also be negative)")
+    public boolean isQuantityUsable() {
+        if (quantity == null) {
+            return true; // @NotNull already reports this one
+        }
+        if (unit == Unit.PERCENT) {
+            return percentBaseKind == PercentBaseKind.TOTAL
+                    ? quantity.compareTo(BigDecimal.ZERO) != 0
+                    : quantity.compareTo(BigDecimal.ZERO) > 0;
+        }
+        return quantity.compareTo(BigDecimal.ZERO) > 0;
     }
 }
