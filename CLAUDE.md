@@ -9,7 +9,7 @@ gotchas live in **[docs/architecture.md](docs/architecture.md)** — the index a
 it. Read the relevant section there before working in that area. Per-feature history is in
 `docs/iteration-*.md`; deferred decisions in [docs/open-questions.md](docs/open-questions.md).
 
-## Stack (pinned)
+## Stack (pinned\edited)
 
 - **Spring Boot 4.0.6** (Spring Framework 7, Jakarta EE 11) on **Java 21 (LTS)**
 - **Gradle Kotlin DSL** — toolchain pinned to JDK 21 in `build.gradle.kts`
