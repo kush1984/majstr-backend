@@ -8,9 +8,11 @@ import com.majstr.backend.entity.CatalogItemSource;
 import com.majstr.backend.entity.ItemType;
 import com.majstr.backend.entity.Trade;
 import com.majstr.backend.entity.User;
+import com.majstr.backend.entity.UserTrade;
 import com.majstr.backend.exception.ResourceNotFoundException;
 import com.majstr.backend.repository.CatalogItemRepository;
 import com.majstr.backend.repository.UserRepository;
+import com.majstr.backend.repository.UserTradeRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.security.access.AccessDeniedException;
@@ -45,6 +47,7 @@ public class CatalogService {
 
     private final CatalogItemRepository catalogRepository;
     private final UserRepository userRepository;
+    private final UserTradeRepository userTradeRepository;
 
     @Transactional
     public CatalogItemResponse create(CatalogItemRequest req, UUID ownerId) {
@@ -70,8 +73,11 @@ public class CatalogService {
             }
         }
         String name = req.name().trim();
-        // No specific trade → the single "Інше" catch-all (never null, V33).
-        Trade trade = req.trade() != null ? req.trade() : Trade.OTHER;
+        UserTrade customTrade = resolveCustomTrade(req.customTradeId(), ownerId);
+        // No specific trade → the single "Інше" catch-all (never null, V33). A custom trade always
+        // files as OTHER — trade/customTradeId keep the invariant the CHECK constraint also pins.
+        Trade trade = customTrade != null ? Trade.OTHER
+                : req.trade() != null ? req.trade() : Trade.OTHER;
         // The catalog is a reference library: one item per (name, type, unit) per owner
         // (enforced by a unique index). Adding an item that already exists UPDATES it
         // instead of creating a duplicate — idempotent, and it can never hit the constraint.
@@ -84,6 +90,7 @@ public class CatalogService {
         if (existing != null) {
             existing.setCategory(normalizeCategory(req.category()));
             existing.setTrade(trade);
+            existing.setCustomTrade(customTrade);
             existing.setDefaultPrice(req.defaultPrice());
             return CatalogItemResponse.from(existing); // managed entity → dirty-checked
         }
@@ -93,6 +100,7 @@ public class CatalogService {
                 .name(name)
                 .category(normalizeCategory(req.category()))
                 .trade(trade)
+                .customTrade(customTrade)
                 .type(req.type())
                 .unit(req.unit())
                 .defaultPrice(req.defaultPrice())
@@ -168,13 +176,25 @@ public class CatalogService {
     @Transactional
     public CatalogItemResponse update(UUID id, CatalogItemRequest req, UUID ownerId) {
         CatalogItem item = loadOwned(id, ownerId);
+        UserTrade customTrade = resolveCustomTrade(req.customTradeId(), ownerId);
         item.setName(req.name().trim());
         item.setCategory(normalizeCategory(req.category()));
-        item.setTrade(req.trade() != null ? req.trade() : Trade.OTHER);
+        item.setTrade(customTrade != null ? Trade.OTHER
+                : req.trade() != null ? req.trade() : Trade.OTHER);
+        item.setCustomTrade(customTrade);
         item.setType(req.type());
         item.setUnit(req.unit());
         item.setDefaultPrice(req.defaultPrice());
         return CatalogItemResponse.from(item);
+    }
+
+    /** Resolve and ownership-check a custom trade id from a request; {@code null} passes through. */
+    private UserTrade resolveCustomTrade(UUID customTradeId, UUID ownerId) {
+        if (customTradeId == null) {
+            return null;
+        }
+        return userTradeRepository.findByIdAndUserId(customTradeId, ownerId)
+                .orElseThrow(() -> new ResourceNotFoundException("Custom trade not found: " + customTradeId));
     }
 
     @Transactional

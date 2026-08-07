@@ -4,6 +4,7 @@ import com.majstr.backend.dto.CheckoutRequest;
 import com.majstr.backend.dto.CheckoutResponse;
 import com.majstr.backend.dto.UserResponse;
 import com.majstr.backend.entity.BillingPeriod;
+import com.majstr.backend.repository.UserTradeRepository;
 import com.majstr.backend.security.UserPrincipal;
 import com.majstr.backend.service.BillingService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -33,6 +34,7 @@ import org.springframework.web.bind.annotation.RestController;
 public class BillingController {
 
     private final BillingService billingService;
+    private final UserTradeRepository userTradeRepository;
 
     @Operation(summary = "Start a PRO checkout — returns the monobank payment page URL to redirect to")
     @SecurityRequirement(name = "bearer-jwt")
@@ -48,7 +50,8 @@ public class BillingController {
     @SecurityRequirement(name = "bearer-jwt")
     @PostMapping("/trial")
     public UserResponse startTrial(@AuthenticationPrincipal UserPrincipal principal) {
-        return UserResponse.from(billingService.startTrial(principal.id()));
+        var user = billingService.startTrial(principal.id());
+        return UserResponse.from(user, userTradeRepository.findByUserIdOrderBySortOrderAscIdAsc(user.getId()));
     }
 
     @Operation(summary = "monobank invoice-status webhook (public; signature-verified)")

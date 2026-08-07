@@ -16,6 +16,7 @@ import com.majstr.backend.entity.TemplateTradeOverride;
 import com.majstr.backend.entity.Trade;
 import com.majstr.backend.entity.Unit;
 import com.majstr.backend.entity.User;
+import com.majstr.backend.entity.UserTrade;
 import com.majstr.backend.exception.ResourceNotFoundException;
 import com.majstr.backend.feature.LimitService;
 import com.majstr.backend.repository.CatalogItemRepository;
@@ -25,6 +26,7 @@ import com.majstr.backend.repository.EstimateTemplateItemRepository;
 import com.majstr.backend.repository.EstimateTemplateRepository;
 import com.majstr.backend.repository.ProjectRepository;
 import com.majstr.backend.repository.TemplateTradeOverrideRepository;
+import com.majstr.backend.repository.UserTradeRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
@@ -62,6 +64,7 @@ public class EstimateTemplateService {
     private final LimitService limitService;
     private final EstimateService estimateService;
     private final TemplateTradeOverrideRepository tradeOverrideRepository;
+    private final UserTradeRepository userTradeRepository;
 
     // ---- listing -----------------------------------------------------------
 
@@ -86,9 +89,15 @@ public class EstimateTemplateService {
         Map<UUID, Long> counts = itemCounts(all);
 
         return all.stream()
-                .map(t -> new EstimateTemplateSummary(
-                        t.getId(), t.getName(), effectiveTrade(t, overrides), t.isDefault(),
-                        counts.getOrDefault(t.getId(), 0L).intValue()))
+                .map(t -> {
+                    UserTrade customTrade = t.getCustomTrade();
+                    return new EstimateTemplateSummary(
+                            t.getId(), t.getName(), effectiveTrade(t, overrides),
+                            customTrade != null ? customTrade.getId() : null,
+                            customTrade != null ? customTrade.getName() : null,
+                            t.isDefault(),
+                            counts.getOrDefault(t.getId(), 0L).intValue());
+                })
                 .toList();
     }
 
@@ -108,15 +117,22 @@ public class EstimateTemplateService {
     }
 
     /**
-     * Re-file a template into a trade. An OWN template carries the trade on its own row;
-     * a system default is shared, so the change is stored as this master's own override
-     * and stays invisible to everyone else.
+     * Re-file a template into a trade. An OWN template carries the trade on its own row (and may
+     * be filed under a master-invented trade — {@code customTradeId}); a system default is shared,
+     * so the change is stored as this master's own override and stays invisible to everyone else.
+     * {@code customTradeId} only makes sense for an own template — {@link TemplateTradeOverride}
+     * has no column for it by design, so it is silently ignored when re-filing a default.
      */
     @Transactional
-    public EstimateTemplateSummary setTrade(UUID templateId, Trade trade, UUID ownerId) {
+    public EstimateTemplateSummary setTrade(UUID templateId, Trade trade, UUID customTradeId, UUID ownerId) {
         EstimateTemplate template = loadAccessible(templateId, ownerId);
+        UserTrade customTrade = null;
+        Trade effectiveTrade = trade;
         if (!template.isDefault()) {
-            template.setTrade(trade);
+            customTrade = resolveCustomTrade(customTradeId, ownerId);
+            effectiveTrade = customTrade != null ? Trade.OTHER : trade;
+            template.setTrade(effectiveTrade);
+            template.setCustomTrade(customTrade);
             tradeOverrideRepository.findByUserIdAndTemplateId(ownerId, templateId)
                     .ifPresent(tradeOverrideRepository::delete);
         } else {
@@ -129,7 +145,10 @@ public class EstimateTemplateService {
         }
         int count = templateItemRepository.findByTemplateIdOrderBySortOrderAscIdAsc(templateId).size();
         return new EstimateTemplateSummary(
-                template.getId(), template.getName(), trade, template.isDefault(), count);
+                template.getId(), template.getName(), effectiveTrade,
+                customTrade != null ? customTrade.getId() : null,
+                customTrade != null ? customTrade.getName() : null,
+                template.isDefault(), count);
     }
 
     @Transactional(readOnly = true)
@@ -145,17 +164,22 @@ public class EstimateTemplateService {
     /**
      * Saves the current estimate as the master's own template. Names + units +
      * type + order are kept; quantities and prices are dropped (a template is
-     * object-agnostic). {@code trade} files it under a trade (null = general).
+     * object-agnostic). {@code trade} files it under a trade (null = general);
+     * {@code customTradeId} (a master-invented trade) wins over it, same as a catalog item.
      */
     @Transactional
-    public EstimateTemplateSummary saveFromEstimate(UUID estimateId, String name, Trade trade, UUID ownerId) {
+    public EstimateTemplateSummary saveFromEstimate(UUID estimateId, String name, Trade trade,
+                                                     UUID customTradeId, UUID ownerId) {
         Estimate estimate = estimateService.loadOwned(estimateId, ownerId);
         User owner = estimate.getProject().getOwner();
+        UserTrade customTrade = resolveCustomTrade(customTradeId, ownerId);
+        Trade effectiveTrade = customTrade != null ? Trade.OTHER : trade;
         List<EstimateItem> items = estimateItemRepository.findByEstimateIdOrderBySortOrderAscIdAsc(estimateId);
         EstimateTemplate template = templateRepository.save(EstimateTemplate.builder()
                 .owner(owner)
                 .name(name.trim())
-                .trade(trade)
+                .trade(effectiveTrade)
+                .customTrade(customTrade)
                 .isDefault(false)
                 .build());
         List<EstimateTemplateItem> toSave = new ArrayList<>();
@@ -170,7 +194,10 @@ public class EstimateTemplateService {
         }
         templateItemRepository.saveAll(toSave);
         return new EstimateTemplateSummary(
-                template.getId(), template.getName(), trade, false, toSave.size());
+                template.getId(), template.getName(), effectiveTrade,
+                customTrade != null ? customTrade.getId() : null,
+                customTrade != null ? customTrade.getName() : null,
+                false, toSave.size());
     }
 
     @Transactional
@@ -178,8 +205,21 @@ public class EstimateTemplateService {
         EstimateTemplate template = loadOwnTemplate(templateId, ownerId);
         template.setName(name.trim());
         long count = templateItemRepository.findByTemplateIdOrderBySortOrderAscIdAsc(templateId).size();
+        UserTrade customTrade = template.getCustomTrade();
         return new EstimateTemplateSummary(
-                template.getId(), template.getName(), template.getTrade(), false, (int) count);
+                template.getId(), template.getName(), template.getTrade(),
+                customTrade != null ? customTrade.getId() : null,
+                customTrade != null ? customTrade.getName() : null,
+                false, (int) count);
+    }
+
+    /** Resolve and ownership-check a custom trade id from a request; {@code null} passes through. */
+    private UserTrade resolveCustomTrade(UUID customTradeId, UUID ownerId) {
+        if (customTradeId == null) {
+            return null;
+        }
+        return userTradeRepository.findByIdAndUserId(customTradeId, ownerId)
+                .orElseThrow(() -> new ResourceNotFoundException("Custom trade not found: " + customTradeId));
     }
 
     @Transactional

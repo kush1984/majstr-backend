@@ -8,8 +8,10 @@ import com.majstr.backend.entity.ItemType;
 import com.majstr.backend.entity.Trade;
 import com.majstr.backend.entity.Unit;
 import com.majstr.backend.entity.User;
+import com.majstr.backend.entity.UserTrade;
 import com.majstr.backend.repository.CatalogItemRepository;
 import com.majstr.backend.repository.UserRepository;
+import com.majstr.backend.repository.UserTradeRepository;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
@@ -39,6 +41,7 @@ class CatalogServiceTest {
 
     @Mock CatalogItemRepository catalogRepository;
     @Mock UserRepository userRepository;
+    @Mock UserTradeRepository userTradeRepository;
     @InjectMocks CatalogService catalogService;
 
     private final UUID ownerId = UUID.randomUUID();
@@ -49,7 +52,7 @@ class CatalogServiceTest {
         given(catalogRepository.save(any(CatalogItem.class))).willAnswer(inv -> inv.getArgument(0));
 
         CatalogItemResponse resp = catalogService.create(
-                new CatalogItemRequest("Кабель ВВГнг", "  Електро   роботи  ", null,
+                new CatalogItemRequest("Кабель ВВГнг", "  Електро   роботи  ", null, null,
                         ItemType.MATERIAL, Unit.M, new BigDecimal("38.50")),
                 ownerId);
 
@@ -67,7 +70,7 @@ class CatalogServiceTest {
         given(catalogRepository.findByOwnerIdOrderByNameAsc(ownerId)).willReturn(List.of(existing));
 
         CatalogItemResponse resp = catalogService.create(
-                new CatalogItemRequest("  кабель ввгнг  ", "Електрика", Trade.ELECTRICAL,
+                new CatalogItemRequest("  кабель ввгнг  ", "Електрика", Trade.ELECTRICAL, null,
                         ItemType.MATERIAL, Unit.M, new BigDecimal("42.00")),
                 ownerId);
 
@@ -86,11 +89,65 @@ class CatalogServiceTest {
         given(catalogRepository.save(any(CatalogItem.class))).willAnswer(inv -> inv.getArgument(0));
 
         CatalogItemResponse resp = catalogService.create(
-                new CatalogItemRequest("Розетка", "   ", null,
+                new CatalogItemRequest("Розетка", "   ", null, null,
                         ItemType.WORK, Unit.PIECE, new BigDecimal("180.00")),
                 ownerId);
 
         assertThat(resp.category()).isNull();
+    }
+
+    // ---- custom trades (user_trade) ------------------------------------------
+
+    @Test
+    void create_withCustomTrade_forcesTradeToOtherAndStoresTheLink() {
+        UserTrade custom = UserTrade.builder().id(UUID.randomUUID()).name("Натяжні стелі").build();
+        given(userTradeRepository.findByIdAndUserId(custom.getId(), ownerId)).willReturn(Optional.of(custom));
+        given(userRepository.getReferenceById(ownerId)).willReturn(User.builder().id(ownerId).build());
+        given(catalogRepository.save(any(CatalogItem.class))).willAnswer(inv -> inv.getArgument(0));
+
+        CatalogItemResponse resp = catalogService.create(
+                new CatalogItemRequest("Монтаж стелі", null, Trade.ELECTRICAL, custom.getId(),
+                        ItemType.WORK, Unit.M2, new BigDecimal("250.00")),
+                ownerId);
+
+        // A custom trade always wins over any system trade sent alongside it — the invariant
+        // both CatalogItem's own CHECK and EstimateTemplate's mirror pin (trade = OTHER).
+        assertThat(resp.trade()).isEqualTo(Trade.OTHER);
+        assertThat(resp.customTradeId()).isEqualTo(custom.getId());
+        assertThat(resp.customTradeName()).isEqualTo("Натяжні стелі");
+    }
+
+    @Test
+    void create_withCustomTradeNotOwnedByCaller_throwsNotFound() {
+        UUID foreignCustomTradeId = UUID.randomUUID();
+        given(userTradeRepository.findByIdAndUserId(foreignCustomTradeId, ownerId)).willReturn(Optional.empty());
+
+        assertThatThrownBy(() -> catalogService.create(
+                new CatalogItemRequest("Монтаж стелі", null, null, foreignCustomTradeId,
+                        ItemType.WORK, Unit.M2, new BigDecimal("250.00")),
+                ownerId))
+                .isInstanceOf(com.majstr.backend.exception.ResourceNotFoundException.class);
+        verify(catalogRepository, never()).save(any());
+    }
+
+    @Test
+    void update_switchingBackToASystemTrade_clearsTheCustomTradeLink() {
+        UUID itemId = UUID.randomUUID();
+        UserTrade custom = UserTrade.builder().id(UUID.randomUUID()).name("Натяжні стелі").build();
+        CatalogItem existing = CatalogItem.builder()
+                .id(itemId).owner(User.builder().id(ownerId).build())
+                .name("Монтаж стелі").trade(Trade.OTHER).customTrade(custom)
+                .type(ItemType.WORK).unit(Unit.M2).defaultPrice(new BigDecimal("250.00"))
+                .build();
+        given(catalogRepository.findById(itemId)).willReturn(Optional.of(existing));
+
+        catalogService.update(itemId,
+                new CatalogItemRequest("Монтаж стелі", null, Trade.ELECTRICAL, null,
+                        ItemType.WORK, Unit.M2, new BigDecimal("250.00")),
+                ownerId);
+
+        assertThat(existing.getTrade()).isEqualTo(Trade.ELECTRICAL);
+        assertThat(existing.getCustomTrade()).isNull();
     }
 
     // ---- offline authoring: client-provided id (X-Entity-Uuid) --------------
@@ -106,7 +163,7 @@ class CatalogServiceTest {
         given(catalogRepository.findById(id)).willReturn(Optional.of(existing));
 
         CatalogItemResponse resp = catalogService.create(
-                new CatalogItemRequest("Кабель ВВГнг", null, null,
+                new CatalogItemRequest("Кабель ВВГнг", null, null, null,
                         ItemType.MATERIAL, Unit.M, new BigDecimal("38.50")),
                 ownerId, id);
 
@@ -122,7 +179,7 @@ class CatalogServiceTest {
         given(catalogRepository.findById(id)).willReturn(Optional.of(foreignItem(id)));
 
         assertThatThrownBy(() -> catalogService.create(
-                new CatalogItemRequest("Hijack", null, null,
+                new CatalogItemRequest("Hijack", null, null, null,
                         ItemType.WORK, Unit.PIECE, new BigDecimal("1.00")),
                 ownerId, id))
                 .isInstanceOf(AccessDeniedException.class);
@@ -137,7 +194,7 @@ class CatalogServiceTest {
         given(catalogRepository.save(any(CatalogItem.class))).willAnswer(inv -> inv.getArgument(0));
 
         CatalogItemResponse resp = catalogService.create(
-                new CatalogItemRequest("Розетка", null, null,
+                new CatalogItemRequest("Розетка", null, null, null,
                         ItemType.WORK, Unit.PIECE, new BigDecimal("180.00")),
                 ownerId, id);
 
@@ -251,7 +308,7 @@ class CatalogServiceTest {
         given(catalogRepository.findById(itemId)).willReturn(Optional.of(foreign));
 
         assertThatThrownBy(() -> catalogService.update(itemId,
-                new CatalogItemRequest("Hijack", null, null, ItemType.WORK, Unit.PIECE, new BigDecimal("1.00")),
+                new CatalogItemRequest("Hijack", null, null, null, ItemType.WORK, Unit.PIECE, new BigDecimal("1.00")),
                 ownerId))
                 .isInstanceOf(AccessDeniedException.class);
 

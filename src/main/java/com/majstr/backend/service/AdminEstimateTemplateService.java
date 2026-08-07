@@ -46,7 +46,7 @@ public class AdminEstimateTemplateService {
         Map<UUID, Long> counts = itemCounts(defaults);
         return defaults.stream()
                 .map(t -> new EstimateTemplateSummary(
-                        t.getId(), t.getName(), t.getTrade(), true,
+                        t.getId(), t.getName(), t.getTrade(), null, null, true,
                         counts.getOrDefault(t.getId(), 0L).intValue()))
                 .toList();
     }
@@ -66,7 +66,7 @@ public class AdminEstimateTemplateService {
                 .owner(null)
                 .build());
         log.info("admin {} created default estimate template {} '{}'", actor, t.getId(), t.getName());
-        return new EstimateTemplateSummary(t.getId(), t.getName(), t.getTrade(), true, 0);
+        return new EstimateTemplateSummary(t.getId(), t.getName(), t.getTrade(), null, null, true, 0);
     }
 
     @Transactional
@@ -76,7 +76,7 @@ public class AdminEstimateTemplateService {
         t.setTrade(req.trade());
         long count = itemRepository.findByTemplateIdOrderBySortOrderAscIdAsc(id).size();
         log.info("admin {} updated default estimate template {} '{}'", actor, id, t.getName());
-        return new EstimateTemplateSummary(id, t.getName(), t.getTrade(), true, (int) count);
+        return new EstimateTemplateSummary(id, t.getName(), t.getTrade(), null, null, true, (int) count);
     }
 
     @Transactional

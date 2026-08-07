@@ -3,9 +3,12 @@ package com.majstr.backend.service;
 import com.majstr.backend.dto.ProfileUpdateRequest;
 import com.majstr.backend.dto.UserResponse;
 import com.majstr.backend.entity.User;
+import com.majstr.backend.entity.UserTrade;
+import com.majstr.backend.exception.CustomTradeDuplicateException;
 import com.majstr.backend.exception.EmailAlreadyExistsException;
 import com.majstr.backend.exception.ResourceNotFoundException;
 import com.majstr.backend.repository.UserRepository;
+import com.majstr.backend.repository.UserTradeRepository;
 import com.majstr.backend.service.ImageContentTypeDetector.ImageKind;
 import com.majstr.backend.storage.StorageService;
 import com.majstr.backend.storage.StoredObject;
@@ -35,6 +38,7 @@ public class ProfileService {
     private static final long MAX_LOGO_BYTES = 2L * 1024 * 1024;
 
     private final UserRepository userRepository;
+    private final UserTradeRepository userTradeRepository;
     private final StorageService storage;
     private final EmailVerificationService emailVerificationService;
     private final EmailPolicyService emailPolicyService;
@@ -47,7 +51,7 @@ public class ProfileService {
         if (user.getConsentedToPrivacyAt() == null) {
             user.setConsentedToPrivacyAt(Instant.now());
         }
-        return UserResponse.from(user);
+        return response(user);
     }
 
     /** Stamp the client-data responsibility acknowledgement (controller/operator
@@ -58,7 +62,7 @@ public class ProfileService {
         if (user.getAcknowledgedClientDataAt() == null) {
             user.setAcknowledgedClientDataAt(Instant.now());
         }
-        return UserResponse.from(user);
+        return response(user);
     }
 
     /**
@@ -71,12 +75,16 @@ public class ProfileService {
     public UserResponse setAutoRenew(UUID userId, boolean enabled) {
         User user = loadUser(userId);
         user.setAutoRenew(enabled && user.getCardToken() != null);
-        return UserResponse.from(user);
+        return response(user);
     }
 
     private User loadUser(UUID userId) {
         return userRepository.findById(userId)
                 .orElseThrow(() -> new ResourceNotFoundException("User not found: " + userId));
+    }
+
+    private UserResponse response(User user) {
+        return UserResponse.from(user, userTradeRepository.findByUserIdOrderBySortOrderAscIdAsc(user.getId()));
     }
 
     @Transactional
@@ -87,10 +95,76 @@ public class ProfileService {
         user.setPhone(req.phone().trim());
         user.setCompanyName(req.companyName().trim());
         // Replacing the trade set never touches the user's catalog items — those
-        // are independent once seeded at registration.
+        // are independent once seeded at registration, and removing a system trade
+        // (down to none, relying on custom trades instead) is a supported end state.
         user.setTrades(new LinkedHashSet<>(req.trades()));
         applyEmailChange(user, req.email());
-        return UserResponse.from(user);
+        return response(user);
+    }
+
+    // ---- custom trades (user_trade) ---------------------------------------
+
+    /** Add a master-invented trade. Idempotent-unfriendly by design (unlike catalog items) —
+     *  a repeat name is a mistake worth surfacing (409), not a silent merge; catalog items are
+     *  keyed by (name,type,unit) tuples a master edits often, a trade name is typed once. */
+    @Transactional
+    public UserResponse addCustomTrade(UUID userId, String name) {
+        User user = loadUser(userId);
+        createCustomTrade(user, name);
+        return response(user);
+    }
+
+    /**
+     * Shared with {@code AuthService.register}, which creates zero or more custom trades in the
+     * same transaction as the account — registration dedupes names within its own request before
+     * calling this (a repeat name typed twice must merge silently, not 409), so the per-name
+     * uniqueness check here only ever fires against trades that predate this call.
+     */
+    @Transactional
+    UserTrade createCustomTrade(User user, String name) {
+        String trimmed = name.trim();
+        if (userTradeRepository.existsByUserIdAndNameIgnoreCase(user.getId(), trimmed)) {
+            throw new CustomTradeDuplicateException(trimmed);
+        }
+        UserTrade trade = UserTrade.builder()
+                .user(user)
+                .name(trimmed)
+                .sortOrder(userTradeRepository.nextSortOrder(user.getId()))
+                .build();
+        return userTradeRepository.save(trade);
+    }
+
+    /** Rename a custom trade — a live FK, so every position/template filed under it picks up
+     *  the new name immediately with no snapshot to update. */
+    @Transactional
+    public UserResponse renameCustomTrade(UUID userId, UUID tradeId, String name) {
+        UserTrade trade = loadOwnedCustomTrade(tradeId, userId);
+        String trimmed = name.trim();
+        if (!trimmed.equalsIgnoreCase(trade.getName())
+                && userTradeRepository.existsByUserIdAndNameIgnoreCase(userId, trimmed)) {
+            throw new CustomTradeDuplicateException(trimmed);
+        }
+        trade.setName(trimmed);
+        return response(trade.getUser());
+    }
+
+    /**
+     * Delete a custom trade. Nothing else to do here: {@code ON DELETE SET NULL} on both
+     * {@code catalog_items.custom_trade_id} and {@code estimate_templates.custom_trade_id} drops
+     * every position/template filed under it back to plain OTHER at the database level — those
+     * rows already carry {@code trade = OTHER} (the invariant both tables enforce), so nothing
+     * about them needs to change on this side. Idempotent: an already-gone id is a no-op.
+     */
+    @Transactional
+    public UserResponse deleteCustomTrade(UUID userId, UUID tradeId) {
+        User user = loadUser(userId);
+        userTradeRepository.findByIdAndUserId(tradeId, userId).ifPresent(userTradeRepository::delete);
+        return response(user);
+    }
+
+    private UserTrade loadOwnedCustomTrade(UUID tradeId, UUID userId) {
+        return userTradeRepository.findByIdAndUserId(tradeId, userId)
+                .orElseThrow(() -> new ResourceNotFoundException("Custom trade not found: " + tradeId));
     }
 
     /**

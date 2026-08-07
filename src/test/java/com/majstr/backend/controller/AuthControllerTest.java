@@ -7,6 +7,7 @@ import com.majstr.backend.dto.UserResponse;
 import com.majstr.backend.entity.Trade;
 import com.majstr.backend.exception.GlobalExceptionHandler;
 import com.majstr.backend.repository.UserRepository;
+import com.majstr.backend.repository.UserTradeRepository;
 import com.majstr.backend.service.AuthService;
 import com.majstr.backend.service.EmailVerificationService;
 import com.majstr.backend.service.ForgotPasswordRateLimiter;
@@ -53,6 +54,9 @@ class AuthControllerTest {
     private UserRepository userRepository;
 
     @Mock
+    private UserTradeRepository userTradeRepository;
+
+    @Mock
     private EmailVerificationService emailVerificationService;
 
     @Mock
@@ -93,6 +97,7 @@ class AuthControllerTest {
                 "Sup3r-Secret!",
                 "John Smith",
                 Set.of(Trade.ELECTRICAL),
+                null,
                 "+15551234567",
                 "Smith Electrical LLC",
                 true,
@@ -164,6 +169,7 @@ class AuthControllerTest {
                 "Sup3r-Secret!",
                 "John Smith",
                 Set.of(Trade.GENERAL),
+                null,
                 "+15551234567",
                 "Company",
                 true,
@@ -178,6 +184,51 @@ class AuthControllerTest {
     }
 
     @Test
+    void register_rejectsZeroTradesSystemAndCustomBothEmpty() throws Exception {
+        // isTradeChosen() requires at least ONE of system trades / custom trade names.
+        RegisterRequest noTrades = new RegisterRequest(
+                "john@example.com",
+                "Sup3r-Secret!",
+                "John Smith",
+                Set.of(),
+                null,
+                "+15551234567",
+                "Company",
+                true,
+                null,
+                null);
+
+        mockMvc.perform(post("/api/auth/register")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(noTrades)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.status", is(400)));
+    }
+
+    @Test
+    void register_acceptsACustomTradeAloneWithNoSystemTrade() throws Exception {
+        RegisterRequest req = new RegisterRequest(
+                "john@example.com",
+                "Sup3r-Secret!",
+                "John Smith",
+                Set.of(),
+                java.util.List.of("Натяжні стелі"),
+                "+15551234567",
+                "Smith Electrical LLC",
+                true,
+                null,
+                null);
+
+        given(authService.register(any(RegisterRequest.class)))
+                .willReturn(sampleAuthResponse("john@example.com"));
+
+        mockMvc.perform(post("/api/auth/register")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(req)))
+                .andExpect(status().isCreated());
+    }
+
+    @Test
     void register_rejectsWithoutConsent() throws Exception {
         // Privacy consent is mandatory (@AssertTrue) — a false flag is a 400.
         RegisterRequest noConsent = new RegisterRequest(
@@ -185,6 +236,7 @@ class AuthControllerTest {
                 "Sup3r-Secret!",
                 "John Smith",
                 Set.of(Trade.GENERAL),
+                null,
                 "+15551234567",
                 "Company",
                 false,
@@ -234,7 +286,7 @@ class AuthControllerTest {
 
     private static RegisterRequest validRegisterRequest(String email) {
         return new RegisterRequest(email, "Sup3r-Secret!", "John Smith",
-                Set.of(Trade.ELECTRICAL), "+15551234567", "Smith Electrical LLC", true, null, null);
+                Set.of(Trade.ELECTRICAL), null, "+15551234567", "Smith Electrical LLC", true, null, null);
     }
 
     private AuthResponse sampleAuthResponse(String email) {
@@ -243,6 +295,7 @@ class AuthControllerTest {
                 email,
                 "John Smith",
                 Set.of(Trade.ELECTRICAL),
+                java.util.List.of(),
                 "+15551234567",
                 "Smith Electrical LLC",
                 null,

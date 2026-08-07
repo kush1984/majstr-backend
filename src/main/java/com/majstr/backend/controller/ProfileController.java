@@ -1,8 +1,10 @@
 package com.majstr.backend.controller;
 
+import com.majstr.backend.dto.CustomTradeRequest;
 import com.majstr.backend.dto.ProfileUpdateRequest;
 import com.majstr.backend.dto.UserResponse;
 import com.majstr.backend.repository.UserRepository;
+import com.majstr.backend.repository.UserTradeRepository;
 import com.majstr.backend.security.UserPrincipal;
 import com.majstr.backend.service.ProfileService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -14,6 +16,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -23,6 +26,7 @@ import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
+import java.util.UUID;
 
 @RestController
 @RequestMapping("/api/profile")
@@ -33,6 +37,7 @@ public class ProfileController {
 
     private final ProfileService profileService;
     private final UserRepository userRepository;
+    private final UserTradeRepository userTradeRepository;
 
     @Operation(summary = "Update the contractor's profile (email editable only while unverified)")
     @PutMapping
@@ -48,9 +53,8 @@ public class ProfileController {
         profileService.uploadLogo(principal.id(), file);
         // Eager-fetch trades: UserResponse.from reads them and this reload runs
         // outside a session (open-in-view off), so a plain findById would throw.
-        return userRepository.findWithTradesById(principal.id())
-                .map(UserResponse::from)
-                .orElseThrow();
+        var user = userRepository.findWithTradesById(principal.id()).orElseThrow();
+        return UserResponse.from(user, userTradeRepository.findByUserIdOrderBySortOrderAscIdAsc(user.getId()));
     }
 
     @Operation(summary = "Delete contractor logo")
@@ -77,5 +81,30 @@ public class ProfileController {
     public UserResponse setAutoRenew(@RequestParam boolean enabled,
                                      @AuthenticationPrincipal UserPrincipal principal) {
         return profileService.setAutoRenew(principal.id(), enabled);
+    }
+
+    @Operation(summary = "Add a master-invented trade — no reference catalog exists for it, "
+            + "the master fills it himself")
+    @PostMapping("/custom-trades")
+    public UserResponse addCustomTrade(@Valid @RequestBody CustomTradeRequest req,
+                                       @AuthenticationPrincipal UserPrincipal principal) {
+        return profileService.addCustomTrade(principal.id(), req.name());
+    }
+
+    @Operation(summary = "Rename a custom trade — a live FK, so every position/template filed "
+            + "under it picks up the new name immediately")
+    @PatchMapping("/custom-trades/{id}")
+    public UserResponse renameCustomTrade(@PathVariable UUID id,
+                                          @Valid @RequestBody CustomTradeRequest req,
+                                          @AuthenticationPrincipal UserPrincipal principal) {
+        return profileService.renameCustomTrade(principal.id(), id, req.name());
+    }
+
+    @Operation(summary = "Delete a custom trade — positions/templates filed under it fall back "
+            + "to \"Інше\", nothing is lost")
+    @DeleteMapping("/custom-trades/{id}")
+    public UserResponse deleteCustomTrade(@PathVariable UUID id,
+                                          @AuthenticationPrincipal UserPrincipal principal) {
+        return profileService.deleteCustomTrade(principal.id(), id);
     }
 }

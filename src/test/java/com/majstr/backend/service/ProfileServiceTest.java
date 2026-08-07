@@ -4,8 +4,12 @@ import com.majstr.backend.dto.ProfileUpdateRequest;
 import com.majstr.backend.dto.UserResponse;
 import com.majstr.backend.entity.Trade;
 import com.majstr.backend.entity.User;
+import com.majstr.backend.entity.UserTrade;
+import com.majstr.backend.exception.CustomTradeDuplicateException;
 import com.majstr.backend.exception.EmailAlreadyExistsException;
+import com.majstr.backend.exception.ResourceNotFoundException;
 import com.majstr.backend.repository.UserRepository;
+import com.majstr.backend.repository.UserTradeRepository;
 import com.majstr.backend.storage.StorageService;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -31,6 +35,7 @@ import static org.mockito.Mockito.verify;
 class ProfileServiceTest {
 
     @Mock UserRepository userRepository;
+    @Mock UserTradeRepository userTradeRepository;
     @Mock StorageService storage;                       // unused here, needed for @InjectMocks
     @Mock EmailVerificationService emailVerificationService;
     @Mock EmailPolicyService emailPolicyService;
@@ -178,5 +183,53 @@ class ProfileServiceTest {
                 .isInstanceOf(com.majstr.backend.storage.UnsupportedMediaTypeException.class);
 
         verify(storage, never()).store(any(), anyLong(), any(), any(), any());
+    }
+
+    // ---- custom trades (user_trade) ---------------------------------------
+
+    @Test
+    void addCustomTrade_savesTrimmedNameAtTheNextSortSlot() {
+        User u = user(true, "ivan@example.com");
+        given(userRepository.findById(userId)).willReturn(Optional.of(u));
+        given(userTradeRepository.existsByUserIdAndNameIgnoreCase(userId, "Натяжні стелі")).willReturn(false);
+        given(userTradeRepository.nextSortOrder(userId)).willReturn(2);
+
+        profileService.addCustomTrade(userId, "  Натяжні стелі  ");
+
+        var captor = org.mockito.ArgumentCaptor.forClass(UserTrade.class);
+        verify(userTradeRepository).save(captor.capture());
+        assertThat(captor.getValue().getName()).isEqualTo("Натяжні стелі");
+        assertThat(captor.getValue().getSortOrder()).isEqualTo(2);
+    }
+
+    @Test
+    void addCustomTrade_duplicateName_throwsConflictAndNeverSaves() {
+        given(userRepository.findById(userId)).willReturn(Optional.of(user(true, "ivan@example.com")));
+        given(userTradeRepository.existsByUserIdAndNameIgnoreCase(userId, "Натяжні стелі")).willReturn(true);
+
+        assertThatThrownBy(() -> profileService.addCustomTrade(userId, "Натяжні стелі"))
+                .isInstanceOf(CustomTradeDuplicateException.class);
+        verify(userTradeRepository, never()).save(any());
+    }
+
+    @Test
+    void renameCustomTrade_deniedForATradeOwnedByAnotherUser() {
+        UUID tradeId = UUID.randomUUID();
+        given(userTradeRepository.findByIdAndUserId(tradeId, userId)).willReturn(Optional.empty());
+
+        assertThatThrownBy(() -> profileService.renameCustomTrade(userId, tradeId, "Кондиціонери"))
+                .isInstanceOf(ResourceNotFoundException.class);
+    }
+
+    @Test
+    void deleteCustomTrade_alreadyGoneIsANoOp() {
+        UUID tradeId = UUID.randomUUID();
+        given(userRepository.findById(userId)).willReturn(Optional.of(user(true, "ivan@example.com")));
+        given(userTradeRepository.findByIdAndUserId(tradeId, userId)).willReturn(Optional.empty());
+
+        // Idempotent — a replayed/duplicate delete of an already-gone custom trade is fine.
+        profileService.deleteCustomTrade(userId, tradeId);
+
+        verify(userTradeRepository, never()).delete(any());
     }
 }

@@ -17,6 +17,10 @@ public record EstimateTemplateDetail(
         UUID id,
         String name,
         Trade trade,
+        /** Set only for a master's OWN template filed under a master-invented trade — always
+         *  {@code null} for a system default. */
+        UUID customTradeId,
+        String customTradeName,
         boolean isDefault,
         List<Item> items
 ) {
@@ -27,10 +31,13 @@ public record EstimateTemplateDetail(
     }
 
     public static EstimateTemplateDetail from(EstimateTemplate t, List<EstimateTemplateItem> items) {
+        var customTrade = t.getCustomTrade();
         return new EstimateTemplateDetail(
                 t.getId(),
                 t.getName(),
                 t.getTrade(),
+                customTrade != null ? customTrade.getId() : null,
+                customTrade != null ? customTrade.getName() : null,
                 t.isDefault(),
                 items.stream().map(Item::from).toList()
         );

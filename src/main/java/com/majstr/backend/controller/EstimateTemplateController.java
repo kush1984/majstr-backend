@@ -72,7 +72,7 @@ public class EstimateTemplateController {
     public EstimateTemplateSummary setTrade(@PathVariable UUID id,
                                             @Valid @RequestBody TemplateTradeRequest req,
                                             @AuthenticationPrincipal UserPrincipal principal) {
-        return templateService.setTrade(id, req.trade(), principal.id());
+        return templateService.setTrade(id, req.trade(), req.customTradeId(), principal.id());
     }
 
     @Operation(summary = "Delete my own template (system defaults are read-only)")
@@ -110,7 +110,8 @@ public class EstimateTemplateController {
             @PathVariable UUID id,
             @Valid @RequestBody SaveAsTemplateRequest req,
             @AuthenticationPrincipal UserPrincipal principal) {
-        EstimateTemplateSummary saved = templateService.saveFromEstimate(id, req.name(), req.trade(), principal.id());
+        EstimateTemplateSummary saved =
+                templateService.saveFromEstimate(id, req.name(), req.trade(), req.customTradeId(), principal.id());
         return ResponseEntity.status(HttpStatus.CREATED).body(saved);
     }
 

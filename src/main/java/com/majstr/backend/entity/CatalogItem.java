@@ -55,6 +55,14 @@ public class CatalogItem {
     @Column(name = "trade", nullable = false, length = 50)
     private Trade trade = Trade.OTHER;
 
+    /** A master-invented trade instead of a system one. When set, {@code trade} is always OTHER
+     *  (invariant enforced by {@code CatalogService} and a DB CHECK) — this column is what tells
+     *  a "real Інше" position apart from one filed under someone's own trade. ON DELETE SET NULL:
+     *  deleting the custom trade just drops the position back to plain OTHER, nothing is lost. */
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "custom_trade_id")
+    private UserTrade customTrade;
+
     @Enumerated(EnumType.STRING)
     @Column(name = "type", nullable = false, length = 20)
     private ItemType type;

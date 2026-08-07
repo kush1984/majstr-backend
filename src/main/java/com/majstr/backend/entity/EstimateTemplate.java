@@ -63,6 +63,14 @@ public class EstimateTemplate {
     @Column(name = "trade", length = 50)
     private Trade trade;
 
+    /** A master-invented trade — OWN templates only ({@code isDefault=false}), never a system
+     *  default (DB CHECK pins {@code is_default=false} alongside it). When set, {@code trade} is
+     *  always OTHER, never null — a custom-trade template is filed under that trade, not general.
+     *  ON DELETE SET NULL: deleting the custom trade drops the template back to plain OTHER. */
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "custom_trade_id")
+    private UserTrade customTrade;
+
     @Column(name = "is_default", nullable = false)
     private boolean isDefault;
 

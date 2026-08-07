@@ -9,7 +9,7 @@ gotchas live in **[docs/architecture.md](docs/architecture.md)** — the index a
 it. Read the relevant section there before working in that area. Per-feature history is in
 `docs/iteration-*.md`; deferred decisions in [docs/open-questions.md](docs/open-questions.md).
 
-## Stack (pinned\edited)
+## Stack (pinned)
 
 - **Spring Boot 4.0.6** (Spring Framework 7, Jakarta EE 11) on **Java 21 (LTS)**
 - **Gradle Kotlin DSL** — toolchain pinned to JDK 21 in `build.gradle.kts`
@@ -67,8 +67,9 @@ controllers return DTOs. `passwordHash` never appears in any response (`UserResp
 
 `hibernate.ddl-auto: validate` — never express schema changes in entity annotations. Add a new
 `V<N>__<desc>.sql` under `src/main/resources/db/migration/`; **check the highest number first** (`ls`
-+ sort numerically — latest is **V89**). **Never edit an applied migration** — Flyway checksums it and
-a changed file fails startup. New `Trade` enum constant → migration to extend the `user_trades` CHECK.
++ sort numerically — latest is **V92**). **Never edit an applied migration** — Flyway checksums it and
+a changed file fails startup. New `Trade` enum constant → migration to extend the `user_trades` CHECK
+(a master-invented trade instead goes in `user_trade` — no migration needed, see index below).
 (Detail + the "testing a DATA migration" pattern: index → Flyway / catalog.)
 
 ## Testing
@@ -122,7 +123,7 @@ tests (Testcontainers slice), billing/payments (monobank checkout, auto-renew, y
 trial), password reset, client messages with attachments + retention, album takeoff (built, not
 exposed), offline-first authoring (everything except photos), estimate duplication with a per-line
 markup, bulk line deletion, the 15-day PRO trial with T-3…T-1 reminders, multi-sheet photo recognition
-with `sheetKind`.
+with `sheetKind`, custom (master-invented) trades alongside the system `Trade` enum.
 
 ## Open-question log
 
@@ -155,8 +156,10 @@ the section before working in that area.
 - **Estimate import (Excel/photo)** — `import/parse|commit`, `Feature.ESTIMATE_IMPORT`; raw-HTTP extractor; failure → 503 `AI_UNAVAILABLE` (retries transient 429/5xx/529); uploaded file discarded.
 - **`sheetKind`** — `PRINTED_PLAN` vs `HAND_DRAWN`; **default leans PRINTED_PLAN** (incl. missing field); passport (the one sheet in metres) rules gated behind ≥2 evidence signals.
 - **Duplicate with markup** — `source_unit_price` on the **line** (V85), not one estimate percent; economy counts the difference; bulk delete cascades parent→duplicate only.
+- **Consolidation freezes «%» lines, and V92 makes that honest** — `copyForConsolidation` freezes the amount (correct: re-measuring against the merged subtotal would silently give an unsigned discount) but used to lose provenance, reading «10 % від 3450» with no hint what 3450 was. `estimate_items.base_origin_label` is a **snapshot** (not FK, same as `source_unit_price`/`source_item_id`) built from the line's kind/base BEFORE it's overwritten to MANUAL — «−15% від робіт · кошторис «Х»». PWA: `percentLabel` shows it verbatim when set; `ItemForm` hides the live POSITION/TOTAL picker for a frozen line (there's nothing left to point at) and lets percent + base sum be edited directly instead.
 - **Consolidated / receipt import / object photos** — `consolidate` (new DRAFT); `RECEIPT_IMPORT` (adds to open estimate, no catalog upsert); photos are **private** (auth-owner + portal-token streams only, never `/api/files/**`).
 - **Catalog is reference data, estimate lines are snapshots** — templates copied BY VALUE; `estimate_items` carry their own name/unit/price with **no FK** (the client signed those numbers); a catalog rewrite must notice the master (`catalog_update_notices`); default catalog is works-only (V81).
+- **Custom trades (V91)** — `user_trade` (id/name/sort per master) has no reference catalog by design; `catalog_items`/`estimate_templates` (own only) get a nullable `custom_trade_id` FK, `ON DELETE SET NULL`; invariant on both tables: `custom_trade_id IS NULL OR trade = 'OTHER'` (a custom-trade row is always OTHER underneath, never a bare system trade) — deleting the custom trade drops it to plain "Інше" for free, no app-level UPDATE. `CatalogTemplate`/`TemplateTradeOverride` untouched — a system default can never carry one (DB CHECK also pins `is_default = false`). PWA: `TradeFilterChips`/`tradeMatches` key on `TradeKey = Trade | \`custom:${id}\`` and must exclude custom rows from the plain "Інше" chip even though `trade` reads OTHER for both.
 - **«%» is a share OF something (V88)** — base `POSITION`/`TOTAL` (per-type: works vs materials), `MANUAL` retired; **`line_total` is STORED** (server-authored, never from a request); only a `TOTAL` percent may be negative (+/− toggle, V89).
 - **Mirrored formulas — change BOTH sides together** — `EstimateMath.recalculate` ↔ `useEstimate.recomputeLines` (percent pass); `MeasurementCalc` ↔ `measurementCalc.ts`.
 - **Estimate line order** — explicit reorder; `EstimatePdfService` mirrors the grouping (change both or the PDF disagrees).

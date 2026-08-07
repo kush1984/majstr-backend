@@ -11,6 +11,7 @@ import com.majstr.backend.dto.EstimateResponse;
 import com.majstr.backend.dto.EstimateSummary;
 import com.majstr.backend.dto.EstimateUpdateRequest;
 import com.lowagie.text.DocumentException;
+import com.majstr.backend.config.LocalizationConfig;
 import com.majstr.backend.entity.CatalogItem;
 import com.majstr.backend.entity.Estimate;
 import com.majstr.backend.entity.EstimateItem;
@@ -43,11 +44,13 @@ import java.io.InputStream;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.Instant;
+import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Locale;
 import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
@@ -62,6 +65,13 @@ public class EstimateService {
     /** Quantity keeps three decimals (matches the estimate_items column scale). */
     static final int QUANTITY_SCALE = 3;
     static final RoundingMode MONEY_ROUNDING = RoundingMode.HALF_UP;
+
+    /** Mirrors the PWA's {@code estimateName()} default EXACTLY (day + genitive month, e.g.
+     *  «6 липня», no year) — a frozen provenance label must read identically to what the master
+     *  already sees for that estimate in the list, or the source becomes unrecognizable. Ukrainian
+     *  "MMMM" in java.time's CLDR data is the format-context (genitive) form, not stand-alone. */
+    private static final DateTimeFormatter DEFAULT_ESTIMATE_NAME_DATE =
+            DateTimeFormatter.ofPattern("d MMMM", Locale.forLanguageTag("uk"));
 
     private final EstimateRepository estimateRepository;
     private final EstimateItemRepository itemRepository;
@@ -363,10 +373,13 @@ public class EstimateService {
             BigDecimal amount = item.getLineTotal() == null
                     ? BigDecimal.ZERO.setScale(MONEY_SCALE, MONEY_ROUNDING)
                     : item.getLineTotal();
+            // The label is built from item's ORIGINAL kind/base — read before the copy below
+            // overwrites the copy's own kind to MANUAL. item itself (the source) is untouched.
             copy.lineTotal(amount)
                     .baseDetached(true)
                     .percentBaseKind(PercentBaseKind.MANUAL)
-                    .unitPrice(reconstructPercentBase(amount, item.getQuantity()));
+                    .unitPrice(reconstructPercentBase(amount, item.getQuantity()))
+                    .baseOriginLabel(buildBaseOriginLabel(item));
         }
         return copy.build();
     }
@@ -378,6 +391,58 @@ public class EstimateService {
             return BigDecimal.ZERO.setScale(MONEY_SCALE, MONEY_ROUNDING);
         }
         return amount.multiply(new BigDecimal("100")).divide(percent, MONEY_SCALE, MONEY_ROUNDING);
+    }
+
+    /**
+     * What a PERCENT line meant before consolidation froze it — «−15% від робіт · кошторис
+     * "Квартира — чорнові"» — so the frozen row keeps its provenance instead of reading as a
+     * percentage of a number nobody can place. Built from {@code item}'s ORIGINAL kind/base,
+     * read before {@link #copyForConsolidation} overwrites the copy's own kind to MANUAL.
+     */
+    private String buildBaseOriginLabel(EstimateItem item) {
+        PercentBaseKind kind = item.getPercentBaseKind();
+        // null can only be combined with `default` in a case label (javac: "invalid case label
+        // combination"), so a genuinely absent kind is handled before the switch rather than as
+        // a case null alongside MANUAL.
+        String baseDescription = kind == null ? "суми" : switch (kind) {
+            case TOTAL -> item.getType() == ItemType.MATERIAL ? "матеріалів" : "робіт";
+            case POSITION -> describePositionBase(item.getPercentBaseItemId());
+            case MANUAL -> "суми";
+        };
+        BigDecimal percent = item.getQuantity();
+        String percentText = (percent.signum() > 0 ? "+" : "") + percent.stripTrailingZeros().toPlainString() + "%";
+        return percentText + " від " + baseDescription + " · кошторис «" + sourceEstimateName(item.getEstimate()) + "»";
+    }
+
+    /**
+     * The name the master already sees for this estimate in his list — the master's own label if
+     * set, otherwise the SAME dated default the PWA computes client-side («Кошторис від 6 липня»).
+     * Without this, every unnamed source estimate collapsed to the bare word «Кошторис», and two
+     * frozen lines from two different unnamed estimates read identically with no way to tell which
+     * was which.
+     */
+    private String sourceEstimateName(Estimate estimate) {
+        if (estimate == null) {
+            return "Кошторис";
+        }
+        String name = estimate.getName();
+        if (name != null && !name.isBlank()) {
+            return name.trim();
+        }
+        if (estimate.getCreatedAt() == null) {
+            return "Кошторис";
+        }
+        String date = DEFAULT_ESTIMATE_NAME_DATE.format(estimate.getCreatedAt().atZone(LocalizationConfig.ZONE));
+        return "Кошторис від " + date;
+    }
+
+    private String describePositionBase(UUID baseItemId) {
+        if (baseItemId == null) {
+            return "позиції";
+        }
+        return itemRepository.findById(baseItemId)
+                .map(base -> "«" + base.getName() + "»")
+                .orElse("видаленої позиції");
     }
 
     @Transactional(readOnly = true)

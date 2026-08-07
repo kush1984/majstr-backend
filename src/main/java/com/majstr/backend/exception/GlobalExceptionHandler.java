@@ -121,6 +121,16 @@ public class GlobalExceptionHandler {
         return ResponseEntity.status(HttpStatus.CONFLICT).body(body);
     }
 
+    @ExceptionHandler(CustomTradeDuplicateException.class)
+    public ResponseEntity<ErrorResponse> handleCustomTradeDuplicate(
+            CustomTradeDuplicateException ex, HttpServletRequest req) {
+        ErrorResponse body = ErrorResponse.coded(HttpStatus.CONFLICT.value(),
+                HttpStatus.CONFLICT.getReasonPhrase(),
+                msg("error.custom-trade.duplicate"),
+                req.getRequestURI(), "CUSTOM_TRADE_DUPLICATE");
+        return ResponseEntity.status(HttpStatus.CONFLICT).body(body);
+    }
+
     /**
      * Level 2 (race safety): the pre-check in {@code AuthService.register} can't prevent
      * two concurrent registrations of the same email — the DB unique constraint does, and

@@ -4,9 +4,11 @@ import com.majstr.backend.entity.Plan;
 import com.majstr.backend.entity.Role;
 import com.majstr.backend.entity.Trade;
 import com.majstr.backend.entity.User;
+import com.majstr.backend.entity.UserTrade;
 
 import java.time.Instant;
 import java.util.LinkedHashSet;
+import java.util.List;
 import java.util.Set;
 import java.util.UUID;
 
@@ -15,6 +17,9 @@ public record UserResponse(
         String email,
         String fullName,
         Set<Trade> trades,
+        /** Master-invented trades (user_trade) — see {@link Trade} for the closed system set;
+         *  ordered by the master's own arrangement. */
+        List<UserTradeResponse> customTrades,
         String phone,
         String companyName,
         String logoUrl,
@@ -40,12 +45,18 @@ public record UserResponse(
         // majstr.pro/?ref=m-<referralCode> from it.
         String referralCode
 ) {
-    public static UserResponse from(User user) {
+    /** {@code customTrades} is a separate explicit query, deliberately NOT a lazy collection on
+     *  {@link User} — this factory is called from many places (auth, profile, billing), and riding
+     *  a lazy relation would repeat the same "must eager-fetch or it throws outside the session"
+     *  trap {@code trades} already carries. A plain query the caller already had to make anyway
+     *  (mirrors how the rest of this DTO is assembled) has no such failure mode. */
+    public static UserResponse from(User user, List<UserTrade> customTrades) {
         return new UserResponse(
                 user.getId(),
                 user.getEmail(),
                 user.getFullName(),
                 new LinkedHashSet<>(user.getTrades()),
+                customTrades.stream().map(UserTradeResponse::from).toList(),
                 user.getPhone(),
                 user.getCompanyName(),
                 logoUrlFromKey(user.getLogoUrl()),

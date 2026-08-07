@@ -38,7 +38,14 @@ public record EstimateItemResponse(
          * The live link is off — the master typed the amount himself, or the base was deleted. The
          * row keeps its last computed amount and the screen offers to re-attach it.
          */
-        boolean baseDetached
+        boolean baseDetached,
+        /**
+         * Snapshot of what a FROZEN percent line meant before consolidation — the signed percent,
+         * what it was a share of, and the source estimate's name. Null on every other line (a
+         * detached-but-not-frozen line, e.g. a deleted POSITION base, has no origin snapshot either
+         * — {@code baseDetached} alone covers that case).
+         */
+        String baseOriginLabel
 ) {
     public static EstimateItemResponse from(EstimateItem item) {
         // The STORED amount (V88), never recomputed here. A percentage of the estimate's own
@@ -61,7 +68,8 @@ public record EstimateItemResponse(
                 item.isQuantityManual(),
                 item.getPercentBaseKind(),
                 item.getPercentBaseItemId(),
-                item.isBaseDetached()
+                item.isBaseDetached(),
+                item.getBaseOriginLabel()
         );
     }
 }

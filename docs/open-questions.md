@@ -251,6 +251,43 @@ one-line summary — keep the item in the file as a record.
 - **Context:** `User.trade` (single) became `User.trades` (a value set in `user_trades`). Any future admin metric that buckets users by trade now double-counts — a GENERAL+ELECTRICAL contractor lands in two buckets, so a "distribution by trade" would sum to more than 100% of users. Nothing is broken today: `MetricsService` has no per-trade breakdown, and `AdminUserSummary` just lists each user's trades.
 - **Notes / options:** When a per-trade chart is added, decide the semantics up front — count distinct users (a user with N trades adds 1 to each bucket; bucket sum exceeds the user count by design) vs. report "trade mentions" explicitly. Document the choice on the endpoint.
 
+### Custom trades: emoji picker instead of one fixed icon
+- **Status:** OPEN
+- **Since:** Custom-trades iteration (2026-08-07)
+- **Context:** Every master-invented trade renders with the same fixed 🏷️ placeholder (v1
+  decision — deliberately not 🔧, which already reads as PLUMBING). Two masters both adding
+  "Натяжні стелі" and "Кондиціонери" see identical icons everywhere (profile list, catalog
+  filter chips, trade pickers).
+- **Notes / options:** A small curated emoji set the master picks from at creation (stored on
+  `user_trade`), falling back to the fixed placeholder for anyone who doesn't bother. Low
+  priority — the icon is a nicety, the label text already disambiguates.
+
+### Custom trades: promote a popular one to a real system trade
+- **Status:** OPEN
+- **Since:** Custom-trades iteration (2026-08-07)
+- **Context:** A custom trade has no reference catalog by design — if many masters
+  independently type the same custom trade name (e.g. "Натяжні стелі"), that is itself a signal
+  the catalog is missing a real system trade for it, the way TILING/METAL/etc. were added.
+- **Notes / options:** An admin report grouping `user_trade.name` (normalized) across accounts
+  by frequency, mirroring the existing catalog-insight screens' "what are masters typing that we
+  don't seed" pattern. If a name clears some threshold, the existing "rebuild a trade's catalog"
+  playbook (docs/iteration-metal-trade.md and friends) applies — add the enum value + CHECK
+  migrations + a real starter catalog. No automatic migration off custom trades on promotion
+  (masters keep their own positions either way).
+
+### Custom trades: moving positions between trades in bulk
+- **Status:** OPEN
+- **Since:** Custom-trades iteration (2026-08-07)
+- **Context:** Re-filing a single catalog position or template to a different trade (system or
+  custom) already works one at a time via the edit form / trade picker. There's no bulk "move
+  all positions from trade A to trade B" action — relevant if a master merges two custom trades,
+  renames by re-creating instead of editing, or wants to move a batch of OTHER-bucket positions
+  into a newly-created custom trade.
+- **Notes / options:** Ties into the existing "Bulk-assign trade to the Інше (OTHER) catalog
+  pile" item above — the same bulk-reassign UI would naturally extend to custom trades as
+  targets. Defer until a master actually asks; renaming a custom trade in place already covers
+  the "I typed it wrong" case for free (live FK, no bulk op needed).
+
 ### Metric month boundary is UTC, not the contractor's local month
 - **Status:** OPEN
 - **Since:** Fix B (2026-05-31)
@@ -679,6 +716,23 @@ one-line summary — keep the item in the file as a record.
   trial or a discount (place is already carved out — `partners` is data). That also makes
   masters actually type the code, sharpening LIGA attribution. Revisit with the trial-period
   item.
+
+### Consolidated estimate rendered in SECTIONS, not a flat list
+- **Status:** OPEN
+- **Since:** Percent-provenance iteration (2026-08-07)
+- **Context:** Consolidating estimates flattens every source's lines into one list, which is why a
+  PERCENT line has to be FROZEN at copy time (V88/V92) — its base (a position, or the works/
+  materials subtotal) no longer exists as a coherent thing once everything is merged, so
+  re-measuring it live would silently give the client a discount he never signed. The freeze +
+  provenance snapshot (`base_origin_label`) makes that honest, but the percent is still dead —
+  it can never again respond to the estimate actually changing.
+- **Notes / options:** The real fix is structural: render (and possibly store) the consolidated
+  estimate as **sections, one per source estimate**, each with its own subtotal — a source's
+  PERCENT line stays LIVE within its own section (POSITION/TOTAL bases are all still intact
+  there), and the overall total sums the sections. This is the same shape masters already want in
+  the object economy and portal (a panel per estimate + a grand total), so it likely isn't
+  throwaway work. A real feature — sectioned estimates + sectioned math — not a tweak; deferred
+  rather than folded into the provenance fix.
 
 ### Object economy: PLAN-margin (my price vs client price) on estimate positions
 - **Status:** OPEN

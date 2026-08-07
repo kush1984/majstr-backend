@@ -809,6 +809,155 @@ class EstimateServiceTest {
     }
 
     @Test
+    @SuppressWarnings("unchecked")
+    void consolidate_ordinaryLineGetsNoOriginLabel() {
+        UUID src = UUID.randomUUID();
+        UUID consolidatedId = UUID.randomUUID();
+        given(projectService.loadOwned(projectId, ownerId)).willReturn(ownedProject(ownerId));
+        given(estimateRepository.save(any(Estimate.class))).willAnswer(inv -> {
+            Estimate e = inv.getArgument(0);
+            e.setId(consolidatedId);
+            e.setStatus(EstimateStatus.DRAFT);
+            e.setCreatedAt(Instant.now());
+            e.setUpdatedAt(Instant.now());
+            return e;
+        });
+        given(estimateRepository.findById(src)).willReturn(Optional.of(sourceEstimate(src, ownerId)));
+        given(itemRepository.findByEstimateIdOrderBySortOrderAscIdAsc(src))
+                .willReturn(List.of(item(ItemType.WORK, "Малярка", "2", "100")));
+        List<EstimateItem>[] saved = new List[1];
+        given(itemRepository.saveAll(anyList())).willAnswer(inv -> {
+            saved[0] = inv.getArgument(0);
+            return saved[0];
+        });
+        given(itemRepository.findByEstimateIdOrderBySortOrderAscIdAsc(consolidatedId)).willAnswer(inv -> saved[0]);
+
+        EstimateResponse resp = estimateService.consolidate(projectId, "Зведений", List.of(src), ownerId);
+
+        assertThat(resp.items().get(0).baseOriginLabel()).isNull();
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void consolidate_percentOfTotal_getsAProvenanceLabelNamingTheSourceEstimateAndScope() {
+        UUID src = UUID.randomUUID();
+        UUID consolidatedId = UUID.randomUUID();
+        given(projectService.loadOwned(projectId, ownerId)).willReturn(ownedProject(ownerId));
+        given(estimateRepository.save(any(Estimate.class))).willAnswer(inv -> {
+            Estimate e = inv.getArgument(0);
+            e.setId(consolidatedId);
+            e.setStatus(EstimateStatus.DRAFT);
+            e.setCreatedAt(Instant.now());
+            e.setUpdatedAt(Instant.now());
+            return e;
+        });
+        Estimate source = sourceEstimate(src, ownerId);
+        source.setName("Квартира — чорнові");
+        given(estimateRepository.findById(src)).willReturn(Optional.of(source));
+        EstimateItem discount = EstimateItem.builder()
+                .id(UUID.randomUUID()).type(ItemType.WORK).name("Знижка")
+                .unit(Unit.PERCENT).quantity(new BigDecimal("-15.000")).unitPrice(BigDecimal.ZERO)
+                .percentBaseKind(PercentBaseKind.TOTAL).lineTotal(new BigDecimal("-150.00")).sortOrder(0)
+                .estimate(source)
+                .build();
+        given(itemRepository.findByEstimateIdOrderBySortOrderAscIdAsc(src)).willReturn(List.of(discount));
+        List<EstimateItem>[] saved = new List[1];
+        given(itemRepository.saveAll(anyList())).willAnswer(inv -> {
+            saved[0] = inv.getArgument(0);
+            return saved[0];
+        });
+        given(itemRepository.findByEstimateIdOrderBySortOrderAscIdAsc(consolidatedId)).willAnswer(inv -> saved[0]);
+
+        EstimateResponse resp = estimateService.consolidate(projectId, "Зведений", List.of(src), ownerId);
+
+        assertThat(resp.items().get(0).baseOriginLabel())
+                .isEqualTo("-15% від робіт · кошторис «Квартира — чорнові»");
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void consolidate_percentOfPosition_namesTheBasePositionInTheLabel() {
+        UUID src = UUID.randomUUID();
+        UUID consolidatedId = UUID.randomUUID();
+        UUID baseId = UUID.randomUUID();
+        given(projectService.loadOwned(projectId, ownerId)).willReturn(ownedProject(ownerId));
+        given(estimateRepository.save(any(Estimate.class))).willAnswer(inv -> {
+            Estimate e = inv.getArgument(0);
+            e.setId(consolidatedId);
+            e.setStatus(EstimateStatus.DRAFT);
+            e.setCreatedAt(Instant.now());
+            e.setUpdatedAt(Instant.now());
+            return e;
+        });
+        Estimate source = sourceEstimate(src, ownerId);
+        source.setName("Санвузол");
+        given(estimateRepository.findById(src)).willReturn(Optional.of(source));
+        EstimateItem markup = EstimateItem.builder()
+                .id(UUID.randomUUID()).type(ItemType.WORK).name("Націнка")
+                .unit(Unit.PERCENT).quantity(new BigDecimal("20.000")).unitPrice(BigDecimal.ZERO)
+                .percentBaseKind(PercentBaseKind.POSITION).percentBaseItemId(baseId)
+                .lineTotal(new BigDecimal("200.00")).sortOrder(0)
+                .estimate(source)
+                .build();
+        given(itemRepository.findByEstimateIdOrderBySortOrderAscIdAsc(src)).willReturn(List.of(markup));
+        given(itemRepository.findById(baseId)).willReturn(Optional.of(
+                EstimateItem.builder().id(baseId).name("Шафа").build()));
+        List<EstimateItem>[] saved = new List[1];
+        given(itemRepository.saveAll(anyList())).willAnswer(inv -> {
+            saved[0] = inv.getArgument(0);
+            return saved[0];
+        });
+        given(itemRepository.findByEstimateIdOrderBySortOrderAscIdAsc(consolidatedId)).willAnswer(inv -> saved[0]);
+
+        EstimateResponse resp = estimateService.consolidate(projectId, "Зведений", List.of(src), ownerId);
+
+        assertThat(resp.items().get(0).baseOriginLabel())
+                .isEqualTo("+20% від «Шафа» · кошторис «Санвузол»");
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void consolidate_unnamedSourceEstimate_labelUsesTheSameDatedDefaultThePwaShows() {
+        // Regression: buildBaseOriginLabel used to fall back to the bare word «Кошторис» for an
+        // unnamed source (estimates.name is nullable) — every unnamed source then read identically,
+        // and the whole point of the label (telling WHICH estimate a frozen line came from) was lost.
+        UUID src = UUID.randomUUID();
+        UUID consolidatedId = UUID.randomUUID();
+        given(projectService.loadOwned(projectId, ownerId)).willReturn(ownedProject(ownerId));
+        given(estimateRepository.save(any(Estimate.class))).willAnswer(inv -> {
+            Estimate e = inv.getArgument(0);
+            e.setId(consolidatedId);
+            e.setStatus(EstimateStatus.DRAFT);
+            e.setCreatedAt(Instant.now());
+            e.setUpdatedAt(Instant.now());
+            return e;
+        });
+        Estimate source = sourceEstimate(src, ownerId); // name left null (unnamed)
+        source.setCreatedAt(Instant.parse("2026-07-06T10:00:00Z")); // 13:00 Kyiv, still 6 July
+        given(estimateRepository.findById(src)).willReturn(Optional.of(source));
+        EstimateItem discount = EstimateItem.builder()
+                .id(UUID.randomUUID()).type(ItemType.WORK).name("Знижка")
+                .unit(Unit.PERCENT).quantity(new BigDecimal("-5.000")).unitPrice(BigDecimal.ZERO)
+                .percentBaseKind(PercentBaseKind.TOTAL).lineTotal(new BigDecimal("-50.00")).sortOrder(0)
+                .estimate(source)
+                .build();
+        given(itemRepository.findByEstimateIdOrderBySortOrderAscIdAsc(src)).willReturn(List.of(discount));
+        List<EstimateItem>[] saved = new List[1];
+        given(itemRepository.saveAll(anyList())).willAnswer(inv -> {
+            saved[0] = inv.getArgument(0);
+            return saved[0];
+        });
+        given(itemRepository.findByEstimateIdOrderBySortOrderAscIdAsc(consolidatedId)).willAnswer(inv -> saved[0]);
+
+        EstimateResponse resp = estimateService.consolidate(projectId, "Зведений", List.of(src), ownerId);
+
+        // «Кошторис від 6 липня» — exactly what the PWA's estimateName() would show for this
+        // same (unnamed) estimate in the list, not the bare, indistinguishable «Кошторис».
+        assertThat(resp.items().get(0).baseOriginLabel())
+                .isEqualTo("-5% від робіт · кошторис «Кошторис від 6 липня»");
+    }
+
+    @Test
     void setCountInEconomy_togglesFlagInAnyStatus() {
         Estimate signed = signedEstimate();
         given(estimateRepository.findById(estimateId)).willReturn(Optional.of(signed));

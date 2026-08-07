@@ -5,8 +5,10 @@ import com.majstr.backend.dto.LoginRequest;
 import com.majstr.backend.dto.RegisterRequest;
 import com.majstr.backend.dto.UserResponse;
 import com.majstr.backend.entity.User;
+import com.majstr.backend.entity.UserTrade;
 import com.majstr.backend.exception.EmailAlreadyExistsException;
 import com.majstr.backend.repository.UserRepository;
+import com.majstr.backend.repository.UserTradeRepository;
 import com.majstr.backend.security.JwtService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.authentication.BadCredentialsException;
@@ -16,12 +18,15 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
 import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.TreeSet;
 
 @Service
 @RequiredArgsConstructor
 public class AuthService {
 
     private final UserRepository userRepository;
+    private final UserTradeRepository userTradeRepository;
     private final PasswordEncoder passwordEncoder;
     private final JwtService jwtService;
     private final RefreshTokenService refreshTokenService;
@@ -29,6 +34,7 @@ public class AuthService {
     private final EmailVerificationService emailVerificationService;
     private final ReferralService referralService;
     private final EmailPolicyService emailPolicyService;
+    private final ProfileService profileService;
 
     @Transactional
     public AuthResponse register(RegisterRequest req) {
@@ -64,6 +70,7 @@ public class AuthService {
                 .referralCode(referralService.generateUniqueCode())
                 .build();
         user = userRepository.save(user);
+        createCustomTrades(user, req.customTrades());
         // Copy starter catalog templates for every chosen trade (merged,
         // de-duplicated) so they never see an empty library on first login.
         catalogTemplateService.seedForUser(user);
@@ -71,6 +78,28 @@ public class AuthService {
         // problem must not break registration; the user can resend later).
         emailVerificationService.issueAndSend(user);
         return issueTokens(user);
+    }
+
+    /**
+     * A master may type the same custom trade name twice on the register form (or paste it in
+     * twice) — that must merge silently into one, not surface {@code ProfileService}'s 409 for a
+     * brand-new account that owns none yet. Dedup case-insensitively within THIS request before
+     * delegating to the shared create logic.
+     */
+    private void createCustomTrades(User user, List<String> names) {
+        if (names == null) {
+            return;
+        }
+        var seen = new TreeSet<String>(String.CASE_INSENSITIVE_ORDER);
+        for (String name : names) {
+            if (name == null || name.isBlank()) {
+                continue;
+            }
+            String trimmed = name.trim();
+            if (seen.add(trimmed)) {
+                profileService.createCustomTrade(user, trimmed);
+            }
+        }
     }
 
     @Transactional
@@ -87,7 +116,10 @@ public class AuthService {
     public AuthResponse refresh(String refreshToken) {
         RefreshTokenService.RotationResult rotated = refreshTokenService.rotate(refreshToken);
         String access = jwtService.generateAccessToken(rotated.user().getId(), rotated.user().getEmail());
-        return AuthResponse.of(access, rotated.newRefreshToken(), jwtService.accessTtlSeconds(), UserResponse.from(rotated.user()));
+        List<UserTrade> customTrades =
+                userTradeRepository.findByUserIdOrderBySortOrderAscIdAsc(rotated.user().getId());
+        return AuthResponse.of(access, rotated.newRefreshToken(), jwtService.accessTtlSeconds(),
+                UserResponse.from(rotated.user(), customTrades));
     }
 
     @Transactional
@@ -99,6 +131,10 @@ public class AuthService {
     private AuthResponse issueTokens(User user) {
         String access = jwtService.generateAccessToken(user.getId(), user.getEmail());
         String refresh = refreshTokenService.issue(user);
-        return AuthResponse.of(access, refresh, jwtService.accessTtlSeconds(), UserResponse.from(user));
+        // A brand-new registration has no custom trades yet; login/refresh reuse this helper too,
+        // so look them up rather than assuming empty.
+        List<UserTrade> customTrades =
+                userTradeRepository.findByUserIdOrderBySortOrderAscIdAsc(user.getId());
+        return AuthResponse.of(access, refresh, jwtService.accessTtlSeconds(), UserResponse.from(user, customTrades));
     }
 }

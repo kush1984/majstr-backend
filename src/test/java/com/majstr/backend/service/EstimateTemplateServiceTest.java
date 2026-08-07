@@ -24,6 +24,7 @@ import com.majstr.backend.repository.EstimateTemplateItemRepository.TemplateItem
 import com.majstr.backend.repository.EstimateTemplateRepository;
 import com.majstr.backend.repository.ProjectRepository;
 import com.majstr.backend.repository.TemplateTradeOverrideRepository;
+import com.majstr.backend.repository.UserTradeRepository;
 import com.majstr.backend.feature.LimitService;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -62,6 +63,7 @@ class EstimateTemplateServiceTest {
     @Mock LimitService limitService;
     @Mock EstimateService estimateService;
     @Mock TemplateTradeOverrideRepository tradeOverrideRepository;
+    @Mock UserTradeRepository userTradeRepository;
     @InjectMocks EstimateTemplateService service;
 
     private final UUID ownerId = UUID.randomUUID();
@@ -217,7 +219,8 @@ class EstimateTemplateServiceTest {
             return t;
         });
 
-        EstimateTemplateSummary summary = service.saveFromEstimate(estimateId, "  Санвузол Іванова  ", null, ownerId);
+        EstimateTemplateSummary summary =
+                service.saveFromEstimate(estimateId, "  Санвузол Іванова  ", null, null, ownerId);
 
         ArgumentCaptor<EstimateTemplate> tplCaptor = ArgumentCaptor.forClass(EstimateTemplate.class);
         verify(templateRepository).save(tplCaptor.capture());
@@ -238,6 +241,28 @@ class EstimateTemplateServiceTest {
                 .containsExactly(ItemType.WORK, ItemType.MATERIAL);
         assertThat(summary.itemCount()).isEqualTo(2);
         assertThat(summary.isDefault()).isFalse();
+    }
+
+    @Test
+    void saveFromEstimate_withCustomTrade_forcesTradeToOtherAndStoresTheLink() {
+        UUID estimateId = UUID.randomUUID();
+        User owner = User.builder().id(ownerId).build();
+        Project project = Project.builder().id(UUID.randomUUID()).owner(owner).build();
+        Estimate estimate = Estimate.builder().id(estimateId).project(project).build();
+        given(estimateService.loadOwned(estimateId, ownerId)).willReturn(estimate);
+        given(estimateItemRepository.findByEstimateIdOrderBySortOrderAscIdAsc(estimateId)).willReturn(List.of());
+        com.majstr.backend.entity.UserTrade custom =
+                com.majstr.backend.entity.UserTrade.builder().id(UUID.randomUUID()).name("Натяжні стелі").build();
+        given(userTradeRepository.findByIdAndUserId(custom.getId(), ownerId)).willReturn(Optional.of(custom));
+        given(templateRepository.save(any())).willAnswer(inv -> inv.getArgument(0));
+
+        EstimateTemplateSummary summary = service.saveFromEstimate(
+                estimateId, "Стелі у вітальні", Trade.TILING, custom.getId(), ownerId);
+
+        // A custom trade always wins over any system trade sent alongside it.
+        assertThat(summary.trade()).isEqualTo(Trade.OTHER);
+        assertThat(summary.customTradeId()).isEqualTo(custom.getId());
+        assertThat(summary.customTradeName()).isEqualTo("Натяжні стелі");
     }
 
     // ---- listing -----------------------------------------------------------
@@ -280,11 +305,35 @@ class EstimateTemplateServiceTest {
         given(tradeOverrideRepository.findByUserIdAndTemplateId(ownerId, id)).willReturn(Optional.empty());
         given(templateItemRepository.findByTemplateIdOrderBySortOrderAscIdAsc(id)).willReturn(List.of());
 
-        EstimateTemplateSummary out = service.setTrade(id, Trade.TILING, ownerId);
+        EstimateTemplateSummary out = service.setTrade(id, Trade.TILING, null, ownerId);
 
         assertThat(mine.getTrade()).isEqualTo(Trade.TILING);      // stored on the template itself
         assertThat(out.trade()).isEqualTo(Trade.TILING);
         verify(tradeOverrideRepository, never()).save(any());
+    }
+
+    @Test
+    void setTrade_onOwnTemplate_withCustomTrade_forcesTradeToOtherAndClearsOnNextSystemTradeSwitch() {
+        UUID id = UUID.randomUUID();
+        User owner = User.builder().id(ownerId).build();
+        com.majstr.backend.entity.UserTrade custom =
+                com.majstr.backend.entity.UserTrade.builder().id(UUID.randomUUID()).name("Натяжні стелі").build();
+        EstimateTemplate mine = EstimateTemplate.builder()
+                .id(id).name("Моя стеля").isDefault(false).owner(owner).trade(null).build();
+        given(templateRepository.findById(id)).willReturn(Optional.of(mine));
+        given(tradeOverrideRepository.findByUserIdAndTemplateId(ownerId, id)).willReturn(Optional.empty());
+        given(templateItemRepository.findByTemplateIdOrderBySortOrderAscIdAsc(id)).willReturn(List.of());
+        given(userTradeRepository.findByIdAndUserId(custom.getId(), ownerId)).willReturn(Optional.of(custom));
+
+        EstimateTemplateSummary out = service.setTrade(id, Trade.TILING, custom.getId(), ownerId);
+
+        assertThat(mine.getTrade()).isEqualTo(Trade.OTHER);
+        assertThat(out.customTradeId()).isEqualTo(custom.getId());
+
+        // Switching back to a plain system trade clears the custom link.
+        service.setTrade(id, Trade.TILING, null, ownerId);
+        assertThat(mine.getTrade()).isEqualTo(Trade.TILING);
+        assertThat(mine.getCustomTrade()).isNull();
     }
 
     @Test
@@ -296,7 +345,7 @@ class EstimateTemplateServiceTest {
         given(tradeOverrideRepository.findByUserIdAndTemplateId(ownerId, id)).willReturn(Optional.empty());
         given(templateItemRepository.findByTemplateIdOrderBySortOrderAscIdAsc(id)).willReturn(List.of());
 
-        EstimateTemplateSummary out = service.setTrade(id, Trade.PAINTER, ownerId);
+        EstimateTemplateSummary out = service.setTrade(id, Trade.PAINTER, null, ownerId);
 
         assertThat(def.getTrade()).isEqualTo(Trade.DRYWALL);      // the shared default is NOT mutated
         assertThat(out.trade()).isEqualTo(Trade.PAINTER);

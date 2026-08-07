@@ -125,6 +125,18 @@ public class EstimateItem {
     @Column(name = "source_item_id")
     private UUID sourceItemId;
 
+    /**
+     * Snapshot of what a FROZEN {@code PERCENT} line meant before it was frozen — the signed
+     * percent, what it was a share of (works/materials/a named position), and the source
+     * estimate's name. Null on every line that was never copied into a consolidated rollup.
+     *
+     * <p>Text, not a FK: the source estimate/position can be edited or deleted afterwards, and
+     * this must keep reading what was true at consolidation time regardless (same reasoning as
+     * {@link #sourceUnitPrice}/{@link #sourceItemId}, V85).</p>
+     */
+    @Column(name = "base_origin_label", columnDefinition = "text")
+    private String baseOriginLabel;
+
     @Column(name = "sort_order", nullable = false)
     private int sortOrder;
 

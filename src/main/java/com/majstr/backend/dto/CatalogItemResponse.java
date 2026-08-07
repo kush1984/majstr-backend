@@ -14,6 +14,11 @@ public record CatalogItemResponse(
         String name,
         String category,
         Trade trade,
+        /** Set only when this position is filed under a master-invented trade — {@code trade} is
+         *  then always OTHER. Denormalized alongside its id so the client never needs a separate
+         *  lookup; it always reflects the CURRENT name (a live FK, not a snapshot). */
+        UUID customTradeId,
+        String customTradeName,
         ItemType type,
         Unit unit,
         BigDecimal defaultPrice,
@@ -22,11 +27,14 @@ public record CatalogItemResponse(
         Instant createdAt
 ) {
     public static CatalogItemResponse from(CatalogItem item) {
+        var customTrade = item.getCustomTrade();
         return new CatalogItemResponse(
                 item.getId(),
                 item.getName(),
                 item.getCategory(),
                 item.getTrade(),
+                customTrade != null ? customTrade.getId() : null,
+                customTrade != null ? customTrade.getName() : null,
                 item.getType(),
                 item.getUnit(),
                 item.getDefaultPrice(),

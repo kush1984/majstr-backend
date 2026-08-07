@@ -10,6 +10,7 @@ import com.majstr.backend.dto.UserResponse;
 import com.majstr.backend.dto.VerifyEmailRequest;
 import com.majstr.backend.exception.TooManyRequestsException;
 import com.majstr.backend.repository.UserRepository;
+import com.majstr.backend.repository.UserTradeRepository;
 import com.majstr.backend.security.UserPrincipal;
 import com.majstr.backend.service.AuthService;
 import com.majstr.backend.service.EmailVerificationService;
@@ -42,6 +43,7 @@ public class AuthController {
 
     private final AuthService authService;
     private final UserRepository userRepository;
+    private final UserTradeRepository userTradeRepository;
     private final EmailVerificationService emailVerificationService;
     private final VerificationEmailRateLimiter verificationEmailRateLimiter;
     private final PasswordResetService passwordResetService;
@@ -126,7 +128,8 @@ public class AuthController {
             throw new UsernameNotFoundException("Not authenticated");
         }
         return userRepository.findById(principal.id())
-                .map(UserResponse::from)
+                .map(user -> UserResponse.from(user,
+                        userTradeRepository.findByUserIdOrderBySortOrderAscIdAsc(user.getId())))
                 .map(ResponseEntity::ok)
                 .orElseThrow(() -> new UsernameNotFoundException("User not found"));
     }

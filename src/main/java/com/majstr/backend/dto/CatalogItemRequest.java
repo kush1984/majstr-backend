@@ -10,12 +10,17 @@ import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
 
 import java.math.BigDecimal;
+import java.util.UUID;
 
 public record CatalogItemRequest(
         @NotBlank @Size(max = 255) String name,
         @Size(max = 100) String category,
-        /** Optional — which trade this position belongs to (for the catalog filter). */
+        /** Optional — which trade this position belongs to (for the catalog filter). Ignored
+         *  (forced to OTHER) when {@code customTradeId} is set. */
         Trade trade,
+        /** Optional — a master-invented trade instead of one of the above. Must belong to the
+         *  caller (validated in {@code CatalogService}). */
+        UUID customTradeId,
         @NotNull ItemType type,
         @NotNull Unit unit,
         @NotNull @DecimalMin(value = "0.01", message = "defaultPrice must be greater than 0")

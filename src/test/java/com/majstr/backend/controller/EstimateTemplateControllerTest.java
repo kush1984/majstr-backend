@@ -91,7 +91,7 @@ class EstimateTemplateControllerTest {
                 .build();
         given(userRepository.findWithTradesById(userId)).willReturn(Optional.of(user));
         given(templateService.listForUser(user)).willReturn(List.of(
-                new EstimateTemplateSummary(UUID.randomUUID(), "Санвузол повний", Trade.TILING, true, 8)));
+                new EstimateTemplateSummary(UUID.randomUUID(), "Санвузол повний", Trade.TILING, null, null, true, 8)));
 
         mockMvc.perform(get("/api/estimate-templates"))
                 .andExpect(status().isOk())
@@ -106,12 +106,12 @@ class EstimateTemplateControllerTest {
     @Test
     void saveAsTemplate_returns201WithSummary() throws Exception {
         UUID estimateId = UUID.randomUUID();
-        given(templateService.saveFromEstimate(estimateId, "Санвузол Іванова", null, userId))
-                .willReturn(new EstimateTemplateSummary(UUID.randomUUID(), "Санвузол Іванова", null, false, 5));
+        given(templateService.saveFromEstimate(estimateId, "Санвузол Іванова", null, null, userId))
+                .willReturn(new EstimateTemplateSummary(UUID.randomUUID(), "Санвузол Іванова", null, null, null, false, 5));
 
         mockMvc.perform(post("/api/estimates/{id}/save-as-template", estimateId)
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(json.writeValueAsString(new SaveAsTemplateRequest("Санвузол Іванова", null))))
+                        .content(json.writeValueAsString(new SaveAsTemplateRequest("Санвузол Іванова", null, null))))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.itemCount", is(5)))
                 .andExpect(jsonPath("$.isDefault", is(false)));
@@ -122,7 +122,7 @@ class EstimateTemplateControllerTest {
         mockMvc.perform(post("/api/estimates/{id}/save-as-template", UUID.randomUUID())
                         .header("Accept-Language", "en")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(json.writeValueAsString(new SaveAsTemplateRequest("  ", null))))
+                        .content(json.writeValueAsString(new SaveAsTemplateRequest("  ", null, null))))
                 .andExpect(status().isBadRequest());
     }
 
