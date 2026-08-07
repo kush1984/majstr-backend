@@ -190,7 +190,7 @@ app:
       electrical: ${AI_FLOW_ELECTRICAL:}
       project-docs: ${AI_FLOW_PROJECT_DOCS:}
       # Reads titles from text, never a drawing — the first flow worth pointing at a cheap model.
-      triage: ${AI_FLOW_TRIAGE:}
+      triage: ${AI_FLOW_TRIAGE:anthropic:claude-haiku-4-5-20251001}
   openai:
     # Inert unless `provider` above selects it. Key is env only, same rule as the Anthropic one.
     api-key: ${OPENAI_API_KEY:}
@@ -208,7 +208,7 @@ app:
     # "unavailable" (503) instead of running, since the call is synchronous. Opus 4.8
     # is chosen for table/number OCR accuracy; the uploaded file is never persisted.
     api-key: ${ANTHROPIC_API_KEY:}
-    model: ${ANTHROPIC_MODEL:claude-opus-4-8}
+    model: ${ANTHROPIC_MODEL:claude-sonnet-5}
     max-tokens: ${ANTHROPIC_MAX_TOKENS:8000}
   sentry:
     # Error monitoring. DSN is env only and blank in local dev (then Sentry is
