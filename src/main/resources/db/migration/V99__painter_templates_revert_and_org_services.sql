@@ -101,13 +101,27 @@ WHERE trade = 'PAINTER' AND source = 'LIBRARY' AND unit = 'LINEAR_METER'
     'фарбування стін/стель (білий) (м.п.)', 'фарбування стін/стель (у кольорі) (м.п.)'
   );
 
+-- Guarded against a real failure caught after this shipped: a master can have his OWN row
+-- (typed by hand, or from some other trade) already sitting at the bare stripped name — renaming
+-- into that would violate ux_catalog_items_owner_name_type_unit. Rare (this exact wording did not
+-- exist before V96), but the fix is to skip that one row rather than let it block the whole
+-- migration for every master. It keeps the harmless leftover "(м²)" suffix; nothing else notices.
 UPDATE catalog_items
 SET name = regexp_replace(name, '\s*\(м²\)$', '')
 WHERE trade = 'PAINTER' AND source = 'LIBRARY' AND unit = 'M2' AND name ~ '\(м²\)$'
   AND EXISTS (
       SELECT 1 FROM catalog_templates ct
       WHERE ct.trade = 'PAINTER' AND ct.unit = 'M2'
-        AND lower(trim(ct.name)) = lower(trim(regexp_replace(catalog_items.name, '\s*\(м²\)$', ''))));
+        AND lower(trim(ct.name)) = lower(trim(regexp_replace(catalog_items.name, '\s*\(м²\)$', '')))
+  )
+  AND NOT EXISTS (
+      SELECT 1 FROM catalog_items other
+      WHERE other.owner_id = catalog_items.owner_id
+        AND other.id <> catalog_items.id
+        AND other.type = catalog_items.type
+        AND other.unit = catalog_items.unit
+        AND lower(trim(other.name)) = lower(trim(regexp_replace(catalog_items.name, '\s*\(м²\)$', '')))
+  );
 
 -- ---- Part 1b: undo V98 --------------------------------------------------------------------------
 
