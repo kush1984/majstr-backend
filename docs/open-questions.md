@@ -1207,7 +1207,7 @@ one-line summary — keep the item in the file as a record.
   (`catalog_update_notices`). See [iteration-tiling-catalog-rebuild.md](iteration-tiling-catalog-rebuild.md).
 
 ### Rebuild the remaining trades' catalogs the way tiling was rebuilt
-- **Status:** OPEN
+- **Status:** OPEN — PAINTER done (differently than planned, see update below); other trades remain.
 - **Since:** Tiling-catalog rebuild (2026-07-31)
 - **Context:** V82–V84 replaced the tiling catalog with 167 works read off a real published price
   list, and the exercise surfaced **10 positions no published list carries** — carrying, rubbish
@@ -1223,6 +1223,85 @@ one-line summary — keep the item in the file as a record.
   price list's CAPS, and never a repeat of the trade name.
   `SeedCatalogInvariantsIntegrationTest` enforces both — a rebuilt trade that imports a supplier's
   capitalisation verbatim will fail the build, which is the intended outcome.
+- **Update (painter rework, V96–V98, 2026-08-10):** PAINTER's live catalog turned out to already
+  hold 152 real, mostly non-zero-priced positions across 16 categories the new source didn't
+  mention — a literal delete-then-rebuild would have erased ~85–90 real positions. Confirmed with
+  the user before writing any SQL; the pattern for a trade with an already-rich catalog is
+  **extend, don't replace**: only exact duplicates get removed, everything else new gets added on
+  top. Templates still get the full rebuild (they're curated, not reference data). Whichever
+  pattern fits a given trade — full V82-style replace, or V96-style extend — depends entirely on
+  how much real data that trade's live catalog already carries; check before assuming either one.
+  See [iteration-painter-catalog-rework.md](iteration-painter-catalog-rework.md).
+
+### PAINTER: three price variances shipped with a resolved default, not confirmed by the master
+- **Status:** OPEN
+- **Since:** Painter-catalog rework (V96, 2026-08-10)
+- **Context:** Three canonical positions had a real spread across the 4 source price lists and
+  shipped with a resolved default rather than blocking the migration on a follow-up conversation:
+  «Фарбування стін/стель» (білий) 160 / (у кольорі) 180 [sources 130/160/220 — median chosen];
+  «Поклейка повітряних дифузорів» 200 [range 100/200/300 — midpoint chosen]; «Фарбування 3D
+  панелей» 400 [range 300-500 — midpoint chosen].
+- **Notes / options:** Confirm with the master (the person who supplied the 4 price lists and
+  signed off on the defaults becoming shared) whether these three defaults match what he'd
+  actually quote, or whether one price list is stale/an outlier and should be weighted down.
+  Adjusting after confirmation is a plain `UPDATE catalog_templates SET suggested_price = ...` —
+  no new migration category needed, this isn't a duplicate/dedup question.
+
+### PAINTER: should "приховані двері, тіньові шви, треки, люки" be its own sub-trade?
+- **Status:** OPEN
+- **Since:** Painter-catalog rework (V98, 2026-08-10)
+- **Context:** Hidden-door/shadow-gap work got its own estimate template (V98, template 6) rather
+  than being folded into finishing, because it's priced and skilled distinctly enough — a single
+  hidden door line prices at 2500 ₴, an order of magnitude above most other PAINTER lines. The
+  source prompt flagged this as worth a decision, not something to resolve unilaterally.
+- **Notes / options:** Leave it as a PAINTER category (current state, no further work) vs. promote
+  it to a `custom_trade`-style distinct trade tag the way V91 lets a master define their own. The
+  category-only approach costs nothing and already works; a distinct trade would only pay off if
+  masters who specialise in hidden-door installs want to filter/report on it separately from
+  general painting — no signal yet that they do.
+
+### PAINTER: V96's near-duplicate report is documentation-only, no review workflow
+- **Status:** OPEN
+- **Since:** Painter-catalog rework (V96, 2026-08-10)
+- **Context:** Comparing the new spec against the live catalog found roughly a dozen near-duplicate
+  pairs — same real-world job, different wording/price, from two different price-list sources
+  (e.g. new «Армування стін сіткою» 150₴ vs live «Армування сіткою» 140₴). Per the source prompt's
+  own rule, these were logged in V96's header comment and left untouched rather than auto-merged —
+  auto-merging near-matches (not exact ones) is exactly how the tiling rebuild silently lost 110
+  positions the first time it tried.
+- **Notes / options:** The community-prices feature (V94, `price_insight_candidate`) already built
+  an admin-reviewable queue for a related problem (price drift on an exact-name match). A future
+  pass could extend that queue to cover near-duplicate wording too, letting an admin pick a
+  canonical name/price per pair instead of the two rows silently coexisting forever. Not attempted
+  here — this iteration's scope was catalog content + templates, not a new review surface.
+
+### PAINTER: 22 †split positions lost their LINEAR_METER billing option (V99)
+- **Status:** OPEN
+- **Since:** Painter-catalog rework (V99, 2026-08-10)
+- **Context:** V96 shipped 22 positions as two rows each (M2 and LINEAR_METER, same price) so a
+  master could bill either per area or per running metre. Naming them with a `(м²)`/`(м.п.)`
+  suffix to keep the rows distinct turned out to break `EstimateTemplateService`'s by-name-only
+  join/dedup (see the iteration doc, "the rule that shaped every migration" #7). V99 collapsed
+  each pair to a single M2 row rather than fix the join key. Confirmed with the user as an accepted
+  trade-off, not an oversight.
+- **Notes / options:** If real usage shows masters frequently need to bill one of these 22 per
+  running metre (a narrow strip primed rather than a whole wall, say), the correct fix is a proper
+  unit-aware key in `EstimateTemplateService` (catalog lookup keyed on name+unit, not name alone),
+  not reviving the suffix-in-name workaround. That's a small, contained change once it's clear it's
+  worth making — no other trade has ever needed two same-named, different-unit catalog rows before.
+
+### PAINTER: 11 organizational-service positions ship at price 0 (V99)
+- **Status:** OPEN
+- **Since:** Painter-catalog rework (V99, 2026-08-10)
+- **Context:** Added to mirror tiling's own "ОРГАНІЗАЦІЙНІ ПОСЛУГИ" category (site-visit,
+  consultation, transport, cleanup, warranty callout) after the user pointed at tiling's version
+  with a screenshot and asked for the painter equivalent. Unlike the rest of V96/V99, none of these
+  11 came from the 4 real painter price lists that were this rework's actual pricing source — so
+  they ship at 0, honestly, the same reasoning V82 already used for tiling's own zero-priced
+  "договірна" positions.
+- **Notes / options:** Confirm real prices with the master for these 11, the same follow-up as the
+  three ⚠-variance items above. A plain `UPDATE catalog_templates SET suggested_price = ...` once
+  confirmed — no migration-shape question here.
 
 ### How materials come back after V81
 - **Status:** OPEN

@@ -7,6 +7,7 @@ import com.majstr.backend.entity.Unit;
 
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.util.List;
 import java.util.UUID;
 
 public record CatalogItemResponse(
@@ -24,9 +25,22 @@ public record CatalogItemResponse(
         BigDecimal defaultPrice,
         /** The master's own arrangement within his catalog (V87) — what the client renders by. */
         int sortOrder,
-        Instant createdAt
+        Instant createdAt,
+        /** Other trades that ALSO recognize this exact (name, type, unit) per {@code
+         *  catalog_templates} — never includes {@link #trade} itself. {@code catalog_items} has
+         *  one row per (owner, name, type, unit); a master running two trades that happen to
+         *  share identical wording (V99: PAINTER's organizational services duplicate several of
+         *  TILING's) only ever owns ONE row, tagged whichever trade claimed it first. The client's
+         *  trade filter chips use this so that row still shows up under the OTHER trade's chip too
+         *  — see {@code TradeFilterChips.tradeMatches}. Empty for anything not (also) shipped
+         *  under a second trade. */
+        List<Trade> sharedTrades
 ) {
     public static CatalogItemResponse from(CatalogItem item) {
+        return from(item, List.of());
+    }
+
+    public static CatalogItemResponse from(CatalogItem item, List<Trade> sharedTrades) {
         var customTrade = item.getCustomTrade();
         return new CatalogItemResponse(
                 item.getId(),
@@ -39,7 +53,8 @@ public record CatalogItemResponse(
                 item.getUnit(),
                 item.getDefaultPrice(),
                 item.getSortOrder(),
-                item.getCreatedAt()
+                item.getCreatedAt(),
+                sharedTrades
         );
     }
 }

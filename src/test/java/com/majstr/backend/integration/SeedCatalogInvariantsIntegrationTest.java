@@ -138,16 +138,21 @@ class SeedCatalogInvariantsIntegrationTest extends IntegrationTestBase {
         // positions that remain are known and listed in seed-audit/potrebuyut-ciny.csv — this test
         // pins the count so a NEW one has to be a deliberate decision, not an accident.
         //
-        // TILING is counted SEPARATELY rather than folded into a bigger allowance, because the
-        // rebuilt tiling catalog (V82) ships 18 deliberate zeros — jobs that are quoted per object
-        // («договірна»), where an invented number is worse than a blank the master fills in once.
-        // Raising the single bound to 19 would have retired the guard for every other trade; two
-        // bounds keep it, and pin the deliberate set exactly.
+        // TILING and PAINTER are counted SEPARATELY rather than folded into a bigger allowance,
+        // because each carries a real batch of deliberate zeros: TILING (V82) ships 18 — jobs
+        // quoted per object («договірна»), where an invented number is worse than a blank the
+        // master fills in once. PAINTER (V99) ships 11 more on top of the one pre-existing
+        // «Захист вхідних дверей картоном» — the "Організаційні послуги" category (site visit,
+        // consultation, transport, cleanup, warranty callout), none of which came from the 4 real
+        // price lists that were V96's actual pricing source, so inventing a number for them would
+        // have been the exact mistake this test exists to catch. Raising the general bound instead
+        // of carving out a trade would have retired the guard for every OTHER trade; three bounds
+        // keep it, and pin each deliberate set exactly.
         assertThat(jdbc.queryForObject(
-                "SELECT count(*) FROM catalog_templates WHERE suggested_price = 0 AND trade <> 'TILING'",
+                "SELECT count(*) FROM catalog_templates WHERE suggested_price = 0 AND trade NOT IN ('TILING', 'PAINTER')",
                 Integer.class))
                 .as("позиція з ціною 0 дає нульовий рядок у кошторисі; нових бути не повинно")
-                .isNotNull().isLessThanOrEqualTo(1);
+                .isNotNull().isZero();
 
         assertThat(jdbc.queryForObject(
                 "SELECT count(*) FROM catalog_templates WHERE suggested_price = 0 AND trade = 'TILING'",
@@ -155,5 +160,12 @@ class SeedCatalogInvariantsIntegrationTest extends IntegrationTestBase {
                 .as("18 «договірних» позицій плитки — рівно стільки, скільки вирішили; 19-та має "
                         + "бути рішенням, а не опискою в наступному сіді")
                 .isEqualTo(18);
+
+        assertThat(jdbc.queryForObject(
+                "SELECT count(*) FROM catalog_templates WHERE suggested_price = 0 AND trade = 'PAINTER'",
+                Integer.class))
+                .as("1 давня «Захист вхідних дверей картоном» + 11 оргпослуг (V99) — рівно стільки, "
+                        + "скільки вирішили; 13-та має бути рішенням, а не опискою")
+                .isEqualTo(12);
     }
 }

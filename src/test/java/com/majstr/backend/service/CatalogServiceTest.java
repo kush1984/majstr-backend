@@ -10,6 +10,7 @@ import com.majstr.backend.entity.Unit;
 import com.majstr.backend.entity.User;
 import com.majstr.backend.entity.UserTrade;
 import com.majstr.backend.repository.CatalogItemRepository;
+import com.majstr.backend.repository.CatalogTemplateRepository;
 import com.majstr.backend.repository.UserRepository;
 import com.majstr.backend.repository.UserTradeRepository;
 import org.junit.jupiter.api.Test;
@@ -40,6 +41,7 @@ import static org.mockito.Mockito.verifyNoInteractions;
 class CatalogServiceTest {
 
     @Mock CatalogItemRepository catalogRepository;
+    @Mock CatalogTemplateRepository catalogTemplateRepository;
     @Mock UserRepository userRepository;
     @Mock UserTradeRepository userTradeRepository;
     @InjectMocks CatalogService catalogService;
@@ -224,11 +226,35 @@ class CatalogServiceTest {
                 ordered("Кабель", "Електрика", 2),
                 ordered("Автомат", "Електрика", 1)
         ));
+        given(catalogTemplateRepository.findNameKeysSharedAcrossTrades()).willReturn(List.of());
 
         List<CatalogItemResponse> list = catalogService.listForOwner(ownerId, null);
 
         assertThat(list).extracting(CatalogItemResponse::name)
                 .containsExactly("Розетка", "Автомат", "Кабель", "Клей");
+    }
+
+    @Test
+    void listForOwner_marksAPositionSharedWithAnotherTrade_excludingItsOwnTrade() {
+        // The row itself is filed under PAINTER (the trade that happened to claim the unique
+        // (owner, name, type, unit) slot first — see the catalog_items unique index), but
+        // catalog_templates ships the same name under both PAINTER and TILING. The trade filter
+        // needs to know that, or this row is invisible the moment a master who runs both trades
+        // selects the TILING chip.
+        CatalogItem shared = item("Організаційні послуги", "Транспортні витрати за містом");
+        shared.setTrade(Trade.PAINTER);
+        shared.setType(ItemType.WORK);
+        shared.setUnit(Unit.KM);
+        given(catalogRepository.findByOwnerIdOrderByNameAsc(ownerId)).willReturn(List.of(shared));
+        given(catalogTemplateRepository.findNameKeysSharedAcrossTrades()).willReturn(List.<Object[]>of(
+                new Object[] {"транспортні витрати за містом", "WORK", "KM", "PAINTER,TILING"}
+        ));
+
+        List<CatalogItemResponse> list = catalogService.listForOwner(ownerId, null);
+
+        assertThat(list).hasSize(1);
+        assertThat(list.get(0).trade()).isEqualTo(Trade.PAINTER);
+        assertThat(list.get(0).sharedTrades()).containsExactly(Trade.TILING);
     }
 
     private CatalogItem ordered(String name, String category, int sortOrder) {
@@ -294,6 +320,7 @@ class CatalogServiceTest {
     @Test
     void listForOwner_queriesOnlyTheGivenOwnersItems() {
         given(catalogRepository.findByOwnerIdOrderByNameAsc(ownerId)).willReturn(List.of());
+        given(catalogTemplateRepository.findNameKeysSharedAcrossTrades()).willReturn(List.of());
 
         catalogService.listForOwner(ownerId, null);
 

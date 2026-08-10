@@ -11,6 +11,7 @@ import com.majstr.backend.entity.User;
 import com.majstr.backend.entity.UserTrade;
 import com.majstr.backend.exception.ResourceNotFoundException;
 import com.majstr.backend.repository.CatalogItemRepository;
+import com.majstr.backend.repository.CatalogTemplateRepository;
 import com.majstr.backend.repository.UserRepository;
 import com.majstr.backend.repository.UserTradeRepository;
 import lombok.RequiredArgsConstructor;
@@ -19,7 +20,9 @@ import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.Arrays;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
@@ -46,6 +49,7 @@ public class CatalogService {
                     .thenComparing(CatalogItem::getId);
 
     private final CatalogItemRepository catalogRepository;
+    private final CatalogTemplateRepository catalogTemplateRepository;
     private final UserRepository userRepository;
     private final UserTradeRepository userTradeRepository;
 
@@ -121,10 +125,36 @@ public class CatalogService {
         List<CatalogItem> items = type == null
                 ? catalogRepository.findByOwnerIdOrderByNameAsc(ownerId)
                 : catalogRepository.findByOwnerIdAndTypeOrderByNameAsc(ownerId, type);
+        Map<String, List<Trade>> sharedByKey = sharedTradesByNameKey();
         return items.stream()
                 .sorted(BY_MASTERS_ORDER)
-                .map(CatalogItemResponse::from)
+                .map(item -> CatalogItemResponse.from(item, sharedTradesFor(item, sharedByKey)))
                 .toList();
+    }
+
+    /** {@code "name_key|TYPE|UNIT" -> every trade catalog_templates ships it under}, only for
+     *  keys more than one trade recognizes — see
+     *  {@link CatalogTemplateRepository#findNameKeysSharedAcrossTrades}. */
+    private Map<String, List<Trade>> sharedTradesByNameKey() {
+        Map<String, List<Trade>> map = new HashMap<>();
+        for (Object[] row : catalogTemplateRepository.findNameKeysSharedAcrossTrades()) {
+            String key = row[0] + "|" + row[1] + "|" + row[2];
+            List<Trade> trades = Arrays.stream(((String) row[3]).split(","))
+                    .map(Trade::valueOf)
+                    .toList();
+            map.put(key, trades);
+        }
+        return map;
+    }
+
+    private static List<Trade> sharedTradesFor(CatalogItem item, Map<String, List<Trade>> sharedByKey) {
+        String key = item.getName().trim().toLowerCase(Locale.ROOT)
+                + "|" + item.getType() + "|" + item.getUnit();
+        List<Trade> all = sharedByKey.get(key);
+        if (all == null) {
+            return List.of();
+        }
+        return all.stream().filter(t -> t != item.getTrade()).toList();
     }
 
     /** Distinct categories the contractor has used — for the picker/autocomplete. */

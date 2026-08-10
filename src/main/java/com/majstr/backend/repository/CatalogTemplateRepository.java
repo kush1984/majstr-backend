@@ -32,6 +32,23 @@ public interface CatalogTemplateRepository extends JpaRepository<CatalogTemplate
     @Query("SELECT COALESCE(MAX(t.addedInVersion), 1) FROM CatalogTemplate t")
     int currentVersion();
 
+    /**
+     * Every (normalized name, type, unit) key more than one trade recognizes, with the CSV of
+     * trades that ship it. {@code catalog_items} has one row per (owner, name, type, unit) —
+     * the unique index has no room for a second row under the same name — so a master running
+     * two trades that happen to share identical wording (V99: PAINTER's organizational-services
+     * category duplicates several of TILING's) only ever owns ONE row, tagged whichever trade
+     * claimed it first. {@link com.majstr.backend.service.CatalogService} uses this to tell the
+     * client's trade filter that such a row is legitimately shared, not just filed wrong.
+     */
+    @Query(value = """
+            SELECT lower(trim(name)) AS name_key, type, unit, string_agg(DISTINCT trade, ',') AS trades
+            FROM catalog_templates
+            GROUP BY lower(trim(name)), type, unit
+            HAVING count(DISTINCT trade) > 1
+            """, nativeQuery = true)
+    List<Object[]> findNameKeysSharedAcrossTrades();
+
     /** Admin editor: optional trade + type filters + optional name substring. The
      *  LIKE pattern is built in Java (see {@link #likePattern}) and compared against
      *  {@code LOWER(name)} — keeping the bind a plain text operand, so Postgres can
