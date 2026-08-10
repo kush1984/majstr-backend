@@ -1,12 +1,15 @@
 # Iteration: Unified object status (ObjectStage) + InfoPopover
 
 - **Status:** DONE
-- **Prompt:** `object-status-unification-prompt.md` — two related steps in one file: (A) unify the
-  object's status into one derived vocabulary (was: two languages on screen — "Очікує 1" on the
-  dashboard vs "Очікує · 0" in the list filter, because they counted different things); (B) a
-  reusable (i)-InfoPopover, curated placement.
+- **Prompt:** `object-status-unification-prompt.md` — three related steps in one file: (A) unify
+  the object's status into one derived vocabulary (was: two languages on screen — "Очікує 1" on
+  the dashboard vs "Очікує · 0" in the list filter, because they counted different things); (B) a
+  reusable (i)-InfoPopover, curated placement; (C) confirm+guard that cancelling an object stays a
+  SOFT status that keeps occupying its FREE `MAX_PROJECTS` slot (added in a follow-up resend of
+  the same prompt after A+B had already shipped — see the "C) FREE-limit safeguard" section below).
 - **Version:** majstr-pwa 1.13.3 → 1.14.0 (minor — a new headline capability: the derived stage
-  model and the InfoPopover component, not a fix on already-shipped work).
+  model and the InfoPopover component, not a fix on already-shipped work). Part C is backend-only
+  (a message-bundle wording fix + tests), no further PWA bump.
 
 ## A) ObjectStage — one derived status
 
@@ -65,6 +68,29 @@ COMPLETED, clear it leaving) already gives the exact invariant needed, for free.
   objects needed an honest name, not just a fixed value behind a stale one. PWA `DashboardMetrics`
   mirrored.
 
+## C) FREE-limit safeguard — cancel must not free a `MAX_PROJECTS` slot
+
+Recon confirmed the invariant the prompt wanted was **already true, unverified**:
+`LimitService.requireWithinLimit(MAX_PROJECTS)` counts via
+`ProjectRepository.countByOwnerId(UUID ownerId)` — a plain Spring Data derived query with **no
+status predicate at all**. A cancelled object is a row with `status = CANCELLED`, not a deleted
+row, so it was already being counted; there was never a live bypass. What was missing was (1) a
+test proving it, since the existing `LimitServiceTest` mocks `countByOwnerId` and so can't tell
+"counts everything" from "counts only active" — only a real-Postgres test can — and (2) the
+limit-exceeded message didn't mention the delete-or-PRO path the prompt asked for.
+
+**Changes:** `error.limit.projects` (both `messages.properties` and `messages_en.properties`)
+now says a cancelled object still counts and to delete one or upgrade — was PRO-only wording
+before. **Not changed:** the generic PWA `limits.objectsHint`/`atLimitTooltip` strings — those are
+shared across limit *types* (projects, estimates, photos), so a "delete an object" hint baked in
+there would be wrong for e.g. the per-project estimate cap.
+
+**New tests** (`ProjectStageQueriesIntegrationTest`, real Postgres — the derived-query behavior
+can't be proven against a mock): `countByOwnerId_stillCountsACancelledObject`,
+`requireWithinLimit_freeUserAtCapWithACancelledObject_stillRejectsANewOne` (2 objects, one
+CANCELLED, `requireWithinLimit` still throws `LimitExceededException` — the exact bypass the
+prompt worried about, pinned).
+
 ## B) InfoPopover
 
 One reusable component (`components/InfoPopover.tsx`) — (i) → tap → small panel, closes on a tap
@@ -120,7 +146,8 @@ clamped to the viewport so it can't run off a 375px screen.
   reach these: `countInProgressStage`/`countPendingSignatureStage`/`findStageFlags`, including the
   COUNT DISTINCT-per-object and priority-exclusion cases), `ProjectServiceTest` (3 new: stage from
   the signed flag, no-estimates → ASSESSMENT, filter-by-derived-stage-not-raw-status),
-  `DashboardServiceTest`/`ProjectControllerTest` fan-out fixed.
+  `DashboardServiceTest`/`ProjectControllerTest` fan-out fixed. Same integration test class gained
+  2 more (part C): cancel does NOT free a `MAX_PROJECTS` slot, on real Postgres.
 - PWA: `InfoPopover.test.tsx` (7 — open/close via all three paths, portal-escapes-clipping,
   children-vs-text), `ProjectCard.test.tsx` (9 — one badge per stage, proves the estimate-status
   label is gone), `ProjectsPage.matches.test.ts` (3 — the exact bug: derived stage wins over raw

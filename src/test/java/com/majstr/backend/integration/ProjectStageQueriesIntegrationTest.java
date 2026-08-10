@@ -6,6 +6,9 @@ import com.majstr.backend.entity.Plan;
 import com.majstr.backend.entity.Project;
 import com.majstr.backend.entity.ProjectStatus;
 import com.majstr.backend.entity.User;
+import com.majstr.backend.exception.LimitExceededException;
+import com.majstr.backend.feature.Limit;
+import com.majstr.backend.feature.LimitService;
 import com.majstr.backend.repository.EstimateRepository;
 import com.majstr.backend.repository.ProjectRepository;
 import com.majstr.backend.repository.UserRepository;
@@ -18,6 +21,7 @@ import java.util.Map;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
  * The object-status-unification native queries ({@code nativeQuery = true}, so no Mockito test
@@ -32,6 +36,7 @@ class ProjectStageQueriesIntegrationTest extends IntegrationTestBase {
     @Autowired UserRepository userRepository;
     @Autowired ProjectRepository projectRepository;
     @Autowired EstimateRepository estimateRepository;
+    @Autowired LimitService limitService;
 
     private UUID ownerId;
 
@@ -113,6 +118,47 @@ class ProjectStageQueriesIntegrationTest extends IntegrationTestBase {
         // A project with literally no estimates gets no row at all — the caller treats absence
         // as false/false, so it must simply not appear here.
         assertThat(byId).doesNotContainKey(noEstimates.getId());
+    }
+
+    // ---- FREE limit: cancel is a SOFT status, does not free a MAX_PROJECTS slot ---------------
+
+    @Test
+    void countByOwnerId_stillCountsACancelledObject() {
+        // ProjectRepository.countByOwnerId has no status predicate at all — cancel must not be
+        // able to free a slot the way a real delete does.
+        User freeOwner = freeUser();
+        projectRepository.save(Project.builder()
+                .owner(freeOwner).name("Обʼєкт 1").address("вул. 1").status(ProjectStatus.CANCELLED).build());
+
+        assertThat(projectRepository.countByOwnerId(freeOwner.getId())).isEqualTo(1L);
+    }
+
+    @Test
+    void requireWithinLimit_freeUserAtCapWithACancelledObject_stillRejectsANewOne() {
+        // The exact FREE-bypass the prompt worried about: 2 objects, cancel one, try to create a
+        // 3rd — must still be rejected, because the cancelled one still occupies a slot.
+        User freeOwner = freeUser();
+        projectRepository.save(Project.builder()
+                .owner(freeOwner).name("Обʼєкт 1").address("вул. 1").status(ProjectStatus.CANCELLED).build());
+        projectRepository.save(Project.builder()
+                .owner(freeOwner).name("Обʼєкт 2").address("вул. 2").status(ProjectStatus.IN_PROGRESS).build());
+
+        assertThatThrownBy(() -> limitService.requireWithinLimit(freeOwner.getId(), Limit.MAX_PROJECTS))
+                .isInstanceOf(LimitExceededException.class);
+    }
+
+    private User freeUser() {
+        String unique = UUID.randomUUID().toString();
+        return userRepository.save(User.builder()
+                .email(unique + "@majstr.test")
+                .emailCanonical(unique + "@majstr.test")
+                .passwordHash("x")
+                .fullName("Майстер")
+                .phone("+380000000000")
+                .companyName("ФОП")
+                .plan(Plan.FREE)
+                .referralCode(unique.substring(0, 10))
+                .build());
     }
 
     // ---- helpers ------------------------------------------------------------------------------
