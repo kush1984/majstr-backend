@@ -1804,6 +1804,42 @@ one-line summary — keep the item in the file as a record.
   `/api/plan/limits` (the PWA already reads that for every other cap) and make the message take it
   as a `{0}` argument rather than spelling it out.
 
+### Auto-hint to complete an object when Отримано ≥ За договором
+- **Status:** OPEN
+- **Since:** Object-status-unification iteration (2026-08-09)
+- **Context:** The prompt's own doc list asked for this as a follow-up: once a master has been paid
+  in full (`payments.received >= payments.contractedTotal`), the object is very likely done, but
+  nothing suggests "Завершити?" — the master has to remember the ⋮ menu action himself.
+- **Notes / options:** A small banner/toast on the object page (or the Економіка tab, where the
+  payment totals already render) when the condition is met, offering the same `PATCH .../status`
+  (COMPLETED) the manual "Завершити" action already uses — no new endpoint. Careful with the
+  wording: a suggestion, not a nag repeated every visit (dismiss-once, or only show while the
+  object isn't already COMPLETED/CANCELLED). Deferred — this iteration shipped the manual actions
+  only; the auto-hint is a distinct, smaller follow-up.
+
+### Cancelled objects: no dedicated filter chip — should "Усі" hide them too?
+- **Status:** OPEN
+- **Since:** Object-status-unification iteration (2026-08-09)
+- **Context:** The prompt's own spec left this genuinely undecided — "Скасовані — окремо/сховано"
+  (separate, OR hidden). This session chose the less destructive reading: CANCELLED gets no
+  dedicated filter chip (a master rarely filters TO cancelled objects), but "Усі" still counts and
+  shows them, so a mis-cancel doesn't make an object vanish from the UI with no way back.
+- **Notes / options:** If the master would rather cancelled objects disappeared from "Усі" entirely
+  (truly archived), that's a one-line change to `ProjectsPage.matches` — `f === 'ALL' ? p.stage !==
+  'CANCELLED' : …`. Revisit once there's real usage — does anyone actually accumulate cancelled
+  clutter in the list, or is out-of-sight-out-of-mind actually preferred?
+
+### More InfoPopover spots (feedback-driven)
+- **Status:** OPEN
+- **Since:** Object-status-unification iteration (2026-08-09)
+- **Context:** The prompt explicitly scoped placement to a curated list (status legend; contracted/
+  received/remaining; act-not-counted note; payment Сума/Отримано + Дата-умова; the signed-estimate
+  read-only banner; one on the portal) and said not to sprinkle it everywhere. Real usage will
+  surface other non-obvious spots.
+- **Notes / options:** Add placements as real confusion is reported, not preemptively — the
+  component (`components/InfoPopover.tsx`) is already reusable, so a new spot is a 2-line addition
+  (import + `<InfoPopover text=… label=… />`), not new plumbing.
+
 ---
 
 ## Features in the catalog enum but not implemented

@@ -3,7 +3,7 @@ package com.majstr.backend.controller;
 import com.majstr.backend.dto.ProjectRequest;
 import com.majstr.backend.dto.ProjectResponse;
 import com.majstr.backend.dto.ProjectStatusUpdateRequest;
-import com.majstr.backend.entity.ProjectStatus;
+import com.majstr.backend.entity.ObjectStage;
 import com.majstr.backend.security.UserPrincipal;
 import com.majstr.backend.service.ProjectService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -50,11 +50,11 @@ public class ProjectController {
                 .body(projectService.create(req, principal.id(), entityId));
     }
 
-    @Operation(summary = "List my projects, optionally filtered by status")
+    @Operation(summary = "List my projects, optionally filtered by the derived object stage")
     @GetMapping
-    public List<ProjectResponse> list(@RequestParam(required = false) ProjectStatus status,
+    public List<ProjectResponse> list(@RequestParam(required = false) ObjectStage stage,
                                       @AuthenticationPrincipal UserPrincipal principal) {
-        return projectService.listForOwner(principal.id(), status);
+        return projectService.listForOwner(principal.id(), stage);
     }
 
     @Operation(summary = "Get a project by id")

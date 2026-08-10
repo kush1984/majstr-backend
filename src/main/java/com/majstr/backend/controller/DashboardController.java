@@ -21,7 +21,7 @@ public class DashboardController {
 
     private final DashboardService dashboardService;
 
-    @Operation(summary = "Metrics for the current contractor's dashboard (active projects, pending estimates, completed this month)")
+    @Operation(summary = "Metrics for the current contractor's dashboard (active objects, objects pending signature, completed this month)")
     @GetMapping("/metrics")
     public DashboardMetricsResponse metrics(@AuthenticationPrincipal UserPrincipal principal) {
         return dashboardService.metrics(principal.id());

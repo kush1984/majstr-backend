@@ -1,7 +1,6 @@
 package com.majstr.backend.service;
 
 import com.majstr.backend.dto.DashboardMetricsResponse;
-import com.majstr.backend.entity.EstimateStatus;
 import com.majstr.backend.entity.ProjectStatus;
 import com.majstr.backend.repository.ProjectMessageRepository;
 import com.majstr.backend.repository.EstimateRepository;
@@ -37,8 +36,11 @@ public class DashboardService {
     public DashboardMetricsResponse metrics(UUID ownerId) {
         Instant monthStart = currentMonthStartUtc();
 
-        long activeProjects = projectRepository.countByOwnerIdAndStatus(ownerId, ProjectStatus.IN_PROGRESS);
-        long pendingEstimates = estimateRepository.countByProjectOwnerIdAndStatus(ownerId, EstimateStatus.SENT);
+        // object-status-unification: both counts are now OBJECTS in the derived stage, not a raw
+        // ProjectStatus count / a count of SENT ESTIMATES — see ProjectRepository for why the old
+        // pendingEstimates (SENT-estimate count) could disagree with the list filter's object count.
+        long activeProjects = projectRepository.countInProgressStage(ownerId);
+        long pendingObjects = projectRepository.countPendingSignatureStage(ownerId);
         long completedCount = projectRepository.countByOwnerIdAndStatusAndCompletedAtGreaterThanEqual(
                 ownerId, ProjectStatus.COMPLETED, monthStart);
 
@@ -50,7 +52,7 @@ public class DashboardService {
 
         return new DashboardMetricsResponse(
                 activeProjects,
-                pendingEstimates,
+                pendingObjects,
                 unreadQuestions,
                 new DashboardMetricsResponse.CompletedThisMonth(completedCount, completedAmount));
     }

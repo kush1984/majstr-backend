@@ -3,6 +3,7 @@ package com.majstr.backend.service;
 import com.majstr.backend.dto.ProjectRequest;
 import com.majstr.backend.dto.ProjectResponse;
 import com.majstr.backend.entity.EstimateStatus;
+import com.majstr.backend.entity.ObjectStage;
 import com.majstr.backend.entity.Project;
 import com.majstr.backend.entity.ProjectStatus;
 import com.majstr.backend.entity.User;
@@ -159,6 +160,55 @@ class ProjectServiceTest {
         List<ProjectResponse> list = projectService.listForOwner(ownerId, null);
 
         assertThat(list.get(0).unreadQuestions()).isZero();
+    }
+
+    // ---- object-status-unification: derived stage --------------------------------------------
+
+    @Test
+    void get_computesStageFromTheSignedFlag() {
+        Project p = owned(ProjectStatus.ESTIMATING, null); // raw status no longer drives display
+        given(projectRepository.findById(projectId)).willReturn(Optional.of(p));
+        given(estimateRepository.findLatestEstimateSummaries(anyCollection())).willReturn(List.of());
+        given(projectRepository.findStageFlags(anyCollection())).willReturn(List.<Object[]>of(
+                new Object[]{projectId, true, false} // has a SIGNED estimate
+        ));
+
+        ProjectResponse r = projectService.get(projectId, ownerId);
+
+        assertThat(r.stage()).isEqualTo(ObjectStage.IN_PROGRESS);
+    }
+
+    @Test
+    void get_noEstimatesAtAll_isAssessment() {
+        Project p = owned(ProjectStatus.DRAFT, null);
+        given(projectRepository.findById(projectId)).willReturn(Optional.of(p));
+        given(estimateRepository.findLatestEstimateSummaries(anyCollection())).willReturn(List.of());
+        given(projectRepository.findStageFlags(anyCollection())).willReturn(List.of()); // no row at all
+
+        ProjectResponse r = projectService.get(projectId, ownerId);
+
+        assertThat(r.stage()).isEqualTo(ObjectStage.ASSESSMENT);
+    }
+
+    @Test
+    void list_filtersByTheDerivedStage_notTheRawProjectStatus() {
+        UUID inProgressId = projectId;
+        UUID assessmentId = UUID.randomUUID();
+        Project inProgress = owned(ProjectStatus.ESTIMATING, null); // raw status intentionally "wrong"
+        Project assessment = Project.builder()
+                .id(assessmentId).owner(User.builder().id(ownerId).build())
+                .name("P2").address("A").status(ProjectStatus.DRAFT).build();
+        given(projectRepository.findByOwnerIdOrderByCreatedAtDesc(ownerId))
+                .willReturn(List.of(inProgress, assessment));
+        given(estimateRepository.findLatestEstimateSummaries(anyCollection())).willReturn(List.of());
+        given(messageRepository.countUnreadByProjectIds(anyCollection())).willReturn(List.of());
+        given(projectRepository.findStageFlags(anyCollection())).willReturn(List.<Object[]>of(
+                new Object[]{inProgressId, true, false}
+        ));
+
+        List<ProjectResponse> shown = projectService.listForOwner(ownerId, ObjectStage.IN_PROGRESS);
+
+        assertThat(shown).extracting(ProjectResponse::id).containsExactly(inProgressId);
     }
 
     @Test

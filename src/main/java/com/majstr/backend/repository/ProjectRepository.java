@@ -22,9 +22,6 @@ public interface ProjectRepository extends JpaRepository<Project, UUID> {
     @EntityGraph(attributePaths = "client")
     List<Project> findByOwnerIdOrderByCreatedAtDesc(UUID ownerId);
 
-    @EntityGraph(attributePaths = "client")
-    List<Project> findByOwnerIdAndStatusOrderByCreatedAtDesc(UUID ownerId, ProjectStatus status);
-
     long countByOwnerId(UUID ownerId);
 
     // ---- dashboard metrics (aggregate, no entity loading) -----------------
@@ -32,6 +29,53 @@ public interface ProjectRepository extends JpaRepository<Project, UUID> {
     long countByOwnerIdAndStatus(UUID ownerId, ProjectStatus status);
 
     long countByOwnerIdAndStatusAndCompletedAtGreaterThanEqual(UUID ownerId, ProjectStatus status, Instant since);
+
+    /** Dashboard "Активні" (object-status-unification): objects derived as IN_PROGRESS — not
+     *  cancelled, not completed, and with at least one SIGNED estimate. Replaces the old
+     *  {@code countByOwnerIdAndStatus(IN_PROGRESS)}, which only counted objects whose stored
+     *  status happened to have been set to IN_PROGRESS (by signing) rather than every object that
+     *  actually IS in progress by the unified derivation. */
+    @Query(value = """
+            SELECT COUNT(DISTINCT p.id)
+            FROM projects p
+            JOIN estimates e ON e.project_id = p.id AND e.status = 'SIGNED'
+            WHERE p.owner_id = :ownerId AND p.status <> 'CANCELLED' AND p.completed_at IS NULL
+            """, nativeQuery = true)
+    long countInProgressStage(@Param("ownerId") UUID ownerId);
+
+    /** Dashboard "Очікує" (object-status-unification): OBJECTS derived as PENDING_SIGNATURE — at
+     *  least one SENT estimate, none SIGNED, not cancelled, not completed. Replaces the old
+     *  {@code EstimateRepository.countByProjectOwnerIdAndStatus(SENT)}, which counted SENT
+     *  ESTIMATES — an object with two SENT variants inflated the count, and once signed an object
+     *  dropped out of neither number in sync with the other (the exact "1 vs 0" bug report). */
+    @Query(value = """
+            SELECT COUNT(DISTINCT p.id)
+            FROM projects p
+            WHERE p.owner_id = :ownerId AND p.status <> 'CANCELLED' AND p.completed_at IS NULL
+                  AND EXISTS (SELECT 1 FROM estimates e WHERE e.project_id = p.id AND e.status = 'SENT')
+                  AND NOT EXISTS (SELECT 1 FROM estimates e2 WHERE e2.project_id = p.id AND e2.status = 'SIGNED')
+            """, nativeQuery = true)
+    long countPendingSignatureStage(@Param("ownerId") UUID ownerId);
+
+    /**
+     * Per-project "has a SIGNED estimate" / "has a SENT estimate" flags, batched for the whole
+     * owner's list — the two facts {@link com.majstr.backend.entity.ObjectStage#derive} needs
+     * beyond what's already on the {@code Project} row itself. One grouped query, no N+1 (mirrors
+     * {@code EstimateRepository.findLatestEstimateSummaries}' batching pattern). A project with no
+     * estimates at all is simply absent from the result — the caller treats a missing row as
+     * {@code false}/{@code false}.
+     *
+     * <p>Row shape: {@code [project_id (UUID), has_signed (Boolean), has_sent (Boolean)]}.</p>
+     */
+    @Query(value = """
+            SELECT e.project_id,
+                   BOOL_OR(e.status = 'SIGNED') AS has_signed,
+                   BOOL_OR(e.status = 'SENT') AS has_sent
+            FROM estimates e
+            WHERE e.project_id IN (:projectIds)
+            GROUP BY e.project_id
+            """, nativeQuery = true)
+    List<Object[]> findStageFlags(@Param("projectIds") Collection<UUID> projectIds);
 
     // ---- admin activity ---------------------------------------------------
 

@@ -29,8 +29,6 @@ public interface EstimateRepository extends JpaRepository<Estimate, UUID> {
      *  per-project estimate limit (deleting one frees a slot). */
     long countByProjectId(UUID projectId);
 
-    long countByProjectOwnerIdAndStatus(UUID ownerId, EstimateStatus status);
-
     // ---- admin activity ---------------------------------------------------
 
     /** Estimate count per owner for a set of users (admin list, no N+1). */
@@ -127,30 +125,41 @@ public interface EstimateRepository extends JpaRepository<Estimate, UUID> {
             """, nativeQuery = true)
     BigDecimal sumIncomeSigned(@Param("projectId") UUID projectId);
 
-    /** Object income = the sum of line totals of estimates FLAGGED to count in the
-     *  economy (the accepted deal(s)) — replaces the sum-of-all figure.
+    /** Object income (the "За договором" / contracted figure) = the sum of line totals of
+     *  {@code SIGNED} estimates FLAGGED to count in the economy — replaces the sum-of-all figure.
      *
      *  <p>REJECTED is excluded regardless of the flag: a rejected estimate is a deal the
      *  client turned down, so it is never income. The flag alone was not enough — V57
      *  blanket-set it TRUE on every existing estimate, which silently counted rejected
      *  variants as earnings until the owner unticked them by hand (V67 patches the data;
-     *  this guard makes it impossible to re-introduce).</p> */
+     *  this guard makes it impossible to re-introduce).</p>
+     *
+     *  <p><b>SIGNED is likewise not optional</b> (economy-contracted-signed-only-fix): {@code
+     *  count_in_economy} defaults {@code true} even on a fresh DRAFT/SENT estimate — it means
+     *  "counts if it becomes the deal," not "is the deal." Without this filter, contracted summed
+     *  every counted DRAFT/SENT alongside the actually-signed ones, disagreeing with the act
+     *  panels below ({@link #findSignedEstimateSummaries}, which was already {@code SIGNED}-only)
+     *  — an object with nothing signed yet showed money in Платежі with an empty acts list.</p> */
     @Query(value = """
             SELECT COALESCE(SUM(i.line_total), 0)
             FROM estimates e JOIN estimate_items i ON i.estimate_id = e.id
-            WHERE e.project_id = :projectId AND e.count_in_economy = true AND e.status <> 'REJECTED'
+            WHERE e.project_id = :projectId AND e.count_in_economy = true AND e.status = 'SIGNED'
             """, nativeQuery = true)
     BigDecimal sumIncomeCounted(@Param("projectId") UUID projectId);
 
-    /** Sum of deposits (завдаток) across the object's counted estimates — the
+    /** Sum of deposits (завдаток) across the object's counted SIGNED estimates — the
      *  "received from client" cash-flow figure. Legacy: superseded by
      *  {@code ProjectPaymentRepository.sumPaidByProjectId} (payments-economy-portal iteration);
      *  kept only because it still reads live {@code deposit_amount} data on estimates predating
-     *  the migration that nothing writes to anymore. */
+     *  the migration that nothing writes to anymore. <b>Dead code today — zero callers</b> (grepped
+     *  main); fixed alongside {@link #sumIncomeCounted} for consistency (same missing-{@code
+     *  SIGNED} bug applied here too) rather than left as a landmine for whoever revives it. */
     @Query("""
             SELECT COALESCE(SUM(e.depositAmount), 0)
             FROM Estimate e
-            WHERE e.project.id = :projectId AND e.countInEconomy = true AND e.depositAmount IS NOT NULL
+            WHERE e.project.id = :projectId AND e.countInEconomy = true
+                  AND e.status = com.majstr.backend.entity.EstimateStatus.SIGNED
+                  AND e.depositAmount IS NOT NULL
             """)
     BigDecimal sumDepositsCounted(@Param("projectId") UUID projectId);
 

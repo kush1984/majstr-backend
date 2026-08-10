@@ -1,7 +1,6 @@
 package com.majstr.backend.service;
 
 import com.majstr.backend.dto.DashboardMetricsResponse;
-import com.majstr.backend.entity.EstimateStatus;
 import com.majstr.backend.entity.ProjectStatus;
 import com.majstr.backend.repository.ProjectMessageRepository;
 import com.majstr.backend.repository.EstimateRepository;
@@ -38,8 +37,8 @@ class DashboardServiceTest {
 
     @Test
     void metrics_composesCountsAndSum() {
-        given(projectRepository.countByOwnerIdAndStatus(ownerId, ProjectStatus.IN_PROGRESS)).willReturn(3L);
-        given(estimateRepository.countByProjectOwnerIdAndStatus(ownerId, EstimateStatus.SENT)).willReturn(5L);
+        given(projectRepository.countInProgressStage(ownerId)).willReturn(3L);
+        given(projectRepository.countPendingSignatureStage(ownerId)).willReturn(5L);
         given(projectRepository.countByOwnerIdAndStatusAndCompletedAtGreaterThanEqual(
                 eq(ownerId), eq(ProjectStatus.COMPLETED), any(Instant.class))).willReturn(2L);
         given(estimateRepository.sumLatestEstimateTotalForCompletedSince(eq(ownerId), any(Instant.class)))
@@ -49,7 +48,7 @@ class DashboardServiceTest {
         DashboardMetricsResponse r = dashboardService.metrics(ownerId);
 
         assertThat(r.activeProjects()).isEqualTo(3);
-        assertThat(r.pendingEstimates()).isEqualTo(5);
+        assertThat(r.pendingObjects()).isEqualTo(5);
         assertThat(r.unreadQuestions()).isEqualTo(4);
         assertThat(r.completedThisMonth().count()).isEqualTo(2);
         assertThat(r.completedThisMonth().totalAmount()).isEqualByComparingTo("12345.50");
@@ -57,8 +56,8 @@ class DashboardServiceTest {
 
     @Test
     void metrics_nullSumBecomesZero() {
-        given(projectRepository.countByOwnerIdAndStatus(ownerId, ProjectStatus.IN_PROGRESS)).willReturn(0L);
-        given(estimateRepository.countByProjectOwnerIdAndStatus(ownerId, EstimateStatus.SENT)).willReturn(0L);
+        given(projectRepository.countInProgressStage(ownerId)).willReturn(0L);
+        given(projectRepository.countPendingSignatureStage(ownerId)).willReturn(0L);
         given(projectRepository.countByOwnerIdAndStatusAndCompletedAtGreaterThanEqual(
                 eq(ownerId), eq(ProjectStatus.COMPLETED), any(Instant.class))).willReturn(0L);
         given(estimateRepository.sumLatestEstimateTotalForCompletedSince(eq(ownerId), any(Instant.class)))
@@ -71,8 +70,8 @@ class DashboardServiceTest {
 
     @Test
     void metrics_usesFirstDayOfCurrentMonthUtc() {
-        given(projectRepository.countByOwnerIdAndStatus(any(), any())).willReturn(0L);
-        given(estimateRepository.countByProjectOwnerIdAndStatus(any(), any())).willReturn(0L);
+        given(projectRepository.countInProgressStage(any())).willReturn(0L);
+        given(projectRepository.countPendingSignatureStage(any())).willReturn(0L);
         given(projectRepository.countByOwnerIdAndStatusAndCompletedAtGreaterThanEqual(any(), any(), any())).willReturn(0L);
         given(estimateRepository.sumLatestEstimateTotalForCompletedSince(any(), any())).willReturn(BigDecimal.ZERO);
 

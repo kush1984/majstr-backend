@@ -4,6 +4,7 @@ import com.majstr.backend.dto.ProjectRequest;
 import com.majstr.backend.dto.ProjectResponse;
 import com.majstr.backend.entity.Client;
 import com.majstr.backend.entity.EstimateStatus;
+import com.majstr.backend.entity.ObjectStage;
 import com.majstr.backend.entity.Project;
 import com.majstr.backend.entity.ProjectPhoto;
 import com.majstr.backend.entity.ProjectStatus;
@@ -86,22 +87,28 @@ public class ProjectService {
         return ProjectResponse.from(projectRepository.save(project));
     }
 
+    /** {@code stage} filters on the DERIVED {@link ObjectStage}, not the raw {@link ProjectStatus}
+     *  column (object-status-unification) — fetches the owner's whole list and filters in memory
+     *  after computing each project's stage, rather than translating the priority chain into SQL.
+     *  Simple, and cheap enough at a solo master's object count (same trade-off the admin
+     *  {@code MetricsService} already accepts at larger scale — see open-questions.md). */
     @Transactional(readOnly = true)
-    public List<ProjectResponse> listForOwner(UUID ownerId, ProjectStatus status) {
-        List<Project> projects = status == null
-                ? projectRepository.findByOwnerIdOrderByCreatedAtDesc(ownerId)
-                : projectRepository.findByOwnerIdAndStatusOrderByCreatedAtDesc(ownerId, status);
+    public List<ProjectResponse> listForOwner(UUID ownerId, ObjectStage stage) {
+        List<Project> projects = projectRepository.findByOwnerIdOrderByCreatedAtDesc(ownerId);
         if (projects.isEmpty()) {
             return List.of();
         }
-        // One aggregate query each for the latest-estimate summary and the unread
-        // question count across the whole list — no N+1.
+        // One aggregate query each for the latest-estimate summary, the unread question count,
+        // and the SIGNED/SENT stage flags across the whole list — no N+1.
         List<UUID> projectIds = projects.stream().map(Project::getId).toList();
         Map<UUID, EstimateSummary> summaries = loadLatestEstimateSummaries(projectIds);
         Map<UUID, Long> unread = loadUnreadCounts(projectIds);
-        return projects.stream()
-                .map(p -> toResponse(p, summaries.get(p.getId()), unread.getOrDefault(p.getId(), 0L)))
+        Map<UUID, StageFlags> flags = loadStageFlags(projectIds);
+        List<ProjectResponse> all = projects.stream()
+                .map(p -> toResponse(p, summaries.get(p.getId()), unread.getOrDefault(p.getId(), 0L),
+                        flags.get(p.getId())))
                 .toList();
+        return stage == null ? all : all.stream().filter(r -> r.stage() == stage).toList();
     }
 
     @Transactional(readOnly = true)
@@ -192,13 +199,17 @@ public class ProjectService {
     private ProjectResponse withSummary(Project project) {
         EstimateSummary summary = loadLatestEstimateSummaries(List.of(project.getId())).get(project.getId());
         long unread = messageRepository.countByProjectIdAndReadFalse(project.getId());
-        return toResponse(project, summary, unread);
+        StageFlags flags = loadStageFlags(List.of(project.getId())).get(project.getId());
+        return toResponse(project, summary, unread, flags);
     }
 
-    private static ProjectResponse toResponse(Project project, EstimateSummary summary, long unreadQuestions) {
+    private static ProjectResponse toResponse(Project project, EstimateSummary summary, long unreadQuestions,
+                                              StageFlags flags) {
+        boolean hasSigned = flags != null && flags.hasSigned();
+        boolean hasSent = flags != null && flags.hasSent();
         return summary == null
-                ? ProjectResponse.from(project, null, null, unreadQuestions)
-                : ProjectResponse.from(project, summary.total(), summary.status(), unreadQuestions);
+                ? ProjectResponse.from(project, null, null, unreadQuestions, hasSigned, hasSent)
+                : ProjectResponse.from(project, summary.total(), summary.status(), unreadQuestions, hasSigned, hasSent);
     }
 
     private Map<UUID, Long> loadUnreadCounts(Collection<UUID> projectIds) {
@@ -231,7 +242,25 @@ public class ProjectService {
         return value instanceof BigDecimal bd ? bd : new BigDecimal(value.toString());
     }
 
+    private Map<UUID, StageFlags> loadStageFlags(Collection<UUID> projectIds) {
+        if (projectIds.isEmpty()) {
+            return Map.of();
+        }
+        Map<UUID, StageFlags> result = new HashMap<>();
+        for (Object[] row : projectRepository.findStageFlags(projectIds)) {
+            UUID projectId = (UUID) row[0];
+            boolean hasSigned = Boolean.TRUE.equals(row[1]);
+            boolean hasSent = Boolean.TRUE.equals(row[2]);
+            result.put(projectId, new StageFlags(hasSigned, hasSent));
+        }
+        return result;
+    }
+
     private record EstimateSummary(BigDecimal total, EstimateStatus status) {}
+
+    /** The two facts {@link ObjectStage#derive} needs beyond the {@code Project} row itself. A
+     *  project absent from {@link #loadStageFlags}' result (no estimates at all) has neither. */
+    private record StageFlags(boolean hasSigned, boolean hasSent) {}
 
     private static String normalize(String s) {
         return s == null || s.isBlank() ? null : s.trim();

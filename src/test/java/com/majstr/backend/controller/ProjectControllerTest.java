@@ -2,6 +2,7 @@ package com.majstr.backend.controller;
 
 import com.majstr.backend.dto.ProjectRequest;
 import com.majstr.backend.dto.ProjectResponse;
+import com.majstr.backend.entity.ObjectStage;
 import com.majstr.backend.entity.ProjectStatus;
 import com.majstr.backend.exception.GlobalExceptionHandler;
 import com.majstr.backend.security.UserPrincipal;
@@ -80,7 +81,7 @@ class ProjectControllerTest {
     void create_returns201WithProjectResponse() throws Exception {
         UUID projectId = UUID.randomUUID();
         ProjectResponse stubbed = new ProjectResponse(
-                projectId, "Apartment 5", "Khreshchatyk 1", ProjectStatus.DRAFT,
+                projectId, "Apartment 5", "Khreshchatyk 1", ProjectStatus.DRAFT, ObjectStage.ASSESSMENT,
                 "Bathroom + kitchen", null, null, null, null, 0L, null, Instant.now(), Instant.now());
         // The controller calls the 3-arg overload (offline replay sends X-Entity-Uuid);
         // `any()` — not `any(UUID.class)` — because the header is absent here, so it is null.
@@ -101,7 +102,8 @@ class ProjectControllerTest {
     void list_returnsArrayOfProjects() throws Exception {
         UUID id = UUID.randomUUID();
         ProjectResponse stubbed = new ProjectResponse(
-                id, "P1", "Addr", ProjectStatus.IN_PROGRESS, null, null, null, null, null, 0L, null, Instant.now(), Instant.now());
+                id, "P1", "Addr", ProjectStatus.IN_PROGRESS, ObjectStage.IN_PROGRESS,
+                null, null, null, null, null, 0L, null, Instant.now(), Instant.now());
         given(projectService.listForOwner(userId, null)).willReturn(List.of(stubbed));
 
         mockMvc.perform(get("/api/projects"))

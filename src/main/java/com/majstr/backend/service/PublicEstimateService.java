@@ -218,9 +218,11 @@ public class PublicEstimateService {
                 }
             });
         }
-        // A signed estimate means work begins — activate the project so it
-        // counts in the "active projects" metric. Don't override a project
-        // that's already in progress or completed.
+        // A signed estimate means work begins. object-status-unification made the DISPLAYED stage
+        // fully derived (a SIGNED estimate alone now drives IN_PROGRESS — see ObjectStage.derive),
+        // so this write is no longer load-bearing for anything the UI shows. Left in place anyway:
+        // harmless (CANCELLED/COMPLETED still win priority regardless of the raw status column),
+        // and cheap insurance against some other future reader of the raw ProjectStatus column.
         Project project = estimate.getProject();
         if (project.getStatus() != ProjectStatus.IN_PROGRESS && project.getStatus() != ProjectStatus.COMPLETED) {
             project.setStatus(ProjectStatus.IN_PROGRESS);

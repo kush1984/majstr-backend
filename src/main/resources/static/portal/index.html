@@ -222,7 +222,27 @@
         }
         .paybar { height: 10px; border-radius: 6px; background: var(--paper-2); overflow: hidden; margin: 8px 0 4px; }
         .paybar-fill { height: 100%; background: var(--amber); }
-        .paybar-label { font-size: 0.85rem; color: var(--muted); }
+        .paybar-label { font-size: 0.85rem; color: var(--muted); display: flex; align-items: center; gap: 6px; }
+        /* One curated (i)-explanation near the payment graph — mirrors the app's InfoPopover
+           component (tap → panel, close on outside-tap/Esc/✕), reimplemented in plain JS since the
+           portal has no build step to share a React component with. */
+        .info-trigger {
+            display: inline-flex; flex-shrink: 0; align-items: center; justify-content: center;
+            width: 18px; height: 18px; border-radius: 50%;
+            background: color-mix(in srgb, var(--amber) 18%, var(--white));
+            color: var(--amber-deep); font-size: 0.7rem; font-weight: 700; line-height: 1;
+            border: none; padding: 0; cursor: pointer;
+        }
+        .info-scrim { position: fixed; inset: 0; z-index: 60; background: rgba(0,0,0,0.35); border: none; padding: 0; cursor: default; }
+        .info-panel {
+            position: fixed; z-index: 61; max-width: min(20rem, calc(100vw - 2rem));
+            background: var(--white); border-radius: 14px; padding: 12px 30px 12px 14px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.18); font-size: 0.85rem; line-height: 1.4; color: var(--ink);
+        }
+        .info-panel-close {
+            position: absolute; top: 6px; right: 6px; width: 22px; height: 22px; border-radius: 50%;
+            border: none; background: transparent; color: var(--muted); font-size: 0.8rem; padding: 0; cursor: pointer;
+        }
         .actions {
             display: flex;
             flex-wrap: wrap;
@@ -620,7 +640,10 @@
                 <div class="row grand"><span>Залишок:</span><span>${money(card.remaining)}</span></div>
             </div>
             <div class="paybar"><div class="paybar-fill" style="width:${pct}%"></div></div>
-            <p class="paybar-label">${money(received)} з ${money(total)} · ${pct}%</p>
+            <p class="paybar-label">
+                ${money(received)} з ${money(total)} · ${pct}%
+                <button type="button" class="info-trigger" data-info="Оплатити до вказаної дати, щоб майстер почав наступний етап робіт." aria-label="Пояснення">i</button>
+            </p>
             ${rows}
         `;
     }
@@ -850,6 +873,68 @@
             }]
         };
     }
+
+    // One curated (i)-popover, delegated (triggers are re-rendered on every load(), so a listener
+    // bound once up front — rather than re-wired per render — is the simpler correct choice).
+    // Closes on: a tap on the scrim, Esc, or the ✕ inside the panel — same three ways the app's own
+    // InfoPopover component closes.
+    let openInfoPanel = null;
+
+    function closeInfoPopover() {
+        if (!openInfoPanel) return;
+        openInfoPanel.remove();
+        openInfoPanel = null;
+    }
+
+    function openInfoPopover(trigger) {
+        closeInfoPopover();
+        const scrim = document.createElement('button');
+        scrim.type = 'button';
+        scrim.className = 'info-scrim';
+        scrim.setAttribute('aria-label', 'Закрити');
+        scrim.addEventListener('click', closeInfoPopover);
+
+        const panel = document.createElement('div');
+        panel.className = 'info-panel';
+        panel.setAttribute('role', 'dialog');
+        panel.textContent = trigger.dataset.info;
+        const close = document.createElement('button');
+        close.type = 'button';
+        close.className = 'info-panel-close';
+        close.setAttribute('aria-label', 'Закрити');
+        close.textContent = '✕';
+        close.addEventListener('click', closeInfoPopover);
+        panel.appendChild(close);
+
+        document.body.appendChild(scrim);
+        document.body.appendChild(panel);
+        // Both tracked as one unit so a single closeInfoPopover() call removes the pair.
+        openInfoPanel = { remove: () => { scrim.remove(); panel.remove(); } };
+
+        // Positioned after insertion so panel.getBoundingClientRect() reflects real content size —
+        // clamped the same way the app's InfoPopover is, so it can't run off a 375px screen.
+        const button = trigger.getBoundingClientRect();
+        const rect = panel.getBoundingClientRect();
+        const margin = 8;
+        const maxWidth = Math.min(320, window.innerWidth - margin * 2);
+        panel.style.maxWidth = maxWidth + 'px';
+        const left = Math.min(Math.max(margin, button.left), window.innerWidth - maxWidth - margin);
+        const below = button.bottom + 6;
+        const dropUp = below + rect.height > window.innerHeight - margin;
+        panel.style.left = left + 'px';
+        panel.style.top = (dropUp ? Math.max(margin, button.top - 6 - rect.height) : below) + 'px';
+    }
+
+    document.addEventListener('click', (e) => {
+        const trigger = e.target.closest('.info-trigger');
+        if (trigger) {
+            e.preventDefault();
+            openInfoPopover(trigger);
+        }
+    });
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') closeInfoPopover();
+    });
 
     async function load() {
         try {

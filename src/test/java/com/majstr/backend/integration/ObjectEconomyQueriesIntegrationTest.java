@@ -42,6 +42,13 @@ import static org.assertj.core.api.Assertions.assertThat;
  * ObjectExpenseRepository.sumAll}, so the tests that used to exercise the deleted formula were
  * removed rather than adapted; {@code sumAllExpensesAcrossCategoriesAndSources} below covers the
  * query that replaced them.</p>
+ *
+ * <p><b>economy-contracted-signed-only-fix:</b> {@code count_in_economy} defaults {@code true}
+ * even on a fresh DRAFT — it means "counts once signed," not "is signed" — so {@code
+ * sumIncomeCounted} missing an {@code AND status = 'SIGNED'} let a flagged DRAFT/SENT estimate's
+ * amount leak into "За договором" while the act panels (already {@code SIGNED}-only) stayed
+ * correctly empty. {@code contractedIgnoresUnsignedEstimatesEvenWhenFlagged} below is the
+ * regression test for exactly that prod bug.</p>
  */
 class ObjectEconomyQueriesIntegrationTest extends IntegrationTestBase {
 
@@ -92,12 +99,29 @@ class ObjectEconomyQueriesIntegrationTest extends IntegrationTestBase {
     @Test
     void unflaggedEstimatesAreExcludedToo_soVariantsDoNotDoubleCount() {
         // The original reason the flag exists: econom/premium variants and a consolidated
-        // rollup must not all be summed into one object's income.
-        estimateWith(EstimateStatus.SENT, true, ItemType.WORK, "800.00");
-        estimateWith(EstimateStatus.DRAFT, false, ItemType.WORK, "9999.00");
+        // rollup must not all be summed into one object's income. Both SIGNED here (flag alone
+        // is no longer sufficient after the SIGNED-only fix — status matters too), so this isolates
+        // what the flag itself is still responsible for excluding.
+        estimateWith(EstimateStatus.SIGNED, true, ItemType.WORK, "800.00");
+        estimateWith(EstimateStatus.SIGNED, false, ItemType.WORK, "9999.00");
 
         assertThat(estimateRepository.sumIncomeCounted(projectId))
                 .isEqualByComparingTo("800.00");
+    }
+
+    @Test
+    void contractedIgnoresUnsignedEstimatesEvenWhenFlagged() {
+        // The exact prod bug: an object with only DRAFT/SENT estimates (both flagged — the
+        // default) must show contracted = 0, matching the empty act-panels list, not the sum of
+        // draft/sent amounts. Signing one then makes contracted equal to ONLY that one's amount.
+        estimateWith(EstimateStatus.DRAFT, true, ItemType.WORK, "40.00");
+        estimateWith(EstimateStatus.SENT, true, ItemType.WORK, "19725.00");
+
+        assertThat(estimateRepository.sumIncomeCounted(projectId)).isEqualByComparingTo("0");
+
+        estimateWith(EstimateStatus.SIGNED, true, ItemType.WORK, "1200.00");
+
+        assertThat(estimateRepository.sumIncomeCounted(projectId)).isEqualByComparingTo("1200.00");
     }
 
     @Test

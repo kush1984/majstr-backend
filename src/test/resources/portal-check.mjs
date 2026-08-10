@@ -15,6 +15,17 @@ assert.ok(script, 'no inline <script> found');
 new Function(script);                     // throws on a syntax error
 console.log('ok   script parses');
 
+// 1b. the one curated (i)-popover near the payment graph (object-status-unification) — this page
+// has no jsdom, so real click/close behavior isn't exercised here; this pins the trigger markup
+// and the three close paths existing in source, so a future edit can't silently drop one of them.
+assert.ok(/class="info-trigger"[^>]*data-info="[^"]+"/.test(script),
+  'payment-graph info trigger with a data-info explanation is missing');
+assert.ok(script.includes('function openInfoPopover'), 'openInfoPopover missing');
+assert.ok(script.includes("closeInfoPopover);") , 'scrim/close-button click handlers missing');
+assert.ok(script.includes("e.key === 'Escape'") && script.includes('closeInfoPopover'),
+  'Escape-to-close handler missing');
+console.log('ok   payment-graph InfoPopover trigger + all three close paths present in source');
+
 // 2. the two functions the change touches, with the tiny helpers they call
 const slice = (name) => {
   const at = script.indexOf(`function ${name}(`);
