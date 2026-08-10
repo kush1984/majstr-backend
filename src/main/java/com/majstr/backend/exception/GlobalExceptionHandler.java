@@ -24,6 +24,7 @@ import org.springframework.security.core.AuthenticationException;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.core.userdetails.UsernameNotFoundException;
 import org.springframework.validation.FieldError;
+import org.springframework.web.HttpMediaTypeNotAcceptableException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
@@ -196,6 +197,17 @@ public class GlobalExceptionHandler {
         return build(HttpStatus.NOT_FOUND, msg("error.not-found"), req);
     }
 
+    @ExceptionHandler(HttpMediaTypeNotAcceptableException.class)
+    public ResponseEntity<ErrorResponse> handleNotAcceptable(HttpMediaTypeNotAcceptableException ex, HttpServletRequest req) {
+        // A PDF/file endpoint (produces = APPLICATION_PDF_VALUE and similar) hit by a client whose
+        // Accept header doesn't include it or */* — a real browser always sends */*;q=0.8, so this
+        // is almost always a link-preview bot (WhatsApp/Telegram/Viber unfurling a shared portal
+        // link) sending a narrow "Accept: text/html". Not an application fault, same reasoning as
+        // the quiet 404 below: a correct 406, no Sentry noise.
+        log.debug("Not acceptable for {} {}: {}", req.getMethod(), req.getRequestURI(), ex.getMessage());
+        return build(HttpStatus.NOT_ACCEPTABLE, msg("error.not-acceptable"), req);
+    }
+
     @ExceptionHandler(UnsupportedMediaTypeException.class)
     public ResponseEntity<ErrorResponse> handleUnsupportedMedia(UnsupportedMediaTypeException ex, HttpServletRequest req) {
         // The throw sites pass a bundle key as the exception message.
@@ -216,6 +228,11 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(MeasurementException.class)
     public ResponseEntity<ErrorResponse> handleMeasurement(MeasurementException ex, HttpServletRequest req) {
         // The throw sites pass a bundle key as the exception message.
+        return build(HttpStatus.BAD_REQUEST, msg(ex.getMessage()), req);
+    }
+
+    @ExceptionHandler(PaymentSplitException.class)
+    public ResponseEntity<ErrorResponse> handlePaymentSplit(PaymentSplitException ex, HttpServletRequest req) {
         return build(HttpStatus.BAD_REQUEST, msg(ex.getMessage()), req);
     }
 

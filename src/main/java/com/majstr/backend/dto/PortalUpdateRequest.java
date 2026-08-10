@@ -8,7 +8,10 @@ import java.util.UUID;
 /**
  * The full set of estimates that should be visible on the object's portal —
  * everything else is hidden. An empty list is legal (portal shows none).
+ * {@code paymentsVisible} is the object-level toggle for the new payments card — off by
+ * default, sent explicitly every publish (mirrors the estimate checkboxes' all-or-nothing shape).
  */
 public record PortalUpdateRequest(
-        @NotNull List<UUID> estimateIds
+        @NotNull List<UUID> estimateIds,
+        @NotNull Boolean paymentsVisible
 ) {}

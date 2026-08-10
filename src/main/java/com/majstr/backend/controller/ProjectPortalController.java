@@ -39,7 +39,8 @@ public class ProjectPortalController {
     public PortalStateResponse update(@PathVariable UUID projectId,
                                       @Valid @RequestBody PortalUpdateRequest req,
                                       @AuthenticationPrincipal UserPrincipal principal) {
-        return portalService.update(projectId, req.estimateIds(), principal.id());
+        return portalService.update(projectId, req.estimateIds(),
+                Boolean.TRUE.equals(req.paymentsVisible()), principal.id());
     }
 
     @Operation(summary = "Email the portal link to the object's client")

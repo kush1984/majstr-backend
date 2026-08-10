@@ -28,10 +28,13 @@ import java.util.List;
 import java.util.UUID;
 
 /**
- * Object economy (PRO): the per-object expense journal + a real-profit summary. All
- * endpoints are PRO-gated ({@code Feature.OBJECT_ECONOMY}, FREE → 403 UPGRADE_REQUIRED)
- * and owner-scoped in the service. Owner-only — none of this reaches the client portal,
- * PDF, or a share-token response.
+ * Object economy: the per-object expense journal + a real-profit summary, PLUS (payments-
+ * economy-portal iteration) FREE-visible per-estimate panels and the payment schedule.
+ * {@code GET /economy} is reachable on every plan — only its {@code internals} field is
+ * PRO-gated (soft, null for FREE). Every OTHER endpoint here (the expense journal itself) stays
+ * hard PRO-gated ({@code Feature.OBJECT_ECONOMY}, FREE → 403 UPGRADE_REQUIRED). All owner-scoped
+ * in the service. Owner-only — none of this reaches the client portal, PDF, or a share-token
+ * response.
  */
 @RestController
 @RequestMapping("/api/projects/{id}")

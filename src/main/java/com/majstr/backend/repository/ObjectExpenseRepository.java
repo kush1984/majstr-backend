@@ -33,6 +33,11 @@ public interface ObjectExpenseRepository extends JpaRepository<ObjectExpense, UU
     @Query("SELECT COALESCE(SUM(e.amount), 0) FROM ObjectExpense e WHERE e.objectId = :objectId AND e.source = :source")
     BigDecimal sumBySource(@Param("objectId") UUID objectId, @Param("source") ExpenseSource source);
 
+    /** Everything spent on the object, regardless of source or category — the "Витрати" figure
+     *  the simplified (economy-rework) profit model subtracts from the contracted total. */
+    @Query("SELECT COALESCE(SUM(e.amount), 0) FROM ObjectExpense e WHERE e.objectId = :objectId")
+    BigDecimal sumAll(@Param("objectId") UUID objectId);
+
     interface CategoryTotal {
         ExpenseCategory getCategory();
         java.math.BigDecimal getTotal();

@@ -129,6 +129,12 @@ public class Estimate {
     @Column(name = "reopened_by")
     private UUID reopenedBy;
 
+    /** Set when this (SIGNED) estimate was auto-reopened to DRAFT because a duplicate of it got
+     *  signed while it was still SIGNED — points at that duplicate, drives the "лишити чи
+     *  видалити" banner on the Кошторис tab. Cleared on edit/re-sign/dismiss. */
+    @Column(name = "superseded_by_estimate_id")
+    private UUID supersededByEstimateId;
+
     // Optimistic lock: two concurrent updates (e.g. parallel portal sign
     // requests) can't both win — the second commit fails with a 409.
     @Version

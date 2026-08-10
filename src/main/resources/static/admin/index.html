@@ -331,6 +331,7 @@
                     <button class="ins-tab primary" data-tab="new">Нове від майстрів</button>
                     <button class="ins-tab" data-tab="reworded">Названо інакше</button>
                     <button class="ins-tab" data-tab="unused">Не використовується</button>
+                    <button class="ins-tab" data-tab="pricedrift">Ціни зрушили</button>
                     <button id="ins-reload">Оновити</button>
                 </div>
                 <p class="hint" id="ins-tabhint"></p>
@@ -1137,6 +1138,13 @@
                 + 'кошторису — це снапшот без звʼязку з каталогом, тож зіставлення лише за назвою.',
             render: renderUnused,
         },
+        pricedrift: {
+            path: '/admin/catalog-insights/price-drift',
+            hint: 'Медіана реальних цін із кошторисів (не з каталогів) розійшлася з нашим дефолтом. '
+                + 'Мін. 3 різних майстри, викиди відсіяні. «Застосувати» міняє лише дефолт і ставить '
+                + 'у чергу повідомлення тим майстрам, чия ціна ще дорівнює старому дефолту.',
+            render: renderPriceDrift,
+        },
     };
     let insightTab = 'new';
 
@@ -1224,6 +1232,27 @@
                 </tr>`).join('')}</tbody></table>`;
     }
 
+    function renderPriceDrift(rows) {
+        return `<table>
+            <thead><tr><th>Позиція</th><th>Тип / од.</th><th>Зараз</th><th>Пропонована медіана</th>
+                       <th title="Скільки майстрів">Майстрів</th><th>Дії</th></tr></thead>
+            <tbody>${rows.map(r => `
+                <tr>
+                    <td>${escapeHtml(r.name)}<div class="muted">${escapeHtml(r.category || '—')}</div></td>
+                    <td class="muted">${typeLabel(r.type)} · ${unitLabel(r.unit)}</td>
+                    <td>${numberFormat.format(r.currentDefaultPrice)} ₴</td>
+                    <td>${numberFormat.format(r.proposedPrice)} ₴
+                        <span class="muted">(${numberFormat.format(r.minPrice)}–${numberFormat.format(r.maxPrice)})</span></td>
+                    <td><b>${r.masters}</b></td>
+                    <td style="white-space:nowrap">
+                        <button class="small primary ins-apply-drift" data-id="${r.candidateId}"
+                                data-name="${escapeHtml(r.name)}" data-old="${r.currentDefaultPrice}"
+                                data-new="${r.proposedPrice}">Застосувати</button>
+                        ${dismissBtn('PRICE_DRIFT', r, r.name)}
+                    </td>
+                </tr>`).join('')}</tbody></table>`;
+    }
+
     function wireInsightActions() {
         document.querySelectorAll('.ins-promote').forEach(b =>
             b.addEventListener('click', () => openPromote(JSON.parse(b.dataset.json))));
@@ -1232,6 +1261,21 @@
         document.querySelectorAll('.ins-rename').forEach(b =>
             b.addEventListener('click', () => { showView('catalog'); alert(
                 'Відкрийте позицію в Каталозі та перейменуйте її на: ' + b.dataset.name); }));
+        document.querySelectorAll('.ins-apply-drift').forEach(b =>
+            b.addEventListener('click', () => applyPriceDrift(b.dataset.id, b.dataset.name, b.dataset.old, b.dataset.new)));
+    }
+
+    async function applyPriceDrift(candidateId, name, oldPrice, newPrice) {
+        const oldFmt = numberFormat.format(Number(oldPrice));
+        const newFmt = numberFormat.format(Number(newPrice));
+        if (!confirm(`Застосувати «${name}»: ${oldFmt} ₴ → ${newFmt} ₴?\n\n`
+                + 'Дефолтна ціна зміниться одразу. Майстри, чия позиція ще на старій ціні, '
+                + 'отримають повідомлення з пропозицією оновити — їхня власна ціна не міняється, '
+                + 'поки вони самі не приймуть.')) return;
+        const resp = await api('/admin/catalog-insights/price-drift/apply', {
+            method: 'POST', body: JSON.stringify({ candidateId }) });
+        if (!resp.ok) { alert('Не вдалося застосувати'); return; }
+        loadInsights();
     }
 
     async function dismissCandidate(kind, nameKey, sampleName) {

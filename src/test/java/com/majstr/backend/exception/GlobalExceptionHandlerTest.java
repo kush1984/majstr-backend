@@ -11,6 +11,7 @@ import org.springframework.http.HttpMethod;
 import org.springframework.http.converter.HttpMessageNotWritableException;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
+import org.springframework.web.HttpMediaTypeNotAcceptableException;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
@@ -65,6 +66,15 @@ class GlobalExceptionHandlerTest {
         String scan() throws NoResourceFoundException {
             // What Spring throws for an unknown path like a scanner's /admin/phpinfo.php.
             throw new NoResourceFoundException(HttpMethod.GET, "admin/phpinfo.php", "");
+        }
+
+        @GetMapping(value = "/pdf-like", produces = "application/pdf")
+        String pdfLike() throws HttpMediaTypeNotAcceptableException {
+            // What Spring throws when a request's Accept header excludes both the endpoint's
+            // produced type AND */* — a real browser always sends */*;q=0.8, so this is what a
+            // link-preview bot (e.g. WhatsApp/Telegram unfurling a shared portal PDF link) produces
+            // with its narrow "Accept: text/html".
+            throw new HttpMediaTypeNotAcceptableException(java.util.List.of(org.springframework.http.MediaType.APPLICATION_PDF));
         }
     }
 
@@ -141,6 +151,20 @@ class GlobalExceptionHandlerTest {
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.status", is(404)))
                 .andExpect(jsonPath("$.message", is("Запис не знайдено")));
+    }
+
+    /**
+     * Sentry saw this as a 500 (JAVA-SPRING-BOOT-J, the public portal PDF endpoint) — but a
+     * client whose Accept header can't be satisfied is not a fault of ours either.
+     */
+    @Test
+    void notAcceptableAccept_returns406NotGeneric500_soLinkPreviewBotsDontHitSentry() throws Exception {
+        // No body assertion: with Accept: text/html, Spring can't write our JSON error body
+        // either (the same content-negotiation rule the fix itself relies on), so the body is
+        // legitimately empty here — a bot doesn't read it anyway. The status is the whole point:
+        // 406, not the generic 500 that used to reach Sentry.
+        mockMvc.perform(get("/pdf-like").header("Accept-Language", "uk").header("Accept", "text/html"))
+                .andExpect(status().isNotAcceptable());
     }
 
     /**

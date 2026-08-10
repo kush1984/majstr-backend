@@ -14,10 +14,12 @@ import com.majstr.backend.entity.ProjectMessage;
 import com.majstr.backend.entity.EstimateShareLink;
 import com.majstr.backend.entity.EstimateStatus;
 import com.majstr.backend.entity.ItemType;
+import com.majstr.backend.entity.PercentBaseKind;
 import com.majstr.backend.entity.Project;
 import com.majstr.backend.entity.ShareLinkKind;
 import com.majstr.backend.entity.ProjectShareLink;
 import com.majstr.backend.entity.ProjectStatus;
+import com.majstr.backend.entity.Unit;
 import com.majstr.backend.config.LocalizationConfig;
 import com.majstr.backend.entity.User;
 import com.majstr.backend.exception.EstimateSignedException;
@@ -25,10 +27,12 @@ import com.majstr.backend.exception.ResourceNotFoundException;
 import com.majstr.backend.feature.Feature;
 import com.majstr.backend.feature.FeatureGuard;
 import com.majstr.backend.push.PushService;
+import com.majstr.backend.entity.ProjectPayment;
 import com.majstr.backend.repository.EstimateItemRepository;
 import com.majstr.backend.repository.ProjectMessageRepository;
 import com.majstr.backend.repository.EstimateRepository;
 import com.majstr.backend.repository.EstimateShareLinkRepository;
+import com.majstr.backend.repository.ProjectPaymentRepository;
 import com.majstr.backend.repository.ProjectShareLinkRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.MessageSource;
@@ -41,6 +45,7 @@ import java.math.RoundingMode;
 import java.text.DecimalFormat;
 import java.text.DecimalFormatSymbols;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
 
@@ -60,6 +65,7 @@ public class PublicEstimateService {
 
     private final EstimateShareLinkRepository shareLinkRepository;
     private final ProjectShareLinkRepository projectShareLinkRepository;
+    private final ProjectPaymentRepository projectPaymentRepository;
     private final EstimateRepository estimateRepository;
     private final EstimateItemRepository itemRepository;
     private final ProjectMessageRepository messageRepository;
@@ -110,7 +116,8 @@ public class PublicEstimateService {
 
     @Transactional(readOnly = true)
     public PublicPortalView viewPortal(String token) {
-        Project project = resolveProject(token);
+        ProjectShareLink link = resolveLink(token);
+        Project project = link.getProject();
         List<PublicPortalView.Section> sections =
                 estimateRepository.findByProjectIdAndPortalVisibleTrueOrderByCreatedAtAsc(project.getId())
                         .stream()
@@ -122,6 +129,9 @@ public class PublicEstimateService {
                 .stream()
                 .map(p -> new PublicEstimateView.SharedPhoto(p.getId(), p.getCaption()))
                 .toList();
+        PublicPortalView.PaymentsCard paymentsCard = link.isPaymentsVisible()
+                ? buildPaymentsCard(project.getId(), sections)
+                : null;
         return new PublicPortalView(
                 contractorOf(contractor),
                 new PublicEstimateView.ProjectSummary(
@@ -129,7 +139,30 @@ public class PublicEstimateService {
                         project.getAddress(),
                         client == null ? null : client.getFullName()),
                 sections,
-                sharedPhotos);
+                sharedPhotos,
+                paymentsCard);
+    }
+
+    /**
+     * {@code contractedTotal} sums only the SHARED sections passed in — never the master's
+     * private "all counted estimates" total, which could include work this client was never
+     * shown (isolation). {@code received}/{@code payments} are genuinely object-level: payments
+     * were never tied to one estimate even before this iteration, so the full list is safe.
+     */
+    private PublicPortalView.PaymentsCard buildPaymentsCard(UUID objectId, List<PublicPortalView.Section> sections) {
+        BigDecimal contracted = sections.stream()
+                .map(PublicPortalView.Section::total)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        List<ProjectPayment> rows = projectPaymentRepository.findByProjectIdOrderBySortOrderAscIdAsc(objectId);
+        BigDecimal received = projectPaymentRepository.sumPaidByProjectId(objectId);
+        BigDecimal remaining = contracted.subtract(received).max(BigDecimal.ZERO);
+        LocalDate today = LocalDate.now(LocalizationConfig.ZONE);
+        List<PublicPortalView.PaymentRow> paymentRows = rows.stream()
+                .map(p -> new PublicPortalView.PaymentRow(
+                        p.getPurpose(), p.getAmount(), p.getPaidAmount(),
+                        p.getDueDate(), p.getNextStage(), p.status(today)))
+                .toList();
+        return new PublicPortalView.PaymentsCard(contracted, received, remaining, paymentRows);
     }
 
     @Transactional
@@ -172,6 +205,19 @@ public class PublicEstimateService {
         estimate.setSignerIp(clientIp);
         // Economy counting is default-on and owner-curated (a signed consolidated
         // must stay excluded), so signing no longer force-sets the flag.
+        // A duplicate signed while its parent is STILL signed is a real deal replacing an old one,
+        // not a second live deal — auto-reopen the parent to DRAFT (an "act" panel only exists for
+        // SIGNED, so this alone drops it out of the economy) and mark which duplicate did it, so
+        // the master sees a banner instead of two competing signed prices with no explanation
+        // (economy-rework iteration; replaces the old "negative difference" double-count guard).
+        if (estimate.getDuplicatedFromId() != null) {
+            estimateRepository.findById(estimate.getDuplicatedFromId()).ifPresent(parent -> {
+                if (parent.getStatus() == EstimateStatus.SIGNED) {
+                    estimateService.applyReopen(parent, null);
+                    parent.setSupersededByEstimateId(estimate.getId());
+                }
+            });
+        }
         // A signed estimate means work begins — activate the project so it
         // counts in the "active projects" metric. Don't override a project
         // that's already in progress or completed.
@@ -234,6 +280,12 @@ public class PublicEstimateService {
 
     /** Portal token → project, same neutral 404 on every failure mode. */
     private Project resolveProject(String token) {
+        return resolveLink(token).getProject();
+    }
+
+    /** Portal token → the link itself (needed by {@link #viewPortal} for
+     *  {@code isPaymentsVisible()}, not just the project it points at). */
+    private ProjectShareLink resolveLink(String token) {
         if (token == null || token.isBlank()) {
             throw new ResourceNotFoundException("Share link not found");
         }
@@ -244,7 +296,7 @@ public class PublicEstimateService {
         if (link == null || !link.isUsable(Instant.now())) {
             throw new ResourceNotFoundException("Share link not found");
         }
-        return link.getProject();
+        return link;
     }
 
     /** An estimate is reachable through the portal only while the master shows it there. */
@@ -262,7 +314,9 @@ public class PublicEstimateService {
     // ---- view building ----------------------------------------------------
 
     private record Totals(List<PublicEstimateItemView> items, BigDecimal works, BigDecimal materials,
-                          BigDecimal total, BigDecimal deposit, BigDecimal balance) {}
+                          BigDecimal total, BigDecimal deposit, BigDecimal balance,
+                          BigDecimal markup, BigDecimal discount,
+                          BigDecimal markupPercent, BigDecimal discountPercent) {}
 
     private Totals totalsOf(Estimate estimate) {
         List<EstimateItem> items = itemRepository.findByEstimateIdOrderBySortOrderAscIdAsc(estimate.getId());
@@ -283,7 +337,56 @@ public class PublicEstimateService {
         BigDecimal balance = deposit == null
                 ? total
                 : total.subtract(deposit).max(BigDecimal.ZERO).setScale(MONEY_SCALE, MONEY_ROUNDING);
-        return new Totals(itemViews, works, materials, total, deposit, balance);
+
+        // Same recap the app's black summary panel shows (AdjustNote / adjustTotals) — mirrored
+        // here rather than re-derived on the page, so the portal never disagrees with the app.
+        BigDecimal markup = BigDecimal.ZERO.setScale(MONEY_SCALE, MONEY_ROUNDING);
+        BigDecimal discount = BigDecimal.ZERO.setScale(MONEY_SCALE, MONEY_ROUNDING);
+        // Percent (portal-pdf-polish iteration): mirrors TypeBreakdown's own rule — a % is shown
+        // ONLY when exactly one live (non-frozen) TOTAL-kind line explains the whole figure. A
+        // frozen carried-over line never had a "live" quantity worth showing (TypeBreakdown itself
+        // shows it as an amount-only "Перенесені…" row, never a percent), and more than one
+        // contributing line has no single percent to report — either way this falls back to
+        // sum-only rather than deriving/guessing a blended number nobody's estimate actually has.
+        int markupTotalLines = 0;
+        int discountTotalLines = 0;
+        boolean markupHasFrozen = false;
+        boolean discountHasFrozen = false;
+        BigDecimal markupQuantity = null;
+        BigDecimal discountQuantity = null;
+        for (EstimateItem item : items) {
+            if (item.getUnit() != Unit.PERCENT || item.getLineTotal() == null) {
+                continue;
+            }
+            boolean isTotalPercent = item.getPercentBaseKind() == PercentBaseKind.TOTAL;
+            boolean isFrozenPercent = item.getBaseOriginLabel() != null;
+            if (!isTotalPercent && !isFrozenPercent) {
+                continue;
+            }
+            if (item.getLineTotal().signum() > 0) {
+                markup = markup.add(item.getLineTotal());
+                if (isFrozenPercent) {
+                    markupHasFrozen = true;
+                } else {
+                    markupTotalLines++;
+                    markupQuantity = item.getQuantity();
+                }
+            } else if (item.getLineTotal().signum() < 0) {
+                discount = discount.add(item.getLineTotal());
+                if (isFrozenPercent) {
+                    discountHasFrozen = true;
+                } else {
+                    discountTotalLines++;
+                    discountQuantity = item.getQuantity();
+                }
+            }
+        }
+        BigDecimal markupPercent = (markupTotalLines == 1 && !markupHasFrozen && markupQuantity != null)
+                ? markupQuantity.abs() : null;
+        BigDecimal discountPercent = (discountTotalLines == 1 && !discountHasFrozen && discountQuantity != null)
+                ? discountQuantity.abs() : null;
+        return new Totals(itemViews, works, materials, total, deposit, balance,
+                markup, discount, markupPercent, discountPercent);
     }
 
     private PublicPortalView.Section sectionOf(Estimate estimate) {
@@ -299,8 +402,10 @@ public class PublicEstimateService {
                 t.works(),
                 t.materials(),
                 t.total(),
-                t.deposit(),
-                t.balance(),
+                t.markup(),
+                t.discount(),
+                t.markupPercent(),
+                t.discountPercent(),
                 signatureOf(estimate));
     }
 
@@ -330,6 +435,10 @@ public class PublicEstimateService {
                 t.total(),
                 t.deposit(),
                 t.balance(),
+                t.markup(),
+                t.discount(),
+                t.markupPercent(),
+                t.discountPercent(),
                 signatureOf(estimate),
                 sharedPhotos
         );

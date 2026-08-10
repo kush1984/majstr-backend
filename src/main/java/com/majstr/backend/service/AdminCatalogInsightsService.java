@@ -68,14 +68,23 @@ public class AdminCatalogInsightsService {
     private final CatalogTemplateRepository templateRepository;
     private final EstimateItemRepository estimateItemRepository;
     private final CatalogInsightDismissalRepository dismissalRepository;
+    private final PriceInsightService priceInsightService;
 
-    /** Positions masters created that our defaults do not cover, most-corroborated first. */
+    /**
+     * Positions masters created that our defaults do not cover, most-corroborated first.
+     *
+     * <p>Two sources, merged: a master's own CATALOG (this method's original source) and, since
+     * the community-price iteration, positions that show up only in masters' ESTIMATES — a
+     * position can be common in real quotes without the master ever having added it to his own
+     * library. {@link PriceInsightService#weeklyRefresh()} maintains the estimate-sourced half;
+     * this is only a read-time merge, not a second candidate system.
+     */
     @Transactional(readOnly = true)
     public List<CatalogInsights.NewPosition> newPositions() {
         Map<String, CatalogTemplate> ours = defaultsByKey();
         Set<String> dismissed = dismissedKeys(CatalogInsightKind.NEW_POSITION);
 
-        return catalogItemRepository.aggregateMasterPositions().stream()
+        Map<String, CatalogInsights.NewPosition> byKey = catalogItemRepository.aggregateMasterPositions().stream()
                 .map(row -> Map.entry(CatalogNameKey.of(row.getName()), row))
                 .filter(e -> !e.getKey().isEmpty())
                 .filter(e -> !ours.containsKey(e.getKey()))
@@ -90,6 +99,18 @@ public class AdminCatalogInsightsService {
                         ItemType.valueOf(e.getValue().getType()), Unit.valueOf(e.getValue().getUnit()),
                         e.getValue().getCategory(), e.getValue().getMasters(), e.getValue().getFirstSeen(),
                         e.getValue().getMedianPrice(), e.getValue().getMinPrice(), e.getValue().getMaxPrice()))
+                .collect(Collectors.toMap(CatalogInsights.NewPosition::nameKey, p -> p,
+                        (a, b) -> a, LinkedHashMap::new));
+
+        // Estimate-sourced candidates the catalog-sourced pass above cannot see. Dismissal was
+        // already applied when this list was built (PriceInsightService.weeklyRefresh); a key
+        // the catalog-sourced pass already found wins (it carries a master's own catalog price,
+        // arguably a stronger signal than one estimate-derived median).
+        for (CatalogInsights.NewPosition fromEstimates : priceInsightService.listNewPositionFromEstimates()) {
+            byKey.putIfAbsent(fromEstimates.nameKey(), fromEstimates);
+        }
+
+        return byKey.values().stream()
                 .sorted(Comparator.comparingLong(CatalogInsights.NewPosition::masters).reversed()
                         .thenComparing(CatalogInsights.NewPosition::name))
                 .toList();

@@ -27,6 +27,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.security.access.AccessDeniedException;
 
+import java.io.ByteArrayInputStream;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.List;
@@ -153,13 +154,29 @@ class ProjectPhotoServiceTest {
     }
 
     @Test
-    void setVisibility_receiptCannotBeShared() {
+    void setVisibility_receiptCanNowBeShared() {
+        // payments-economy-portal iteration lifted the old "receipts always PRIVATE" rule —
+        // sharing a receipt is a deliberate master action, same as a progress photo.
         stubGate();
-        given(photoRepository.findByIdAndProjectId(photoId, projectId))
-                .willReturn(Optional.of(photo(PhotoSource.RECEIPT, PhotoVisibility.PRIVATE)));
+        ProjectPhoto photo = photo(PhotoSource.RECEIPT, PhotoVisibility.PRIVATE);
+        given(photoRepository.findByIdAndProjectId(photoId, projectId)).willReturn(Optional.of(photo));
 
-        assertThatThrownBy(() -> service.setVisibility(projectId, photoId, ownerId, PhotoVisibility.SHARED))
-                .isInstanceOf(AccessDeniedException.class);
+        ProjectPhotoResponse resp = service.setVisibility(projectId, photoId, ownerId, PhotoVisibility.SHARED);
+
+        assertThat(resp.visibility()).isEqualTo(PhotoVisibility.SHARED);
+        assertThat(photo.getVisibility()).isEqualTo(PhotoVisibility.SHARED);
+    }
+
+    @Test
+    void readSharedFile_servesASharedReceiptToo() throws Exception {
+        given(photoRepository.findByIdAndProjectId(photoId, projectId))
+                .willReturn(Optional.of(photo(PhotoSource.RECEIPT, PhotoVisibility.SHARED)));
+        given(storage.open(anyString())).willReturn(Optional.of(new ByteArrayInputStream("x".getBytes())));
+        given(storage.contentType(anyString())).willReturn(Optional.of("image/jpeg"));
+
+        ProjectPhotoService.PhotoFile file = service.readSharedFile(projectId, photoId);
+
+        assertThat(file.contentType()).isEqualTo("image/jpeg");
     }
 
     @Test

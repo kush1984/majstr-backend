@@ -128,8 +128,8 @@ public class EstimateService {
      * Creates an estimate on an object from an LLM-extracted import (Excel/photo).
      * Respects the FREE per-project estimate cap and ownership like a normal create,
      * bumps the lifetime churn counter, and persists the extracted items in order.
-     * The deposit (завдаток) is carried onto the estimate; money is scaled HALF_UP.
-     * The caller ({@code EstimateImportService}) has already gated the feature.
+     * A detected deposit is handled by the caller as a {@code project_payment} — see
+     * {@code EstimateImportService.commit}. The caller has already gated the feature.
      */
     @Transactional
     public EstimateResponse createFromImport(UUID projectId, ImportEstimateData data, UUID ownerId) {
@@ -138,9 +138,6 @@ public class EstimateService {
         Estimate estimate = Estimate.builder()
                 .project(project)
                 .name(normalize(data.name()))
-                .depositAmount(data.depositAmount() == null
-                        ? null
-                        : data.depositAmount().setScale(MONEY_SCALE, MONEY_ROUNDING))
                 .build();
         Estimate saved = estimateRepository.save(estimate);
         projectRepository.incrementEstimatesCreated(projectId); // lifetime churn counter
@@ -479,9 +476,6 @@ public class EstimateService {
         estimate.setName(normalize(req.name()));
         estimate.setValidUntil(req.validUntil());
         estimate.setNotes(normalize(req.notes()));
-        estimate.setDepositAmount(req.depositAmount() == null
-                ? null
-                : req.depositAmount().setScale(MONEY_SCALE, MONEY_ROUNDING));
         List<EstimateItem> items = itemRepository.findByEstimateIdOrderBySortOrderAscIdAsc(estimateId);
         return toResponse(estimate, items);
     }
@@ -529,15 +523,25 @@ public class EstimateService {
         if (estimate.getStatus() != EstimateStatus.SIGNED) {
             throw new InvalidEstimateStatusException("error.estimate.not-signed-reopen");
         }
+        applyReopen(estimate, ownerId);
+        List<EstimateItem> items = itemRepository.findByEstimateIdOrderBySortOrderAscIdAsc(estimateId);
+        return toResponse(estimate, items);
+    }
+
+    /**
+     * The reopen mechanics shared by the owner-facing {@link #reopen} and the system-triggered
+     * supersede path ({@link com.majstr.backend.service.PublicEstimateService#doSign}) — the
+     * latter has no owner acting through the UI, so {@code reopenedBy} is left {@code null} rather
+     * than attributed to someone who didn't click anything.
+     */
+    void applyReopen(Estimate estimate, UUID reopenedBy) {
         estimate.setStatus(EstimateStatus.DRAFT);
         estimate.setSignedAt(null);
         estimate.setSignerName(null);
         estimate.setSignerPhone(null);
         estimate.setSignerIp(null);
         estimate.setReopenedAt(Instant.now());
-        estimate.setReopenedBy(ownerId);
-        List<EstimateItem> items = itemRepository.findByEstimateIdOrderBySortOrderAscIdAsc(estimateId);
-        return toResponse(estimate, items);
+        estimate.setReopenedBy(reopenedBy);
     }
 
     /**
@@ -548,6 +552,17 @@ public class EstimateService {
     public EstimateResponse setCountInEconomy(UUID estimateId, boolean value, UUID ownerId) {
         Estimate estimate = loadOwned(estimateId, ownerId);
         estimate.setCountInEconomy(value);
+        return recalculatedResponse(estimate);
+    }
+
+    /**
+     * Clears a stale supersede banner without touching anything else — the master has seen the
+     * notice and chooses to keep the reopened estimate around, no edit needed to acknowledge it.
+     */
+    @Transactional
+    public EstimateResponse dismissSupersededNotice(UUID estimateId, UUID ownerId) {
+        Estimate estimate = loadOwned(estimateId, ownerId);
+        estimate.setSupersededByEstimateId(null);
         return recalculatedResponse(estimate);
     }
 
@@ -1013,6 +1028,12 @@ public class EstimateService {
         if (estimate.getStatus() == EstimateStatus.SIGNED) {
             throw new EstimateSignedException();
         }
+        // Every write path funnels through here, so this is the one place that catches "the master
+        // is now editing this estimate" — which is exactly when a stale supersede banner should stop
+        // showing (economy-rework iteration).
+        if (estimate.getSupersededByEstimateId() != null) {
+            estimate.setSupersededByEstimateId(null);
+        }
         return estimate;
     }
 
@@ -1203,11 +1224,13 @@ public class EstimateService {
     }
 
     /**
-     * Server-side input for {@link #createFromImport}: the estimate name + deposit and
-     * the final (master-confirmed) items. Units/types/amounts are already resolved by
-     * {@code EstimateImportService} from the LLM extraction and the review-screen edits.
+     * Server-side input for {@link #createFromImport}: the estimate name + the final
+     * (master-confirmed) items. Units/types/amounts are already resolved by
+     * {@code EstimateImportService} from the LLM extraction and the review-screen edits. A
+     * detected deposit is handled by the caller as a {@code project_payment}, not here —
+     * money is object-level, not carried on the estimate.
      */
-    public record ImportEstimateData(String name, BigDecimal depositAmount, List<ImportItem> items) {
+    public record ImportEstimateData(String name, List<ImportItem> items) {
         public record ImportItem(
                 ItemType type,
                 String name,

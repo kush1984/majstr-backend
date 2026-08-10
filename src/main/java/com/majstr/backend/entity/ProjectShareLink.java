@@ -62,6 +62,12 @@ public class ProjectShareLink {
     @Builder.Default
     private ShareLinkKind kind = ShareLinkKind.PORTAL;
 
+    /** Whether the object-level payments card shows on the portal. Off by default — the master
+     *  opts in explicitly (V93), mirroring {@code Estimate.portalVisible}'s per-estimate cousin
+     *  but as ONE flag for the whole object (payments aren't tied to any single estimate). */
+    @Column(name = "payments_visible", nullable = false)
+    private boolean paymentsVisible;
+
     @PrePersist
     void onCreate() {
         if (id == null) {

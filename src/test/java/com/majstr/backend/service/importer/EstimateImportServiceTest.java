@@ -7,6 +7,7 @@ import com.majstr.backend.dto.EstimateImportCommitRequest;
 import com.majstr.backend.dto.EstimateImportCommitResponse;
 import com.majstr.backend.dto.EstimateImportParseResponse;
 import com.majstr.backend.dto.EstimateResponse;
+import com.majstr.backend.dto.ProjectPaymentRequest;
 import com.majstr.backend.entity.EstimateStatus;
 import com.majstr.backend.entity.ItemType;
 import com.majstr.backend.entity.Plan;
@@ -19,6 +20,7 @@ import com.majstr.backend.feature.FeatureNotAvailableException;
 import com.majstr.backend.repository.UserRepository;
 import com.majstr.backend.service.EstimateService;
 import com.majstr.backend.service.EstimateService.ImportEstimateData;
+import com.majstr.backend.service.PaymentService;
 import com.majstr.backend.service.importer.EstimateExtractor.Extracted;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -38,6 +40,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.willThrow;
 import static org.mockito.Mockito.never;
@@ -52,6 +55,7 @@ class EstimateImportServiceTest {
     @Mock private EstimateExtractor extractor;
     @Mock private EstimateService estimateService;
     @Mock private CatalogImportService catalogImportService;
+    @Mock private PaymentService paymentService;
 
     @InjectMocks private EstimateImportService service;
 
@@ -89,6 +93,8 @@ class EstimateImportServiceTest {
         assertThat(bad.type()).isEqualTo(ItemType.MATERIAL); // "матеріал" → MATERIAL
         assertThat(bad.issues()).containsExactlyInAnyOrder("unit", "quantity", "price");
 
+        // The review screen still shows the detected deposit — only WHERE it lands on
+        // commit changed (a project_payment now, not the estimate).
         assertThat(resp.depositAmount()).isEqualByComparingTo("500");
     }
 
@@ -149,7 +155,13 @@ class EstimateImportServiceTest {
         verify(estimateService).createFromImport(eq(projectId), data.capture(), eq(ownerId));
         assertThat(data.getValue().items()).hasSize(2);
         assertThat(data.getValue().name()).isEqualTo("Import");
-        assertThat(data.getValue().depositAmount()).isEqualByComparingTo("100");
+
+        // The detected deposit becomes an object-level payment, not a field on the estimate.
+        ArgumentCaptor<ProjectPaymentRequest> payment = ArgumentCaptor.forClass(ProjectPaymentRequest.class);
+        verify(paymentService).add(eq(projectId), eq(ownerId), payment.capture(), isNull());
+        assertThat(payment.getValue().amount()).isEqualByComparingTo("100");
+        assertThat(payment.getValue().paidAmount()).isEqualByComparingTo("100");
+        assertThat(payment.getValue().purpose()).isEqualTo("Завдаток");
 
         // Catalog gets ONLY the ticked item, with its per-item policy.
         ArgumentCaptor<CatalogImportCommitRequest> cat = ArgumentCaptor.forClass(CatalogImportCommitRequest.class);
@@ -177,6 +189,7 @@ class EstimateImportServiceTest {
         EstimateImportCommitResponse resp = service.commit(ownerId, req);
 
         verify(catalogImportService, never()).commit(any(), any());
+        verify(paymentService, never()).add(any(), any(), any(), any()); // no deposit in this request
         assertThat(resp.catalogCreated()).isZero();
         assertThat(resp.catalogUpdated()).isZero();
         assertThat(resp.catalogSkipped()).isZero();

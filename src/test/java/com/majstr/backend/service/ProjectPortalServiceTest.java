@@ -86,13 +86,30 @@ class ProjectPortalServiceTest {
         given(linkRepository.save(any(ProjectShareLink.class))).willAnswer(inv -> inv.getArgument(0));
         given(portalProperties.publicBaseUrl()).willReturn("https://majstr.pro");
 
-        PortalStateResponse state = portalService.update(projectId, List.of(wanted.getId()), ownerId);
+        PortalStateResponse state = portalService.update(projectId, List.of(wanted.getId()), false, ownerId);
 
         assertThat(wanted.isPortalVisible()).isTrue();
         assertThat(wanted.getStatus()).isEqualTo(EstimateStatus.SENT); // DRAFT flipped on publish
         assertThat(other.isPortalVisible()).isFalse();                 // unticked → hidden
         assertThat(state.url()).startsWith("https://majstr.pro/portal/index.html?p=");
+        assertThat(state.paymentsVisible()).isFalse();
         verify(linkRepository).save(any(ProjectShareLink.class));
+    }
+
+    @Test
+    void update_setsPaymentsVisibleOnTheLink_onFirstPublishAndOnReuse() {
+        Project p = project(true, null);
+        given(projectService.loadOwned(projectId, ownerId)).willReturn(p);
+        given(estimateRepository.findByProjectIdOrderByCreatedAtDesc(projectId)).willReturn(List.of());
+        given(linkRepository.findFirstByProjectIdAndKindAndRevokedFalseOrderByCreatedAtDesc(
+                projectId, ShareLinkKind.PORTAL))
+                .willReturn(Optional.empty());
+        given(linkRepository.save(any(ProjectShareLink.class))).willAnswer(inv -> inv.getArgument(0));
+        given(portalProperties.publicBaseUrl()).willReturn("https://majstr.pro");
+
+        PortalStateResponse state = portalService.update(projectId, List.of(), true, ownerId);
+
+        assertThat(state.paymentsVisible()).isTrue();
     }
 
     @Test
@@ -107,7 +124,7 @@ class ProjectPortalServiceTest {
                         .createdAt(Instant.now()).revoked(false).build()));
         given(portalProperties.publicBaseUrl()).willReturn("https://majstr.pro");
 
-        PortalStateResponse state = portalService.update(projectId, List.of(), ownerId);
+        PortalStateResponse state = portalService.update(projectId, List.of(), false, ownerId);
 
         assertThat(state.url()).endsWith("?p=existing-token");
         verify(linkRepository, never()).save(any());
@@ -119,7 +136,7 @@ class ProjectPortalServiceTest {
         given(projectService.loadOwned(projectId, ownerId)).willReturn(p);
         given(estimateRepository.findByProjectIdOrderByCreatedAtDesc(projectId)).willReturn(List.of());
 
-        assertThatThrownBy(() -> portalService.update(projectId, List.of(UUID.randomUUID()), ownerId))
+        assertThatThrownBy(() -> portalService.update(projectId, List.of(UUID.randomUUID()), false, ownerId))
                 .isInstanceOf(ResourceNotFoundException.class);
     }
 
@@ -128,7 +145,7 @@ class ProjectPortalServiceTest {
         Project p = project(false, null);
         given(projectService.loadOwned(projectId, ownerId)).willReturn(p);
 
-        assertThatThrownBy(() -> portalService.update(projectId, List.of(), ownerId))
+        assertThatThrownBy(() -> portalService.update(projectId, List.of(), false, ownerId))
                 .isInstanceOf(EmailNotVerifiedException.class);
     }
 

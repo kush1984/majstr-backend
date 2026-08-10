@@ -7,6 +7,7 @@ import com.majstr.backend.entity.CatalogInsightKind;
 import com.majstr.backend.security.UserPrincipal;
 import com.majstr.backend.service.AdminCatalogInsightsService;
 import com.majstr.backend.service.AdminCatalogTemplateService;
+import com.majstr.backend.service.PriceInsightService;
 import com.majstr.backend.service.catalog.CatalogNameKey;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
@@ -43,6 +44,7 @@ public class AdminCatalogInsightsController {
 
     private final AdminCatalogInsightsService insights;
     private final AdminCatalogTemplateService templates;
+    private final PriceInsightService priceInsights;
 
     @Operation(summary = "Positions masters created that the defaults do not cover",
             description = "Ranked by how many masters independently arrived at the same thing. "
@@ -67,6 +69,28 @@ public class AdminCatalogInsightsController {
     @GetMapping("/unused")
     public List<CatalogInsights.UnusedDefault> unused() {
         return insights.unusedDefaults();
+    }
+
+    @Operation(summary = "Default positions whose community median price has drifted",
+            description = "Two-level median (per-master, then across masters, outliers trimmed) "
+                    + "from masters' own ESTIMATE lines, min 3 masters. Refreshed weekly — this "
+                    + "reads the last refresh's snapshot, it does not recompute on open.")
+    @GetMapping("/price-drift")
+    public List<CatalogInsights.PriceDrift> priceDrift() {
+        return priceInsights.listPriceDrift();
+    }
+
+    /**
+     * Updates the shared default's price and queues a notice for every master whose own LIBRARY
+     * item still carries the exact old price. Never touches an estimate (snapshots) or a
+     * master's self-edited price.
+     */
+    @Operation(summary = "Apply a price-drift candidate to the default catalog")
+    @PostMapping("/price-drift/apply")
+    public ResponseEntity<Void> applyPriceDrift(@Valid @RequestBody ApplyPriceDriftRequest req,
+                                                 @AuthenticationPrincipal UserPrincipal principal) {
+        priceInsights.applyPriceDrift(req.candidateId(), principal.id());
+        return ResponseEntity.noContent().build();
     }
 
     /**
@@ -120,4 +144,6 @@ public class AdminCatalogInsightsController {
             String note) {}
 
     public record UndismissRequest(@NotNull CatalogInsightKind kind, @NotBlank String nameKey) {}
+
+    public record ApplyPriceDriftRequest(@NotNull java.util.UUID candidateId) {}
 }

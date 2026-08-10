@@ -277,7 +277,7 @@ class EstimateServiceTest {
         given(estimateRepository.findById(estimateId)).willReturn(Optional.of(signed));
 
         assertThatThrownBy(() -> estimateService.update(
-                estimateId, new EstimateUpdateRequest(EstimateStatus.DRAFT, null, null, null, null), ownerId))
+                estimateId, new EstimateUpdateRequest(EstimateStatus.DRAFT, null, null, null), ownerId))
                 .isInstanceOf(EstimateSignedException.class);
         assertThat(signed.getStatus()).isEqualTo(EstimateStatus.SIGNED);
     }
@@ -288,7 +288,7 @@ class EstimateServiceTest {
         given(estimateRepository.findById(estimateId)).willReturn(Optional.of(draft));
 
         assertThatThrownBy(() -> estimateService.update(
-                estimateId, new EstimateUpdateRequest(EstimateStatus.SIGNED, null, null, null, null), ownerId))
+                estimateId, new EstimateUpdateRequest(EstimateStatus.SIGNED, null, null, null), ownerId))
                 .isInstanceOf(InvalidEstimateStatusException.class);
         assertThat(draft.getStatus()).isEqualTo(EstimateStatus.DRAFT);
     }
@@ -301,7 +301,7 @@ class EstimateServiceTest {
         given(itemRepository.findByEstimateIdOrderBySortOrderAscIdAsc(estimateId)).willReturn(List.of());
 
         EstimateResponse resp = estimateService.update(
-                estimateId, new EstimateUpdateRequest(EstimateStatus.REJECTED, null, null, null, null), ownerId);
+                estimateId, new EstimateUpdateRequest(EstimateStatus.REJECTED, null, null, null), ownerId);
 
         assertThat(resp.status()).isEqualTo(EstimateStatus.REJECTED);
     }
@@ -318,58 +318,13 @@ class EstimateServiceTest {
         given(itemRepository.findByEstimateIdOrderBySortOrderAscIdAsc(estimateId)).willReturn(List.of());
 
         estimateService.update(
-                estimateId, new EstimateUpdateRequest(EstimateStatus.REJECTED, null, null, null, null), ownerId);
+                estimateId, new EstimateUpdateRequest(EstimateStatus.REJECTED, null, null, null), ownerId);
 
         assertThat(sent.isCountInEconomy()).isFalse();
     }
 
-    @Test
-    void update_setsDepositAndComputesBalance() {
-        Estimate sent = ownedEstimate(ownerId);
-        sent.setStatus(EstimateStatus.SENT);
-        given(estimateRepository.findById(estimateId)).willReturn(Optional.of(sent));
-        given(itemRepository.findByEstimateIdOrderBySortOrderAscIdAsc(estimateId))
-                .willReturn(List.of(item(ItemType.WORK, "Монтаж", "3", "100"))); // total 300
-
-        EstimateResponse resp = estimateService.update(estimateId,
-                new EstimateUpdateRequest(EstimateStatus.SENT, null, null, null, new BigDecimal("120")), ownerId);
-
-        assertThat(resp.total()).isEqualByComparingTo("300.00");
-        assertThat(resp.depositAmount()).isEqualByComparingTo("120.00");
-        assertThat(resp.balance()).isEqualByComparingTo("180.00");
-        assertThat(sent.getDepositAmount()).isEqualByComparingTo("120.00");
-    }
-
-    @Test
-    void update_clearsDepositWhenNull_balanceEqualsTotal() {
-        Estimate sent = ownedEstimate(ownerId);
-        sent.setStatus(EstimateStatus.SENT);
-        sent.setDepositAmount(new BigDecimal("50.00"));
-        given(estimateRepository.findById(estimateId)).willReturn(Optional.of(sent));
-        given(itemRepository.findByEstimateIdOrderBySortOrderAscIdAsc(estimateId))
-                .willReturn(List.of(item(ItemType.WORK, "Монтаж", "2", "100"))); // total 200
-
-        EstimateResponse resp = estimateService.update(estimateId,
-                new EstimateUpdateRequest(EstimateStatus.SENT, null, null, null, null), ownerId);
-
-        assertThat(resp.depositAmount()).isNull();
-        assertThat(resp.balance()).isEqualByComparingTo("200.00");
-        assertThat(sent.getDepositAmount()).isNull();
-    }
-
-    @Test
-    void update_depositExceedingTotal_clampsBalanceToZero() {
-        Estimate sent = ownedEstimate(ownerId);
-        sent.setStatus(EstimateStatus.SENT);
-        given(estimateRepository.findById(estimateId)).willReturn(Optional.of(sent));
-        given(itemRepository.findByEstimateIdOrderBySortOrderAscIdAsc(estimateId))
-                .willReturn(List.of(item(ItemType.WORK, "Монтаж", "1", "100"))); // total 100
-
-        EstimateResponse resp = estimateService.update(estimateId,
-                new EstimateUpdateRequest(EstimateStatus.SENT, null, null, null, new BigDecimal("150")), ownerId);
-
-        assertThat(resp.balance()).isEqualByComparingTo("0.00");
-    }
+    // Deposit editing via this endpoint was removed (payments-economy-portal iteration) — money
+    // moved to project_payment, object-level. See PaymentServiceTest for the new coverage.
 
     @Test
     void addItem_rejectsWhenEstimateIsSigned() {
@@ -477,6 +432,64 @@ class EstimateServiceTest {
 
         assertThatThrownBy(() -> estimateService.reopen(estimateId, ownerId))
                 .isInstanceOf(AccessDeniedException.class);
+    }
+
+    // ---- supersede banner (economy-rework) ---------------------------------
+
+    @Test
+    void update_clearsAStaleSupersededBanner_whenTheMasterEditsIt() {
+        // requireNotSigned runs on every write path — editing IS "the master has seen and acted
+        // on it", so the banner (from an auto-reopen when a discounted duplicate got signed) goes
+        // away without a dedicated "acknowledge" click.
+        Estimate draft = ownedEstimate(ownerId);
+        draft.setSupersededByEstimateId(UUID.randomUUID());
+        given(estimateRepository.findById(estimateId)).willReturn(Optional.of(draft));
+        given(itemRepository.findByEstimateIdOrderBySortOrderAscIdAsc(estimateId)).willReturn(List.of());
+
+        estimateService.update(
+                estimateId, new EstimateUpdateRequest(EstimateStatus.SENT, null, null, null), ownerId);
+
+        assertThat(draft.getSupersededByEstimateId()).isNull();
+    }
+
+    @Test
+    void dismissSupersededNotice_clearsTheFlag_touchesNothingElse() {
+        Estimate draft = ownedEstimate(ownerId);
+        UUID supersededBy = UUID.randomUUID();
+        draft.setSupersededByEstimateId(supersededBy);
+        draft.setName("Кошторис А");
+        given(estimateRepository.findById(estimateId)).willReturn(Optional.of(draft));
+        given(itemRepository.findByEstimateIdOrderBySortOrderAscIdAsc(estimateId)).willReturn(List.of());
+
+        estimateService.dismissSupersededNotice(estimateId, ownerId);
+
+        assertThat(draft.getSupersededByEstimateId()).isNull();
+        assertThat(draft.getName()).isEqualTo("Кошторис А"); // untouched
+        assertThat(draft.getStatus()).isEqualTo(EstimateStatus.DRAFT); // untouched
+    }
+
+    @Test
+    void dismissSupersededNotice_rejectsWhenEstimateBelongsToAnotherUser() {
+        Estimate draft = ownedEstimate(otherUserId);
+        given(estimateRepository.findById(estimateId)).willReturn(Optional.of(draft));
+
+        assertThatThrownBy(() -> estimateService.dismissSupersededNotice(estimateId, ownerId))
+                .isInstanceOf(AccessDeniedException.class);
+    }
+
+    @Test
+    void applyReopen_withNoActingOwner_leavesReopenedByNull() {
+        // The system-triggered path (PublicEstimateService.doSign auto-reopening a superseded
+        // parent) calls this directly with no owner — must not attribute the audit stamp to
+        // anyone who didn't click anything.
+        Estimate signed = signedEstimate();
+
+        estimateService.applyReopen(signed, null);
+
+        assertThat(signed.getStatus()).isEqualTo(EstimateStatus.DRAFT);
+        assertThat(signed.getSignedAt()).isNull();
+        assertThat(signed.getReopenedBy()).isNull();
+        assertThat(signed.getReopenedAt()).isNotNull();
     }
 
     // ---- name --------------------------------------------------------------
@@ -1049,7 +1062,9 @@ class EstimateServiceTest {
 
     @Test
     @SuppressWarnings("unchecked")
-    void createFromImport_persistsItemsWithDepositAndBalance() {
+    void createFromImport_persistsItems() {
+        // A detected deposit is no longer carried on the estimate — EstimateImportService
+        // turns it into a project_payment instead (see PaymentServiceTest).
         Project project = ownedProject(ownerId);
         given(projectService.loadOwned(projectId, ownerId)).willReturn(project);
         given(estimateRepository.save(any(Estimate.class))).willAnswer(invocation -> {
@@ -1070,7 +1085,7 @@ class EstimateServiceTest {
                 .willAnswer(invocation -> saved[0]);
 
         var data = new EstimateService.ImportEstimateData(
-                "Import", new BigDecimal("100"),
+                "Import",
                 List.of(
                         new EstimateService.ImportEstimateData.ImportItem(
                                 ItemType.WORK, "Малярні роботи", "Кімната", Unit.M2,
@@ -1085,8 +1100,6 @@ class EstimateServiceTest {
         assertThat(response.worksSubtotal()).isEqualByComparingTo("200.00");
         assertThat(response.materialsSubtotal()).isEqualByComparingTo("150.00");
         assertThat(response.total()).isEqualByComparingTo("350.00");
-        assertThat(response.depositAmount()).isEqualByComparingTo("100.00");
-        assertThat(response.balance()).isEqualByComparingTo("250.00"); // total − deposit
         verify(limitService).requireCanAddEstimate(ownerId, projectId); // FREE cap still enforced
         verify(projectRepository).incrementEstimatesCreated(projectId); // lifetime churn counter
     }

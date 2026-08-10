@@ -146,34 +146,45 @@ class CatalogControllerTest {
     }
 
     @Test
-    void updateNotice_reportsThePendingCatalogChange() throws Exception {
-        given(catalogTemplateService.pendingUpdateNotice(userId))
-                .willReturn(new CatalogUpdateNoticeResponse(true, 167, 4));
+    void updateNotices_reportsTheWholePendingQueue() throws Exception {
+        UUID noticeId = UUID.randomUUID();
+        given(catalogTemplateService.pendingUpdateNotices(userId)).willReturn(List.of(
+                new CatalogUpdateNoticeResponse(noticeId, com.majstr.backend.entity.CatalogUpdateNoticeKind.COUNT,
+                        167, 4, null, null, null)));
 
         mockMvc.perform(get("/api/catalog/update-notice"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.pending", is(true)))
-                .andExpect(jsonPath("$.added", is(167)))
-                .andExpect(jsonPath("$.removed", is(4)));
+                .andExpect(jsonPath("$[0].kind", is("COUNT")))
+                .andExpect(jsonPath("$[0].added", is(167)))
+                .andExpect(jsonPath("$[0].removed", is(4)));
     }
 
     @Test
-    void updateNotice_isPlainOkWhenThereIsNothingToShow() throws Exception {
-        given(catalogTemplateService.pendingUpdateNotice(userId))
-                .willReturn(CatalogUpdateNoticeResponse.NONE);
+    void updateNotices_isPlainEmptyArrayWhenThereIsNothingToShow() throws Exception {
+        given(catalogTemplateService.pendingUpdateNotices(userId)).willReturn(List.of());
 
-        // 200 with pending=false, not 404 — this is the answer on nearly every app open and an
-        // error status here would make the PWA log an error every single time it starts.
+        // 200 with [], not 404 — this is the answer on nearly every app open and an error status
+        // here would make the PWA log an error every single time it starts.
         mockMvc.perform(get("/api/catalog/update-notice"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.pending", is(false)));
+                .andExpect(jsonPath("$", org.hamcrest.Matchers.hasSize(0)));
     }
 
     @Test
     void dismissUpdateNotice_answers204() throws Exception {
-        mockMvc.perform(post("/api/catalog/update-notice/dismiss"))
+        UUID noticeId = UUID.randomUUID();
+        mockMvc.perform(post("/api/catalog/update-notice/" + noticeId + "/dismiss"))
                 .andExpect(status().isNoContent());
 
-        verify(catalogTemplateService).dismissUpdateNotice(userId);
+        verify(catalogTemplateService).dismissUpdateNotice(userId, noticeId);
+    }
+
+    @Test
+    void acceptUpdateNotice_answers204() throws Exception {
+        UUID noticeId = UUID.randomUUID();
+        mockMvc.perform(post("/api/catalog/update-notice/" + noticeId + "/accept"))
+                .andExpect(status().isNoContent());
+
+        verify(catalogTemplateService).acceptUpdateNotice(userId, noticeId);
     }
 }

@@ -274,6 +274,11 @@ one-line summary — keep the item in the file as a record.
   playbook (docs/iteration-metal-trade.md and friends) applies — add the enum value + CHECK
   migrations + a real starter catalog. No automatic migration off custom trades on promotion
   (masters keep their own positions either way).
+- **Related (2026-08-07):** the community-prices iteration's aggregate reads WORK lines
+  regardless of trade, so it can surface a custom-trade position as a NEW_POSITION candidate —
+  see "Community prices: custom (master-invented) trades' positions" below, which flags that a
+  cluster like this is exactly the promote-a-system-trade signal this item describes, not a
+  shortcut around it.
 
 ### Custom trades: moving positions between trades in bulk
 - **Status:** OPEN
@@ -746,8 +751,23 @@ one-line summary — keep the item in the file as a record.
   fact-based economy are two lenses on the same object; decide how they combine in the UI.
   Build after the fact-based economy proves used.
 
+### Superseded (auto-reopened) estimate's history — no UI beyond "it's a draft now"
+- **Status:** OPEN
+- **Since:** Economy-rework iteration (2026-08-09)
+- **Context:** When a discount-duplicate supersedes its parent (V95 `superseded_by_estimate_id`),
+  the parent just becomes an ordinary DRAFT with a one-time banner (Кошторис tab) that clears on
+  edit/re-sign/dismiss. Once dismissed (or edited), there is no record anywhere that this DRAFT was
+  once a signed deal that got replaced — no "history" view, no audit trail beyond
+  `reopened_at`/`reopened_by` (which doesn't distinguish an owner-clicked reopen from a
+  system-triggered supersede — both go through the same `applyReopen`, the latter with
+  `reopenedBy = null`).
+- **Notes / options:** Low priority — `reopened_by IS NULL` already lets an admin/DB query
+  distinguish a system supersede from an owner reopen if ever needed. A dedicated "this estimate's
+  history" UI (a timeline: created → signed → superseded by B → edited) would be a real feature,
+  not a tweak; build if a master actually asks where their old signed price went.
+
 ### Object economy: "actually received from client" (payments/prepayments) line
-- **Status:** IN_PROGRESS
+- **Status:** RESOLVED (2026-08-07)
 - **Since:** Object-economy iteration (2026-07-06)
 - **Context:** Economy today is income (estimates) − expenses. A third line — **what the
   client actually paid** (prepayments / staged payments) — would show real cash flow, not
@@ -761,6 +781,12 @@ one-line summary — keep the item in the file as a record.
   open part is a **multi-payment journal** (staged payments beyond the single `deposit_amount`):
   today the master edits the estimate's `depositAmount` to reflect total received so far. Build a
   `client_payments` ledger when masters need more than one payment line.
+- **Resolution:** Payments-economy-portal iteration (V93,
+  [iteration-payments-economy-portal.md](iteration-payments-economy-portal.md)) — `project_payment`
+  is exactly that ledger: object-level, `amount`/`paidAmount`/`paidAt` kept separate (planned vs
+  actual), derived status (PLANNED/PARTIAL/RECEIVED/OVERDUE). Economy's summary panel shows
+  contracted/received/remaining + the full payment schedule, FREE-visible. Superseded the single
+  `deposit_amount` entirely — see the next item.
 
 ### Object economy: income double-counted across estimates
 - **Status:** RESOLVED
@@ -773,7 +799,7 @@ one-line summary — keep the item in the file as a record.
   off; owner toggle `PATCH …/count-in-economy`. See [iteration-object-economy-rework.md](iteration-object-economy-rework.md).
 
 ### Estimate: deposit → balance (завдаток / залишок)
-- **Status:** IN_PROGRESS
+- **Status:** RESOLVED (2026-08-07)
 - **Since:** Excel-example review (2026-07-10)
 - **Context:** A real stretch-ceiling master's Excel estimate ends with Загальна вартість /
   Завдаток / Залишок. Majstr estimates show only the total — no prepayment or balance-due,
@@ -785,6 +811,13 @@ one-line summary — keep the item in the file as a record.
   "actually received from client (prepayments)" journal above — that's a cash-flow ledger;
   this is one client-facing figure on the estimate. Open: whether the deposit later becomes
   the first entry of that payments journal.
+- **Resolution:** Payments-economy-portal iteration (V93,
+  [iteration-payments-economy-portal.md](iteration-payments-economy-portal.md)) — the deposit
+  answer to "whether it becomes the first payments-journal entry" is yes: every
+  `deposit_amount > 0` was data-migrated into a `project_payment` row, and the estimate no longer
+  carries its own deposit/balance figure at all — money moved fully to the object level (client
+  portal and PDF now read `project_payment`, not the estimate). `Estimate.depositAmount` stays in
+  the schema unread, pending a column drop — see the next item.
 
 ### Object economy: profit rollup across all objects (dashboard)
 - **Status:** OPEN
@@ -897,7 +930,7 @@ one-line summary — keep the item in the file as a record.
   already exists, no new entry. But confirm the concrete want first.
 
 ### Market-price updates for existing catalog items
-- **Status:** OPEN
+- **Status:** IN_PROGRESS
 - **Since:** Default-catalog iteration (2026-06-22)
 - **Context:** The default-catalog versioning ("Add new from library") only ever
   **adds new** items — it deliberately never touches the price or name of an item
@@ -923,12 +956,74 @@ one-line summary — keep the item in the file as a record.
   [iteration-catalog-enrichment.md](iteration-catalog-enrichment.md).
 - **Update (admin catalog editor, 2026-07-01):** an admin can now *edit* a default
   catalog position's price/name from the panel (`AdminCatalogTemplateService.update`).
+- **In progress (community-prices iteration, 2026-08-07):** this is being answered now, but by
+  crowd-median rather than a single template-version bump — see
+  [iteration-community-prices.md](iteration-community-prices.md). A weekly job aggregates a
+  two-level median (per-master, then across masters, min 3 masters) off masters' actual
+  ESTIMATE lines (not their catalog, which drifts less), producing PRICE_DRIFT admin candidates.
+  Admin applies by hand (never auto); the master gets a notice naming old→new price, and only if
+  their own LIBRARY-sourced item still equals the OLD price (self-edited prices stay untouched —
+  same golden rule as everywhere else). Their own catalog price only actually changes when THEY
+  click «Прийняти» on the notice — apply-time only updates the shared template + queues notices.
   Confirmed with the user: this deliberately keeps the sacred-data model — an edit
   reaches only NEW registrations; masters who already copied the item keep their
   copy. A newly *created* default does reach everyone (stamped at the next version →
   "Add new from library"). So the open part is now precisely: pushing an *edited*
   price into masters who **already own** the item — still the opt-in "prices changed,
   accept?" review, unbuilt. See [iteration-admin-catalog-editor.md](iteration-admin-catalog-editor.md).
+
+### Community prices: auto-applying high-confidence drifts
+- **Status:** OPEN
+- **Since:** Community-prices iteration (2026-08-07)
+- **Context:** Every PRICE_DRIFT candidate today requires an admin's manual "Застосувати" click,
+  regardless of how strong the signal is. A position with 40 masters agreeing within a tight
+  spread is a very different confidence level from one that just clears the N≥3 floor.
+- **Notes / options:** Phase 2 idea: auto-apply candidates above a confidence threshold (large N,
+  small IQR-relative spread) without a human step, reserving manual review for the ambiguous
+  middle. Needs the threshold tuned against real weekly runs first — don't guess it from theory.
+  Ties into the notice flow being solid before trusting it to fire unsupervised weekly.
+
+### Community prices: one national median ignores regional cost differences
+- **Status:** OPEN
+- **Since:** Community-prices iteration (2026-08-07)
+- **Context:** The aggregate is one median across every master in the country. A Kyiv price and a
+  price in a small town are not the same market, and the median (softer than a mean, but still
+  one number) can't represent both.
+- **Notes / options:** No location signal exists on `estimate_items`/`User` to segment by today.
+  If this becomes a real complaint, the natural axis is the master's own city/region (already
+  captured nowhere — would need its own decision on where that data comes from). Low priority
+  until masters actually push back on a proposed price as "wrong for my area."
+
+### Community prices: custom (master-invented) trades' positions
+- **Status:** OPEN
+- **Since:** Community-prices iteration (2026-08-07)
+- **Context:** The aggregation reads every non-REJECTED WORK line regardless of which trade
+  (system or custom) it came from — a position under a master's own custom trade contributes to
+  the median exactly like any other. That's fine for the price-drift/new-position math itself, but
+  it means a position several masters priced under DIFFERENT custom trades (no shared reference
+  catalog by design — see "Custom trades: promote a popular one to a real system trade") could in
+  principle surface as a NEW_POSITION candidate and get promoted straight into the shared
+  defaults, which would be the wrong move — a custom-trade pattern should be a signal to consider
+  adding a real SYSTEM trade, not a shortcut around that decision.
+- **Notes / options:** Not yet a problem in practice (promote is still a manual admin action with
+  full visibility into the candidate), but worth flagging explicitly before this queue is ever
+  auto-applied (see the item above). If it becomes a real issue, exclude custom-trade-sourced
+  `catalog_items`/`estimate_items` from the NEW_POSITION half of the aggregate, or surface the
+  originating trade on the candidate so an admin sees "these masters all filed this under their
+  own invented trade" and treats it as the promote-a-system-trade signal it actually is.
+
+### Community prices: materials are explicitly out of scope
+- **Status:** OPEN
+- **Since:** Community-prices iteration (2026-08-07)
+- **Context:** The aggregation is WORK-only by design — a material's honest price comes from a
+  receipt (what the master actually paid), not from what other masters wrote on an estimate line
+  (markup, guesswork, or a stale catalog copy all pollute that signal in ways a work line's labour
+  price doesn't).
+- **Notes / options:** Same underlying question as the existing "How materials come back after
+  V81" item's option (c) — per-master learned materials built from receipt-import data would be
+  the honest version of "crowd-sourced material prices," but it's a different data source (receipt
+  OCR, not estimate lines) and a different aggregate. Not started; tracked there, cross-linked
+  here so the two don't drift into contradictory answers if picked up separately.
 
 ### Estimate templates (typical work sets per object type)
 - **Status:** IN_PROGRESS
@@ -1143,6 +1238,10 @@ one-line summary — keep the item in the file as a record.
   receipt imports have already produced (no invention, no shared price). (c) is the only one that
   produces a real number without us guessing, but it needs usage data we do not have yet.
   Deliberately deferred — the user's words were «наразі викидай повністю, лишаємо суто роботи».
+- **Related (2026-08-07):** the community-prices iteration built exactly this pattern for WORK
+  lines (crowd-median off estimate data) and deliberately left materials out of its aggregate —
+  see "Community prices: materials are explicitly out of scope" below. Option (c) here is the
+  material-side equivalent, off a different data source (receipt imports, not estimate lines).
 
 ### Bulk-assign trade to the "Інше" (OTHER) catalog pile
 - **Status:** OPEN
@@ -1526,6 +1625,173 @@ one-line summary — keep the item in the file as a record.
   `source_unit_price` and `source_item_id`, which is exactly what those columns record. Same shape
   as the long-standing "what changed since the client last signed" gap on `reopen`, and the two
   should probably be one component rather than two.
+
+### Portal payments card is now de-facto PRO-only — confirm this is acceptable
+- **Status:** OPEN
+- **Since:** Economy-polish iteration (2026-08-09)
+- **Context:** The portal's own payments card (`PublicPortalView.PaymentsCard`) is unchanged code
+  and stays gated only by the `payments_visible` toggle, regardless of the master's plan. But
+  economy-polish moved payment MUTATIONS behind `Feature.OBJECT_ECONOMY` — a FREE master can no
+  longer create a `project_payment` row at all. So in practice, a FREE master who toggles
+  `payments_visible` on now shows the client an empty card (за договором with nothing planned/
+  received), where before this iteration they could at least log a завдаток manually. Nothing is
+  broken — the card still renders correctly for zero rows — but the FEATURE is now effectively
+  PRO-gated end to end even though its own toggle doesn't say so.
+- **Notes / options:** Either accept this (a FREE master's client-facing payment story is thin
+  either way, consistent with FREE's other limits) or reconsider: keep payment CREATE (not the
+  fuller split/mark-received flows) open to FREE so a FREE master can still show a simple
+  завдаток figure on the portal. The prompt this shipped under deferred the decision explicitly —
+  revisit once real FREE-plan portal usage data exists.
+
+### Raw «Знижка PERCENT −15» line in the portal/PDF items table
+- **Status:** OPEN — explicitly deferred by the prompt that touched the neighboring recap
+- **Since:** Portal-pdf-polish iteration (2026-08-09)
+- **Context:** `portal-pdf-polish` added the % to the markup/discount RECAP row (the small line
+  under the totals — «Знижка 15% · 3 900 грн»). It deliberately left the raw TABLE row for a
+  PERCENT-unit line untouched: the portal's items table and the PDF's items table both still print
+  the line's own unit as the literal enum-adjacent text (quantity `−15`, unit column showing the
+  unit code), not «−15%» the way the app's own item list would show it. Same underlying gap the
+  `percent-unit-fix-prompt` already fixed elsewhere in the app (PERCENT unit reading "%" not
+  "PERCENT") — this is the two remaining client-facing surfaces (portal table, PDF table) that
+  fix never reached, because that iteration predates the portal/PDF category+percent work.
+- **Notes / options:** In `static/portal/index.html`'s `renderItems` and
+  `EstimatePdfService.addItemsTable`, format a `PERCENT`-unit line's quantity cell as `−15%`/`15%`
+  instead of the bare number + a `PERCENT`/unit-code cell. Small, isolated change — deferred only
+  because the prompt scoped this iteration to the recap, not the raw table.
+
+### Additional works vs. a replacement estimate — how not to double-count income
+- **Status:** OPEN — the REPLACES half got a real (partial) answer; ADDITIONAL is still manual
+- **Since:** Payments-economy-portal iteration (2026-08-07)
+- **Update (economy-rework iteration, 2026-08-09):** the REPLACES case got a real mechanism for
+  its most common shape — signing a duplicate whose parent is STILL signed now auto-reopens the
+  parent to DRAFT (`estimates.superseded_by_estimate_id`, V95) instead of relying on the master to
+  notice and untick `count_in_economy` himself. A DRAFT doesn't show as an economy "act" at all, so
+  double-counting the two is now structurally impossible for THIS shape — the answer turned out to
+  be "detect it and change state," not "add a relationship field" as guessed below. What's still
+  open: this only fires when signing triggers it (both sides went through client-portal signing) —
+  a master manually duplicating without a second signature, or the genuinely ADDITIONAL-work case
+  (both should stay signed and both should count), still has no dedicated UI signal and falls back
+  to the plain `count_in_economy` toggle exactly as before. See
+  [iteration-economy-rework.md](iteration-economy-rework.md) for the exact boundary of what V95
+  covers.
+- **Context:** "Зміни" on a signed object (mid-job additional works, or a scope change) becomes a
+  new estimate today (duplication, V85, already exists) rather than mutating the signed act. But
+  nothing distinguishes "this new estimate is genuinely ADDITIONAL work, add its income to the
+  object total" from "this new estimate REPLACES part of what the signed one covered, don't just
+  sum them" — a master flagging both `count_in_economy` risks the object's contracted total
+  reading as more money than was actually agreed. Deliberately left to the master's manual
+  `count_in_economy` toggle for now, per his own instruction while scoping this iteration.
+- **Notes / options:** Needs a real decision, not a UI nicety — possibly a relationship field
+  (`ADDITIONAL` vs `REPLACES` vs plain `PARENT`/`DUPLICATE` as today) that the economy sum can
+  reason about instead of a bare boolean. Related to the sibling "Зміни / додаткові роботи" idea
+  and to "nothing shows WHAT differs between a parent estimate and its marked-up copy" above — all
+  three are facets of "the object's signed estimates aren't independent, but economy sums them as
+  if they were."
+
+### Reopen: hide the UI vs. remove the flow entirely
+- **Status:** OPEN
+- **Since:** Payments-economy-portal iteration (2026-08-07)
+- **Context:** Owner-only `reopen` (SIGNED → DRAFT) is now hidden from both UI locations (the
+  editor's signed banner, the object row menu) behind `REOPEN_ENABLED = false` consts, while the
+  backend endpoint stays fully live — the master's explicit instruction was "hide for now, might
+  come back." Signed-estimate changes now route through duplication (V85) instead.
+- **Notes / options:** If reopen never comes back, the honest next step is deleting the endpoint,
+  its tests, and the two flags outright rather than leaving a permanently-false const in two files.
+  If it does come back, it likely wants a gate rather than a bare toggle — e.g. only within N days
+  of signing, or only before any payment has been recorded against the object (reopening an
+  estimate with money already logged against it is a different, riskier situation). Revisit when
+  the master decides.
+
+### Unforeseen (manual-source) expenses — bring the section back
+- **Status:** RESOLVED (economy-rework iteration, 2026-08-09)
+- **Since:** Payments-economy-portal iteration (2026-08-07)
+- **Context:** The itemized MANUAL-source expense list, its `spentManual` tile, and the "+
+  Непередбачувана витрата" button are hidden behind `UNFORESEEN_EXPENSES_ENABLED = false`
+  (`ObjectEconomySection.tsx`) as part of the economy-tab redesign — data and endpoints are
+  untouched, only the UI is gated off, pending the master's decision on the redesigned tab's final
+  shape.
+- **Resolution:** The redesigned tab's shape landed — `Прибуток = contracted − Σ all expenses`
+  (economy-rework iteration) needs a master to be able to log ANY expense, materials or otherwise
+  (crew wages as LABOR now double as the бригадир margin's replacement, see the "Duplicate with
+  markup" CLAUDE.md note), so hiding manual entry was no longer just a UI nicety — it would starve
+  the new profit formula of half its input. The flag is removed; the add-expense button and journal
+  list are unconditionally visible.
+
+### Object economy: Прибуток/Витрати parked again — needs an honest earnings model
+- **Status:** OPEN
+- **Since:** Economy-hide-internals iteration (2026-08-09)
+- **Context:** Full circle from the item above — after a live trial, the very formula that
+  justified un-hiding the expense journal (`Прибуток = contracted − Σ all expenses`) turned out to
+  read as "what I earned" without actually being that: it never accounts for what a master pays
+  his crew unless he remembers to log it as a LABOR expense, so a бригадир who forgets sees a
+  profit figure that's really his gross, not his take. `ObjectEconomySection.tsx`'s
+  `INTERNALS_ENABLED = false` hides the Прибуток/Витрати card and the expense journal again;
+  backend (`ObjectExpenseService`, `ObjectEconomyInternalsResponse`) is fully live and untouched.
+- **Notes / options:** Needs a conversation with the master about what "заробіток" should actually
+  mean before this comes back — candidates: require a LABOR entry (or a crew-cost field) before
+  showing profit at all; split "gross" (current formula, clearly labeled) from a "net" that
+  subtracts a mandatory crew-cost figure; or drop the profit figure entirely and show only
+  aggregate expenses (no derived "earnings" claim at all). Whichever shape wins, flip
+  `INTERNALS_ENABLED` back to `true` — no other code change needed, the data path was never
+  touched.
+
+### Drop `estimates.deposit_amount` once the V93 migration is stable
+- **Status:** OPEN
+- **Since:** Payments-economy-portal iteration (2026-08-07)
+- **Context:** V93 migrated every `deposit_amount > 0` into a `project_payment` row and nothing
+  in the app reads the column for new math anymore (`EstimateUpdateRequest`, `PublicPortalView.
+  Section`, and the deposit-derived economy math were all removed from the write/read paths this
+  iteration). The column itself was deliberately left in the schema rather than dropped in the
+  same migration — a safety margin in case the data migration needs a second look in production.
+- **Notes / options:** Once the migration has run in production and the totals have been
+  spot-checked (Σ deposits before = Σ `project_payment.paidAmount` after, per the drill this
+  iteration's tests already assert against test data), a follow-up migration can drop the column
+  and the now-dead `Estimate.depositAmount` field/getter. Low risk, just sequenced after real
+  data has proven the migration correct.
+
+### Raw receipt-as-photo sharing — which plan tier gates it
+- **Status:** OPEN
+- **Since:** Payments-economy-portal iteration (2026-08-07)
+- **Context:** `RECEIPT_IMPORT` (parsing a receipt's line items into an estimate via LLM vision) is
+  a PRO feature with its own photo budget (`MAX_RECEIPT_PHOTOS_PER_OBJECT`, 0 for FREE today). This
+  iteration adds a second, unrelated capability — sharing a receipt PHOTO with the client as-is, no
+  parsing, just proof of spend (portal + PDF appendix) — reusing the same `RECEIPT` photo source.
+  Whether "just show the client a receipt photo" should be free (client-facing value, same spirit
+  as the payments card) or stay behind the existing PRO receipt budget was left unresolved rather
+  than silently decided.
+- **Notes / options:** If it should be FREE, it needs its own limit/gate separate from
+  `RECEIPT_IMPORT`'s parsing budget (today they share one photo-count ceiling by virtue of sharing
+  `source=RECEIPT`). If it should stay PRO, the current shared-budget behavior already does that
+  and nothing changes. Revisit when the master decides; today the receipts folder + share-toggle
+  ships gated exactly the same way `RECEIPT_IMPORT` already was.
+
+### Client payment reminders (email / portal)
+- **Status:** OPEN
+- **Since:** Payments-economy-portal iteration (2026-08-07)
+- **Context:** The new payment schedule shows the master an OVERDUE status and a due-date
+  condition, but nothing proactively nudges the **client** — no reminder email, no portal banner
+  when a due date has passed. Today the master has to notice and follow up out-of-band, same as the
+  existing one-way client-messages inbox.
+- **Notes / options:** A due-date-passed reminder email to the client (if an email is on file) is
+  the natural first version, mirroring the trial/auto-renew reminder pattern (`@Scheduled`, dedup
+  stamp so it fires once). Needs product sign-off on tone — the in-app wording deliberately avoids
+  "ви винні"; a reminder email would need the same care. Not built; wanted but unscoped.
+
+### Recalculating a payment schedule when the estimate total changes
+- **Status:** OPEN
+- **Since:** Payments-economy-portal iteration (2026-08-07)
+- **Context:** A payment split is computed once from the contracted total at creation time and then
+  stored as plain numbers — deliberately not a live percentage (percentages that recompute
+  silently on estimate changes are exactly the failure mode `base_origin_label`/frozen-% provenance
+  exists to avoid elsewhere in this codebase). Today the UI plan calls for a soft "Кошторис змінився
+  (було X, стало Y) — перерахувати графік?" nudge, but the nudge itself is not wired up this
+  iteration — a contracted-total change today leaves an existing schedule exactly as it was, with
+  no prompt.
+- **Notes / options:** Compare the summary's live `contractedTotal` against the sum of existing
+  `project_payment.amount` rows; if they diverge, surface the nudge with a "recalculate" action that
+  re-runs the split against the new total (same preset/custom percents, if recoverable, else prompt
+  for a fresh split). Low risk to build once wanted — the split-computation code already exists and
+  is idempotent to re-run.
 
 ### The "up to 10 sheets" cap is written in three places
 - **Status:** OPEN

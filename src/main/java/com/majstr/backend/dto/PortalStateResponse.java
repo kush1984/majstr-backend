@@ -13,7 +13,8 @@ import java.util.UUID;
  */
 public record PortalStateResponse(
         String url,
-        List<PortalEstimate> estimates
+        List<PortalEstimate> estimates,
+        boolean paymentsVisible
 ) {
     public record PortalEstimate(
             UUID id,

@@ -169,6 +169,21 @@ class EstimatePdfServiceTest {
     }
 
     @Test
+    void render_omitsSectionSubtotalForASingleItemSection() throws Exception {
+        // «Разом по розділу» under one lone line just repeats that line's own amount — noise, not
+        // information. Плитка (3 items) still earns its subtotal; Підготовка (1 item, «Грунтування»)
+        // must not — so the label should appear exactly once, not once per section.
+        given(featureGuard.isEnabled(org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.eq(Feature.BRANDED_PDF))).willReturn(false);
+
+        String text = textOf(pdfService.render(sectionedModel()));
+
+        assertThat(text).contains("Плитка").contains("Підготовка"); // both bands still render
+        int count = text.split("Разом по розділу", -1).length - 1;
+        assertThat(count).as("only Плитка (≥2 items) should get a subtotal row").isEqualTo(1);
+    }
+
+    @Test
     void render_leavesAnEstimateWithoutCategoriesExactlyAsItWas() throws Exception {
         // A master who never files their lines must not be shown a «Без категорії» heading over the
         // whole document, nor a subtotal that just repeats the grand total.

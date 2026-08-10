@@ -32,11 +32,13 @@ import java.util.UUID;
 
 /**
  * Object photos («Фото» tab), gated by {@code Feature.PHOTO_REPORTS} (all plans today) and
- * owner-scoped via {@link ProjectService#loadOwned}. Two sources: RECEIPT (always PRIVATE,
- * linked to the estimate whose lines were parsed) and MANUAL (progress photo, PRIVATE by
- * default, toggleable to SHARED for the client portal). Files go through {@link StorageService}
- * (magic-byte validated like the logo) and are served only through authenticated / token-gated
- * endpoints — the storage key is never exposed. Deleting the object cascades (FK).
+ * owner-scoped via {@link ProjectService#loadOwned}. Two sources: RECEIPT (linked to the
+ * estimate whose lines were parsed) and MANUAL (progress photo) — both start PRIVATE and are
+ * toggleable to SHARED for the client portal (payments-economy-portal iteration lifted the old
+ * "receipts are always PRIVATE" rule; a master now explicitly shares a receipt, per-photo, same
+ * flow as a progress photo). Files go through {@link StorageService} (magic-byte validated like
+ * the logo) and are served only through authenticated / token-gated endpoints — the storage key
+ * is never exposed. Deleting the object cascades (FK).
  */
 @Slf4j
 @Service
@@ -117,17 +119,15 @@ public class ProjectPhotoService {
     }
 
     /**
-     * Show / hide a photo from the client portal. Only MANUAL photos can be shared — a
-     * RECEIPT photo is financial and stays PRIVATE (a request to share it is rejected).
+     * Show / hide a photo from the client portal — RECEIPT and MANUAL alike (payments-economy-
+     * portal iteration: sharing a receipt is a deliberate master action, "show the client proof
+     * of what was bought", the same trust/transparency reasoning as sharing a progress photo).
      */
     @Transactional
     public ProjectPhotoResponse setVisibility(UUID projectId, UUID photoId, UUID ownerId,
                                               PhotoVisibility visibility) {
         requirePhotos(projectId, ownerId);
         ProjectPhoto photo = loadPhoto(projectId, photoId);
-        if (photo.getSource() == PhotoSource.RECEIPT && visibility == PhotoVisibility.SHARED) {
-            throw new AccessDeniedException("Receipt photos cannot be shared with the client");
-        }
         photo.setVisibility(visibility);
         return ProjectPhotoResponse.from(photo);
     }

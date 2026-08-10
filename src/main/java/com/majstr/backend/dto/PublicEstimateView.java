@@ -27,6 +27,17 @@ public record PublicEstimateView(
         BigDecimal total,
         BigDecimal depositAmount,
         BigDecimal balance,
+        /** Σ of TOTAL-based / frozen PERCENT lines with a positive amount — the same
+         *  «Надбавка» recap the app's black summary panel shows. Zero when none. */
+        BigDecimal markupAmount,
+        /** Same, negative lines — «Знижка». Zero when none. */
+        BigDecimal discountAmount,
+        /** The single live TOTAL-kind line's own quantity, mirroring {@code TypeBreakdown}'s
+         *  "exactly one contributing line, none of it frozen" rule — null falls back to the
+         *  sum-only {@link #markupAmount} display. */
+        BigDecimal markupPercent,
+        /** Same rule for {@link #discountAmount}. */
+        BigDecimal discountPercent,
         Signature signature,
         List<SharedPhoto> sharedPhotos
 ) {

@@ -12,6 +12,7 @@ import com.majstr.backend.entity.ProjectMessage;
 import com.majstr.backend.entity.EstimateShareLink;
 import com.majstr.backend.entity.EstimateStatus;
 import com.majstr.backend.entity.ItemType;
+import com.majstr.backend.entity.PercentBaseKind;
 import com.majstr.backend.entity.Project;
 import com.majstr.backend.entity.ShareLinkKind;
 import com.majstr.backend.entity.ProjectShareLink;
@@ -27,6 +28,7 @@ import com.majstr.backend.repository.EstimateItemRepository;
 import com.majstr.backend.repository.ProjectMessageRepository;
 import com.majstr.backend.repository.EstimateRepository;
 import com.majstr.backend.repository.EstimateShareLinkRepository;
+import com.majstr.backend.repository.ProjectPaymentRepository;
 import com.majstr.backend.repository.ProjectShareLinkRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -48,6 +50,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.contains;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 
 @ExtendWith(MockitoExtension.class)
@@ -55,6 +58,7 @@ class PublicEstimateServiceTest {
 
     @Mock private EstimateShareLinkRepository shareLinkRepository;
     @Mock private ProjectShareLinkRepository projectShareLinkRepository;
+    @Mock private ProjectPaymentRepository projectPaymentRepository;
     @Mock private EstimateRepository estimateRepository;
     @Mock private EstimateItemRepository itemRepository;
     @Mock private ProjectMessageRepository messageRepository;
@@ -75,8 +79,8 @@ class PublicEstimateServiceTest {
         messages.setDefaultEncoding("UTF-8");
         messages.setFallbackToSystemLocale(false);
         publicService = new PublicEstimateService(shareLinkRepository, projectShareLinkRepository,
-                estimateRepository, itemRepository, messageRepository, estimateService,
-                projectPhotoService, featureGuard, pushService, messages);
+                projectPaymentRepository, estimateRepository, itemRepository, messageRepository,
+                estimateService, projectPhotoService, featureGuard, pushService, messages);
     }
 
     @Test
@@ -101,6 +105,61 @@ class PublicEstimateServiceTest {
         // the portal back into one long list while every test still passed.
         assertThat(view.items().getFirst().category()).isEqualTo("Штукатурка стін");
         assertThat(view.items().getFirst().sortOrder()).isZero();
+    }
+
+    @Test
+    void view_namesAPercentWhenExactlyOneLiveTotalLineExplainsIt() {
+        // Mirrors TypeBreakdown's own rule (EstimateEditorPage.tsx): a % is shown only when a single
+        // live TOTAL-kind line accounts for the whole markup/discount figure.
+        Estimate estimate = sampleEstimate();
+        given(shareLinkRepository.findByToken(token)).willReturn(Optional.of(usableLink(estimate)));
+        given(itemRepository.findByEstimateIdOrderBySortOrderAscIdAsc(estimate.getId())).willReturn(List.of(
+                workItem(estimate),
+                totalPercentItem(estimate, "12.00", "550.80"),
+                totalPercentItem(estimate, "-5.00", "-229.50")));
+
+        PublicEstimateView view = publicService.view(token);
+
+        assertThat(view.markupAmount()).isEqualByComparingTo("550.80");
+        assertThat(view.markupPercent()).isEqualByComparingTo("12.00");
+        assertThat(view.discountAmount()).isEqualByComparingTo("-229.50");
+        assertThat(view.discountPercent()).isEqualByComparingTo("5.00");
+    }
+
+    @Test
+    void view_fallsBackToSumOnlyWhenSeveralLinesShareTheSameDirection() {
+        // Two markup lines: no single % explains the total, so the % must not be fabricated.
+        Estimate estimate = sampleEstimate();
+        given(shareLinkRepository.findByToken(token)).willReturn(Optional.of(usableLink(estimate)));
+        given(itemRepository.findByEstimateIdOrderBySortOrderAscIdAsc(estimate.getId())).willReturn(List.of(
+                workItem(estimate),
+                totalPercentItem(estimate, "10.00", "459.00"),
+                totalPercentItem(estimate, "2.00", "91.80")));
+
+        PublicEstimateView view = publicService.view(token);
+
+        assertThat(view.markupAmount()).isEqualByComparingTo("550.80");
+        assertThat(view.markupPercent()).isNull();
+    }
+
+    @Test
+    void view_fallsBackToSumOnlyWhenAFrozenLineSharesTheDirection() {
+        // A frozen (carried-over) percent line has no "live" quantity worth showing as a %, so its
+        // presence in a bucket blocks naming a single percent for that bucket, same as several lines.
+        Estimate estimate = sampleEstimate();
+        EstimateItem frozenMarkup = totalPercentItem(estimate, "8.00", "367.20");
+        frozenMarkup.setBaseOriginLabel("10% від робіт · кошторис «Економ»");
+        frozenMarkup.setPercentBaseKind(null);
+        given(shareLinkRepository.findByToken(token)).willReturn(Optional.of(usableLink(estimate)));
+        given(itemRepository.findByEstimateIdOrderBySortOrderAscIdAsc(estimate.getId())).willReturn(List.of(
+                workItem(estimate),
+                totalPercentItem(estimate, "12.00", "550.80"),
+                frozenMarkup));
+
+        PublicEstimateView view = publicService.view(token);
+
+        assertThat(view.markupAmount()).isEqualByComparingTo("918.00");
+        assertThat(view.markupPercent()).isNull();
     }
 
     @Test
@@ -195,6 +254,59 @@ class PublicEstimateServiceTest {
     }
 
     @Test
+    void sign_ofADuplicate_autoReopensAStillSignedParent() {
+        // Economy-rework: A was signed first, the master duplicated it with a discount → B, and
+        // now the client signs B too. A must auto-reopen to DRAFT and be stamped with which
+        // duplicate superseded it — the whole "negative difference" workaround this replaces.
+        Estimate parent = sampleEstimate();
+        parent.setStatus(EstimateStatus.SIGNED);
+        parent.setSignedAt(Instant.now());
+        Estimate duplicate = Estimate.builder()
+                .id(UUID.randomUUID())
+                .project(parent.getProject())
+                .status(EstimateStatus.DRAFT)
+                .duplicatedFromId(parent.getId())
+                .createdAt(Instant.now())
+                .updatedAt(Instant.now())
+                .build();
+        given(shareLinkRepository.findByToken(token)).willReturn(Optional.of(usableLink(duplicate)));
+        given(itemRepository.findByEstimateIdOrderBySortOrderAscIdAsc(duplicate.getId()))
+                .willReturn(List.of(workItem(duplicate)));
+        given(estimateRepository.findById(parent.getId())).willReturn(Optional.of(parent));
+
+        publicService.sign(token, new SignRequest("Олена Іваненко", "+380671234567"), "203.0.113.42");
+
+        assertThat(duplicate.getStatus()).isEqualTo(EstimateStatus.SIGNED);
+        verify(estimateService).applyReopen(parent, null); // system call, no owner attribution
+        assertThat(parent.getSupersededByEstimateId()).isEqualTo(duplicate.getId());
+    }
+
+    @Test
+    void sign_ofADuplicateWhoseParentIsStillDraft_leavesTheParentAlone() {
+        // The auto-reopen only fires when the parent was ITSELF a live signed deal — an ordinary
+        // "duplicate a draft, sign the copy" flow (the everyday markup/бригадир case) must not
+        // touch the still-DRAFT parent at all.
+        Estimate parent = sampleEstimate(); // DRAFT by default
+        Estimate duplicate = Estimate.builder()
+                .id(UUID.randomUUID())
+                .project(parent.getProject())
+                .status(EstimateStatus.DRAFT)
+                .duplicatedFromId(parent.getId())
+                .createdAt(Instant.now())
+                .updatedAt(Instant.now())
+                .build();
+        given(shareLinkRepository.findByToken(token)).willReturn(Optional.of(usableLink(duplicate)));
+        given(itemRepository.findByEstimateIdOrderBySortOrderAscIdAsc(duplicate.getId()))
+                .willReturn(List.of(workItem(duplicate)));
+        given(estimateRepository.findById(parent.getId())).willReturn(Optional.of(parent));
+
+        publicService.sign(token, new SignRequest("Олена Іваненко", "+380671234567"), "203.0.113.42");
+
+        verify(estimateService, never()).applyReopen(any(), any());
+        assertThat(parent.getSupersededByEstimateId()).isNull();
+    }
+
+    @Test
     void askQuestion_persistsAndReturnsSummary() {
         Estimate estimate = sampleEstimate();
         given(shareLinkRepository.findByToken(token)).willReturn(Optional.of(usableLink(estimate)));
@@ -251,6 +363,35 @@ class PublicEstimateServiceTest {
         assertThat(view.estimates().get(1).name()).isEqualTo("Преміум");
         assertThat(view.estimates().get(1).total()).isEqualByComparingTo("2220.00");
         assertThat(view.contractor().companyName()).isEqualTo("Іван-Електрик ФОП");
+        assertThat(view.payments()).isNull(); // toggle off by default
+    }
+
+    @Test
+    void viewPortal_paymentsVisible_cardSumsOnlySharedEstimates_neverAllOfTheMasters() {
+        // Isolation: the object may have OTHER (private, unshared) counted estimates — the
+        // portal's contractedTotal must sum only what THIS client is actually shown.
+        Estimate shared = sampleEstimate();
+        shared.setName("Економ");
+        ProjectShareLink link = ProjectShareLink.builder()
+                .id(UUID.randomUUID()).project(shared.getProject()).token(token)
+                .createdAt(Instant.now()).revoked(false).paymentsVisible(true).build();
+        given(projectShareLinkRepository.findByTokenAndKind(token, ShareLinkKind.PORTAL))
+                .willReturn(Optional.of(link));
+        given(estimateRepository.findByProjectIdAndPortalVisibleTrueOrderByCreatedAtAsc(shared.getProject().getId()))
+                .willReturn(List.of(shared));
+        given(itemRepository.findByEstimateIdOrderBySortOrderAscIdAsc(shared.getId()))
+                .willReturn(List.of(workItem(shared)));
+        given(projectPaymentRepository.findByProjectIdOrderBySortOrderAscIdAsc(shared.getProject().getId()))
+                .willReturn(List.of());
+        given(projectPaymentRepository.sumPaidByProjectId(shared.getProject().getId()))
+                .willReturn(new BigDecimal("1000.00"));
+
+        PublicPortalView view = publicService.viewPortal(token);
+
+        assertThat(view.payments()).isNotNull();
+        assertThat(view.payments().contractedTotal()).isEqualByComparingTo("4590.00"); // shared estimate only
+        assertThat(view.payments().received()).isEqualByComparingTo("1000.00");
+        assertThat(view.payments().remaining()).isEqualByComparingTo("3590.00");
     }
 
     @Test
@@ -393,6 +534,22 @@ class PublicEstimateServiceTest {
                 // must never rewrite what a client has already signed.
                 .lineTotal(new BigDecimal("4590.00"))
                 .sortOrder(0)
+                .build();
+    }
+
+    /** A live (non-frozen) TOTAL-kind percent line — {@code quantity} is the % itself,
+     *  {@code lineTotal} the amount it works out to (sign carries the markup/discount direction). */
+    private EstimateItem totalPercentItem(Estimate estimate, String quantity, String lineTotal) {
+        return EstimateItem.builder()
+                .id(UUID.randomUUID())
+                .estimate(estimate)
+                .type(ItemType.WORK)
+                .name("Націнка")
+                .unit(Unit.PERCENT)
+                .percentBaseKind(PercentBaseKind.TOTAL)
+                .quantity(new BigDecimal(quantity))
+                .lineTotal(new BigDecimal(lineTotal))
+                .sortOrder(2)
                 .build();
     }
 

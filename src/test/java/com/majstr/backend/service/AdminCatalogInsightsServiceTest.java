@@ -39,6 +39,7 @@ class AdminCatalogInsightsServiceTest {
     @Mock CatalogTemplateRepository templateRepository;
     @Mock EstimateItemRepository estimateItemRepository;
     @Mock CatalogInsightDismissalRepository dismissalRepository;
+    @Mock PriceInsightService priceInsightService;
     @InjectMocks AdminCatalogInsightsService service;
 
     /** Minimal stub of the aggregated-row projection. */
@@ -171,6 +172,35 @@ class AdminCatalogInsightsServiceTest {
                         .sampleName("Демонтаж підвіконня").build()));
 
         assertThat(service.newPositions()).isEmpty();
+    }
+
+    @Test
+    void newPositions_mergesInEstimateSourcedCandidates_catalogSourcedWinsOnKeyCollision() {
+        given(templateRepository.findAll()).willReturn(List.of());
+        given(catalogItemRepository.aggregateMasterPositions())
+                .willReturn(List.of(row("Демонтаж підвіконня", 11)));
+        given(priceInsightService.listNewPositionFromEstimates()).willReturn(List.of(
+                // Same key as the catalog-sourced row above — must NOT appear twice.
+                new CatalogInsights.NewPosition(
+                        com.majstr.backend.service.catalog.CatalogNameKey.of("Демонтаж підвіконня"),
+                        "Демонтаж підвіконня", ItemType.WORK, Unit.M2, "Стіни", 99,
+                        Instant.parse("2026-01-01T00:00:00Z"),
+                        new BigDecimal("999"), new BigDecimal("999"), new BigDecimal("999")),
+                // A position only ever seen in estimates, never in anyone's catalog.
+                new CatalogInsights.NewPosition(
+                        com.majstr.backend.service.catalog.CatalogNameKey.of("Шпаклювання стель"),
+                        "Шпаклювання стель", ItemType.WORK, Unit.M2, "Стеля", 5,
+                        Instant.parse("2026-02-01T00:00:00Z"),
+                        new BigDecimal("120"), new BigDecimal("100"), new BigDecimal("140"))));
+
+        List<CatalogInsights.NewPosition> out = service.newPositions();
+
+        assertThat(out).extracting(CatalogInsights.NewPosition::name)
+                .containsExactlyInAnyOrder("Демонтаж підвіконня", "Шпаклювання стель");
+        // The catalog-sourced row (masters=11) wins the collision, not the estimate-sourced one
+        // (masters=99) — a master's own catalog price is the stronger signal.
+        assertThat(out).filteredOn(p -> p.name().equals("Демонтаж підвіконня"))
+                .singleElement().extracting(CatalogInsights.NewPosition::masters).isEqualTo(11L);
     }
 
     private record UsedRow(String name, long uses) implements EstimateItemRepository.UsedNameRow {

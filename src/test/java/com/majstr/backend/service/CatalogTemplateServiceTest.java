@@ -5,6 +5,7 @@ import com.majstr.backend.entity.CatalogItem;
 import com.majstr.backend.entity.CatalogItemSource;
 import com.majstr.backend.entity.CatalogTemplate;
 import com.majstr.backend.entity.CatalogUpdateNotice;
+import com.majstr.backend.entity.CatalogUpdateNoticeKind;
 import com.majstr.backend.entity.ItemType;
 import com.majstr.backend.entity.Trade;
 import com.majstr.backend.entity.Unit;
@@ -28,6 +29,7 @@ import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.verify;
@@ -41,45 +43,140 @@ class CatalogTemplateServiceTest {
     @InjectMocks CatalogTemplateService catalogTemplateService;
 
     @Test
-    void pendingUpdateNotice_reportsWhatTheMigrationRecorded() {
+    void pendingUpdateNotices_reportsTheWholeQueueOldestFirst() {
         UUID userId = UUID.randomUUID();
-        given(noticeRepository.findByUserIdAndDismissedAtIsNull(userId))
-                .willReturn(Optional.of(CatalogUpdateNotice.builder()
-                        .userId(userId).positionsAdded(167).positionsRemoved(4).build()));
+        CatalogUpdateNotice count = CatalogUpdateNotice.builder()
+                .id(UUID.randomUUID()).userId(userId)
+                .kind(CatalogUpdateNoticeKind.COUNT).positionsAdded(167).positionsRemoved(4).build();
+        CatalogUpdateNotice priceDrift = CatalogUpdateNotice.builder()
+                .id(UUID.randomUUID()).userId(userId)
+                .kind(CatalogUpdateNoticeKind.PRICE_DRIFT)
+                .positionName("Штукатурка стін").oldPrice(new BigDecimal("200")).newPrice(new BigDecimal("250"))
+                .build();
+        given(noticeRepository.findByUserIdAndDismissedAtIsNullOrderByCreatedAtAsc(userId))
+                .willReturn(List.of(count, priceDrift));
 
-        assertThat(catalogTemplateService.pendingUpdateNotice(userId))
-                .isEqualTo(new CatalogUpdateNoticeResponse(true, 167, 4));
+        List<CatalogUpdateNoticeResponse> out = catalogTemplateService.pendingUpdateNotices(userId);
+
+        assertThat(out).hasSize(2);
+        assertThat(out.get(0)).isEqualTo(new CatalogUpdateNoticeResponse(
+                count.getId(), CatalogUpdateNoticeKind.COUNT, 167, 4, null, null, null));
+        assertThat(out.get(1)).isEqualTo(new CatalogUpdateNoticeResponse(
+                priceDrift.getId(), CatalogUpdateNoticeKind.PRICE_DRIFT, 0, 0,
+                "Штукатурка стін", new BigDecimal("200"), new BigDecimal("250")));
     }
 
     @Test
-    void pendingUpdateNotice_isNotAnErrorWhenThereIsNothingToSay() {
+    void pendingUpdateNotices_isEmptyNotAnErrorWhenThereIsNothingToSay() {
         UUID userId = UUID.randomUUID();
-        given(noticeRepository.findByUserIdAndDismissedAtIsNull(userId)).willReturn(Optional.empty());
+        given(noticeRepository.findByUserIdAndDismissedAtIsNullOrderByCreatedAtAsc(userId)).willReturn(List.of());
 
         // The normal answer on nearly every app open, so it must not be an exception or a 404.
-        assertThat(catalogTemplateService.pendingUpdateNotice(userId))
-                .isEqualTo(CatalogUpdateNoticeResponse.NONE);
+        assertThat(catalogTemplateService.pendingUpdateNotices(userId)).isEmpty();
     }
 
     @Test
-    void dismissUpdateNotice_stampsTheNotice() {
+    void dismissUpdateNotice_stampsTheNotice_andNeverTouchesAPrice() {
         UUID userId = UUID.randomUUID();
-        CatalogUpdateNotice notice = CatalogUpdateNotice.builder().userId(userId).build();
-        given(noticeRepository.findByUserIdAndDismissedAtIsNull(userId)).willReturn(Optional.of(notice));
+        UUID noticeId = UUID.randomUUID();
+        CatalogUpdateNotice notice = CatalogUpdateNotice.builder()
+                .id(noticeId).userId(userId).kind(CatalogUpdateNoticeKind.PRICE_DRIFT)
+                .positionName("Штукатурка стін").oldPrice(new BigDecimal("200")).newPrice(new BigDecimal("250"))
+                .build();
+        given(noticeRepository.findByIdAndUserId(noticeId, userId)).willReturn(Optional.of(notice));
 
-        catalogTemplateService.dismissUpdateNotice(userId);
+        catalogTemplateService.dismissUpdateNotice(userId, noticeId);
 
+        assertThat(notice.getDismissedAt()).isNotNull();
+        // "Закрити" declines the proposal — nothing about accepting/applying a price here.
+        verify(catalogRepository, org.mockito.Mockito.never()).findByOwnerIdOrderByNameAsc(any());
+    }
+
+    @Test
+    void dismissUpdateNotice_isANoOpWhenForeignOrMissing() {
+        UUID userId = UUID.randomUUID();
+        UUID noticeId = UUID.randomUUID();
+        given(noticeRepository.findByIdAndUserId(noticeId, userId)).willReturn(Optional.empty());
+
+        // An offline client may replay the dismiss, or the id may belong to another master
+        // entirely — either way this must not throw or leak whether the id exists.
+        assertThatCode(() -> catalogTemplateService.dismissUpdateNotice(userId, noticeId))
+                .doesNotThrowAnyException();
+    }
+
+    @Test
+    void acceptUpdateNotice_updatesTheLibraryItem_onlyWhenItStillCarriesTheOldPrice() {
+        UUID userId = UUID.randomUUID();
+        UUID noticeId = UUID.randomUUID();
+        CatalogUpdateNotice notice = CatalogUpdateNotice.builder()
+                .id(noticeId).userId(userId).kind(CatalogUpdateNoticeKind.PRICE_DRIFT)
+                .positionName("Штукатурка стін").oldPrice(new BigDecimal("200")).newPrice(new BigDecimal("250"))
+                .build();
+        given(noticeRepository.findByIdAndUserId(noticeId, userId)).willReturn(Optional.of(notice));
+        CatalogItem stillAtOldPrice = CatalogItem.builder()
+                .name("Штукатурка стін").source(CatalogItemSource.LIBRARY).defaultPrice(new BigDecimal("200"))
+                .build();
+        given(catalogRepository.findByOwnerIdOrderByNameAsc(userId)).willReturn(List.of(stillAtOldPrice));
+
+        catalogTemplateService.acceptUpdateNotice(userId, noticeId);
+
+        assertThat(stillAtOldPrice.getDefaultPrice()).isEqualByComparingTo("250");
         assertThat(notice.getDismissedAt()).isNotNull();
     }
 
     @Test
-    void dismissUpdateNotice_isANoOpWhenNothingIsPending() {
+    void acceptUpdateNotice_neverTouchesAPriceTheMasterAlreadyChangedHimself() {
+        // The golden rule this whole feature is built around: a self-edited price is untouched.
         UUID userId = UUID.randomUUID();
-        given(noticeRepository.findByUserIdAndDismissedAtIsNull(userId)).willReturn(Optional.empty());
+        UUID noticeId = UUID.randomUUID();
+        CatalogUpdateNotice notice = CatalogUpdateNotice.builder()
+                .id(noticeId).userId(userId).kind(CatalogUpdateNoticeKind.PRICE_DRIFT)
+                .positionName("Штукатурка стін").oldPrice(new BigDecimal("200")).newPrice(new BigDecimal("250"))
+                .build();
+        given(noticeRepository.findByIdAndUserId(noticeId, userId)).willReturn(Optional.of(notice));
+        CatalogItem selfEdited = CatalogItem.builder()
+                .name("Штукатурка стін").source(CatalogItemSource.LIBRARY).defaultPrice(new BigDecimal("310"))
+                .build();
+        given(catalogRepository.findByOwnerIdOrderByNameAsc(userId)).willReturn(List.of(selfEdited));
 
-        // An offline client may replay the dismiss; a second one must not fail.
-        assertThatCode(() -> catalogTemplateService.dismissUpdateNotice(userId))
-                .doesNotThrowAnyException();
+        catalogTemplateService.acceptUpdateNotice(userId, noticeId);
+
+        assertThat(selfEdited.getDefaultPrice()).isEqualByComparingTo("310"); // untouched
+        assertThat(notice.getDismissedAt()).isNotNull(); // still closes the notice
+    }
+
+    @Test
+    void acceptUpdateNotice_neverTouchesAManualOrImportedItemEvenAtTheOldPrice() {
+        UUID userId = UUID.randomUUID();
+        UUID noticeId = UUID.randomUUID();
+        CatalogUpdateNotice notice = CatalogUpdateNotice.builder()
+                .id(noticeId).userId(userId).kind(CatalogUpdateNoticeKind.PRICE_DRIFT)
+                .positionName("Штукатурка стін").oldPrice(new BigDecimal("200")).newPrice(new BigDecimal("250"))
+                .build();
+        given(noticeRepository.findByIdAndUserId(noticeId, userId)).willReturn(Optional.of(notice));
+        CatalogItem manual = CatalogItem.builder()
+                .name("Штукатурка стін").source(CatalogItemSource.MANUAL).defaultPrice(new BigDecimal("200"))
+                .build();
+        given(catalogRepository.findByOwnerIdOrderByNameAsc(userId)).willReturn(List.of(manual));
+
+        catalogTemplateService.acceptUpdateNotice(userId, noticeId);
+
+        assertThat(manual.getDefaultPrice()).isEqualByComparingTo("200");
+    }
+
+    @Test
+    void acceptUpdateNotice_onACountNoticeJustDismisses_nothingToAccept() {
+        UUID userId = UUID.randomUUID();
+        UUID noticeId = UUID.randomUUID();
+        CatalogUpdateNotice notice = CatalogUpdateNotice.builder()
+                .id(noticeId).userId(userId).kind(CatalogUpdateNoticeKind.COUNT)
+                .positionsAdded(3).positionsRemoved(0).build();
+        given(noticeRepository.findByIdAndUserId(noticeId, userId)).willReturn(Optional.of(notice));
+
+        catalogTemplateService.acceptUpdateNotice(userId, noticeId);
+
+        assertThat(notice.getDismissedAt()).isNotNull();
+        verify(catalogRepository, org.mockito.Mockito.never()).findByOwnerIdOrderByNameAsc(any());
     }
 
     @Test

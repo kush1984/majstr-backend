@@ -26,6 +26,7 @@ import java.time.Instant;
 import java.util.Base64;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 
@@ -54,12 +55,12 @@ public class ProjectPortalService {
     @Transactional(readOnly = true)
     public PortalStateResponse state(UUID projectId, UUID ownerId) {
         Project project = projectService.loadOwned(projectId, ownerId);
-        String url = linkRepository.findFirstByProjectIdAndKindAndRevokedFalseOrderByCreatedAtDesc(
+        Optional<ProjectShareLink> link = linkRepository.findFirstByProjectIdAndKindAndRevokedFalseOrderByCreatedAtDesc(
                 projectId, ShareLinkKind.PORTAL)
-                .filter(link -> link.isUsable(Instant.now()))
-                .map(link -> buildUrl(link.getToken()))
-                .orElse(null);
-        return new PortalStateResponse(url, estimateFlags(project.getId()));
+                .filter(l -> l.isUsable(Instant.now()));
+        String url = link.map(l -> buildUrl(l.getToken())).orElse(null);
+        boolean paymentsVisible = link.map(ProjectShareLink::isPaymentsVisible).orElse(false);
+        return new PortalStateResponse(url, estimateFlags(project.getId()), paymentsVisible);
     }
 
     /**
@@ -69,7 +70,7 @@ public class ProjectPortalService {
      * visible DRAFTs flip to SENT, same as the legacy share.
      */
     @Transactional
-    public PortalStateResponse update(UUID projectId, List<UUID> estimateIds, UUID ownerId) {
+    public PortalStateResponse update(UUID projectId, List<UUID> estimateIds, boolean paymentsVisible, UUID ownerId) {
         Project project = projectService.loadOwned(projectId, ownerId);
         requireSharable(project.getOwner());
 
@@ -95,8 +96,9 @@ public class ProjectPortalService {
                         .token(generateToken())
                         .revoked(false)
                         .build()));
+        link.setPaymentsVisible(paymentsVisible);
 
-        return new PortalStateResponse(buildUrl(link.getToken()), estimateFlags(projectId));
+        return new PortalStateResponse(buildUrl(link.getToken()), estimateFlags(projectId), link.isPaymentsVisible());
     }
 
     /**
@@ -125,7 +127,7 @@ public class ProjectPortalService {
         emailService.sendEstimateShareEmail(
                 client.getEmail(), client.getFullName(), contractorName, project.getName(), url);
 
-        return new PortalStateResponse(url, estimateFlags(projectId));
+        return new PortalStateResponse(url, estimateFlags(projectId), link.isPaymentsVisible());
     }
 
     // ---- helpers ----------------------------------------------------------

@@ -9,5 +9,7 @@ public enum CatalogInsightKind {
     /** One of our default positions that no estimate has ever used. */
     UNUSED_DEFAULT,
     /** A whole estimate template a master built for themselves. */
-    NEW_TEMPLATE
+    NEW_TEMPLATE,
+    /** A default position whose community median price has drifted from what we ship. */
+    PRICE_DRIFT
 }

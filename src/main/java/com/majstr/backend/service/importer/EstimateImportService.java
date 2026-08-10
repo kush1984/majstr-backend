@@ -9,6 +9,7 @@ import com.majstr.backend.dto.EstimateImportCommitResponse;
 import com.majstr.backend.dto.EstimateImportParseResponse;
 import com.majstr.backend.dto.EstimateImportParseResponse.ParsedItem;
 import com.majstr.backend.dto.EstimateResponse;
+import com.majstr.backend.dto.ProjectPaymentRequest;
 import com.majstr.backend.entity.ItemType;
 import com.majstr.backend.entity.Unit;
 import com.majstr.backend.entity.User;
@@ -20,6 +21,7 @@ import com.majstr.backend.repository.UserRepository;
 import com.majstr.backend.service.EstimateService;
 import com.majstr.backend.service.EstimateService.ImportEstimateData;
 import com.majstr.backend.service.EstimateService.ImportEstimateData.ImportItem;
+import com.majstr.backend.service.PaymentService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.poi.ss.usermodel.Cell;
@@ -36,6 +38,7 @@ import java.io.InputStream;
 import java.math.BigDecimal;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
@@ -62,6 +65,7 @@ public class EstimateImportService {
     private final EstimateExtractor extractor;
     private final EstimateService estimateService;
     private final CatalogImportService catalogImportService;
+    private final PaymentService paymentService;
 
     private final DataFormatter dataFormatter = new DataFormatter(Locale.forLanguageTag("uk-UA"));
 
@@ -93,8 +97,15 @@ public class EstimateImportService {
                 .toList();
         EstimateResponse estimate = estimateService.createFromImport(
                 req.projectId(),
-                new ImportEstimateData(req.estimateName(), req.depositAmount(), importItems),
+                new ImportEstimateData(req.estimateName(), importItems),
                 ownerId);
+
+        // A detected deposit becomes an object-level payment (already received) — money is
+        // project_payment now, not a field on the estimate. See PaymentService.
+        if (req.depositAmount() != null && req.depositAmount().signum() > 0) {
+            paymentService.add(req.projectId(), ownerId, new ProjectPaymentRequest(
+                    req.depositAmount(), null, null, "Завдаток", req.depositAmount(), Instant.now()), null);
+        }
 
         // Catalog side-effect: only the positions the master ticked on the review screen.
         List<CommitItem> catalogItems = req.items().stream()

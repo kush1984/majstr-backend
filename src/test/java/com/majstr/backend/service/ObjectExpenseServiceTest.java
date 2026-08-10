@@ -3,6 +3,7 @@ package com.majstr.backend.service;
 import com.majstr.backend.dto.ExpenseRequest;
 import com.majstr.backend.dto.ExpenseResponse;
 import com.majstr.backend.dto.ObjectEconomyResponse;
+import com.majstr.backend.dto.PaymentsSummaryResponse;
 import com.majstr.backend.entity.ExpenseCategory;
 import com.majstr.backend.entity.ExpenseSource;
 import com.majstr.backend.entity.ObjectExpense;
@@ -22,6 +23,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -40,13 +42,14 @@ class ObjectExpenseServiceTest {
     @Mock EstimateRepository estimateRepository;
     @Mock ProjectService projectService;
     @Mock UserRepository userRepository;
+    @Mock PaymentService paymentService;
 
     // The REAL gate (backed by PlanConfig) so the PRO/FREE decision is genuinely tested.
     private final DefaultFeatureGuard featureGuard = new DefaultFeatureGuard();
 
     private ObjectExpenseService service() {
         return new ObjectExpenseService(expenseRepository, estimateRepository, projectService,
-                userRepository, featureGuard);
+                userRepository, featureGuard, paymentService);
     }
 
     private void user(UUID id, Plan plan) {
@@ -59,18 +62,60 @@ class ObjectExpenseServiceTest {
         return p;
     }
 
+    private static PaymentsSummaryResponse payments(BigDecimal received) {
+        return new PaymentsSummaryResponse(BigDecimal.ZERO, received, BigDecimal.ZERO, List.of());
+    }
+
+    private static PaymentsSummaryResponse payments(BigDecimal contractedTotal, BigDecimal received) {
+        return new PaymentsSummaryResponse(contractedTotal, received, BigDecimal.ZERO, List.of());
+    }
+
+    // ---- FREE/PRO split on economy() ---------------------------------------
+
     @Test
-    void freeUser_isBlockedBeforeAnyObjectRead() {
+    void freeUser_economy_seesOnlyThePanels_paymentsAndInternalsAreBothNull() {
+        // economy-polish iteration: the gate moved from "internals only" to "everything except
+        // the acts list" — a FREE master sees his signed deals and nothing past them.
+        UUID owner = UUID.randomUUID();
+        UUID object = UUID.randomUUID();
+        user(owner, Plan.FREE);
+        given(projectService.loadOwned(object, owner)).willReturn(object(ProjectStatus.IN_PROGRESS));
+
+        ObjectEconomyResponse eco = service().economy(object, owner);
+
+        assertThat(eco.internals()).isNull();
+        assertThat(eco.payments()).isNull();
+        assertThat(eco.estimates()).isEmpty(); // no signed estimates stubbed
+        verify(paymentService, never()).summaryUnchecked(any()); // never computed for FREE either
+        verify(expenseRepository, never()).sumAll(any());
+    }
+
+    @Test
+    void proUser_economy_getsBothPaymentsAndInternals() {
+        UUID owner = UUID.randomUUID();
+        UUID object = UUID.randomUUID();
+        user(owner, Plan.PRO);
+        given(projectService.loadOwned(object, owner)).willReturn(object(ProjectStatus.IN_PROGRESS));
+        given(paymentService.summaryUnchecked(object)).willReturn(payments(BigDecimal.ZERO));
+        given(expenseRepository.sumAll(object)).willReturn(BigDecimal.ZERO);
+
+        ObjectEconomyResponse eco = service().economy(object, owner);
+
+        assertThat(eco.payments()).isNotNull();
+        assertThat(eco.internals()).isNotNull();
+    }
+
+    @Test
+    void expenseJournal_stillHardBlocksFree_beforeAnyObjectRead() {
+        // Unlike economy(), the expense journal itself (add/list/update/delete) stays PRO-only.
         UUID owner = UUID.randomUUID();
         UUID object = UUID.randomUUID();
         user(owner, Plan.FREE);
 
-        assertThatThrownBy(() -> service().economy(object, owner))
+        assertThatThrownBy(() -> service().list(object, owner))
                 .isInstanceOf(FeatureNotAvailableException.class);
 
-        // Gate fires first — ownership/data never touched.
         verify(projectService, never()).loadOwned(any(), any());
-        verify(estimateRepository, never()).sumWorksCounted(any());
     }
 
     @Test
@@ -92,67 +137,39 @@ class ObjectExpenseServiceTest {
     }
 
     @Test
-    void economy_worksAreEarnings_manualReducesThem_materialsAreCash() {
+    void economy_profitIsContractedMinusEveryExpense_expensesIsTheirSum() {
+        // Economy-rework: no works/materials/cash split — profit reads straight off the same
+        // contracted total the payments block already shows, minus every object_expense
+        // regardless of category or source (materials, crew wages logged as LABOR, anything else).
         UUID owner = UUID.randomUUID();
         UUID object = UUID.randomUUID();
         user(owner, Plan.PRO);
         given(projectService.loadOwned(object, owner)).willReturn(object(ProjectStatus.IN_PROGRESS));
-        given(estimateRepository.sumWorksCounted(object)).willReturn(new BigDecimal("10000.00"));
-        given(estimateRepository.sumMaterialsCounted(object)).willReturn(new BigDecimal("4000.00"));
-        given(estimateRepository.sumDepositsCounted(object)).willReturn(new BigDecimal("6000.00"));
-        given(expenseRepository.sumBySource(object, ExpenseSource.RECEIPT)).willReturn(new BigDecimal("3000.00"));
-        given(expenseRepository.sumBySource(object, ExpenseSource.MANUAL)).willReturn(new BigDecimal("500.00"));
+        given(paymentService.summaryUnchecked(object))
+                .willReturn(payments(new BigDecimal("14000.00"), new BigDecimal("6000.00")));
+        given(expenseRepository.sumAll(object)).willReturn(new BigDecimal("3500.00"));
 
         ObjectEconomyResponse eco = service().economy(object, owner);
 
-        assertThat(eco.works()).isEqualByComparingTo("10000.00");
-        assertThat(eco.materials()).isEqualByComparingTo("4000.00");     // reference, not earnings
-        assertThat(eco.received()).isEqualByComparingTo("6000.00");
-        assertThat(eco.spentReceipts()).isEqualByComparingTo("3000.00");
-        assertThat(eco.spentManual()).isEqualByComparingTo("500.00");
-        // Not completed → profit = works − manual (materials NOT included).
-        assertThat(eco.profit()).isEqualByComparingTo("9500.00");        // 10000 − 500
-        assertThat(eco.cashBalance()).isEqualByComparingTo("3000.00");   // received 6000 − receipts 3000
+        assertThat(eco.internals().expenses()).isEqualByComparingTo("3500.00");
+        assertThat(eco.internals().profit()).isEqualByComparingTo("10500.00"); // 14000 − 3500
     }
 
     @Test
-    void economy_cashGoesNegativeWhenReceiptsExceedDeposit_store_run() {
-        // Client paid a 3000 deposit, the master spent 5000 on receipts out of pocket
-        // → materials cash −2000 (NOT clamped). Profit is works − manual, unaffected.
+    void economy_expensesExceedingContracted_goesNegativeNotClamped() {
+        // The master spent more than the contracted total (materials out of pocket, or an
+        // over-budget crew payment) — profit is honestly negative, not floored at zero.
         UUID owner = UUID.randomUUID();
         UUID object = UUID.randomUUID();
         user(owner, Plan.PRO);
         given(projectService.loadOwned(object, owner)).willReturn(object(ProjectStatus.IN_PROGRESS));
-        given(estimateRepository.sumWorksCounted(object)).willReturn(new BigDecimal("15000.00"));
-        given(estimateRepository.sumMaterialsCounted(object)).willReturn(new BigDecimal("6000.00"));
-        given(estimateRepository.sumDepositsCounted(object)).willReturn(new BigDecimal("3000.00"));
-        given(expenseRepository.sumBySource(object, ExpenseSource.RECEIPT)).willReturn(new BigDecimal("5000.00"));
-        given(expenseRepository.sumBySource(object, ExpenseSource.MANUAL)).willReturn(new BigDecimal("0.00"));
+        given(paymentService.summaryUnchecked(object))
+                .willReturn(payments(new BigDecimal("3000.00"), new BigDecimal("3000.00")));
+        given(expenseRepository.sumAll(object)).willReturn(new BigDecimal("5000.00"));
 
         ObjectEconomyResponse eco = service().economy(object, owner);
 
-        assertThat(eco.cashBalance()).isEqualByComparingTo("-2000.00");  // 3000 − 5000
-        assertThat(eco.profit()).isEqualByComparingTo("15000.00");       // works − manual (not completed)
-    }
-
-    @Test
-    void economy_completedObject_leftoverDepositSettlesIntoProfit() {
-        // Object CLOSED: the materials pot (received − receipts = 1000 leftover) becomes earnings.
-        UUID owner = UUID.randomUUID();
-        UUID object = UUID.randomUUID();
-        user(owner, Plan.PRO);
-        given(projectService.loadOwned(object, owner)).willReturn(object(ProjectStatus.COMPLETED));
-        given(estimateRepository.sumWorksCounted(object)).willReturn(new BigDecimal("10000.00"));
-        given(estimateRepository.sumMaterialsCounted(object)).willReturn(new BigDecimal("4000.00"));
-        given(estimateRepository.sumDepositsCounted(object)).willReturn(new BigDecimal("4000.00"));
-        given(expenseRepository.sumBySource(object, ExpenseSource.RECEIPT)).willReturn(new BigDecimal("3000.00"));
-        given(expenseRepository.sumBySource(object, ExpenseSource.MANUAL)).willReturn(new BigDecimal("200.00"));
-
-        ObjectEconomyResponse eco = service().economy(object, owner);
-
-        assertThat(eco.cashBalance()).isEqualByComparingTo("1000.00");   // 4000 − 3000 leftover
-        // Completed → profit = works − manual + leftover = 10000 − 200 + 1000.
-        assertThat(eco.profit()).isEqualByComparingTo("10800.00");
+        assertThat(eco.internals().profit()).isEqualByComparingTo("-2000.00"); // 3000 − 5000
     }
 
     // ---- offline authoring (client-supplied ids) ---------------------------

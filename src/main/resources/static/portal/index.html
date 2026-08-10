@@ -180,6 +180,49 @@
             margin-top: 6px;
         }
         .totals .grand span:last-child { color: var(--ink); font-weight: 800; }
+        /* Small-type «Надбавка/Знижка» recap — the same wording the app's black summary panel
+           shows, so a client who's seen the app doesn't see different numbers on the portal. */
+        .totals .adjust {
+            font-size: 0.82rem;
+            color: var(--muted);
+            padding-top: 2px;
+        }
+        /* Object-level payments card + timeline. */
+        .payments-list { display: grid; gap: 10px; margin-top: 6px; }
+        .payment-row {
+            display: flex;
+            align-items: flex-start;
+            gap: 10px;
+            padding: 10px 0;
+            border-bottom: 1px solid var(--line);
+        }
+        .payment-row:last-child { border-bottom: none; }
+        .payment-dot {
+            flex-shrink: 0;
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            margin-top: 4px;
+            border: 2px solid var(--line);
+            background: var(--white);
+        }
+        .payment-dot.received { background: var(--success); border-color: var(--success); }
+        .payment-dot.partial { background: var(--amber); border-color: var(--amber); }
+        .payment-dot.overdue { background: var(--danger); border-color: var(--danger); }
+        .payment-body { flex: 1; min-width: 0; }
+        .payment-purpose { font-weight: 700; color: var(--ink); }
+        .payment-condition { font-size: 0.85rem; color: var(--muted); margin-top: 2px; }
+        .payment-amount {
+            font-family: var(--mono);
+            font-variant-numeric: tabular-nums;
+            text-align: right;
+            flex-shrink: 0;
+            color: var(--ink);
+            font-weight: 700;
+        }
+        .paybar { height: 10px; border-radius: 6px; background: var(--paper-2); overflow: hidden; margin: 8px 0 4px; }
+        .paybar-fill { height: 100%; background: var(--amber); }
+        .paybar-label { font-size: 0.85rem; color: var(--muted); }
         .actions {
             display: flex;
             flex-wrap: wrap;
@@ -401,6 +444,7 @@
     }
 
     const moneyFormat = new Intl.NumberFormat('uk-UA', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    const percentFormat = new Intl.NumberFormat('uk-UA', { maximumFractionDigits: 2 });
     const dateFormat = new Intl.DateTimeFormat('uk-UA', { dateStyle: 'medium' });
 
     const UNIT_LABEL = {
@@ -470,7 +514,7 @@
                 <td class="num">${amount(i.lineTotal)}</td>
             </tr>`).join('');
             const sum = section.items.reduce((acc, i) => acc + Number(i.lineTotal || 0), 0);
-            const foot = sectioned ? `
+            const foot = (sectioned && section.items.length >= 2) ? `
             <tr class="section-total">
                 <td colspan="4">Разом по розділу</td>
                 <td class="num">${amount(sum)}</td>
@@ -510,9 +554,82 @@
         return `<section class="card"><h2>Фото об’єкта</h2><div class="photos">${tiles}</div></section>`;
     }
 
+    // Same wording the app's black summary panel uses (AdjustNote) — never recomputed here,
+    // just the numbers the server already worked out. The % (when the server could name one —
+    // TypeBreakdown's own "exactly one contributing line" rule, mirrored server-side) is shown
+    // right after the label, same as the black panel; several lines with no single % just show
+    // the sum, same as before — never a fabricated blended number.
+    function adjustNote(markup, discount, markupPercent, discountPercent) {
+        const m = Number(markup || 0);
+        const d = Number(discount || 0);
+        if (m <= 0 && d >= 0) return '';
+        const parts = [];
+        if (m > 0) {
+            parts.push('Надбавка' + (markupPercent != null ? ' ' + percentFormat.format(Math.abs(Number(markupPercent))) + '%' : ''));
+            parts.push(money(m));
+        }
+        if (d < 0) {
+            parts.push('Знижка' + (discountPercent != null ? ' ' + percentFormat.format(Math.abs(Number(discountPercent))) + '%' : ''));
+            parts.push(money(-d));
+        }
+        return `<div class="adjust">${parts.join(' · ')}</div>`;
+    }
+
+    const PAYMENT_DOT_CLASS = { RECEIVED: 'received', PARTIAL: 'partial', OVERDUE: 'overdue', PLANNED: '' };
+
+    // Not a debt reminder — the condition for the NEXT stage of work. Same neutral framing the
+    // app uses: "оплатити до X, щоб почати Y", never "ви винні".
+    function paymentCondition(row) {
+        if (!row.dueDate && !row.nextStage) return '';
+        const date = row.dueDate ? dateFormat.format(new Date(row.dueDate)) : null;
+        if (date && row.nextStage) return `Оплатити до ${date}, щоб почати «${escapeHtml(row.nextStage)}»`;
+        if (date) return `Оплатити до ${date}`;
+        return `Щоб почати «${escapeHtml(row.nextStage)}»`;
+    }
+
+    function renderPaymentRow(row) {
+        const dotClass = PAYMENT_DOT_CLASS[row.status] || '';
+        const amountText = row.paidAmount != null && Number(row.paidAmount) > 0
+            ? `${money(row.paidAmount)} з ${money(row.amount)}`
+            : money(row.amount);
+        return `
+            <div class="payment-row">
+                <span class="payment-dot ${dotClass}"></span>
+                <div class="payment-body">
+                    <div class="payment-purpose">${escapeHtml(row.purpose)}</div>
+                    ${paymentCondition(row) ? `<div class="payment-condition">${paymentCondition(row)}</div>` : ''}
+                </div>
+                <div class="payment-amount">${amountText}</div>
+            </div>
+        `;
+    }
+
+    // The payment strip: filled = received, empty = remaining. One horizontal bar — no legend,
+    // the caption spells out the split. Mobile-first: no charting library, no vertical axis.
+    function renderPaymentsBody(card) {
+        const total = Number(card.contractedTotal || 0);
+        const received = Number(card.received || 0);
+        const pct = total > 0 ? Math.min(100, Math.round((received / total) * 100)) : 0;
+        const rows = card.payments && card.payments.length
+            ? `<div class="payments-list">${card.payments.map(renderPaymentRow).join('')}</div>`
+            : '';
+        return `
+            <div class="totals">
+                <div class="row"><span>Разом за договором:</span><span>${money(total)}</span></div>
+                <div class="row"><span>Отримано:</span><span>${money(received)}</span></div>
+                <div class="row grand"><span>Залишок:</span><span>${money(card.remaining)}</span></div>
+            </div>
+            <div class="paybar"><div class="paybar-fill" style="width:${pct}%"></div></div>
+            <p class="paybar-label">${money(received)} з ${money(total)} · ${pct}%</p>
+            ${rows}
+        `;
+    }
+
     // One estimate → one section: name band (multi-estimate portals), items,
-    // totals, terms and its own sign / PDF / question actions.
-    function renderSection(est, index, showTitle) {
+    // totals, terms and its own sign / PDF / question actions. `paymentsCard`, when given,
+    // is the SINGLE-estimate case — the object's payments join the same totals block rather
+    // than getting a separate top-level card (there's only one estimate to relate them to).
+    function renderSection(est, index, showTitle, paymentsCard) {
         const signed = est.signature != null;
         const signedBanner = signed
             ? `<p class="signed">✓ Підписано клієнтом ${est.signature.signerName ? '(' + escapeHtml(est.signature.signerName) + ')' : ''} ${dateFormat.format(new Date(est.signature.signedAt))}</p>`
@@ -533,10 +650,9 @@
                         <div class="row"><span>Сума робіт:</span><span>${money(est.worksSubtotal)}</span></div>
                         <div class="row"><span>Сума матеріалів:</span><span>${money(est.materialsSubtotal)}</span></div>
                         <div class="row grand"><span>РАЗОМ:</span><span>${money(est.total)}</span></div>
-                        ${est.depositAmount != null ? `
-                        <div class="row"><span>Завдаток:</span><span>${money(est.depositAmount)}</span></div>
-                        <div class="row grand"><span>ЗАЛИШОК:</span><span>${money(est.balance)}</span></div>` : ''}
                     </div>
+                    ${adjustNote(est.markupAmount, est.discountAmount, est.markupPercent, est.discountPercent)}
+                    ${paymentsCard ? `<div style="margin-top:14px;padding-top:14px;border-top:1px solid var(--line)">${renderPaymentsBody(paymentsCard)}</div>` : ''}
                 </section>
 
                 ${est.notes ? `<section class="card"><h2>Умови</h2><p>${escapeHtml(est.notes)}</p></section>` : ''}
@@ -557,6 +673,12 @@
         // Section name bands only when there is something to tell apart
         // (a multi-estimate portal, or an estimate the master named).
         const showTitles = data.estimates.length > 1 || data.estimates.some(e => e.name);
+        // ≥2 shown estimates → a standalone payments card, one level up (there's no single
+        // estimate to fold it into); exactly 1 → passed into that section instead (see
+        // renderSection's paymentsCard param). Either way it's the SAME toggle/data — data.payments
+        // is simply absent (not just empty) when the master hasn't turned the card on.
+        const standalonePayments = data.payments && data.estimates.length >= 2;
+        const inlinePayments = data.payments && data.estimates.length === 1 ? data.payments : null;
 
         root.innerHTML = `
             <header class="card contractor">
@@ -574,8 +696,10 @@
                 ${data.project.clientName ? `<p style="margin:4px 0;">Клієнт: ${escapeHtml(data.project.clientName)}</p>` : ''}
             </section>
 
+            ${standalonePayments ? `<section class="card"><h2>Платежі</h2>${renderPaymentsBody(data.payments)}</section>` : ''}
+
             ${data.estimates.length
-                ? data.estimates.map((e, i) => renderSection(e, i, showTitles)).join('')
+                ? data.estimates.map((e, i) => renderSection(e, i, showTitles, inlinePayments)).join('')
                 : '<section class="card"><p style="text-align:center;color:var(--muted);">Майстер ще не додав кошторисів на портал.</p></section>'}
 
             ${renderPhotos(data.sharedPhotos)}
@@ -699,8 +823,9 @@
         }
     });
 
-    // Adapts the legacy single-estimate response into the portal shape so
-    // there is exactly one render path.
+    // Adapts the legacy single-estimate response into the portal shape so there is exactly one
+    // render path. No `payments` — legacy `?t=` links have no ProjectShareLink to carry the
+    // toggle, so a legacy page never shows the object-level payments card.
     function adaptLegacy(data) {
         return {
             contractor: data.contractor,
@@ -717,8 +842,10 @@
                 worksSubtotal: data.worksSubtotal,
                 materialsSubtotal: data.materialsSubtotal,
                 total: data.total,
-                depositAmount: data.depositAmount,
-                balance: data.balance,
+                markupAmount: data.markupAmount,
+                discountAmount: data.discountAmount,
+                markupPercent: data.markupPercent,
+                discountPercent: data.discountPercent,
                 signature: data.signature
             }]
         };

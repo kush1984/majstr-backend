@@ -79,6 +79,31 @@ public final class CatalogInsights {
             boolean approximate
     ) {}
 
+    /**
+     * A default position whose community median price has drifted from what we ship.
+     *
+     * <p>{@code proposedPrice} is a two-level median (per-master, then across masters, outliers
+     * trimmed) of what {@code masters} contractors actually charge in their own ESTIMATES for
+     * this work — never their catalog, which drifts far less often. {@code candidateId} is what
+     * {@code POST .../price-drift/apply} takes; applying never touches an estimate (snapshots)
+     * and never a master's own edited price (see {@code PriceInsightService}).
+     */
+    public record PriceDrift(
+            UUID candidateId,
+            String nameKey,
+            String name,
+            ItemType type,
+            Unit unit,
+            String category,
+            UUID catalogTemplateId,
+            BigDecimal currentDefaultPrice,
+            BigDecimal proposedPrice,
+            int masters,
+            BigDecimal minPrice,
+            BigDecimal maxPrice,
+            Instant firstSeen
+    ) {}
+
     /** A whole estimate template a master built for themselves. */
     public record NewTemplate(
             String nameKey,

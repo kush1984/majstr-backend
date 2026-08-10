@@ -10,26 +10,31 @@ import java.util.Locale;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * Regression guard for the object-economy isolation rule: the public estimate view
- * served over a share token must NEVER carry object expenses or profit. Reflects the
- * whole record tree so a future accidental field (e.g. an added `economy`) fails here
- * instead of leaking to the client portal / PDF.
+ * Regression guard for the object-economy isolation rule: anything served over a public share
+ * token — the legacy per-estimate view AND the object-level portal (payments-economy-portal
+ * iteration added a second public DTO tree, {@link PublicPortalView}, so both are walked; a
+ * check rooted at only one would miss a leak on the other) — must NEVER carry object expenses,
+ * profit, or internal economy fields. Reflects the whole record tree so a future accidental
+ * field (e.g. an added `economy`) fails here instead of leaking to the client.
  */
 class PublicEstimateIsolationTest {
 
     private static final String[] FORBIDDEN = {"expense", "profit", "economy", "cost", "margin"};
+    private static final Class<?>[] PUBLIC_ROOTS = {PublicEstimateView.class, PublicPortalView.class};
 
     @Test
-    void publicEstimateViewCarriesNoEconomyData() {
-        List<String> names = new ArrayList<>();
-        collect(PublicEstimateView.class, names, 0);
-        assertThat(names).isNotEmpty();
-        for (String name : names) {
-            String lower = name.toLowerCase(Locale.ROOT);
-            for (String bad : FORBIDDEN) {
-                assertThat(lower)
-                        .as("public share DTO must not expose '%s' (found component '%s')", bad, name)
-                        .doesNotContain(bad);
+    void publicViewsCarryNoEconomyData() {
+        for (Class<?> root : PUBLIC_ROOTS) {
+            List<String> names = new ArrayList<>();
+            collect(root, names, 0);
+            assertThat(names).as("record components of %s", root.getSimpleName()).isNotEmpty();
+            for (String name : names) {
+                String lower = name.toLowerCase(Locale.ROOT);
+                for (String bad : FORBIDDEN) {
+                    assertThat(lower)
+                            .as("%s must not expose '%s' (found component '%s')", root.getSimpleName(), bad, name)
+                            .doesNotContain(bad);
+                }
             }
         }
     }
@@ -41,15 +46,31 @@ class PublicEstimateIsolationTest {
      * would surface here, while the legitimate estimate-notes String stays clear.
      */
     @Test
-    void publicEstimateViewCarriesNoObjectNoteType() {
-        List<String> typeNames = new ArrayList<>();
-        collectTypes(PublicEstimateView.class, typeNames, 0);
-        assertThat(typeNames).isNotEmpty();
-        for (String type : typeNames) {
-            assertThat(type.toLowerCase(Locale.ROOT))
-                    .as("public share DTO must not carry an object-note type (found '%s')", type)
-                    .doesNotContain("note");
+    void publicViewsCarryNoObjectNoteType() {
+        for (Class<?> root : PUBLIC_ROOTS) {
+            List<String> typeNames = new ArrayList<>();
+            collectTypes(root, typeNames, 0);
+            assertThat(typeNames).as("record component types of %s", root.getSimpleName()).isNotEmpty();
+            for (String type : typeNames) {
+                assertThat(type.toLowerCase(Locale.ROOT))
+                        .as("%s must not carry an object-note type (found '%s')", root.getSimpleName(), type)
+                        .doesNotContain("note");
+            }
         }
+    }
+
+    /**
+     * Payments-economy-portal isolation: the portal's payments card sums only the SHARED
+     * estimates and is a plain schedule (purpose/amount/dueDate/nextStage/status) — it must
+     * never carry the master's private aggregates (works/materials/spentReceipts/spentManual/
+     * cashBalance) that {@code ObjectEconomyResponse} exposes on the owner-only side.
+     */
+    @Test
+    void publicPortalPaymentsCardCarriesNoPrivateAggregates() {
+        List<String> names = new ArrayList<>();
+        collect(PublicPortalView.PaymentsCard.class, names, 0);
+        assertThat(names).containsExactlyInAnyOrder("contractedTotal", "received", "remaining", "payments",
+                "purpose", "amount", "paidAmount", "dueDate", "nextStage", "status");
     }
 
     private static void collectTypes(Class<?> type, List<String> typeNames, int depth) {

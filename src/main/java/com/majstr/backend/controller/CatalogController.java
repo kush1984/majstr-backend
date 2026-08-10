@@ -162,18 +162,32 @@ public class CatalogController {
         return new CatalogResetResponse(added);
     }
 
-    @Operation(summary = "The pending 'your catalog was updated' notice, if any",
-            description = "Written by a catalog migration that changed this master's own catalog "
-                    + "without them asking. Answers pending=false when there is nothing to show.")
+    @Operation(summary = "Every pending 'your catalog was updated' notice",
+            description = "A queue, not a single slot — a master can have several at once (a "
+                    + "migration's count notice, and/or a community price-drift notice per "
+                    + "repriced position). Empty list is the normal 'nothing pending' answer.")
     @GetMapping("/update-notice")
-    public CatalogUpdateNoticeResponse updateNotice(@AuthenticationPrincipal UserPrincipal principal) {
-        return catalogTemplateService.pendingUpdateNotice(principal.id());
+    public List<CatalogUpdateNoticeResponse> updateNotices(@AuthenticationPrincipal UserPrincipal principal) {
+        return catalogTemplateService.pendingUpdateNotices(principal.id());
     }
 
-    @Operation(summary = "Mark the catalog-update notice as seen")
-    @PostMapping("/update-notice/dismiss")
-    public ResponseEntity<Void> dismissUpdateNotice(@AuthenticationPrincipal UserPrincipal principal) {
-        catalogTemplateService.dismissUpdateNotice(principal.id());
+    @Operation(summary = "Mark one catalog-update notice as seen (declines a price-drift's proposal)")
+    @PostMapping("/update-notice/{id}/dismiss")
+    public ResponseEntity<Void> dismissUpdateNotice(@PathVariable UUID id,
+                                                     @AuthenticationPrincipal UserPrincipal principal) {
+        catalogTemplateService.dismissUpdateNotice(principal.id(), id);
+        return ResponseEntity.noContent().build();
+    }
+
+    @Operation(summary = "Accept a price-drift notice",
+            description = "Updates the master's own catalog item to the new price — but only if "
+                    + "it still carries the exact old price the notice named; a price the master "
+                    + "edited themselves in the meantime is never touched. No-op price change (just "
+                    + "a dismiss) on a plain count notice, which has nothing to accept.")
+    @PostMapping("/update-notice/{id}/accept")
+    public ResponseEntity<Void> acceptUpdateNotice(@PathVariable UUID id,
+                                                    @AuthenticationPrincipal UserPrincipal principal) {
+        catalogTemplateService.acceptUpdateNotice(principal.id(), id);
         return ResponseEntity.noContent().build();
     }
 }

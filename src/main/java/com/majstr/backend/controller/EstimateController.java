@@ -128,6 +128,14 @@ public class EstimateController {
         return estimateService.setCountInEconomy(id, req.countInEconomy(), principal.id());
     }
 
+    @Operation(summary = "Dismiss the \"was auto-reopened, a duplicate got signed instead\" banner "
+            + "without otherwise touching the estimate")
+    @PostMapping("/api/estimates/{id}/dismiss-superseded")
+    public EstimateResponse dismissSuperseded(@PathVariable UUID id,
+                                              @AuthenticationPrincipal UserPrincipal principal) {
+        return estimateService.dismissSupersededNotice(id, principal.id());
+    }
+
     @Operation(summary = "Download the estimate as a PDF, optionally appending chosen receipt photos")
     @GetMapping(value = "/api/estimates/{id}/pdf", produces = MediaType.APPLICATION_PDF_VALUE)
     public ResponseEntity<byte[]> pdf(@PathVariable UUID id,

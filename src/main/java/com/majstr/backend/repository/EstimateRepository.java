@@ -142,82 +142,48 @@ public interface EstimateRepository extends JpaRepository<Estimate, UUID> {
             """, nativeQuery = true)
     BigDecimal sumIncomeCounted(@Param("projectId") UUID projectId);
 
-    /**
-     * Works (labour) subtotal of the counted estimates — the master's earnings base.
-     *
-     * <p><b>A duplicate earns only its markup.</b> When an estimate was copied from another with a
-     * markup (the бригадир's two-price workflow), the lower price is what he PAYS his crew and only
-     * the difference is his. Counting the client-facing total would report his crew's wages as his
-     * income — on a 100 000 ₴ object at +15 % that is 100 000 ₴ of imaginary earnings instead of
-     * 15 000 ₴ of real ones.</p>
-     *
-     * <p>The subtraction is per LINE, against the price stored on that line when it was copied, and
-     * NOT against the parent estimate: the parent may have been deleted, half its lines may have
-     * been marked up while the rest passed through at cost, and either sheet may have been edited
-     * since. {@code COALESCE(source_unit_price, 0)} is what makes a line ADDED to the duplicate
-     * afterwards count in full — nobody downstream is paid for it, so all of it is margin.</p>
-     *
-     * <p><b>A percentage line earns too, and reaching its base is the only way to see it.</b> Two
-     * shapes, both real. Base is a MATERIAL (never marked up): the copy carries a raised PERCENT —
-     * 20 % becomes 26 % at +30 % — so 5 000 ₴ of шафа yields 1 300 against the parent's 1 000, and
-     * the margin is 300. Base is a WORK: the percent is left alone because the base itself grew, so
-     * 20 % of 1 300 is 260 against the parent's 200, and the margin is 60. Subtracting per unit
-     * price would report ZERO in the second case and nothing sensible in the first — a percentage
-     * has no price to subtract. Hence {@code source_unit_price} holding the ORIGINAL PERCENT on
-     * these rows, and the LEFT JOIN that finds what the crew's sheet charged for the base.</p>
-     */
-    @Query(value = """
-            SELECT COALESCE(SUM(
-                CASE
-                    -- An ordinary estimate: the master keeps what the line charges.
-                    WHEN e.duplicated_from_id IS NULL THEN i.line_total
-                    -- A duplicate, ordinary line: the difference between the two prices.
-                    WHEN i.unit <> 'PERCENT'
-                        THEN ROUND(i.quantity * (i.unit_price - COALESCE(i.source_unit_price, 0)), 2)
-                    -- A duplicate, percentage line: what it charges minus what the crew's sheet
-                    -- charged for it. source_unit_price holds the ORIGINAL PERCENT here, so the
-                    -- crew's amount is that percent of the crew's own base — which is why the base
-                    -- has to be reached rather than guessed.
-                    ELSE i.line_total - ROUND(COALESCE(i.source_unit_price, 0) / 100 * COALESCE(
-                        CASE i.percent_base_kind
-                            -- A hand-typed sum is not marked up, so both sheets share it.
-                            WHEN 'MANUAL' THEN i.unit_price
-                            -- The base line carries its own crew price.
-                            WHEN 'POSITION'
-                                THEN ROUND(b.quantity * COALESCE(b.source_unit_price, b.unit_price), 2)
-                            -- Measured against the crew's ordinary subtotal. Deliberately ordinary
-                            -- lines only: a percentage of the whole sheet is an overhead on the
-                            -- work, and folding other percentages into its base would make two
-                            -- TOTAL lines depend on each other — the thing EstimateMath refuses to
-                            -- do when it computes them all against one base.
-                            WHEN 'TOTAL' THEN (
-                                SELECT COALESCE(SUM(ROUND(o.quantity
-                                        * COALESCE(o.source_unit_price, o.unit_price), 2)), 0)
-                                FROM estimate_items o
-                                WHERE o.estimate_id = i.estimate_id AND o.unit <> 'PERCENT')
-                        END, 0), 2)
-                END), 0)
-            FROM estimates e
-            JOIN estimate_items i ON i.estimate_id = e.id
-            LEFT JOIN estimate_items b ON b.id = i.percent_base_item_id
-            WHERE e.project_id = :projectId AND e.count_in_economy = true AND e.status <> 'REJECTED' AND i.type = 'WORK'
-            """, nativeQuery = true)
-    BigDecimal sumWorksCounted(@Param("projectId") UUID projectId);
-
-    /** Materials subtotal of the counted estimates — passthrough, not earnings (reference). */
-    @Query(value = """
-            SELECT COALESCE(SUM(i.line_total), 0)
-            FROM estimates e JOIN estimate_items i ON i.estimate_id = e.id
-            WHERE e.project_id = :projectId AND e.count_in_economy = true AND e.status <> 'REJECTED' AND i.type = 'MATERIAL'
-            """, nativeQuery = true)
-    BigDecimal sumMaterialsCounted(@Param("projectId") UUID projectId);
-
     /** Sum of deposits (завдаток) across the object's counted estimates — the
-     *  "received from client" cash-flow figure. */
+     *  "received from client" cash-flow figure. Legacy: superseded by
+     *  {@code ProjectPaymentRepository.sumPaidByProjectId} (payments-economy-portal iteration);
+     *  kept only because it still reads live {@code deposit_amount} data on estimates predating
+     *  the migration that nothing writes to anymore. */
     @Query("""
             SELECT COALESCE(SUM(e.depositAmount), 0)
             FROM Estimate e
             WHERE e.project.id = :projectId AND e.countInEconomy = true AND e.depositAmount IS NOT NULL
             """)
     BigDecimal sumDepositsCounted(@Param("projectId") UUID projectId);
+
+    /**
+     * Per-SIGNED-estimate works/materials/markup/discount totals, for the object economy's
+     * per-estimate panels. Every SIGNED estimate gets a row regardless of {@code count_in_economy}
+     * (the master sees every "act" he signed) — {@code count_in_economy} rides along so the caller
+     * can flag a panel whose amount is NOT folded into the counted-only summary total, rather than
+     * let the two numbers silently disagree.
+     *
+     * <p>markup/discount mirror {@code PublicEstimateService.totalsOf}'s recap (a «TOTAL» percent
+     * line, or a frozen consolidated one, split by sign) — already folded into works/materials by
+     * type, so {@code total = works + materials} stays correct without adding them again.</p>
+     *
+     * <p>Row shape: {@code [id (UUID), name (String), count_in_economy (Boolean),
+     * signed_at (Timestamp), works (BigDecimal), materials (BigDecimal), markup (BigDecimal),
+     * discount (BigDecimal)]}.</p>
+     */
+    @Query(value = """
+            SELECT e.id, e.name, e.count_in_economy, e.signed_at,
+                   COALESCE(SUM(CASE WHEN i.type = 'WORK' THEN i.line_total ELSE 0 END), 0) AS works,
+                   COALESCE(SUM(CASE WHEN i.type = 'MATERIAL' THEN i.line_total ELSE 0 END), 0) AS materials,
+                   COALESCE(SUM(CASE WHEN i.unit = 'PERCENT' AND i.line_total > 0
+                                       AND (i.percent_base_kind = 'TOTAL' OR i.base_origin_label IS NOT NULL)
+                                  THEN i.line_total ELSE 0 END), 0) AS markup,
+                   COALESCE(SUM(CASE WHEN i.unit = 'PERCENT' AND i.line_total < 0
+                                       AND (i.percent_base_kind = 'TOTAL' OR i.base_origin_label IS NOT NULL)
+                                  THEN i.line_total ELSE 0 END), 0) AS discount
+            FROM estimates e
+            LEFT JOIN estimate_items i ON i.estimate_id = e.id
+            WHERE e.project_id = :projectId AND e.status = 'SIGNED'
+            GROUP BY e.id, e.name, e.count_in_economy, e.signed_at
+            ORDER BY e.signed_at ASC
+            """, nativeQuery = true)
+    List<Object[]> findSignedEstimateSummaries(@Param("projectId") UUID projectId);
 }

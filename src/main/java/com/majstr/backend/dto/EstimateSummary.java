@@ -34,7 +34,14 @@ public record EstimateSummary(
          * see both sides of the pair from this alone — and the PARENT is the row that needs a note
          * saying its crew prices are not earnings.
          */
-        UUID duplicatedFromId
+        UUID duplicatedFromId,
+        /**
+         * Set when this estimate was auto-reopened to DRAFT because a duplicate of it got signed
+         * while it was still SIGNED — the id of that duplicate. The list uses it to show a "клієнт
+         * підписав похідний" banner; the duplicate's own name is already in this same list (both
+         * sides of the pair belong to the same project), so no extra lookup is needed here.
+         */
+        UUID supersededByEstimateId
 ) {
     public static EstimateSummary from(Estimate estimate) {
         return new EstimateSummary(
@@ -47,7 +54,8 @@ public record EstimateSummary(
                 estimate.getUpdatedAt(),
                 estimate.isCountInEconomy(),
                 estimate.getMarkupPercent(),
-                estimate.getDuplicatedFromId()
+                estimate.getDuplicatedFromId(),
+                estimate.getSupersededByEstimateId()
         );
     }
 }

@@ -196,7 +196,7 @@ public class EstimatePdfService {
                 table.addCell(textCell(priceCell(item, byId), Element.ALIGN_RIGHT));
                 table.addCell(textCell(formatMoney(lineTotal), Element.ALIGN_RIGHT));
             }
-            if (sectioned) {
+            if (sectioned && section.getValue().size() >= 2) {
                 addSectionSubtotal(table, sectionTotal);
             }
         }

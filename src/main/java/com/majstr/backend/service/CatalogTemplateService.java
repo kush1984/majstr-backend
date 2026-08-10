@@ -3,12 +3,14 @@ package com.majstr.backend.service;
 import com.majstr.backend.entity.CatalogItem;
 import com.majstr.backend.entity.CatalogItemSource;
 import com.majstr.backend.entity.CatalogTemplate;
+import com.majstr.backend.entity.CatalogUpdateNoticeKind;
 import com.majstr.backend.entity.Trade;
 import com.majstr.backend.entity.User;
 import com.majstr.backend.dto.CatalogUpdateNoticeResponse;
 import com.majstr.backend.repository.CatalogItemRepository;
 import com.majstr.backend.repository.CatalogTemplateRepository;
 import com.majstr.backend.repository.CatalogUpdateNoticeRepository;
+import com.majstr.backend.service.catalog.CatalogNameKey;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -41,24 +43,49 @@ public class CatalogTemplateService {
     private final CatalogUpdateNoticeRepository noticeRepository;
 
     /**
-     * The pending "we changed your catalog" notice for this master, or
-     * {@link CatalogUpdateNoticeResponse#NONE}. Written by a catalog migration, not by any code
-     * path here — see {@link com.majstr.backend.entity.CatalogUpdateNotice}.
+     * Every pending "we changed your catalog" notice for this master, oldest first — a queue, not
+     * a single slot (see {@link com.majstr.backend.entity.CatalogUpdateNotice}). A COUNT notice
+     * is written only by a catalog migration; a PRICE_DRIFT notice only by
+     * {@code PriceInsightService#applyPriceDrift}. Neither is written here.
      */
     @Transactional(readOnly = true)
-    public CatalogUpdateNoticeResponse pendingUpdateNotice(UUID userId) {
-        return noticeRepository.findByUserIdAndDismissedAtIsNull(userId)
-                .map(n -> new CatalogUpdateNoticeResponse(
-                        true, n.getPositionsAdded(), n.getPositionsRemoved()))
-                .orElse(CatalogUpdateNoticeResponse.NONE);
+    public List<CatalogUpdateNoticeResponse> pendingUpdateNotices(UUID userId) {
+        return noticeRepository.findByUserIdAndDismissedAtIsNullOrderByCreatedAtAsc(userId).stream()
+                .map(n -> new CatalogUpdateNoticeResponse(n.getId(), n.getKind(),
+                        n.getPositionsAdded(), n.getPositionsRemoved(),
+                        n.getPositionName(), n.getOldPrice(), n.getNewPrice()))
+                .toList();
     }
 
-    /** Idempotent: dismissing an already-dismissed or absent notice is a no-op, so a retry from
-     *  an offline client can never fail. */
+    /** Idempotent: dismissing an already-dismissed, foreign, or missing id is a no-op, so a retry
+     *  from an offline client can never fail. Never touches a master's catalog price — that only
+     *  happens through {@link #acceptUpdateNotice}. */
     @Transactional
-    public void dismissUpdateNotice(UUID userId) {
-        noticeRepository.findByUserIdAndDismissedAtIsNull(userId)
+    public void dismissUpdateNotice(UUID userId, UUID noticeId) {
+        noticeRepository.findByIdAndUserId(noticeId, userId)
                 .ifPresent(n -> n.setDismissedAt(Instant.now()));
+    }
+
+    /**
+     * "Прийняти" on a PRICE_DRIFT notice: updates the master's own {@code LIBRARY} catalog item
+     * to the new price, but ONLY if it still carries the exact old price from the notice — if the
+     * master edited it themselves in the meantime, their number is never touched, the notice is
+     * just dismissed. A COUNT notice has no price to accept; this is then the same as dismiss.
+     * Idempotent for the same reasons as {@link #dismissUpdateNotice}.
+     */
+    @Transactional
+    public void acceptUpdateNotice(UUID userId, UUID noticeId) {
+        noticeRepository.findByIdAndUserId(noticeId, userId).ifPresent(n -> {
+            if (n.getKind() == CatalogUpdateNoticeKind.PRICE_DRIFT) {
+                String key = CatalogNameKey.of(n.getPositionName());
+                catalogRepository.findByOwnerIdOrderByNameAsc(userId).stream()
+                        .filter(item -> item.getSource() == CatalogItemSource.LIBRARY)
+                        .filter(item -> item.getDefaultPrice().compareTo(n.getOldPrice()) == 0)
+                        .filter(item -> key.equals(CatalogNameKey.of(item.getName())))
+                        .forEach(item -> item.setDefaultPrice(n.getNewPrice()));
+            }
+            n.setDismissedAt(Instant.now());
+        });
     }
 
     @Transactional

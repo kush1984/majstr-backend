@@ -1,33 +1,24 @@
 package com.majstr.backend.dto;
 
-import java.math.BigDecimal;
+import java.util.List;
 
 /**
- * The object-economy summary (PRO): honest per-object money, keyed off the estimate(s)
- * the master flagged to count (the accepted deal — no double-counting).
+ * The object economy tab's data, split by who may see it:
  *
- * <p>The model separates the master's <b>earnings</b> (labour) from the materials cash-flow:
  * <ul>
- *   <li>{@code works} — Σ WORK line totals of the counted estimates (the master's labour value).</li>
- *   <li>{@code materials} — Σ MATERIAL line totals of the counted estimates (passthrough; reference).</li>
- *   <li>{@code received} — Σ deposits (завдаток) of the counted estimates.</li>
- *   <li>{@code spentReceipts} — Σ RECEIPT-source expenses (real material cost, from receipt import).</li>
- *   <li>{@code spentManual} — Σ MANUAL-source expenses (unforeseen, hand-entered).</li>
- *   <li>{@code cashBalance} = {@code received − spentReceipts} — the materials pot; <b>NOT clamped</b>:
- *       negative means the master funded materials out of pocket (deposit 3000 − receipts 5000 = −2000).</li>
- *   <li>{@code profit} = {@code works − spentManual}, PLUS {@code cashBalance} once the object is
- *       <b>COMPLETED</b> (a leftover deposit becomes earnings; an overspend reduces them). Materials
- *       themselves are never earnings — they only settle into profit via the deposit at close.</li>
+ *   <li>{@code estimates} — <b>FREE + PRO, always present, never gated.</b> A panel per SIGNED
+ *       estimate (the acts) — "here are the deals I've actually signed" is the one thing every
+ *       plan gets to see.</li>
+ *   <li>{@code payments} + {@code internals} — <b>PRO only</b> (economy-polish iteration moved
+ *       {@code payments} here too — it used to be FREE-visible alongside {@code estimates}).
+ *       {@code null} for a FREE master; the PWA renders ONE lock teaser covering the Σ summary
+ *       panel, the payment schedule, and Прибуток/Витрати together, not three separate gates.</li>
  * </ul>
  *
  * Owner-only — never in the client portal, PDF, or any share-token response.
  */
 public record ObjectEconomyResponse(
-        BigDecimal works,
-        BigDecimal materials,
-        BigDecimal received,
-        BigDecimal spentReceipts,
-        BigDecimal spentManual,
-        BigDecimal profit,
-        BigDecimal cashBalance
+        List<SignedEstimatePanelResponse> estimates,
+        PaymentsSummaryResponse payments,
+        ObjectEconomyInternalsResponse internals
 ) {}

@@ -67,6 +67,17 @@ public interface CatalogItemRepository extends JpaRepository<CatalogItem, UUID> 
         java.math.BigDecimal getMaxPrice();
     }
 
+    /**
+     * Candidate masters for a price-drift notice: LIBRARY-sourced items still at the exact OLD
+     * default price. Cheap SQL pre-filter (source + exact price, both indexed-shaped equality) —
+     * the final {@code CatalogNameKey} match against the candidate happens in Java on this much
+     * smaller result, same split as {@link #aggregateMasterPositions()}. Owner is join-fetched
+     * because every caller needs the id to write a notice.
+     */
+    @Query("SELECT c FROM CatalogItem c JOIN FETCH c.owner "
+            + "WHERE c.source = com.majstr.backend.entity.CatalogItemSource.LIBRARY AND c.defaultPrice = :price")
+    List<CatalogItem> findLibraryItemsAtPrice(java.math.BigDecimal price);
+
     List<CatalogItem> findByOwnerIdOrderByNameAsc(UUID ownerId);
 
     List<CatalogItem> findByOwnerIdAndTypeOrderByNameAsc(UUID ownerId, ItemType type);
