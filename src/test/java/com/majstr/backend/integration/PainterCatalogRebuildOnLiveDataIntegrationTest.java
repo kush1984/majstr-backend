@@ -57,6 +57,11 @@ class PainterCatalogRebuildOnLiveDataIntegrationTest extends IntegrationTestBase
 
     /** One of V96's †split pairs. V99 collapses it to a single M2 row, unsuffixed. */
     private static final String SPLIT_COLLAPSED = "обезпилення поверхні";
+    /** A different †split pair, deliberately collided with a pre-existing MANUAL row at the exact
+     *  stripped name — see {@link #theOwnRowThatWouldCollideWithAStrippedNameIsUntouched()}. This
+     *  reproduces a real failure: the first version of V99's rename crashed the whole migration
+     *  (unique constraint violation) the moment any master already had a row at the bare name. */
+    private static final String SPLIT_COLLIDING = "вирівнювання стін";
 
     private static JdbcTemplate db;
     private static int painterCatalogBeforeV96;
@@ -133,6 +138,18 @@ class PainterCatalogRebuildOnLiveDataIntegrationTest extends IntegrationTestBase
                                            trade, source)
                 VALUES (gen_random_uuid(), '%s', 'Дефектовка стін не нами за погодженням', 'WORK',
                         'M2', 60.00, 'Моя категорія', 'PAINTER', 'MANUAL')
+                """.formatted(PAINTER));
+
+        // A pre-existing MANUAL row sits at the exact bare name V99's rename will try to produce for
+        // "Вирівнювання стін (м²)" (pushed moments ago by the copy above, from catalog_templates).
+        // The first version of V99 crashed here — ux_catalog_items_owner_name_type_unit — for every
+        // master, not just this one, the moment any single one of them had this. Reproduced deliberately
+        // rather than trusted to a live incident report.
+        db.execute("""
+                INSERT INTO catalog_items (id, owner_id, name, type, unit, default_price, category,
+                                           trade, source)
+                VALUES (gen_random_uuid(), '%s', 'Вирівнювання стін', 'WORK', 'M2', 500.00,
+                        'Моя категорія', 'PAINTER', 'MANUAL')
                 """.formatted(PAINTER));
 
         // An estimate already quotes the 4th leftover — the catalog copy must go, the quote must not.
@@ -248,6 +265,21 @@ class PainterCatalogRebuildOnLiveDataIntegrationTest extends IntegrationTestBase
     }
 
     @Test
+    void theOwnRowThatWouldCollideWithAStrippedNameIsUntouched() {
+        // Reaching this line at all proves the fix: @BeforeAll would have thrown
+        // (duplicate key value violates unique constraint) on the version of V99 that renamed
+        // unconditionally. The master's own MANUAL row survives exactly as they left it —
+        assertThat(db.queryForObject("""
+                SELECT source || '|' || default_price FROM catalog_items
+                WHERE owner_id = ? AND lower(trim(name)) = ? AND type = 'WORK' AND unit = 'M2'
+                """, String.class, UUID.fromString(PAINTER), SPLIT_COLLIDING))
+                .isEqualTo("MANUAL|500.00");
+        // — and the LIBRARY row that could not rename into it keeps the harmless "(м²)" suffix
+        // rather than being silently dropped or overwriting the master's row.
+        assertThat(itemRows(PAINTER, SPLIT_COLLIDING + " (м²)")).isOne();
+    }
+
+    @Test
     void theNewCatalogRowsAreAllPricedAndWork() {
         assertThat(count("""
                 SELECT count(*) FROM catalog_templates
@@ -301,9 +333,13 @@ class PainterCatalogRebuildOnLiveDataIntegrationTest extends IntegrationTestBase
 
     @Test
     void noSplitSuffixSurvivesInThePaintersOwnCatalog() {
+        // Exactly one deliberate exception: SPLIT_COLLIDING's LIBRARY row could not rename into the
+        // master's own pre-existing MANUAL row at that bare name — see
+        // theOwnRowThatWouldCollideWithAStrippedNameIsUntouched(). Every other split-collapsed
+        // position renamed cleanly.
         assertThat(count("SELECT count(*) FROM catalog_items WHERE owner_id = ? AND name LIKE '%(м%)%'",
                 UUID.fromString(PAINTER)))
-                .isZero();
+                .isOne();
     }
 
     @Test

@@ -609,8 +609,8 @@
 
     function renderPaymentRow(row) {
         const dotClass = PAYMENT_DOT_CLASS[row.status] || '';
-        const amountText = row.paidAmount != null && Number(row.paidAmount) > 0
-            ? `${money(row.paidAmount)} з ${money(row.amount)}`
+        const amountText = row.received != null && Number(row.received) > 0
+            ? `${money(row.received)} з ${money(row.amount)}`
             : money(row.amount);
         return `
             <div class="payment-row">
@@ -624,15 +624,32 @@
         `;
     }
 
+    // A payment with no matching planned stage ("Своє") — `card.received` above already sums it
+    // in, so without a row here the itemized list wouldn't add up to the total shown.
+    function renderUnplannedRow(row) {
+        return `
+            <div class="payment-row">
+                <span class="payment-dot received"></span>
+                <div class="payment-body">
+                    <div class="payment-purpose">${escapeHtml(row.label)}</div>
+                    <div class="payment-condition">${dateFormat.format(new Date(row.receivedAt))}</div>
+                </div>
+                <div class="payment-amount">${money(row.amount)}</div>
+            </div>
+        `;
+    }
+
     // The payment strip: filled = received, empty = remaining. One horizontal bar — no legend,
     // the caption spells out the split. Mobile-first: no charting library, no vertical axis.
     function renderPaymentsBody(card) {
         const total = Number(card.contractedTotal || 0);
         const received = Number(card.received || 0);
         const pct = total > 0 ? Math.min(100, Math.round((received / total) * 100)) : 0;
-        const rows = card.payments && card.payments.length
-            ? `<div class="payments-list">${card.payments.map(renderPaymentRow).join('')}</div>`
-            : '';
+        const rowsHtml = [
+            ...(card.payments || []).map(renderPaymentRow),
+            ...(card.unplannedReceipts || []).map(renderUnplannedRow),
+        ].join('');
+        const rows = rowsHtml ? `<div class="payments-list">${rowsHtml}</div>` : '';
         return `
             <div class="totals">
                 <div class="row"><span>Разом за договором:</span><span>${money(total)}</span></div>

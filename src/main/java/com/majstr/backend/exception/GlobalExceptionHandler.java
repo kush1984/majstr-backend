@@ -236,6 +236,11 @@ public class GlobalExceptionHandler {
         return build(HttpStatus.BAD_REQUEST, msg(ex.getMessage()), req);
     }
 
+    @ExceptionHandler(PaymentValidationException.class)
+    public ResponseEntity<ErrorResponse> handlePaymentValidation(PaymentValidationException ex, HttpServletRequest req) {
+        return build(HttpStatus.BAD_REQUEST, msg(ex.getMessage(), ex.getArgs()), req);
+    }
+
     @ExceptionHandler(AiExtractionException.class)
     public ResponseEntity<ErrorResponse> handleAiExtraction(AiExtractionException ex, HttpServletRequest req) {
         // Not configured (dev) or an upstream/parse failure — the AI couldn't do it

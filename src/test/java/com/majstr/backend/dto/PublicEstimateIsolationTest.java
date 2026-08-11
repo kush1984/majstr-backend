@@ -61,16 +61,20 @@ class PublicEstimateIsolationTest {
 
     /**
      * Payments-economy-portal isolation: the portal's payments card sums only the SHARED
-     * estimates and is a plain schedule (purpose/amount/dueDate/nextStage/status) — it must
-     * never carry the master's private aggregates (works/materials/spentReceipts/spentManual/
-     * cashBalance) that {@code ObjectEconomyResponse} exposes on the owner-only side.
+     * estimates and is a plain schedule (purpose/amount/dueDate/nextStage/status), plus unplanned
+     * receipts as their own line items (label/amount/receivedAt) — it must never carry the
+     * master's private aggregates (works/materials/spentReceipts/spentManual/cashBalance) that
+     * {@code ObjectEconomyResponse} exposes on the owner-only side.
      */
     @Test
     void publicPortalPaymentsCardCarriesNoPrivateAggregates() {
         List<String> names = new ArrayList<>();
         collect(PublicPortalView.PaymentsCard.class, names, 0);
+        // "received" appears twice (PaymentsCard's own aggregate + each PaymentRow's); "amount"
+        // appears twice too (PaymentRow's + UnplannedReceiptRow's).
         assertThat(names).containsExactlyInAnyOrder("contractedTotal", "received", "remaining", "payments",
-                "purpose", "amount", "paidAmount", "dueDate", "nextStage", "status");
+                "purpose", "amount", "received", "dueDate", "nextStage", "status",
+                "unplannedReceipts", "label", "amount", "receivedAt");
     }
 
     private static void collectTypes(Class<?> type, List<String> typeNames, int depth) {

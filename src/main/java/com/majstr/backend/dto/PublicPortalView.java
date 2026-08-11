@@ -34,16 +34,28 @@ public record PublicPortalView(
             BigDecimal contractedTotal,
             BigDecimal received,
             BigDecimal remaining,
-            List<PaymentRow> payments
+            List<PaymentRow> payments,
+            /** Receipts with no matching plan stage ("Своє") — {@code received} above already
+             *  includes them, so without this list the client sees a total that the itemized
+             *  {@code payments} rows don't add up to. Own line items, same as the master's own
+             *  timeline shows them. */
+            List<UnplannedReceiptRow> unplannedReceipts
     ) {}
 
     public record PaymentRow(
             String purpose,
             BigDecimal amount,
-            BigDecimal paidAmount,
+            /** Σ of this stage's payment_receipt rows (V100) — replaces the old single paidAmount. */
+            BigDecimal received,
             LocalDate dueDate,
             String nextStage,
             ProjectPaymentStatus status
+    ) {}
+
+    public record UnplannedReceiptRow(
+            String label,
+            BigDecimal amount,
+            LocalDate receivedAt
     ) {}
 
     /**

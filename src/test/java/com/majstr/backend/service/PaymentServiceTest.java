@@ -1,29 +1,39 @@
 package com.majstr.backend.service;
 
+import com.majstr.backend.dto.PaymentReceiptEditRequest;
+import com.majstr.backend.dto.PaymentReceiptRequest;
+import com.majstr.backend.dto.PaymentReceiptResponse;
 import com.majstr.backend.dto.PaymentSplitPreviewResponse;
 import com.majstr.backend.dto.PaymentSplitRequest;
+import com.majstr.backend.dto.PaymentSurplusTransferRequest;
 import com.majstr.backend.dto.PaymentsSummaryResponse;
 import com.majstr.backend.dto.ProjectPaymentRequest;
 import com.majstr.backend.dto.ProjectPaymentResponse;
+import com.majstr.backend.entity.PaymentOverflowResolution;
+import com.majstr.backend.entity.PaymentReceipt;
 import com.majstr.backend.entity.PaymentSplitPreset;
 import com.majstr.backend.entity.Plan;
 import com.majstr.backend.entity.Project;
 import com.majstr.backend.entity.ProjectPayment;
-import com.majstr.backend.entity.ProjectPaymentStatus;
 import com.majstr.backend.entity.User;
 import com.majstr.backend.exception.PaymentSplitException;
+import com.majstr.backend.exception.PaymentValidationException;
 import com.majstr.backend.feature.DefaultFeatureGuard;
 import com.majstr.backend.feature.FeatureNotAvailableException;
 import com.majstr.backend.repository.EstimateRepository;
+import com.majstr.backend.repository.PaymentReceiptRepository;
 import com.majstr.backend.repository.ProjectPaymentRepository;
 import com.majstr.backend.repository.UserRepository;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.time.LocalDate;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -39,6 +49,7 @@ import static org.mockito.Mockito.verify;
 class PaymentServiceTest {
 
     @Mock ProjectPaymentRepository paymentRepository;
+    @Mock PaymentReceiptRepository receiptRepository;
     @Mock EstimateRepository estimateRepository;
     @Mock ProjectService projectService;
     @Mock UserRepository userRepository;
@@ -48,7 +59,8 @@ class PaymentServiceTest {
     private final DefaultFeatureGuard featureGuard = new DefaultFeatureGuard();
 
     private PaymentService service() {
-        return new PaymentService(paymentRepository, estimateRepository, projectService, userRepository, featureGuard);
+        return new PaymentService(paymentRepository, receiptRepository, estimateRepository, projectService,
+                userRepository, featureGuard);
     }
 
     private final UUID ownerId = UUID.randomUUID();
@@ -62,6 +74,14 @@ class PaymentServiceTest {
 
     private void user(UUID id, Plan plan) {
         given(userRepository.findById(id)).willReturn(Optional.of(User.builder().id(id).plan(plan).build()));
+    }
+
+    private ProjectPayment stage(UUID id, BigDecimal amount, String purpose) {
+        return ProjectPayment.builder().id(id).project(object()).amount(amount).purpose(purpose).sortOrder(0).build();
+    }
+
+    private static ProjectPaymentRequest plan(BigDecimal amount, String purpose) {
+        return new ProjectPaymentRequest(amount, null, null, purpose);
     }
 
     // ---- split calculation --------------------------------------------------
@@ -153,20 +173,16 @@ class PaymentServiceTest {
         assertThat(saved.get(1).sortOrder()).isEqualTo(1);
     }
 
-    // ---- CRUD + offline idempotency -----------------------------------------
+    // ---- plan CRUD + offline idempotency ------------------------------------
 
     @Test
     void add_replayedWithTheSameClientId_doesNotDuplicate() {
         UUID clientId = UUID.randomUUID();
         user(ownerId, Plan.PRO);
         given(projectService.loadOwned(objectId, ownerId)).willReturn(object());
-        given(paymentRepository.findById(clientId)).willReturn(Optional.of(ProjectPayment.builder()
-                .id(clientId).project(object()).amount(new BigDecimal("500.00")).purpose("Аванс")
-                .sortOrder(0).build()));
+        given(paymentRepository.findById(clientId)).willReturn(Optional.of(stage(clientId, new BigDecimal("500.00"), "Аванс")));
 
-        ProjectPaymentResponse resp = service().add(objectId, ownerId,
-                new ProjectPaymentRequest(new BigDecimal("500.00"), null, null, "Аванс", null, null),
-                clientId);
+        ProjectPaymentResponse resp = service().add(objectId, ownerId, plan(new BigDecimal("500.00"), "Аванс"), clientId);
 
         assertThat(resp.id()).isEqualTo(clientId);
         verify(paymentRepository, never()).save(any(ProjectPayment.class));
@@ -182,8 +198,7 @@ class PaymentServiceTest {
         given(paymentRepository.findById(clientId)).willReturn(Optional.of(ProjectPayment.builder()
                 .id(clientId).project(otherObject).amount(BigDecimal.TEN).purpose("X").sortOrder(0).build()));
 
-        assertThatThrownBy(() -> service().add(objectId, ownerId,
-                new ProjectPaymentRequest(BigDecimal.TEN, null, null, "X", null, null), clientId))
+        assertThatThrownBy(() -> service().add(objectId, ownerId, plan(BigDecimal.TEN, "X"), clientId))
                 .isInstanceOf(org.springframework.security.access.AccessDeniedException.class);
     }
 
@@ -202,31 +217,18 @@ class PaymentServiceTest {
     @Test
     void summaryUnchecked_computesRemainingAsContractedMinusReceived_clampedAtZero() {
         given(estimateRepository.sumIncomeCounted(objectId)).willReturn(new BigDecimal("1000.00"));
-        given(paymentRepository.sumPaidByProjectId(objectId)).willReturn(new BigDecimal("1500.00")); // overpaid
         given(paymentRepository.findByProjectIdOrderBySortOrderAscIdAsc(objectId)).willReturn(List.of());
+        given(receiptRepository.findByProjectIdOrderByReceivedAtAscCreatedAtAsc(objectId)).willReturn(List.of(
+                PaymentReceipt.builder().id(UUID.randomUUID()).project(object())
+                        .amount(new BigDecimal("1500.00")).receivedAt(LocalDate.now()).label("Своє").build()
+        ));
 
         PaymentsSummaryResponse summary = service().summaryUnchecked(objectId);
 
         assertThat(summary.contractedTotal()).isEqualByComparingTo("1000.00");
         assertThat(summary.received()).isEqualByComparingTo("1500.00");
         assertThat(summary.remaining()).isEqualByComparingTo("0.00"); // clamped, not negative
-    }
-
-    @Test
-    void update_marksReceived_wholeRowReplaced() {
-        user(ownerId, Plan.PRO);
-        UUID paymentId = UUID.randomUUID();
-        given(projectService.loadOwned(objectId, ownerId)).willReturn(object());
-        given(paymentRepository.findByIdAndProjectId(paymentId, objectId)).willReturn(Optional.of(
-                ProjectPayment.builder().id(paymentId).project(object()).amount(new BigDecimal("500.00"))
-                        .purpose("Аванс").sortOrder(0).build()));
-
-        ProjectPaymentResponse resp = service().update(objectId, paymentId, ownerId,
-                new ProjectPaymentRequest(new BigDecimal("500.00"), null, null, "Аванс",
-                        new BigDecimal("500.00"), Instant.now()));
-
-        assertThat(resp.paidAmount()).isEqualByComparingTo("500.00");
-        assertThat(resp.status()).isEqualTo(ProjectPaymentStatus.RECEIVED);
+        assertThat(summary.unplannedReceipts()).hasSize(1);
     }
 
     // ---- economy-polish: mutations require PRO, reads stay open ------------
@@ -235,8 +237,7 @@ class PaymentServiceTest {
     void add_rejectsFreeBeforeAnyObjectRead() {
         user(ownerId, Plan.FREE);
 
-        assertThatThrownBy(() -> service().add(objectId, ownerId,
-                new ProjectPaymentRequest(BigDecimal.TEN, null, null, "Аванс", null, null), null))
+        assertThatThrownBy(() -> service().add(objectId, ownerId, plan(BigDecimal.TEN, "Аванс"), null))
                 .isInstanceOf(FeatureNotAvailableException.class);
 
         verify(projectService, never()).loadOwned(any(), any());
@@ -246,8 +247,7 @@ class PaymentServiceTest {
     void update_rejectsFree() {
         user(ownerId, Plan.FREE);
 
-        assertThatThrownBy(() -> service().update(objectId, UUID.randomUUID(), ownerId,
-                new ProjectPaymentRequest(BigDecimal.TEN, null, null, "Аванс", null, null)))
+        assertThatThrownBy(() -> service().update(objectId, UUID.randomUUID(), ownerId, plan(BigDecimal.TEN, "Аванс")))
                 .isInstanceOf(FeatureNotAvailableException.class);
     }
 
@@ -288,10 +288,358 @@ class PaymentServiceTest {
         given(projectService.loadOwned(objectId, ownerId)).willReturn(object());
         given(paymentRepository.findByProjectIdOrderBySortOrderAscIdAsc(objectId)).willReturn(List.of());
         given(estimateRepository.sumIncomeCounted(objectId)).willReturn(BigDecimal.ZERO);
-        given(paymentRepository.sumPaidByProjectId(objectId)).willReturn(BigDecimal.ZERO);
+        given(receiptRepository.findByProjectIdOrderByReceivedAtAscCreatedAtAsc(objectId)).willReturn(List.of());
 
         assertThat(service().list(objectId, ownerId)).isEmpty();
         assertThat(service().summary(objectId, ownerId).contractedTotal()).isEqualByComparingTo("0");
         verify(userRepository, never()).findById(any());
+    }
+
+    // ---- FACT: addReceipt — partial/full close ------------------------------
+
+    @Test
+    void addReceipt_partial_leavesStagePartialWithCorrectRemaining() {
+        UUID stageId = UUID.randomUUID();
+        user(ownerId, Plan.PRO);
+        given(projectService.loadOwned(objectId, ownerId)).willReturn(object());
+        given(paymentRepository.findByIdAndProjectId(stageId, objectId))
+                .willReturn(Optional.of(stage(stageId, new BigDecimal("1000.00"), "Аванс")));
+        given(receiptRepository.sumByPlanPaymentId(stageId)).willReturn(BigDecimal.ZERO);
+        given(receiptRepository.save(any(PaymentReceipt.class))).willAnswer(inv -> {
+            PaymentReceipt r = inv.getArgument(0);
+            if (r.getId() == null) r.setId(UUID.randomUUID());
+            return r;
+        });
+
+        List<PaymentReceiptResponse> saved = service().addReceipt(objectId, ownerId,
+                new PaymentReceiptRequest(stageId, null, new BigDecimal("400.00"), LocalDate.now(), null), null);
+
+        assertThat(saved).hasSize(1);
+        assertThat(saved.get(0).amount()).isEqualByComparingTo("400.00");
+        assertThat(saved.get(0).planPaymentId()).isEqualTo(stageId);
+    }
+
+    @Test
+    void addReceipt_exactRemaining_closesWithNoOverflow() {
+        UUID stageId = UUID.randomUUID();
+        user(ownerId, Plan.PRO);
+        given(projectService.loadOwned(objectId, ownerId)).willReturn(object());
+        given(paymentRepository.findByIdAndProjectId(stageId, objectId))
+                .willReturn(Optional.of(stage(stageId, new BigDecimal("500.00"), "Аванс")));
+        given(receiptRepository.sumByPlanPaymentId(stageId)).willReturn(new BigDecimal("200.00"));
+        given(receiptRepository.save(any(PaymentReceipt.class))).willAnswer(inv -> {
+            PaymentReceipt r = inv.getArgument(0);
+            if (r.getId() == null) r.setId(UUID.randomUUID());
+            return r;
+        });
+
+        List<PaymentReceiptResponse> saved = service().addReceipt(objectId, ownerId,
+                new PaymentReceiptRequest(stageId, null, new BigDecimal("300.00"), LocalDate.now(), null), null);
+
+        assertThat(saved).hasSize(1);
+        assertThat(saved.get(0).amount()).isEqualByComparingTo("300.00");
+    }
+
+    @Test
+    void addReceipt_replayedWithSameClientId_doesNotDuplicate() {
+        UUID stageId = UUID.randomUUID();
+        UUID clientId = UUID.randomUUID();
+        user(ownerId, Plan.PRO);
+        given(projectService.loadOwned(objectId, ownerId)).willReturn(object());
+        given(receiptRepository.findById(clientId)).willReturn(Optional.of(PaymentReceipt.builder()
+                .id(clientId).project(object()).planPayment(stage(stageId, new BigDecimal("500"), "Аванс"))
+                .amount(new BigDecimal("300.00")).receivedAt(LocalDate.now()).build()));
+
+        List<PaymentReceiptResponse> saved = service().addReceipt(objectId, ownerId,
+                new PaymentReceiptRequest(stageId, null, new BigDecimal("300.00"), LocalDate.now(), null), clientId);
+
+        assertThat(saved).singleElement().satisfies(r -> assertThat(r.id()).isEqualTo(clientId));
+        verify(receiptRepository, never()).save(any(PaymentReceipt.class));
+    }
+
+    // ---- FACT: overpayment resolutions ---------------------------------------
+
+    @Test
+    void addReceipt_overflow_withNoResolution_throwsValidation() {
+        UUID stageId = UUID.randomUUID();
+        user(ownerId, Plan.PRO);
+        given(projectService.loadOwned(objectId, ownerId)).willReturn(object());
+        given(paymentRepository.findByIdAndProjectId(stageId, objectId))
+                .willReturn(Optional.of(stage(stageId, new BigDecimal("500.00"), "Аванс")));
+        given(receiptRepository.sumByPlanPaymentId(stageId)).willReturn(BigDecimal.ZERO);
+
+        assertThatThrownBy(() -> service().addReceipt(objectId, ownerId,
+                new PaymentReceiptRequest(stageId, null, new BigDecimal("700.00"), LocalDate.now(), null), null))
+                .isInstanceOf(PaymentValidationException.class);
+
+        verify(receiptRepository, never()).save(any(PaymentReceipt.class));
+    }
+
+    @Test
+    void addReceipt_overflow_RESERVE_postsFullAmountAgainstTheSameStage_planUnchanged() {
+        UUID stageId = UUID.randomUUID();
+        ProjectPayment st = stage(stageId, new BigDecimal("500.00"), "Аванс");
+        user(ownerId, Plan.PRO);
+        given(projectService.loadOwned(objectId, ownerId)).willReturn(object());
+        given(paymentRepository.findByIdAndProjectId(stageId, objectId)).willReturn(Optional.of(st));
+        given(receiptRepository.sumByPlanPaymentId(stageId)).willReturn(BigDecimal.ZERO);
+        given(receiptRepository.save(any(PaymentReceipt.class))).willAnswer(inv -> {
+            PaymentReceipt r = inv.getArgument(0);
+            if (r.getId() == null) r.setId(UUID.randomUUID());
+            return r;
+        });
+
+        List<PaymentReceiptResponse> saved = service().addReceipt(objectId, ownerId,
+                new PaymentReceiptRequest(stageId, null, new BigDecimal("700.00"), LocalDate.now(),
+                        PaymentOverflowResolution.RESERVE), null);
+
+        assertThat(saved).hasSize(1);
+        assertThat(saved.get(0).amount()).isEqualByComparingTo("700.00");
+        assertThat(st.getAmount()).isEqualByComparingTo("500.00"); // plan untouched — the reserve
+    }
+
+    @Test
+    void addReceipt_overflow_INCREASE_bumpsThePlanAmountToTheReceivedTotal() {
+        UUID stageId = UUID.randomUUID();
+        ProjectPayment st = stage(stageId, new BigDecimal("500.00"), "Аванс");
+        user(ownerId, Plan.PRO);
+        given(projectService.loadOwned(objectId, ownerId)).willReturn(object());
+        given(paymentRepository.findByIdAndProjectId(stageId, objectId)).willReturn(Optional.of(st));
+        given(receiptRepository.sumByPlanPaymentId(stageId)).willReturn(BigDecimal.ZERO);
+        given(receiptRepository.save(any(PaymentReceipt.class))).willAnswer(inv -> {
+            PaymentReceipt r = inv.getArgument(0);
+            if (r.getId() == null) r.setId(UUID.randomUUID());
+            return r;
+        });
+
+        List<PaymentReceiptResponse> saved = service().addReceipt(objectId, ownerId,
+                new PaymentReceiptRequest(stageId, null, new BigDecimal("700.00"), LocalDate.now(),
+                        PaymentOverflowResolution.INCREASE), null);
+
+        assertThat(saved).hasSize(1);
+        assertThat(saved.get(0).amount()).isEqualByComparingTo("700.00");
+        assertThat(st.getAmount()).isEqualByComparingTo("700.00"); // raised to cover it exactly
+    }
+
+    @Test
+    void addReceipt_overflow_TRANSFER_closesCurrentAndPartiallyFillsTheNextOpenStage() {
+        UUID stageId = UUID.randomUUID();
+        UUID nextId = UUID.randomUUID();
+        ProjectPayment current = stage(stageId, new BigDecimal("500.00"), "Аванс");
+        ProjectPayment next = stage(nextId, new BigDecimal("300.00"), "Фінал");
+        user(ownerId, Plan.PRO);
+        given(projectService.loadOwned(objectId, ownerId)).willReturn(object());
+        given(paymentRepository.findByIdAndProjectId(stageId, objectId)).willReturn(Optional.of(current));
+        given(paymentRepository.findByProjectIdOrderBySortOrderAscIdAsc(objectId)).willReturn(List.of(current, next));
+        given(receiptRepository.sumByPlanPaymentId(stageId)).willReturn(BigDecimal.ZERO);
+        given(receiptRepository.sumByPlanPaymentId(nextId)).willReturn(BigDecimal.ZERO);
+        given(receiptRepository.save(any(PaymentReceipt.class))).willAnswer(inv -> {
+            PaymentReceipt r = inv.getArgument(0);
+            if (r.getId() == null) r.setId(UUID.randomUUID());
+            return r;
+        });
+
+        List<PaymentReceiptResponse> saved = service().addReceipt(objectId, ownerId,
+                new PaymentReceiptRequest(stageId, null, new BigDecimal("700.00"), LocalDate.now(),
+                        PaymentOverflowResolution.TRANSFER), null);
+
+        assertThat(saved).hasSize(2);
+        assertThat(saved.get(0).planPaymentId()).isEqualTo(stageId);
+        assertThat(saved.get(0).amount()).isEqualByComparingTo("500.00"); // closes current exactly
+        assertThat(saved.get(1).planPaymentId()).isEqualTo(nextId);
+        assertThat(saved.get(1).amount()).isEqualByComparingTo("200.00"); // surplus onto next
+        // Σ across the two receipts equals the whole amount received — no money invented or lost.
+        BigDecimal sum = saved.stream().map(PaymentReceiptResponse::amount).reduce(BigDecimal.ZERO, BigDecimal::add);
+        assertThat(sum).isEqualByComparingTo("700.00");
+    }
+
+    @Test
+    void addReceipt_overflow_TRANSFER_noNextOpenStage_throwsValidation() {
+        UUID stageId = UUID.randomUUID();
+        ProjectPayment current = stage(stageId, new BigDecimal("500.00"), "Аванс");
+        user(ownerId, Plan.PRO);
+        given(projectService.loadOwned(objectId, ownerId)).willReturn(object());
+        given(paymentRepository.findByIdAndProjectId(stageId, objectId)).willReturn(Optional.of(current));
+        given(paymentRepository.findByProjectIdOrderBySortOrderAscIdAsc(objectId)).willReturn(List.of(current));
+        given(receiptRepository.sumByPlanPaymentId(stageId)).willReturn(BigDecimal.ZERO);
+
+        assertThatThrownBy(() -> service().addReceipt(objectId, ownerId,
+                new PaymentReceiptRequest(stageId, null, new BigDecimal("700.00"), LocalDate.now(),
+                        PaymentOverflowResolution.TRANSFER), null))
+                .isInstanceOf(PaymentValidationException.class);
+    }
+
+    // ---- FACT: unplanned ("Своє") receipts -----------------------------------
+
+    @Test
+    void addReceipt_unplanned_requiresANonBlankLabel() {
+        user(ownerId, Plan.PRO);
+        given(projectService.loadOwned(objectId, ownerId)).willReturn(object());
+
+        assertThatThrownBy(() -> service().addReceipt(objectId, ownerId,
+                new PaymentReceiptRequest(null, "  ", new BigDecimal("300.00"), LocalDate.now(), null), null))
+                .isInstanceOf(PaymentValidationException.class);
+    }
+
+    @Test
+    void addReceipt_unplanned_labelCollidingWithAPlanPurpose_isRejected() {
+        user(ownerId, Plan.PRO);
+        given(projectService.loadOwned(objectId, ownerId)).willReturn(object());
+        given(paymentRepository.findByProjectIdOrderBySortOrderAscIdAsc(objectId))
+                .willReturn(List.of(stage(UUID.randomUUID(), new BigDecimal("500"), "Аванс")));
+
+        assertThatThrownBy(() -> service().addReceipt(objectId, ownerId,
+                new PaymentReceiptRequest(null, "аванс", new BigDecimal("300.00"), LocalDate.now(), null), null))
+                .isInstanceOf(PaymentValidationException.class);
+
+        verify(receiptRepository, never()).save(any(PaymentReceipt.class));
+    }
+
+    @Test
+    void addReceipt_unplanned_distinctLabel_isSaved() {
+        user(ownerId, Plan.PRO);
+        given(projectService.loadOwned(objectId, ownerId)).willReturn(object());
+        given(paymentRepository.findByProjectIdOrderBySortOrderAscIdAsc(objectId))
+                .willReturn(List.of(stage(UUID.randomUUID(), new BigDecimal("500"), "Аванс")));
+        given(receiptRepository.save(any(PaymentReceipt.class))).willAnswer(inv -> {
+            PaymentReceipt r = inv.getArgument(0);
+            if (r.getId() == null) r.setId(UUID.randomUUID());
+            return r;
+        });
+
+        List<PaymentReceiptResponse> saved = service().addReceipt(objectId, ownerId,
+                new PaymentReceiptRequest(null, "Продаж інструменту", new BigDecimal("300.00"), LocalDate.now(), null), null);
+
+        assertThat(saved).singleElement().satisfies(r -> {
+            assertThat(r.planPaymentId()).isNull();
+            assertThat(r.displayLabel()).isEqualTo("Продаж інструменту");
+        });
+    }
+
+    // ---- FACT: edit / delete --------------------------------------------------
+
+    @Test
+    void editReceipt_updatesAmountAndDate() {
+        UUID receiptId = UUID.randomUUID();
+        user(ownerId, Plan.PRO);
+        given(projectService.loadOwned(objectId, ownerId)).willReturn(object());
+        given(receiptRepository.findByIdAndProjectId(receiptId, objectId)).willReturn(Optional.of(
+                PaymentReceipt.builder().id(receiptId).project(object())
+                        .planPayment(stage(UUID.randomUUID(), new BigDecimal("500"), "Аванс"))
+                        .amount(new BigDecimal("300.00")).receivedAt(LocalDate.now().minusDays(1)).build()));
+
+        PaymentReceiptResponse resp = service().editReceipt(objectId, receiptId, ownerId,
+                new PaymentReceiptEditRequest(new BigDecimal("350.00"), LocalDate.now(), null));
+
+        assertThat(resp.amount()).isEqualByComparingTo("350.00");
+    }
+
+    @Test
+    void deleteReceipt_alreadyGoneIsANoOp() {
+        UUID receiptId = UUID.randomUUID();
+        user(ownerId, Plan.PRO);
+        given(projectService.loadOwned(objectId, ownerId)).willReturn(object());
+        given(receiptRepository.findByIdAndProjectId(receiptId, objectId)).willReturn(Optional.empty());
+
+        service().deleteReceipt(objectId, receiptId, ownerId); // must not throw
+
+        verify(receiptRepository, never()).delete(any(PaymentReceipt.class));
+    }
+
+    @Test
+    void addReceipt_rejectsFree() {
+        user(ownerId, Plan.FREE);
+
+        assertThatThrownBy(() -> service().addReceipt(objectId, ownerId,
+                new PaymentReceiptRequest(null, "Щось", BigDecimal.TEN, LocalDate.now(), null), null))
+                .isInstanceOf(FeatureNotAvailableException.class);
+
+        verify(receiptRepository, never()).save(any(PaymentReceipt.class));
+    }
+
+    // ---- FACT: transferSurplus (the "create a new stage while another is over-received" hint) --
+
+    @Test
+    void transferSurplus_reducesTheMostRecentReceiptAndPostsANewOneOnTheTarget() {
+        UUID fromId = UUID.randomUUID();
+        UUID toId = UUID.randomUUID();
+        ProjectPayment from = stage(fromId, new BigDecimal("500.00"), "Аванс");
+        ProjectPayment to = stage(toId, new BigDecimal("4000.00"), "Демонтаж");
+        PaymentReceipt onlyReceipt = PaymentReceipt.builder().id(UUID.randomUUID()).project(object())
+                .planPayment(from).amount(new BigDecimal("700.00")).receivedAt(LocalDate.now()).build();
+        user(ownerId, Plan.PRO);
+        given(projectService.loadOwned(objectId, ownerId)).willReturn(object());
+        given(paymentRepository.findByIdAndProjectId(fromId, objectId)).willReturn(Optional.of(from));
+        given(paymentRepository.findByIdAndProjectId(toId, objectId)).willReturn(Optional.of(to));
+        given(receiptRepository.findByPlanPaymentIdOrderByReceivedAtAscCreatedAtAsc(fromId))
+                .willReturn(new ArrayList<>(List.of(onlyReceipt)));
+        given(receiptRepository.findByPlanPaymentIdOrderByReceivedAtAscCreatedAtAsc(toId)).willReturn(List.of());
+        given(receiptRepository.save(any(PaymentReceipt.class))).willAnswer(inv -> inv.getArgument(0));
+
+        service().transferSurplus(objectId, ownerId, new PaymentSurplusTransferRequest(fromId, toId));
+
+        assertThat(onlyReceipt.getAmount()).isEqualByComparingTo("500.00"); // 700 - 200 surplus
+        ArgumentCaptor<PaymentReceipt> saved = ArgumentCaptor.forClass(PaymentReceipt.class);
+        verify(receiptRepository).save(saved.capture());
+        assertThat(saved.getValue().getPlanPayment()).isEqualTo(to);
+        assertThat(saved.getValue().getAmount()).isEqualByComparingTo("200.00");
+        verify(receiptRepository, never()).delete(any(PaymentReceipt.class));
+    }
+
+    @Test
+    void transferSurplus_cascadesToAnOlderReceiptWhenTheNewestCantCoverTheWholeSurplus() {
+        UUID fromId = UUID.randomUUID();
+        UUID toId = UUID.randomUUID();
+        ProjectPayment from = stage(fromId, new BigDecimal("3000.00"), "Аванс");
+        ProjectPayment to = stage(toId, new BigDecimal("4000.00"), "Демонтаж");
+        PaymentReceipt older = PaymentReceipt.builder().id(UUID.randomUUID()).project(object())
+                .planPayment(from).amount(new BigDecimal("3500.00")).receivedAt(LocalDate.now().minusDays(1)).build();
+        PaymentReceipt newer = PaymentReceipt.builder().id(UUID.randomUUID()).project(object())
+                .planPayment(from).amount(new BigDecimal("500.00")).receivedAt(LocalDate.now()).build();
+        // Σ = 4000, plan = 3000 → surplus = 1000; newest (500) fully consumed, older reduced by 500.
+        user(ownerId, Plan.PRO);
+        given(projectService.loadOwned(objectId, ownerId)).willReturn(object());
+        given(paymentRepository.findByIdAndProjectId(fromId, objectId)).willReturn(Optional.of(from));
+        given(paymentRepository.findByIdAndProjectId(toId, objectId)).willReturn(Optional.of(to));
+        given(receiptRepository.findByPlanPaymentIdOrderByReceivedAtAscCreatedAtAsc(fromId))
+                .willReturn(new ArrayList<>(List.of(older, newer)));
+        given(receiptRepository.findByPlanPaymentIdOrderByReceivedAtAscCreatedAtAsc(toId)).willReturn(List.of());
+        given(receiptRepository.save(any(PaymentReceipt.class))).willAnswer(inv -> inv.getArgument(0));
+
+        service().transferSurplus(objectId, ownerId, new PaymentSurplusTransferRequest(fromId, toId));
+
+        verify(receiptRepository).delete(newer);
+        assertThat(older.getAmount()).isEqualByComparingTo("3000.00"); // 3500 - 500
+        ArgumentCaptor<PaymentReceipt> saved = ArgumentCaptor.forClass(PaymentReceipt.class);
+        verify(receiptRepository).save(saved.capture());
+        assertThat(saved.getValue().getAmount()).isEqualByComparingTo("1000.00");
+    }
+
+    @Test
+    void transferSurplus_noSurplus_throwsValidation() {
+        UUID fromId = UUID.randomUUID();
+        UUID toId = UUID.randomUUID();
+        ProjectPayment from = stage(fromId, new BigDecimal("500.00"), "Аванс");
+        ProjectPayment to = stage(toId, new BigDecimal("4000.00"), "Демонтаж");
+        user(ownerId, Plan.PRO);
+        given(projectService.loadOwned(objectId, ownerId)).willReturn(object());
+        given(paymentRepository.findByIdAndProjectId(fromId, objectId)).willReturn(Optional.of(from));
+        given(paymentRepository.findByIdAndProjectId(toId, objectId)).willReturn(Optional.of(to));
+        given(receiptRepository.findByPlanPaymentIdOrderByReceivedAtAscCreatedAtAsc(fromId)).willReturn(List.of());
+
+        assertThatThrownBy(() -> service().transferSurplus(objectId, ownerId,
+                new PaymentSurplusTransferRequest(fromId, toId)))
+                .isInstanceOf(PaymentValidationException.class);
+
+        verify(receiptRepository, never()).save(any(PaymentReceipt.class));
+    }
+
+    @Test
+    void transferSurplus_rejectsFree() {
+        user(ownerId, Plan.FREE);
+
+        assertThatThrownBy(() -> service().transferSurplus(objectId, ownerId,
+                new PaymentSurplusTransferRequest(UUID.randomUUID(), UUID.randomUUID())))
+                .isInstanceOf(FeatureNotAvailableException.class);
     }
 }

@@ -28,6 +28,7 @@ import com.majstr.backend.repository.EstimateItemRepository;
 import com.majstr.backend.repository.ProjectMessageRepository;
 import com.majstr.backend.repository.EstimateRepository;
 import com.majstr.backend.repository.EstimateShareLinkRepository;
+import com.majstr.backend.repository.PaymentReceiptRepository;
 import com.majstr.backend.repository.ProjectPaymentRepository;
 import com.majstr.backend.repository.ProjectShareLinkRepository;
 import org.junit.jupiter.api.BeforeEach;
@@ -59,6 +60,7 @@ class PublicEstimateServiceTest {
     @Mock private EstimateShareLinkRepository shareLinkRepository;
     @Mock private ProjectShareLinkRepository projectShareLinkRepository;
     @Mock private ProjectPaymentRepository projectPaymentRepository;
+    @Mock private PaymentReceiptRepository paymentReceiptRepository;
     @Mock private EstimateRepository estimateRepository;
     @Mock private EstimateItemRepository itemRepository;
     @Mock private ProjectMessageRepository messageRepository;
@@ -79,8 +81,8 @@ class PublicEstimateServiceTest {
         messages.setDefaultEncoding("UTF-8");
         messages.setFallbackToSystemLocale(false);
         publicService = new PublicEstimateService(shareLinkRepository, projectShareLinkRepository,
-                projectPaymentRepository, estimateRepository, itemRepository, messageRepository,
-                estimateService, projectPhotoService, featureGuard, pushService, messages);
+                projectPaymentRepository, paymentReceiptRepository, estimateRepository, itemRepository,
+                messageRepository, estimateService, projectPhotoService, featureGuard, pushService, messages);
     }
 
     @Test
@@ -383,7 +385,7 @@ class PublicEstimateServiceTest {
                 .willReturn(List.of(workItem(shared)));
         given(projectPaymentRepository.findByProjectIdOrderBySortOrderAscIdAsc(shared.getProject().getId()))
                 .willReturn(List.of());
-        given(projectPaymentRepository.sumPaidByProjectId(shared.getProject().getId()))
+        given(paymentReceiptRepository.sumByProjectId(shared.getProject().getId()))
                 .willReturn(new BigDecimal("1000.00"));
 
         PublicPortalView view = publicService.viewPortal(token);
@@ -392,6 +394,39 @@ class PublicEstimateServiceTest {
         assertThat(view.payments().contractedTotal()).isEqualByComparingTo("4590.00"); // shared estimate only
         assertThat(view.payments().received()).isEqualByComparingTo("1000.00");
         assertThat(view.payments().remaining()).isEqualByComparingTo("3590.00");
+        assertThat(view.payments().unplannedReceipts()).isEmpty();
+    }
+
+    @Test
+    void viewPortal_anUnplannedReceipt_appearsAsItsOwnLineItem() {
+        // Regression: `received` already includes unplanned receipts (no matching plan stage),
+        // but without their own row the client sees a total the itemized rows don't add up to.
+        Estimate shared = sampleEstimate();
+        shared.setName("Економ");
+        ProjectShareLink link = ProjectShareLink.builder()
+                .id(UUID.randomUUID()).project(shared.getProject()).token(token)
+                .createdAt(Instant.now()).revoked(false).paymentsVisible(true).build();
+        given(projectShareLinkRepository.findByTokenAndKind(token, ShareLinkKind.PORTAL))
+                .willReturn(Optional.of(link));
+        given(estimateRepository.findByProjectIdAndPortalVisibleTrueOrderByCreatedAtAsc(shared.getProject().getId()))
+                .willReturn(List.of(shared));
+        given(itemRepository.findByEstimateIdOrderBySortOrderAscIdAsc(shared.getId()))
+                .willReturn(List.of(workItem(shared)));
+        given(projectPaymentRepository.findByProjectIdOrderBySortOrderAscIdAsc(shared.getProject().getId()))
+                .willReturn(List.of());
+        given(paymentReceiptRepository.sumByProjectId(shared.getProject().getId()))
+                .willReturn(new BigDecimal("2700.00"));
+        given(paymentReceiptRepository.findByProjectIdOrderByReceivedAtAscCreatedAtAsc(shared.getProject().getId()))
+                .willReturn(List.of(com.majstr.backend.entity.PaymentReceipt.builder()
+                        .id(UUID.randomUUID()).project(shared.getProject())
+                        .amount(new BigDecimal("2700.00")).receivedAt(java.time.LocalDate.now())
+                        .label("Частково за матеріали").build()));
+
+        PublicPortalView view = publicService.viewPortal(token);
+
+        assertThat(view.payments().unplannedReceipts()).hasSize(1);
+        assertThat(view.payments().unplannedReceipts().get(0).label()).isEqualTo("Частково за матеріали");
+        assertThat(view.payments().unplannedReceipts().get(0).amount()).isEqualByComparingTo("2700.00");
     }
 
     @Test

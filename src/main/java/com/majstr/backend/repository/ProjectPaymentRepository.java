@@ -20,9 +20,4 @@ public interface ProjectPaymentRepository extends JpaRepository<ProjectPayment, 
 
     @Query("SELECT COALESCE(MAX(p.sortOrder) + 1, 0) FROM ProjectPayment p WHERE p.project.id = :projectId")
     int nextSortOrder(@Param("projectId") UUID projectId);
-
-    /** Σ actually-paid amounts for the object — the "Отримано" figure. Unpaid rows (paidAmount
-     *  null) contribute nothing, matching the planned-vs-actual split. */
-    @Query("SELECT COALESCE(SUM(p.paidAmount), 0) FROM ProjectPayment p WHERE p.project.id = :projectId")
-    BigDecimal sumPaidByProjectId(@Param("projectId") UUID projectId);
 }

@@ -1,7 +1,11 @@
 package com.majstr.backend.controller;
 
+import com.majstr.backend.dto.PaymentReceiptEditRequest;
+import com.majstr.backend.dto.PaymentReceiptRequest;
+import com.majstr.backend.dto.PaymentReceiptResponse;
 import com.majstr.backend.dto.PaymentSplitPreviewResponse;
 import com.majstr.backend.dto.PaymentSplitRequest;
+import com.majstr.backend.dto.PaymentSurplusTransferRequest;
 import com.majstr.backend.dto.PaymentsSummaryResponse;
 import com.majstr.backend.dto.ProjectPaymentRequest;
 import com.majstr.backend.dto.ProjectPaymentResponse;
@@ -99,5 +103,41 @@ public class PaymentController {
                                                      @Valid @RequestBody PaymentSplitRequest req,
                                                      @AuthenticationPrincipal UserPrincipal principal) {
         return paymentService.commitSplit(id, principal.id(), req);
+    }
+
+    @Operation(summary = "Register a received payment ('Отриманий платіж') against a plan stage, or unplanned")
+    @PostMapping("/receipts")
+    @ResponseStatus(HttpStatus.CREATED)
+    public List<PaymentReceiptResponse> addReceipt(@PathVariable UUID id,
+                                                    @Valid @RequestBody PaymentReceiptRequest req,
+                                                    @RequestHeader(value = "X-Entity-Uuid", required = false) UUID entityId,
+                                                    @AuthenticationPrincipal UserPrincipal principal) {
+        return paymentService.addReceipt(id, principal.id(), req, entityId);
+    }
+
+    @Operation(summary = "Edit a receipt's amount/date/label")
+    @PatchMapping("/receipts/{receiptId}")
+    public PaymentReceiptResponse editReceipt(@PathVariable UUID id,
+                                              @PathVariable UUID receiptId,
+                                              @Valid @RequestBody PaymentReceiptEditRequest req,
+                                              @AuthenticationPrincipal UserPrincipal principal) {
+        return paymentService.editReceipt(id, receiptId, principal.id(), req);
+    }
+
+    @Operation(summary = "Delete a receipt — its stage recomputes on the next read")
+    @DeleteMapping("/receipts/{receiptId}")
+    public ResponseEntity<Void> deleteReceipt(@PathVariable UUID id,
+                                              @PathVariable UUID receiptId,
+                                              @AuthenticationPrincipal UserPrincipal principal) {
+        paymentService.deleteReceipt(id, receiptId, principal.id());
+        return ResponseEntity.noContent().build();
+    }
+
+    @Operation(summary = "Move an over-received stage's surplus onto another stage as a partial receipt")
+    @PostMapping("/receipts/transfer-surplus")
+    public List<ProjectPaymentResponse> transferSurplus(@PathVariable UUID id,
+                                                         @Valid @RequestBody PaymentSurplusTransferRequest req,
+                                                         @AuthenticationPrincipal UserPrincipal principal) {
+        return paymentService.transferSurplus(id, principal.id(), req);
     }
 }

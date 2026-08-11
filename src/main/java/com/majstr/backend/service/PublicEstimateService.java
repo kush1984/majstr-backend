@@ -32,6 +32,7 @@ import com.majstr.backend.repository.EstimateItemRepository;
 import com.majstr.backend.repository.ProjectMessageRepository;
 import com.majstr.backend.repository.EstimateRepository;
 import com.majstr.backend.repository.EstimateShareLinkRepository;
+import com.majstr.backend.repository.PaymentReceiptRepository;
 import com.majstr.backend.repository.ProjectPaymentRepository;
 import com.majstr.backend.repository.ProjectShareLinkRepository;
 import lombok.RequiredArgsConstructor;
@@ -66,6 +67,7 @@ public class PublicEstimateService {
     private final EstimateShareLinkRepository shareLinkRepository;
     private final ProjectShareLinkRepository projectShareLinkRepository;
     private final ProjectPaymentRepository projectPaymentRepository;
+    private final PaymentReceiptRepository paymentReceiptRepository;
     private final EstimateRepository estimateRepository;
     private final EstimateItemRepository itemRepository;
     private final ProjectMessageRepository messageRepository;
@@ -154,15 +156,24 @@ public class PublicEstimateService {
                 .map(PublicPortalView.Section::total)
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
         List<ProjectPayment> rows = projectPaymentRepository.findByProjectIdOrderBySortOrderAscIdAsc(objectId);
-        BigDecimal received = projectPaymentRepository.sumPaidByProjectId(objectId);
+        BigDecimal received = paymentReceiptRepository.sumByProjectId(objectId);
         BigDecimal remaining = contracted.subtract(received).max(BigDecimal.ZERO);
         LocalDate today = LocalDate.now(LocalizationConfig.ZONE);
         List<PublicPortalView.PaymentRow> paymentRows = rows.stream()
-                .map(p -> new PublicPortalView.PaymentRow(
-                        p.getPurpose(), p.getAmount(), p.getPaidAmount(),
-                        p.getDueDate(), p.getNextStage(), p.status(today)))
+                .map(p -> {
+                    BigDecimal stageReceived = paymentReceiptRepository.sumByPlanPaymentId(p.getId());
+                    return new PublicPortalView.PaymentRow(
+                            p.getPurpose(), p.getAmount(), stageReceived,
+                            p.getDueDate(), p.getNextStage(), p.status(today, stageReceived));
+                })
                 .toList();
-        return new PublicPortalView.PaymentsCard(contracted, received, remaining, paymentRows);
+        List<PublicPortalView.UnplannedReceiptRow> unplannedRows = paymentReceiptRepository
+                .findByProjectIdOrderByReceivedAtAscCreatedAtAsc(objectId).stream()
+                .filter(r -> r.getPlanPayment() == null)
+                .map(r -> new PublicPortalView.UnplannedReceiptRow(
+                        r.getLabel() != null ? r.getLabel() : "Оплата", r.getAmount(), r.getReceivedAt()))
+                .toList();
+        return new PublicPortalView.PaymentsCard(contracted, received, remaining, paymentRows, unplannedRows);
     }
 
     @Transactional

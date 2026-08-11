@@ -63,11 +63,11 @@ class ObjectExpenseServiceTest {
     }
 
     private static PaymentsSummaryResponse payments(BigDecimal received) {
-        return new PaymentsSummaryResponse(BigDecimal.ZERO, received, BigDecimal.ZERO, List.of());
+        return new PaymentsSummaryResponse(BigDecimal.ZERO, received, BigDecimal.ZERO, List.of(), List.of());
     }
 
     private static PaymentsSummaryResponse payments(BigDecimal contractedTotal, BigDecimal received) {
-        return new PaymentsSummaryResponse(contractedTotal, received, BigDecimal.ZERO, List.of());
+        return new PaymentsSummaryResponse(contractedTotal, received, BigDecimal.ZERO, List.of(), List.of());
     }
 
     // ---- FREE/PRO split on economy() ---------------------------------------

@@ -1,5 +1,6 @@
 package com.majstr.backend.service.importer;
 
+import com.majstr.backend.config.LocalizationConfig;
 import com.majstr.backend.dto.CatalogImportCommitRequest;
 import com.majstr.backend.dto.CatalogImportCommitRequest.CommitItem;
 import com.majstr.backend.dto.CatalogImportCommitRequest.DedupPolicy;
@@ -9,7 +10,9 @@ import com.majstr.backend.dto.EstimateImportCommitResponse;
 import com.majstr.backend.dto.EstimateImportParseResponse;
 import com.majstr.backend.dto.EstimateImportParseResponse.ParsedItem;
 import com.majstr.backend.dto.EstimateResponse;
+import com.majstr.backend.dto.PaymentReceiptRequest;
 import com.majstr.backend.dto.ProjectPaymentRequest;
+import com.majstr.backend.dto.ProjectPaymentResponse;
 import com.majstr.backend.entity.ItemType;
 import com.majstr.backend.entity.Unit;
 import com.majstr.backend.entity.User;
@@ -38,7 +41,7 @@ import java.io.InputStream;
 import java.math.BigDecimal;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
-import java.time.Instant;
+import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
@@ -101,10 +104,13 @@ public class EstimateImportService {
                 ownerId);
 
         // A detected deposit becomes an object-level payment (already received) — money is
-        // project_payment now, not a field on the estimate. See PaymentService.
+        // payment_receipt now (V100), not a field on the estimate. See PaymentService: a plan
+        // row is created, then immediately closed by one receipt for the full amount.
         if (req.depositAmount() != null && req.depositAmount().signum() > 0) {
-            paymentService.add(req.projectId(), ownerId, new ProjectPaymentRequest(
-                    req.depositAmount(), null, null, "Завдаток", req.depositAmount(), Instant.now()), null);
+            ProjectPaymentResponse plan = paymentService.add(req.projectId(), ownerId,
+                    new ProjectPaymentRequest(req.depositAmount(), null, null, "Завдаток"), null);
+            paymentService.addReceipt(req.projectId(), ownerId, new PaymentReceiptRequest(
+                    plan.id(), null, req.depositAmount(), LocalDate.now(LocalizationConfig.ZONE), null), null);
         }
 
         // Catalog side-effect: only the positions the master ticked on the review screen.

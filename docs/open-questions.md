@@ -1828,6 +1828,64 @@ one-line summary — keep the item in the file as a record.
   and the now-dead `Estimate.depositAmount` field/getter. Low risk, just sequenced after real
   data has proven the migration correct.
 
+### Drop `project_payment.paid_amount`/`paid_at` once V100 is stable
+- **Status:** OPEN
+- **Since:** Payments plan/fact iteration (2026-08-11)
+- **Context:** Same pattern as the item above, one layer up: V100 moved fact from
+  `project_payment.paidAmount`/`paidAt` into `payment_receipt`, and nothing reads the two old
+  columns for new math anymore (`ProjectPaymentResponse`/`ProjectPaymentRequest` dropped both
+  fields, `PaymentService` never writes them). Left in the schema — `@Deprecated` on the entity
+  fields, `COMMENT ON COLUMN` in V100 — as a safety margin, same reasoning as the deposit-column
+  item.
+- **Notes / options:** Once the V100 data migration has run in production and been spot-checked
+  (`PaymentReceiptMigrationOnLiveDataIntegrationTest` already asserts Σ=Σ against planted test
+  data), a follow-up migration can drop both columns and the now-dead
+  `ProjectPayment.paidAmount`/`paidAt` fields.
+
+### V100 data migration: is "Вже отримано" → plan+equal-receipt the right read?
+- **Status:** OPEN
+- **Since:** Payments plan/fact iteration (2026-08-11)
+- **Context:** The old one-step "Вже отримано" create (plan `amount` and fact `paidAmount` set
+  equal at creation) becomes, after V100, one `project_payment` row plus one `payment_receipt` that
+  closes it exactly — indistinguishable from a plan a master entered first and then paid off in one
+  go. This reads as correct (a closed stage either way), but is a genuine modeling choice, not a
+  fact — flagging it explicitly rather than deciding silently.
+- **Notes / options:** Revisit only if a real master's history looks wrong after the migration —
+  the drill (Σ paid_amount before = Σ payment_receipt.amount after) proves the money is right
+  either way; this item is only about whether the resulting SHAPE (one closed stage vs. some other
+  representation) tells the right story.
+
+### Portal: how to show an unplanned receipt or a RESERVE overpayment
+- **Status:** RESOLVED (2026-08-11, same day — found live)
+- **Since:** Payments plan/fact iteration (2026-08-11)
+- **Context:** V100 added two shapes the portal's `PaymentsCard` had no distinct way to show:
+  an unplanned receipt (no matching plan stage, e.g. "Частково за матеріали") isn't a stage the
+  client's payment schedule expects, and a RESERVE-resolved overpayment reads as a stage that
+  received more than planned ("7 000 з 5 000"). This surfaced immediately on first live use — a
+  master tested a 2 700 ₴ unplanned receipt and the client-facing portal showed "Отримано 11 700"
+  with itemized rows only summing to 9 000, no explanation for the gap.
+- **Resolution:** `PublicPortalView.PaymentsCard` gained `unplannedReceipts: List<UnplannedReceiptRow>`
+  (`label`/`amount`/`receivedAt`) — `PublicEstimateService.buildPaymentsCard` reads them from
+  `PaymentReceiptRepository.findByProjectIdOrderByReceivedAtAscCreatedAtAsc`, filtered to
+  `planPayment == null`. Rendered as their own line items on the portal (`static/portal/index.html`'s
+  `renderUnplannedRow`, same row styling as a plan stage, always a green "received" dot, no due-date
+  condition — just the label and date). Isolation test's exact field-list updated. The RESERVE case
+  needed no code change — `renderPaymentRow`'s `amountText` already prints `received з amount`
+  unconditionally, so an over-received stage already read as "7 000 з 5 000" with no special-casing.
+
+### Overpayment TRANSFER: no cascade if the surplus itself overflows the next stage
+- **Status:** OPEN
+- **Since:** Payments plan/fact iteration (2026-08-11)
+- **Context:** `PaymentService.addReceipt`'s TRANSFER resolution moves the surplus onto the single
+  next open stage, even if that surplus is itself bigger than the next stage's own remaining amount
+  (the next stage would then read as its own over-received "X з Y", with no further prompt). This
+  was a deliberate simplicity choice, not an oversight — the prompt that shipped this iteration
+  called it out explicitly: no cascading through multiple stages, the master gets a fresh chance to
+  resolve it the next time they touch that stage.
+- **Notes / options:** Leave as-is unless a real multi-stage overpayment case shows this reads as
+  broken rather than "resolve later" — the next-open-stage lookup + resolution flow already handles
+  it correctly on a second pass, just not automatically in one submission.
+
 ### Raw receipt-as-photo sharing — which plan tier gates it
 - **Status:** OPEN
 - **Since:** Payments-economy-portal iteration (2026-08-07)

@@ -148,12 +148,13 @@ public interface EstimateRepository extends JpaRepository<Estimate, UUID> {
     BigDecimal sumIncomeCounted(@Param("projectId") UUID projectId);
 
     /** Sum of deposits (завдаток) across the object's counted SIGNED estimates — the
-     *  "received from client" cash-flow figure. Legacy: superseded by
-     *  {@code ProjectPaymentRepository.sumPaidByProjectId} (payments-economy-portal iteration);
-     *  kept only because it still reads live {@code deposit_amount} data on estimates predating
-     *  the migration that nothing writes to anymore. <b>Dead code today — zero callers</b> (grepped
-     *  main); fixed alongside {@link #sumIncomeCounted} for consistency (same missing-{@code
-     *  SIGNED} bug applied here too) rather than left as a landmine for whoever revives it. */
+     *  "received from client" cash-flow figure. Legacy: superseded by {@code
+     *  PaymentReceiptRepository.sumByProjectId} (payments-economy-portal iteration, then V100's
+     *  PLAN/FACT split); kept only because it still reads live {@code deposit_amount} data on
+     *  estimates predating the migration that nothing writes to anymore. <b>Dead code today —
+     *  zero callers</b> (grepped main); fixed alongside {@link #sumIncomeCounted} for consistency
+     *  (same missing-{@code SIGNED} bug applied here too) rather than left as a landmine for
+     *  whoever revives it. */
     @Query("""
             SELECT COALESCE(SUM(e.depositAmount), 0)
             FROM Estimate e
