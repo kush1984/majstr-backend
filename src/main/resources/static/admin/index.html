@@ -168,13 +168,13 @@
                     </div>
                 </section>
 
-                <h2>Підписки та гроші</h2>
+                <!--<h2>Підписки та гроші</h2>
                 <section class="card">
                     <div class="grid" id="subs">
                         <div class="stat"><div class="label">Завантаження…</div></div>
                     </div>
                     <div id="recentPayments"></div>
-                </section>
+                </section>-->
 
                 <h2>Воронка активації — де відвалюються майстри</h2>
                 <section class="card">
@@ -533,7 +533,7 @@
         const planRows = Object.entries(m.planDistribution)
             .map(([plan, n]) => `<div class="stat"><div class="label">План ${plan}</div><div class="value">${n}</div></div>`)
             .join('');
-        renderSubscriptions(m.subscriptions);
+        //renderSubscriptions(m.subscriptions);
         document.getElementById('overview').innerHTML = `
             <div class="stat"><div class="label">Усього користувачів</div><div class="value">${numberFormat.format(m.usersTotal)}</div></div>
             <div class="stat"><div class="label">Нових сьогодні</div><div class="value">${m.usersNewToday}</div></div>
