@@ -100,6 +100,9 @@
         .badge.TEAM { background: #fce7f3; color: #be185d; }
         .badge.USER  { background: #f3f4f6; color: var(--muted); }
         .badge.ADMIN { background: #fee2e2; color: var(--danger); }
+        /* Active-right-now row — same --success green already used for .ok. */
+        tr.active-row { background: rgba(22, 163, 74, 0.10); }
+        tr.active-row:hover { background: rgba(22, 163, 74, 0.16); }
         #login { max-width: 360px; margin: 80px auto; }
         #login label { display: block; margin: 10px 0 4px; color: var(--muted); font-size: 0.9rem; }
         #login input { width: 100%; }
@@ -449,6 +452,13 @@
     let page = 0;
     let totalPages = 1;
     let chart = null;
+    let currentView = 'dashboard';
+
+    // «Активний зараз» — last_active_at is touched on every authed request but throttled to once
+    // per 5 min (LastActiveTracker), so a window has to be wider than that or a still-active master
+    // would flicker in and out between two rows on the same page. 15 min covers the throttle plus
+    // normal gaps between requests.
+    const ACTIVE_WINDOW_MS = 15 * 60 * 1000;
 
     function api(path, opts) {
         const init = Object.assign({ headers: {} }, opts || {});
@@ -511,6 +521,7 @@
     let catalogLoaded = false, templatesLoaded = false, insightsLoaded = false;
 
     function showView(name) {
+        currentView = name;
         document.querySelectorAll('.view').forEach(v => { v.hidden = v.id !== 'view-' + name; });
         document.querySelectorAll('.navlink').forEach(a =>
             a.classList.toggle('active', a.dataset.view === name));
@@ -741,11 +752,23 @@
         totalPages = Math.max(data.totalPages, 1);
         document.getElementById('pageInfo').textContent =
             `сторінка ${data.page + 1} / ${totalPages} (всього ${data.totalItems})`;
-        document.getElementById('usersBody').innerHTML = data.items.map(u => {
+        // Active-right-now first (most recently active among them first); everyone else keeps the
+        // server's own order after that — this only reorders WITHIN the fetched page, so an active
+        // master still needs to be on the page his filters/sort would put him on to surface here.
+        const now = Date.now();
+        const withActivity = data.items.map(u => ({
+            u,
+            activeNow: !!u.lastActiveAt && (now - new Date(u.lastActiveAt).getTime()) <= ACTIVE_WINDOW_MS,
+        }));
+        const ordered = withActivity.filter(x => x.activeNow)
+            .sort((a, b) => new Date(b.u.lastActiveAt) - new Date(a.u.lastActiveAt))
+            .concat(withActivity.filter(x => !x.activeNow));
+
+        document.getElementById('usersBody').innerHTML = ordered.map(({ u, activeNow }) => {
             const bypass = u.estimatesCount > 0 && !u.emailVerified;
             return `
-            <tr>
-                <td><a href="#" class="user-link" data-user="${u.id}">${escapeHtml(u.email)}</a>${bypass ? ' <span title="Активний, але email не підтверджено — можливий обхід через PDF (не торкається порталу клієнта)">⚠️</span>' : ''}</td>
+            <tr class="${activeNow ? 'active-row' : ''}"${activeNow ? ' title="Активний зараз"' : ''}>
+                <td>${activeNow ? '🟢 ' : ''}<a href="#" class="user-link" data-user="${u.id}">${escapeHtml(u.email)}</a>${bypass ? ' <span title="Активний, але email не підтверджено — можливий обхід через PDF (не торкається порталу клієнта)">⚠️</span>' : ''}</td>
                 <td>${u.emailVerified ? '✅' : '❌'}</td>
                 <td class="hide-mobile">${escapeHtml(u.fullName)}</td>
                 <td>${u.projectsCount}</td>
@@ -1374,6 +1397,17 @@
 
     initCatalogSelects();
     initTplCatSelects();
+
+    // «Активний зараз» is only worth showing if it actually updates on its own — a manual
+    // «Оновити» click is not what an admin watching who's online right now wants to be doing every
+    // minute. Polls the users table (+ the overview tiles, same activity data) every 60s, but only
+    // while logged in, on the dashboard view, and the tab is actually in the foreground — no point
+    // hammering the API from a background tab or a different section of the panel.
+    setInterval(() => {
+        if (!token || currentView !== 'dashboard' || document.visibilityState !== 'visible') return;
+        loadUsers();
+        loadOverview();
+    }, 60 * 1000);
 
     if (token) {
         showApp();
