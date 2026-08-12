@@ -58,3 +58,12 @@ billing plumbing so nothing new has to expire it.
   auto-renew reminder machinery later).
 - No abuse guard beyond one-per-account (a new email = a new trial); acceptable for
   now.
+
+## Later changes
+
+- **V86**: 5 days → 15 (five was barely one object; see that migration's own comment).
+- **V101, alongside hiding the AI-calling measurement flows** (plan/sketch recognition,
+  project import — both hidden behind `AI_MEASUREMENT_IMPORT_ENABLED = false` in the PWA's
+  `MeasurementsSection.tsx` to cut AI spend): 15 days → 30. `trial-days` is still config
+  (`BILLING_TRIAL_DAYS`); both bumps also backfilled anyone mid-trial, same GREATEST-based
+  shape as the original migration.

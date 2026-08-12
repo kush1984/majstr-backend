@@ -2143,10 +2143,14 @@ one-line summary — keep the item in the file as a record.
 - **Notes / options:** Do a proper price pass once a metalworker uses it, or tune via the admin catalog editor (`AdminCatalogTemplatePage`). Non-blocking — masters set their own prices.
 
 ### PRO trial: "ending soon" reminder
-- **Status:** OPEN
+- **Status:** RESOLVED — stale entry, this shipped a while back and was never marked. `TrialReminderService`
+  sends push + email daily over the trial's last `trial-reminder-days` (T-3, T-2, T-1), stamped via
+  `users.trial_reminder_sent_at` (V86). Trial length itself is now 30 days (was 15, was 5 — V101).
 - **Since:** pro-trial iteration
-- **Context:** The 5-day self-serve trial reverts to FREE silently via `BillingExpiryService`; the master gets no "trial ends tomorrow" nudge (a conversion moment).
-- **Notes / options:** Reuse the auto-renew T-N reminder machinery (`findAutoRenewReminderDue` pattern) for a trial-ending email.
+- **Context:** The self-serve trial reverts to FREE silently via `BillingExpiryService`; originally the
+  master got no "trial ends tomorrow" nudge (a conversion moment).
+- **Notes / options:** ~~Reuse the auto-renew T-N reminder machinery (`findAutoRenewReminderDue`
+  pattern) for a trial-ending email.~~ Done.
 
 ### Multi-account abuse: AI-call daily quota + blocklist upkeep
 - **Status:** OPEN

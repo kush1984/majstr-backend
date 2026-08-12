@@ -246,10 +246,11 @@ app:
     # Days after expiry before the daily job downgrades PRO → FREE (late-renew window).
     grace-days: ${BILLING_GRACE_DAYS:3}
     # Length of the self-serve one-time PRO trial (opt-in, no card required).
-    # 15, not the original 5: five days is barely one object. A master signs up, takes a job, and
-    # the trial is over before he has run a single estimate through to a client signature — which
-    # is the moment PRO is meant to prove itself.
-    trial-days: ${BILLING_TRIAL_DAYS:15}
+    # 30, not 15 (which itself replaced the original 5): the AI-calling flows (plan/sketch
+    # recognition, project import) are temporarily hidden to cut AI spend (see
+    # AI_MEASUREMENT_IMPORT_ENABLED in the PWA), so PRO now sells mainly on the non-AI features —
+    # a longer trial gives those more room to prove themselves before the trial lapses.
+    trial-days: ${BILLING_TRIAL_DAYS:30}
     # How many days before the trial ends to start reminding — one notification per day, so at 3
     # the master hears about it on T-3, T-2 and T-1.
     trial-reminder-days: ${BILLING_TRIAL_REMINDER_DAYS:3}

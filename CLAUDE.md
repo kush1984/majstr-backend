@@ -122,7 +122,7 @@ Spring Boot 4 removed all test-slice annotations (`@WebMvcTest`, `@DataJpaTest`,
 tests (Testcontainers slice), billing/payments (monobank checkout, auto-renew, yearly tariff, PRO
 trial), password reset, client messages with attachments + retention, album takeoff (built, not
 exposed), offline-first authoring (everything except photos), estimate duplication with a per-line
-markup, bulk line deletion, the 15-day PRO trial with T-3…T-1 reminders, multi-sheet photo recognition
+markup, bulk line deletion, the 30-day PRO trial (was 15, then 5) with T-3…T-1 reminders, multi-sheet photo recognition
 with `sheetKind`, custom (master-invented) trades alongside the system `Trade` enum, object-level
 payments (`project_payment`, V93 — replaced the old per-estimate deposit) with a FREE-visible
 payment schedule + PRO-gated profit/expense internals, a client-portal payments card, shared
