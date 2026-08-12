@@ -171,9 +171,19 @@ public interface UserRepository extends JpaRepository<User, UUID> {
     }
 
     /**
-     * Active-right-now users first (most recently active among them first — Postgres/JPQL's DESC
-     * default already puts NULLs last, so the rest fall back to {@code createdAt DESC}, the
-     * previous default). No sort on the incoming {@code Pageable} — this ORDER BY is the only one.
+     * Active-right-now users first (most recently active among them first), everyone else by
+     * {@code createdAt DESC}. No sort on the incoming {@code Pageable} — this ORDER BY is the only
+     * one.
+     *
+     * <p>The second sort key is deliberately {@code CASE WHEN <active> THEN u.lastActiveAt END}, not
+     * a bare {@code u.lastActiveAt DESC}: {@code lastActiveAt} is stamped on every authenticated
+     * request (throttled to 5 min, {@code LastActiveTracker}), so it is non-null for nearly every
+     * user who has ever logged in — a bare {@code DESC} on it would rank the "everyone else" bucket
+     * by stale last-login recency instead of registration date, and {@code createdAt} would only
+     * ever break exact ties (it never got a chance to actually order anything, which is the bug this
+     * comment exists to stop someone from reintroducing). Scoping the key to the active bucket makes
+     * it NULL — sorted last under DESC by default — for everyone else, so createdAt fully controls
+     * that bucket's order.</p>
      */
     @Query("""
             SELECT u FROM User u
@@ -185,7 +195,10 @@ public interface UserRepository extends JpaRepository<User, UUID> {
                 OR LOWER(u.fullName)    LIKE :pattern
                 OR LOWER(u.companyName) LIKE :pattern
               )
-            ORDER BY CASE WHEN u.lastActiveAt > :activeSince THEN 0 ELSE 1 END, u.lastActiveAt DESC, u.createdAt DESC
+            ORDER BY
+                CASE WHEN u.lastActiveAt > :activeSince THEN 0 ELSE 1 END,
+                CASE WHEN u.lastActiveAt > :activeSince THEN u.lastActiveAt END DESC,
+                u.createdAt DESC
             """)
     Page<User> searchAdminByPattern(@Param("plan") Plan plan,
                                     @Param("source") String source,
@@ -204,7 +217,10 @@ public interface UserRepository extends JpaRepository<User, UUID> {
                 OR LOWER(u.fullName)    LIKE :pattern
                 OR LOWER(u.companyName) LIKE :pattern
               )
-            ORDER BY CASE WHEN u.lastActiveAt > :activeSince THEN 0 ELSE 1 END, u.lastActiveAt DESC, u.createdAt ASC
+            ORDER BY
+                CASE WHEN u.lastActiveAt > :activeSince THEN 0 ELSE 1 END,
+                CASE WHEN u.lastActiveAt > :activeSince THEN u.lastActiveAt END DESC,
+                u.createdAt ASC
             """)
     Page<User> searchAdminByPatternRegistrationAscending(@Param("plan") Plan plan,
                                     @Param("source") String source,
