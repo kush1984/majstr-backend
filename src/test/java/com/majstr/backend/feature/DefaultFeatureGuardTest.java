@@ -65,12 +65,22 @@ class DefaultFeatureGuardTest {
     }
 
     @Test
-    void objectEconomyIsProAndAbove() {
-        // FREE is blocked (403), PRO+ (incl. admin-granted dateless PRO — plan-gated) passes.
-        assertThat(guard.isEnabled(userOnPlan(Plan.FREE), Feature.OBJECT_ECONOMY)).isFalse();
+    void objectEconomyIsTemporarilyOpenToFreeToo() {
+        // TEMPORARY business decision — see the comment on Plan.FREE in PlanConfig: opened up to
+        // FREE while the AI-calling flows are hidden in the PWA to cut AI spend.
+        assertThat(guard.isEnabled(userOnPlan(Plan.FREE), Feature.OBJECT_ECONOMY)).isTrue();
         assertThat(guard.isEnabled(userOnPlan(Plan.PRO),  Feature.OBJECT_ECONOMY)).isTrue();
         assertThat(guard.isEnabled(userOnPlan(Plan.TEAM), Feature.OBJECT_ECONOMY)).isTrue();
-        assertThat(PlanConfig.minimumPlanFor(Feature.OBJECT_ECONOMY)).isEqualTo(Plan.PRO);
+        assertThat(PlanConfig.minimumPlanFor(Feature.OBJECT_ECONOMY)).isEqualTo(Plan.FREE);
+    }
+
+    @Test
+    void measurementsAreTemporarilyOpenToFreeToo() {
+        // Same TEMPORARY decision as objectEconomyIsTemporarilyOpenToFreeToo, same reason.
+        assertThat(guard.isEnabled(userOnPlan(Plan.FREE), Feature.MEASUREMENTS)).isTrue();
+        assertThat(guard.isEnabled(userOnPlan(Plan.PRO),  Feature.MEASUREMENTS)).isTrue();
+        assertThat(guard.isEnabled(userOnPlan(Plan.TEAM), Feature.MEASUREMENTS)).isTrue();
+        assertThat(PlanConfig.minimumPlanFor(Feature.MEASUREMENTS)).isEqualTo(Plan.FREE);
     }
 
     private User userOnPlan(Plan plan) {

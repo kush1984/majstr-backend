@@ -457,8 +457,11 @@ public class PaymentService {
                 .orElseThrow(() -> new ResourceNotFoundException("Payment not found: " + paymentId));
     }
 
-    /** Plan gate (PRO+) THEN ownership — a FREE master is refused before any object read, same
-     *  order {@link ObjectExpenseService#requireEconomy} uses for the expense journal. */
+    /** Plan gate THEN ownership, same order {@link ObjectExpenseService#requireEconomy} uses for
+     *  the expense journal. Gate is {@code Feature.OBJECT_ECONOMY} — currently granted to every
+     *  plan including FREE (TEMPORARY, see the comment on {@code Plan.FREE} in
+     *  {@link com.majstr.backend.feature.PlanConfig}), so this passes for everyone right now; the
+     *  check stays wired so reverting the plan matrix alone re-enables the block. */
     private Project requireEconomy(UUID objectId, UUID ownerId) {
         User user = userRepository.findById(ownerId)
                 .orElseThrow(() -> new ResourceNotFoundException("User not found: " + ownerId));

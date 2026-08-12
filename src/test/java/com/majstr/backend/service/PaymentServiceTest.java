@@ -19,7 +19,6 @@ import com.majstr.backend.entity.User;
 import com.majstr.backend.exception.PaymentSplitException;
 import com.majstr.backend.exception.PaymentValidationException;
 import com.majstr.backend.feature.DefaultFeatureGuard;
-import com.majstr.backend.feature.FeatureNotAvailableException;
 import com.majstr.backend.repository.EstimateRepository;
 import com.majstr.backend.repository.PaymentReceiptRepository;
 import com.majstr.backend.repository.ProjectPaymentRepository;
@@ -231,54 +230,85 @@ class PaymentServiceTest {
         assertThat(summary.unplannedReceipts()).hasSize(1);
     }
 
-    // ---- economy-polish: mutations require PRO, reads stay open ------------
+    // ---- economy-polish: mutations required PRO — TEMPORARILY open to FREE too, see the
+    // comment on Plan.FREE in PlanConfig (opened up while the AI-calling flows are hidden in the
+    // PWA to cut AI spend). Reads (list/summary, below) were always open regardless of plan. -----
 
     @Test
-    void add_rejectsFreeBeforeAnyObjectRead() {
+    void add_allowsFreeToo_temporarily() {
         user(ownerId, Plan.FREE);
+        given(projectService.loadOwned(objectId, ownerId)).willReturn(object());
+        given(paymentRepository.nextSortOrder(objectId)).willReturn(0);
+        given(paymentRepository.save(any(ProjectPayment.class))).willAnswer(inv -> {
+            ProjectPayment p = inv.getArgument(0);
+            if (p.getId() == null) {
+                p.setId(UUID.randomUUID());
+            }
+            p.setCreatedAt(Instant.now());
+            return p;
+        });
 
-        assertThatThrownBy(() -> service().add(objectId, ownerId, plan(BigDecimal.TEN, "Аванс"), null))
-                .isInstanceOf(FeatureNotAvailableException.class);
+        ProjectPaymentResponse resp = service().add(objectId, ownerId, plan(BigDecimal.TEN, "Аванс"), null);
 
-        verify(projectService, never()).loadOwned(any(), any());
+        assertThat(resp.amount()).isEqualByComparingTo("10");
     }
 
     @Test
-    void update_rejectsFree() {
+    void update_allowsFreeToo_temporarily() {
         user(ownerId, Plan.FREE);
+        UUID paymentId = UUID.randomUUID();
+        given(projectService.loadOwned(objectId, ownerId)).willReturn(object());
+        given(paymentRepository.findByIdAndProjectId(paymentId, objectId))
+                .willReturn(Optional.of(stage(paymentId, BigDecimal.TEN, "Аванс")));
 
-        assertThatThrownBy(() -> service().update(objectId, UUID.randomUUID(), ownerId, plan(BigDecimal.TEN, "Аванс")))
-                .isInstanceOf(FeatureNotAvailableException.class);
+        ProjectPaymentResponse resp = service().update(
+                objectId, paymentId, ownerId, plan(new BigDecimal("20"), "Аванс 2"));
+
+        assertThat(resp.amount()).isEqualByComparingTo("20");
+        assertThat(resp.purpose()).isEqualTo("Аванс 2");
     }
 
     @Test
-    void delete_rejectsFree() {
+    void delete_allowsFreeToo_temporarily() {
         user(ownerId, Plan.FREE);
+        UUID paymentId = UUID.randomUUID();
+        given(projectService.loadOwned(objectId, ownerId)).willReturn(object());
+        given(paymentRepository.findByIdAndProjectId(paymentId, objectId)).willReturn(Optional.empty());
 
-        assertThatThrownBy(() -> service().delete(objectId, UUID.randomUUID(), ownerId))
-                .isInstanceOf(FeatureNotAvailableException.class);
-
-        verify(paymentRepository, never()).delete(any(ProjectPayment.class));
+        service().delete(objectId, paymentId, ownerId); // must not throw
     }
 
     @Test
-    void previewSplit_rejectsFree() {
+    void previewSplit_allowsFreeToo_temporarily() {
         user(ownerId, Plan.FREE);
+        given(projectService.loadOwned(objectId, ownerId)).willReturn(object());
+        given(estimateRepository.sumIncomeCounted(objectId)).willReturn(new BigDecimal("1000.00"));
 
-        assertThatThrownBy(() -> service().previewSplit(objectId, ownerId,
-                new PaymentSplitRequest(PaymentSplitPreset.FIFTY_FIFTY, null)))
-                .isInstanceOf(FeatureNotAvailableException.class);
+        PaymentSplitPreviewResponse resp = service().previewSplit(objectId, ownerId,
+                new PaymentSplitRequest(PaymentSplitPreset.FIFTY_FIFTY, null));
+
+        assertThat(resp.rows()).hasSize(2);
     }
 
     @Test
-    void commitSplit_rejectsFree() {
+    void commitSplit_allowsFreeToo_temporarily() {
         user(ownerId, Plan.FREE);
+        given(projectService.loadOwned(objectId, ownerId)).willReturn(object());
+        given(estimateRepository.sumIncomeCounted(objectId)).willReturn(new BigDecimal("1000.00"));
+        given(paymentRepository.nextSortOrder(objectId)).willReturn(0);
+        given(paymentRepository.save(any(ProjectPayment.class))).willAnswer(inv -> {
+            ProjectPayment p = inv.getArgument(0);
+            if (p.getId() == null) {
+                p.setId(UUID.randomUUID());
+            }
+            p.setCreatedAt(Instant.now());
+            return p;
+        });
 
-        assertThatThrownBy(() -> service().commitSplit(objectId, ownerId,
-                new PaymentSplitRequest(PaymentSplitPreset.FIFTY_FIFTY, null)))
-                .isInstanceOf(FeatureNotAvailableException.class);
+        List<ProjectPaymentResponse> saved = service().commitSplit(objectId, ownerId,
+                new PaymentSplitRequest(PaymentSplitPreset.FIFTY_FIFTY, null));
 
-        verify(paymentRepository, never()).save(any(ProjectPayment.class));
+        assertThat(saved).hasSize(2);
     }
 
     @Test
@@ -547,14 +577,22 @@ class PaymentServiceTest {
     }
 
     @Test
-    void addReceipt_rejectsFree() {
+    void addReceipt_allowsFreeToo_temporarily() {
+        // TEMPORARY business decision — see the comment on Plan.FREE in PlanConfig: economy
+        // opened up to FREE while the AI-calling flows are hidden to cut AI spend.
         user(ownerId, Plan.FREE);
+        given(projectService.loadOwned(objectId, ownerId)).willReturn(object());
+        given(paymentRepository.findByProjectIdOrderBySortOrderAscIdAsc(objectId)).willReturn(List.of());
+        given(receiptRepository.save(any(PaymentReceipt.class))).willAnswer(inv -> {
+            PaymentReceipt r = inv.getArgument(0);
+            if (r.getId() == null) r.setId(UUID.randomUUID());
+            return r;
+        });
 
-        assertThatThrownBy(() -> service().addReceipt(objectId, ownerId,
-                new PaymentReceiptRequest(null, "Щось", BigDecimal.TEN, LocalDate.now(), null), null))
-                .isInstanceOf(FeatureNotAvailableException.class);
+        List<PaymentReceiptResponse> saved = service().addReceipt(objectId, ownerId,
+                new PaymentReceiptRequest(null, "Щось", BigDecimal.TEN, LocalDate.now(), null), null);
 
-        verify(receiptRepository, never()).save(any(PaymentReceipt.class));
+        assertThat(saved).singleElement().satisfies(r -> assertThat(r.displayLabel()).isEqualTo("Щось"));
     }
 
     // ---- FACT: transferSurplus (the "create a new stage while another is over-received" hint) --
@@ -635,11 +673,26 @@ class PaymentServiceTest {
     }
 
     @Test
-    void transferSurplus_rejectsFree() {
+    void transferSurplus_allowsFreeToo_temporarily() {
+        // TEMPORARY business decision — see the comment on Plan.FREE in PlanConfig: economy
+        // opened up to FREE while the AI-calling flows are hidden to cut AI spend.
+        UUID fromId = UUID.randomUUID();
+        UUID toId = UUID.randomUUID();
+        ProjectPayment from = stage(fromId, new BigDecimal("500.00"), "Аванс");
+        ProjectPayment to = stage(toId, new BigDecimal("4000.00"), "Демонтаж");
+        PaymentReceipt onlyReceipt = PaymentReceipt.builder().id(UUID.randomUUID()).project(object())
+                .planPayment(from).amount(new BigDecimal("700.00")).receivedAt(LocalDate.now()).build();
         user(ownerId, Plan.FREE);
+        given(projectService.loadOwned(objectId, ownerId)).willReturn(object());
+        given(paymentRepository.findByIdAndProjectId(fromId, objectId)).willReturn(Optional.of(from));
+        given(paymentRepository.findByIdAndProjectId(toId, objectId)).willReturn(Optional.of(to));
+        given(receiptRepository.findByPlanPaymentIdOrderByReceivedAtAscCreatedAtAsc(fromId))
+                .willReturn(new ArrayList<>(List.of(onlyReceipt)));
+        given(receiptRepository.findByPlanPaymentIdOrderByReceivedAtAscCreatedAtAsc(toId)).willReturn(List.of());
+        given(receiptRepository.save(any(PaymentReceipt.class))).willAnswer(inv -> inv.getArgument(0));
 
-        assertThatThrownBy(() -> service().transferSurplus(objectId, ownerId,
-                new PaymentSurplusTransferRequest(UUID.randomUUID(), UUID.randomUUID())))
-                .isInstanceOf(FeatureNotAvailableException.class);
+        service().transferSurplus(objectId, ownerId, new PaymentSurplusTransferRequest(fromId, toId));
+
+        assertThat(onlyReceipt.getAmount()).isEqualByComparingTo("500.00"); // 700 - 200 surplus
     }
 }

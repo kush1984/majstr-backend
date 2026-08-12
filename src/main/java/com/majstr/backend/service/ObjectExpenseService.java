@@ -118,13 +118,13 @@ public class ObjectExpenseService {
     }
 
     /**
-     * The economy tab's data. Unlike the expense journal above, this endpoint is reachable on
-     * EVERY plan — only {@link ObjectEconomyResponse#estimates()} (the signed acts themselves) is
-     * unconditional. {@link ObjectEconomyResponse#payments()} and {@link
-     * ObjectEconomyResponse#internals()} are BOTH a soft null for FREE (economy-polish iteration —
-     * previously only internals was gated; a FREE master now sees his signed deals and nothing
-     * past them, matching the PWA's single PRO-lock teaser covering summary+payments+internals as
-     * one block). Ownership is still required regardless of plan.
+     * The economy tab's data. This endpoint is reachable on EVERY plan — only {@link
+     * ObjectEconomyResponse#estimates()} (the signed acts themselves) was ever unconditional.
+     * {@link ObjectEconomyResponse#payments()} and {@link ObjectEconomyResponse#internals()} are
+     * BOTH gated by one soft check (economy-polish iteration — previously only internals was
+     * gated), currently {@code true} for every plan including FREE: {@code Feature.OBJECT_ECONOMY}
+     * is TEMPORARILY granted to FREE too, see the comment on {@code Plan.FREE} in {@link
+     * com.majstr.backend.feature.PlanConfig}. Ownership is still required regardless of plan.
      */
     @Transactional(readOnly = true)
     public ObjectEconomyResponse economy(UUID objectId, UUID ownerId) {
@@ -188,8 +188,11 @@ public class ObjectExpenseService {
                 .orElseThrow(() -> new ResourceNotFoundException("User not found: " + ownerId));
     }
 
-    /** Plan gate (PRO+) THEN ownership — a FREE master is refused before any object read.
-     *  Only used by the expense-journal endpoints; {@link #economy} gates just its internals. */
+    /** Plan gate THEN ownership. Only used by the expense-journal endpoints; {@link #economy}
+     *  gates just its internals. Gate is {@code Feature.OBJECT_ECONOMY} — currently granted to
+     *  every plan including FREE (TEMPORARY, see the comment on {@code Plan.FREE} in {@link
+     *  com.majstr.backend.feature.PlanConfig}), so this passes for everyone right now; the check
+     *  stays wired so reverting the plan matrix alone re-enables the block. */
     private Project requireEconomy(UUID objectId, UUID ownerId) {
         User user = loadUser(ownerId);
         featureGuard.requireFeature(user, Feature.OBJECT_ECONOMY);

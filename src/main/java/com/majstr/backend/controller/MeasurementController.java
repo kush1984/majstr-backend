@@ -24,11 +24,12 @@ import org.springframework.web.bind.annotation.RestController;
 import java.util.UUID;
 
 /**
- * Object measurements (Заміри), PRO-gated ({@code Feature.MEASUREMENTS}, FREE → 403
- * UPGRADE_REQUIRED) and owner-scoped in the service. A master measures the object once by
- * room; the metrics are later pulled into estimate line quantities (Stage 2). Every mutating
- * call returns the fresh tree (rooms → elements + per-room/object totals). Owner-only — none
- * of this reaches the client portal, PDF, or a share-token response.
+ * Object measurements (Заміри), PRO-gated ({@code Feature.MEASUREMENTS}) and owner-scoped in the
+ * service — TEMPORARILY also granted to FREE, see the comment on {@code Plan.FREE} in
+ * {@link com.majstr.backend.feature.PlanConfig}. A master measures the object once by room; the
+ * metrics are later pulled into estimate line quantities (Stage 2). Every mutating call returns
+ * the fresh tree (rooms → elements + per-room/object totals). Owner-only — none of this reaches
+ * the client portal, PDF, or a share-token response.
  */
 @RestController
 @RequestMapping("/api/projects/{id}/measurements")

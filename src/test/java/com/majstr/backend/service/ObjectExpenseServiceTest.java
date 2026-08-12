@@ -12,7 +12,6 @@ import com.majstr.backend.entity.Project;
 import com.majstr.backend.entity.ProjectStatus;
 import com.majstr.backend.entity.User;
 import com.majstr.backend.feature.DefaultFeatureGuard;
-import com.majstr.backend.feature.FeatureNotAvailableException;
 import com.majstr.backend.repository.EstimateRepository;
 import com.majstr.backend.repository.ObjectExpenseRepository;
 import com.majstr.backend.repository.UserRepository;
@@ -73,21 +72,21 @@ class ObjectExpenseServiceTest {
     // ---- FREE/PRO split on economy() ---------------------------------------
 
     @Test
-    void freeUser_economy_seesOnlyThePanels_paymentsAndInternalsAreBothNull() {
-        // economy-polish iteration: the gate moved from "internals only" to "everything except
-        // the acts list" — a FREE master sees his signed deals and nothing past them.
+    void freeUser_economy_getsBothPaymentsAndInternalsToo_temporarily() {
+        // TEMPORARY business decision — see the comment on Plan.FREE in PlanConfig: economy
+        // opened up to FREE (previously: FREE saw only the signed-acts panels, nothing past
+        // them) while the AI-calling flows are hidden in the PWA to cut AI spend.
         UUID owner = UUID.randomUUID();
         UUID object = UUID.randomUUID();
         user(owner, Plan.FREE);
         given(projectService.loadOwned(object, owner)).willReturn(object(ProjectStatus.IN_PROGRESS));
+        given(paymentService.summaryUnchecked(object)).willReturn(payments(BigDecimal.ZERO));
+        given(expenseRepository.sumAll(object)).willReturn(BigDecimal.ZERO);
 
         ObjectEconomyResponse eco = service().economy(object, owner);
 
-        assertThat(eco.internals()).isNull();
-        assertThat(eco.payments()).isNull();
-        assertThat(eco.estimates()).isEmpty(); // no signed estimates stubbed
-        verify(paymentService, never()).summaryUnchecked(any()); // never computed for FREE either
-        verify(expenseRepository, never()).sumAll(any());
+        assertThat(eco.payments()).isNotNull();
+        assertThat(eco.internals()).isNotNull();
     }
 
     @Test
@@ -106,16 +105,16 @@ class ObjectExpenseServiceTest {
     }
 
     @Test
-    void expenseJournal_stillHardBlocksFree_beforeAnyObjectRead() {
-        // Unlike economy(), the expense journal itself (add/list/update/delete) stays PRO-only.
+    void expenseJournal_alsoAllowsFreeNow_temporarily() {
+        // TEMPORARY business decision — see the comment on Plan.FREE in PlanConfig: the expense
+        // journal (add/list/update/delete) shares requireEconomy with economy(), so it opened up
+        // to FREE at the same time, for the same reason.
         UUID owner = UUID.randomUUID();
         UUID object = UUID.randomUUID();
         user(owner, Plan.FREE);
+        given(projectService.loadOwned(object, owner)).willReturn(new Project());
 
-        assertThatThrownBy(() -> service().list(object, owner))
-                .isInstanceOf(FeatureNotAvailableException.class);
-
-        verify(projectService, never()).loadOwned(any(), any());
+        assertThatCode(() -> service().list(object, owner)).doesNotThrowAnyException();
     }
 
     @Test
