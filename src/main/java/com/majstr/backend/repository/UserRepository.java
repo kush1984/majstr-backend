@@ -125,10 +125,14 @@ public interface UserRepository extends JpaRepository<User, UUID> {
      * partial match on email / full name / company name. The LIKE pattern is
      * built in Java (see {@link #likePattern}) and compared against
      * {@code LOWER(column)} by {@link #searchAdminByPattern}.
+     *
+     * <p>{@code activeSince} pins who counts as "active right now" for the ORDER BY — passed in
+     * (not computed here) so the repository stays a plain data-access layer; the cutoff itself is
+     * the caller's business decision.</p>
      */
-    default Page<User> searchAdmin(Plan plan, String source, String search, Pageable pageable) {
+    default Page<User> searchAdmin(Plan plan, String source, String search, Instant activeSince, Pageable pageable) {
         String src = (source == null || source.isBlank()) ? null : source.trim().toUpperCase(Locale.ROOT);
-        return searchAdminByPattern(plan, src, likePattern(search), pageable);
+        return searchAdminByPattern(plan, src, likePattern(search), activeSince, pageable);
     }
 
     /**
@@ -150,6 +154,11 @@ public interface UserRepository extends JpaRepository<User, UUID> {
         return "%" + search.trim().toLowerCase(Locale.ROOT) + "%";
     }
 
+    /**
+     * Active-right-now users first (most recently active among them first — Postgres/JPQL's DESC
+     * default already puts NULLs last, so the rest fall back to {@code createdAt DESC}, the
+     * previous default). No sort on the incoming {@code Pageable} — this ORDER BY is the only one.
+     */
     @Query("""
             SELECT u FROM User u
             WHERE (:plan IS NULL OR u.plan = :plan)
@@ -160,10 +169,12 @@ public interface UserRepository extends JpaRepository<User, UUID> {
                 OR LOWER(u.fullName)    LIKE :pattern
                 OR LOWER(u.companyName) LIKE :pattern
               )
+            ORDER BY CASE WHEN u.lastActiveAt > :activeSince THEN 0 ELSE 1 END, u.lastActiveAt DESC, u.createdAt DESC
             """)
     Page<User> searchAdminByPattern(@Param("plan") Plan plan,
                                     @Param("source") String source,
                                     @Param("pattern") String pattern,
+                                    @Param("activeSince") Instant activeSince,
                                     Pageable pageable);
 
     @Modifying

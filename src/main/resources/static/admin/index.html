@@ -752,19 +752,17 @@
         totalPages = Math.max(data.totalPages, 1);
         document.getElementById('pageInfo').textContent =
             `сторінка ${data.page + 1} / ${totalPages} (всього ${data.totalItems})`;
-        // Active-right-now first (most recently active among them first); everyone else keeps the
-        // server's own order after that — this only reorders WITHIN the fetched page, so an active
-        // master still needs to be on the page his filters/sort would put him on to surface here.
+        // The server already returns active-right-now users first (most recently active among them
+        // first, across ALL pages — see UserRepository#searchAdminByPattern's ORDER BY), so no
+        // client-side re-sort here. This just decides which rows get the green highlight, using the
+        // same 15-min window as the query.
         const now = Date.now();
         const withActivity = data.items.map(u => ({
             u,
             activeNow: !!u.lastActiveAt && (now - new Date(u.lastActiveAt).getTime()) <= ACTIVE_WINDOW_MS,
         }));
-        const ordered = withActivity.filter(x => x.activeNow)
-            .sort((a, b) => new Date(b.u.lastActiveAt) - new Date(a.u.lastActiveAt))
-            .concat(withActivity.filter(x => !x.activeNow));
 
-        document.getElementById('usersBody').innerHTML = ordered.map(({ u, activeNow }) => {
+        document.getElementById('usersBody').innerHTML = withActivity.map(({ u, activeNow }) => {
             const bypass = u.estimatesCount > 0 && !u.emailVerified;
             return `
             <tr class="${activeNow ? 'active-row' : ''}"${activeNow ? ' title="Активний зараз"' : ''}>

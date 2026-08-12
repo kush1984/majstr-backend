@@ -24,6 +24,8 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Duration;
+import java.time.Instant;
 import java.util.EnumMap;
 import java.util.HashMap;
 import java.util.LinkedHashSet;
@@ -41,6 +43,11 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class AdminUserService {
 
+    // «Активний зараз» for the admin user list — same window the admin panel's own client-side
+    // badge uses (admin/index.html's ACTIVE_WINDOW_MS), wider than LastActiveTracker's 5-minute
+    // touch throttle so a still-active master doesn't flicker in and out of the bucket.
+    private static final Duration ACTIVE_WINDOW = Duration.ofMinutes(15);
+
     private final UserRepository userRepository;
     private final ClientRepository clientRepository;
     private final ProjectRepository projectRepository;
@@ -53,7 +60,7 @@ public class AdminUserService {
 
     @Transactional(readOnly = true)
     public Page<AdminUserSummary> search(Plan plan, String source, String search, Pageable pageable) {
-        Page<User> page = userRepository.searchAdmin(plan, source, search, pageable);
+        Page<User> page = userRepository.searchAdmin(plan, source, search, Instant.now().minus(ACTIVE_WINDOW), pageable);
         List<UUID> ids = page.getContent().stream().map(User::getId).toList();
         if (ids.isEmpty()) {
             return page.map(AdminUserSummary::from);

@@ -33,6 +33,9 @@ import java.util.Set;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.BDDMockito.given;
 
 @ExtendWith(MockitoExtension.class)
@@ -56,7 +59,9 @@ class AdminUserServiceTest {
         User ua = user(a, "a@x", Plan.FREE, true);
         User ub = user(b, "b@x", Plan.PRO, false);
         Pageable pageable = PageRequest.of(0, 20);
-        given(userRepository.searchAdmin(null, null, null, pageable))
+        // activeSince is Instant.now() minus the service's own window — computed inside search(),
+        // so the exact value here is unknown to the test; match on type instead.
+        given(userRepository.searchAdmin(isNull(), isNull(), isNull(), any(Instant.class), eq(pageable)))
                 .willReturn(new PageImpl<>(List.of(ua, ub), pageable, 2));
         given(clientRepository.countByOwnerIdIn(List.of(a, b))).willReturn(List.of(oc(a, 3)));
         given(projectRepository.countByOwnerIdIn(List.of(a, b))).willReturn(List.of(oc(a, 2), oc(b, 1)));

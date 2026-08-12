@@ -17,7 +17,6 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.PageRequest;
-import org.springframework.data.domain.Sort;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -53,7 +52,9 @@ public class AdminUserController {
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size) {
         int safeSize = Math.min(Math.max(size, 1), MAX_PAGE_SIZE);
-        var pageable = PageRequest.of(Math.max(page, 0), safeSize, Sort.by(Sort.Direction.DESC, "createdAt"));
+        // Unsorted — the ordering (active-right-now first, then createdAt DESC) is the query's
+        // own ORDER BY now (UserRepository#searchAdminByPattern), not something Pageable adds.
+        var pageable = PageRequest.of(Math.max(page, 0), safeSize);
         return PageResponse.of(
                 adminUserService.search(plan, blankToNull(source), blankToNull(search), pageable),
                 Function.identity());
