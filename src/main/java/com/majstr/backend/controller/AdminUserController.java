@@ -43,20 +43,23 @@ public class AdminUserController {
     private final AdminUserService adminUserService;
 
     @Operation(summary = "Search users with pagination + per-user activity counts "
-            + "(email verified, clients, projects, estimates, signed)")
+            + "(email verified, clients, projects, estimates, signed). Always active-right-now "
+            + "first; `dir=asc` reverses registration order for everyone else (default: desc).")
     @GetMapping
     public PageResponse<AdminUserSummary> list(
             @RequestParam(required = false) Plan plan,
             @RequestParam(required = false) String source,
             @RequestParam(required = false) String search,
+            @RequestParam(defaultValue = "desc") String dir,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size) {
         int safeSize = Math.min(Math.max(size, 1), MAX_PAGE_SIZE);
-        // Unsorted — the ordering (active-right-now first, then createdAt DESC) is the query's
-        // own ORDER BY now (UserRepository#searchAdminByPattern), not something Pageable adds.
+        boolean registrationAscending = "asc".equalsIgnoreCase(dir);
+        // Unsorted — the ordering (active-right-now first, then createdAt DESC/ASC) is the query's
+        // own ORDER BY now (UserRepository#searchAdmin), not something Pageable adds.
         var pageable = PageRequest.of(Math.max(page, 0), safeSize);
         return PageResponse.of(
-                adminUserService.search(plan, blankToNull(source), blankToNull(search), pageable),
+                adminUserService.search(plan, blankToNull(source), blankToNull(search), registrationAscending, pageable),
                 Function.identity());
     }
 

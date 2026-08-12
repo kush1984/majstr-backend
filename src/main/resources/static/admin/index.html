@@ -68,6 +68,9 @@
         table { width: 100%; border-collapse: collapse; }
         th, td { padding: 8px; border-bottom: 1px solid var(--border); text-align: left; font-size: 0.92rem; }
         th { font-weight: 500; color: var(--muted); font-size: 0.82rem; }
+        th.sortable { cursor: pointer; user-select: none; white-space: nowrap; }
+        th.sortable:hover { color: var(--text); }
+        th.sortable span { margin-left: 3px; }
         td.muted { color: var(--muted); }
         select, input, button {
             font: inherit;
@@ -229,7 +232,7 @@
                                 <th title="Підписані кошториси">Підп.</th>
                                 <th>План</th>
                                 <th class="hide-mobile" title="Джерело реєстрації">Дж.</th>
-                                <th class="hide-mobile">Реєстрація</th>
+                                <th class="hide-mobile sortable" id="th-reg-sort" title="Сортувати за датою реєстрації">Реєстрація<span id="th-reg-arrow"></span></th>
                                 <th>Дії</th>
                             </tr>
                         </thead>
@@ -453,6 +456,11 @@
     let totalPages = 1;
     let chart = null;
     let currentView = 'dashboard';
+    // null = default order (active-right-now first, see below); 'asc'/'desc' once the admin has
+    // clicked «Реєстрація» — an explicit column sort means a literal chronological order, not
+    // grouped by activity, so it drops the active-first bucketing entirely (server-side, see
+    // AdminUserController#list's sort/dir params).
+    let regSort = null;
 
     // «Активний зараз» — last_active_at is touched on every authed request but throttled to once
     // per 5 min (LastActiveTracker), so a window has to be wider than that or a still-active master
@@ -744,18 +752,21 @@
         if (search) params.set('search', search);
         if (plan) params.set('plan', plan);
         if (source) params.set('source', source);
+        if (regSort) params.set('dir', regSort);
         params.set('page', String(page));
         params.set('size', '20');
+        document.getElementById('th-reg-arrow').textContent = regSort === 'asc' ? ' ▲' : regSort === 'desc' ? ' ▼' : '';
         const resp = await api('/admin/users?' + params.toString());
         if (!resp.ok) return;
         const data = await resp.json();
         totalPages = Math.max(data.totalPages, 1);
         document.getElementById('pageInfo').textContent =
             `сторінка ${data.page + 1} / ${totalPages} (всього ${data.totalItems})`;
-        // The server already returns active-right-now users first (most recently active among them
-        // first, across ALL pages — see UserRepository#searchAdminByPattern's ORDER BY), so no
-        // client-side re-sort here. This just decides which rows get the green highlight, using the
-        // same 15-min window as the query.
+        // By default the server returns active-right-now users first (most recently active among
+        // them first, across ALL pages — UserRepository#searchAdminByPattern's ORDER BY); with an
+        // explicit «Реєстрація» sort (regSort set) it's a literal chronological order instead
+        // (searchAdminSorted). Either way, no client-side re-sort — this just decides which rows
+        // get the green highlight, using the same 15-min window as the default query.
         const now = Date.now();
         const withActivity = data.items.map(u => ({
             u,
@@ -1392,6 +1403,13 @@
     document.getElementById('planFilter').addEventListener('change', () => { page = 0; loadUsers(); });
     document.getElementById('prevPage').addEventListener('click', () => { if (page > 0) { page--; loadUsers(); } });
     document.getElementById('nextPage').addEventListener('click', () => { if (page < totalPages - 1) { page++; loadUsers(); } });
+    // Click/tap «Реєстрація» to sort by it — toggles newest-first ⇄ oldest-first; a fresh page load
+    // starts back at the default (active-right-now-first) order.
+    document.getElementById('th-reg-sort').addEventListener('click', () => {
+        regSort = regSort === 'desc' ? 'asc' : 'desc';
+        page = 0;
+        loadUsers();
+    });
 
     initCatalogSelects();
     initTplCatSelects();

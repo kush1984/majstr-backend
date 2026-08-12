@@ -9,6 +9,7 @@ import java.time.Instant;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.mock;
@@ -79,5 +80,35 @@ class UserRepositorySearchTest {
 
         // source is trimmed + uppercased to match the stored referral_source.
         verify(repo).searchAdminByPattern(isNull(), eq("LIGA"), isNull(), eq(activeSince), eq(Pageable.unpaged()));
+    }
+
+    @Test
+    void searchAdmin_registrationDescending_delegatesToTheOriginalTwoLevelQuery() {
+        UserRepository repo = mock(UserRepository.class);
+        when(repo.searchAdmin(any(), any(), any(), any(), anyBoolean(), any())).thenCallRealMethod();
+        when(repo.searchAdmin(any(), any(), any(), any(), any())).thenCallRealMethod();
+        when(repo.searchAdminByPattern(any(), any(), any(), any(), any())).thenReturn(Page.<com.majstr.backend.entity.User>empty());
+        Instant activeSince = Instant.now();
+
+        repo.searchAdmin(Plan.PRO, null, "ACME", activeSince, false, Pageable.unpaged());
+
+        // false (the default / DESC toggle state) is the same active-first, newest-registered-first
+        // query as the 5-arg searchAdmin — no separate ORDER BY variant needed for it.
+        verify(repo).searchAdminByPattern(eq(Plan.PRO), isNull(), eq("%acme%"), eq(activeSince), eq(Pageable.unpaged()));
+    }
+
+    @Test
+    void searchAdmin_registrationAscending_delegatesToTheAscendingQuery() {
+        UserRepository repo = mock(UserRepository.class);
+        when(repo.searchAdmin(any(), any(), any(), any(), anyBoolean(), any())).thenCallRealMethod();
+        when(repo.searchAdminByPatternRegistrationAscending(any(), any(), any(), any(), any()))
+                .thenReturn(Page.<com.majstr.backend.entity.User>empty());
+        Instant activeSince = Instant.now();
+
+        repo.searchAdmin(Plan.PRO, " liga ", "ACME", activeSince, true, Pageable.unpaged());
+
+        // Same plan/source/pattern handling as the descending path, just the ascending ORDER BY query.
+        verify(repo).searchAdminByPatternRegistrationAscending(
+                eq(Plan.PRO), eq("LIGA"), eq("%acme%"), eq(activeSince), eq(Pageable.unpaged()));
     }
 }

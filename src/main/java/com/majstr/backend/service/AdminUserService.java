@@ -60,7 +60,19 @@ public class AdminUserService {
 
     @Transactional(readOnly = true)
     public Page<AdminUserSummary> search(Plan plan, String source, String search, Pageable pageable) {
-        Page<User> page = userRepository.searchAdmin(plan, source, search, Instant.now().minus(ACTIVE_WINDOW), pageable);
+        return search(plan, source, search, false, pageable);
+    }
+
+    /**
+     * @param registrationAscending oldest-registered-first for everyone NOT active right now (the
+     *                              admin panel's clickable «Реєстрація» header) — the active bucket
+     *                              itself always stays pinned first, sorted by most-recently-active.
+     */
+    @Transactional(readOnly = true)
+    public Page<AdminUserSummary> search(Plan plan, String source, String search,
+                                          boolean registrationAscending, Pageable pageable) {
+        Page<User> page = userRepository.searchAdmin(
+                plan, source, search, Instant.now().minus(ACTIVE_WINDOW), registrationAscending, pageable);
         List<UUID> ids = page.getContent().stream().map(User::getId).toList();
         if (ids.isEmpty()) {
             return page.map(AdminUserSummary::from);

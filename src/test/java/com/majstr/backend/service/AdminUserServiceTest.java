@@ -37,6 +37,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.Mockito.verify;
 
 @ExtendWith(MockitoExtension.class)
 class AdminUserServiceTest {
@@ -60,8 +61,9 @@ class AdminUserServiceTest {
         User ub = user(b, "b@x", Plan.PRO, false);
         Pageable pageable = PageRequest.of(0, 20);
         // activeSince is Instant.now() minus the service's own window — computed inside search(),
-        // so the exact value here is unknown to the test; match on type instead.
-        given(userRepository.searchAdmin(isNull(), isNull(), isNull(), any(Instant.class), eq(pageable)))
+        // so the exact value here is unknown to the test; match on type instead. The 4-arg
+        // search(...) overload delegates to the 6-arg repository method with registrationAscending=false.
+        given(userRepository.searchAdmin(isNull(), isNull(), isNull(), any(Instant.class), eq(false), eq(pageable)))
                 .willReturn(new PageImpl<>(List.of(ua, ub), pageable, 2));
         given(clientRepository.countByOwnerIdIn(List.of(a, b))).willReturn(List.of(oc(a, 3)));
         given(projectRepository.countByOwnerIdIn(List.of(a, b))).willReturn(List.of(oc(a, 2), oc(b, 1)));
@@ -85,6 +87,21 @@ class AdminUserServiceTest {
         assertThat(sb.projectsCount()).isEqualTo(1);
         assertThat(sb.estimatesCount()).isEqualTo(4);
         assertThat(sb.signedEstimatesCount()).isZero();  // absent in signed result → 0
+    }
+
+    @Test
+    void search_registrationAscending_isPassedThroughToTheRepository() {
+        // Two-level sort: active-right-now users always stay pinned first (see
+        // UserRepository#searchAdminByPatternRegistrationAscending's own ORDER BY) — this only
+        // checks that the admin panel's «Реєстрація» toggle actually reaches the repository call,
+        // the ordering itself is a repository/SQL concern, not this service's.
+        Pageable pageable = PageRequest.of(0, 20);
+        given(userRepository.searchAdmin(isNull(), isNull(), isNull(), any(Instant.class), eq(true), eq(pageable)))
+                .willReturn(new PageImpl<>(List.of(), pageable, 0));
+
+        adminUserService.search(null, null, null, true, pageable);
+
+        verify(userRepository).searchAdmin(isNull(), isNull(), isNull(), any(Instant.class), eq(true), eq(pageable));
     }
 
     @Test

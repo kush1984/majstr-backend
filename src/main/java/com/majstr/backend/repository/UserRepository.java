@@ -128,11 +128,27 @@ public interface UserRepository extends JpaRepository<User, UUID> {
      *
      * <p>{@code activeSince} pins who counts as "active right now" for the ORDER BY — passed in
      * (not computed here) so the repository stays a plain data-access layer; the cutoff itself is
-     * the caller's business decision.</p>
+     * the caller's business decision. Registration order is newest-first (DESC) — see the
+     * {@code registrationAscending} overload below for the toggle.</p>
      */
     default Page<User> searchAdmin(Plan plan, String source, String search, Instant activeSince, Pageable pageable) {
         String src = (source == null || source.isBlank()) ? null : source.trim().toUpperCase(Locale.ROOT);
         return searchAdminByPattern(plan, src, likePattern(search), activeSince, pageable);
+    }
+
+    /**
+     * Same two-level order — active-right-now first, then registration date — but with the second
+     * level's direction picked by the caller (the admin panel's clickable «Реєстрація» header). The
+     * active bucket is always ON: an explicit registration sort narrows to WHICH end of the
+     * inactive/tied rows comes first, it never demotes someone who is active right now.
+     */
+    default Page<User> searchAdmin(Plan plan, String source, String search, Instant activeSince,
+                                    boolean registrationAscending, Pageable pageable) {
+        if (!registrationAscending) {
+            return searchAdmin(plan, source, search, activeSince, pageable);
+        }
+        String src = (source == null || source.isBlank()) ? null : source.trim().toUpperCase(Locale.ROOT);
+        return searchAdminByPatternRegistrationAscending(plan, src, likePattern(search), activeSince, pageable);
     }
 
     /**
@@ -172,6 +188,25 @@ public interface UserRepository extends JpaRepository<User, UUID> {
             ORDER BY CASE WHEN u.lastActiveAt > :activeSince THEN 0 ELSE 1 END, u.lastActiveAt DESC, u.createdAt DESC
             """)
     Page<User> searchAdminByPattern(@Param("plan") Plan plan,
+                                    @Param("source") String source,
+                                    @Param("pattern") String pattern,
+                                    @Param("activeSince") Instant activeSince,
+                                    Pageable pageable);
+
+    /** Same as {@link #searchAdminByPattern}, registration oldest-first instead of newest-first. */
+    @Query("""
+            SELECT u FROM User u
+            WHERE (:plan IS NULL OR u.plan = :plan)
+              AND (:source IS NULL OR u.referralSource = :source)
+              AND (
+                :pattern IS NULL
+                OR LOWER(u.email)       LIKE :pattern
+                OR LOWER(u.fullName)    LIKE :pattern
+                OR LOWER(u.companyName) LIKE :pattern
+              )
+            ORDER BY CASE WHEN u.lastActiveAt > :activeSince THEN 0 ELSE 1 END, u.lastActiveAt DESC, u.createdAt ASC
+            """)
+    Page<User> searchAdminByPatternRegistrationAscending(@Param("plan") Plan plan,
                                     @Param("source") String source,
                                     @Param("pattern") String pattern,
                                     @Param("activeSince") Instant activeSince,
