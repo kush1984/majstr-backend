@@ -24,10 +24,6 @@ public interface PaymentReceiptRepository extends JpaRepository<PaymentReceipt, 
     /** One stage's own history, for a single-row response (add/update a plan row). */
     List<PaymentReceipt> findByPlanPaymentIdOrderByReceivedAtAscCreatedAtAsc(UUID planPaymentId);
 
-    /** Σ every receipt of the object (planned + unplanned) — the "Отримано" figure. */
-    @Query("SELECT COALESCE(SUM(r.amount), 0) FROM PaymentReceipt r WHERE r.project.id = :projectId")
-    BigDecimal sumByProjectId(@Param("projectId") UUID projectId);
-
     /** Σ received against one plan stage — used when resolving an overpayment against it. */
     @Query("SELECT COALESCE(SUM(r.amount), 0) FROM PaymentReceipt r WHERE r.planPayment.id = :planPaymentId")
     BigDecimal sumByPlanPaymentId(@Param("planPaymentId") UUID planPaymentId);

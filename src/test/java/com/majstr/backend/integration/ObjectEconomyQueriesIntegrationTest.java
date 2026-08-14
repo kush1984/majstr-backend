@@ -7,6 +7,7 @@ import com.majstr.backend.entity.ExpenseCategory;
 import com.majstr.backend.entity.ExpenseSource;
 import com.majstr.backend.entity.ItemType;
 import com.majstr.backend.entity.ObjectExpense;
+import com.majstr.backend.entity.PercentBaseKind;
 import com.majstr.backend.entity.Plan;
 import com.majstr.backend.entity.Project;
 import com.majstr.backend.entity.ProjectStatus;
@@ -151,6 +152,38 @@ class ObjectEconomyQueriesIntegrationTest extends IntegrationTestBase {
         assertThat(expenseRepository.sumAll(projectId)).isEqualByComparingTo("4700.00");
     }
 
+    @Test
+    void findSignedEstimateSummaries_worksAndMaterialsAreGross_notNetOfTheDiscount() {
+        // The live bug: a 15% TOTAL-kind discount applied against WORK lines used to fold its own
+        // line_total into the raw `works` sum, so the panel showed "Роботи: 22 100" — the ALREADY
+        // discounted figure, identical to "Разом" — with nothing left for the Знижка recap to
+        // explain. `works` must come back gross (26 000, matching what the estimate's own view
+        // shows), with the discount reported separately and total reconciling as
+        // works + materials + markup + discount.
+        Estimate estimate = estimateRepository.save(Estimate.builder()
+                .project(projectRepository.findById(projectId).orElseThrow())
+                .status(EstimateStatus.SIGNED)
+                .countInEconomy(true)
+                .build());
+        addItem(estimate, ItemType.WORK, "10000.00");
+        addItem(estimate, ItemType.WORK, "16000.00");
+        addPercentItem(estimate, ItemType.WORK, PercentBaseKind.TOTAL, "-3900.00"); // 15% of 26 000
+
+        Object[] row = estimateRepository.findSignedEstimateSummaries(projectId).get(0);
+        BigDecimal works = (BigDecimal) row[4];
+        BigDecimal materials = (BigDecimal) row[5];
+        BigDecimal markup = (BigDecimal) row[6];
+        BigDecimal discount = (BigDecimal) row[7];
+
+        assertThat(works).isEqualByComparingTo("26000.00"); // gross — the discount line excluded
+        assertThat(materials).isEqualByComparingTo("0");
+        assertThat(markup).isEqualByComparingTo("0");
+        assertThat(discount).isEqualByComparingTo("-3900.00");
+        // The caller (ObjectExpenseService.signedEstimatePanels) reconstitutes the real signed
+        // total from these four — verify that reconciliation lands on the actual contracted amount.
+        assertThat(works.add(materials).add(markup).add(discount)).isEqualByComparingTo("22100.00");
+    }
+
     // ---- helpers ----------------------------------------------------------------
 
     private Estimate estimateWith(EstimateStatus status, boolean counted, ItemType type, String amount) {
@@ -177,6 +210,22 @@ class ObjectEconomyQueriesIntegrationTest extends IntegrationTestBase {
                 .unitPrice(new BigDecimal(amount))
                 .lineTotal(new BigDecimal(amount).setScale(2))
                 .sortOrder(0)
+                .build());
+    }
+
+    /** A PERCENT-unit line («% від кошторису» / «% від типу») — the kind excluded from the raw
+     *  works/materials sum and reported via markup/discount instead. */
+    private void addPercentItem(Estimate estimate, ItemType type, PercentBaseKind baseKind, String lineTotal) {
+        itemRepository.save(EstimateItem.builder()
+                .estimate(estimate)
+                .type(type)
+                .name("Знижка")
+                .unit(Unit.PERCENT)
+                .percentBaseKind(baseKind)
+                .quantity(new BigDecimal("15.000"))
+                .unitPrice(BigDecimal.ZERO)
+                .lineTotal(new BigDecimal(lineTotal).setScale(2))
+                .sortOrder(1)
                 .build());
     }
 }

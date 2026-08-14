@@ -180,52 +180,158 @@
             margin-top: 6px;
         }
         .totals .grand span:last-child { color: var(--ink); font-weight: 800; }
-        /* Small-type «Надбавка/Знижка» recap — the same wording the app's black summary panel
-           shows, so a client who's seen the app doesn't see different numbers on the portal. */
-        .totals .adjust {
-            font-size: 0.82rem;
+        /* «Надбавка/Знижка» recap — the same wording the app's black summary panel shows, so a
+           client who's seen the app doesn't see different numbers on the portal. Smaller than the
+           Роботи/Матеріали/Разом line below it (.summary-figures) — a supporting note, not a peer
+           figure (2026-08-14: briefly swapped larger-than-figures, then corrected back on explicit
+           feedback — the figures need to read clearly at a glance, the recap is secondary to them).
+           Bare `.adjust` (not `.totals .adjust`) — `adjustNote()` emits a plain `<div class="adjust">`
+           with no `.totals` ancestor now that renderSection's duplicate totals block is gone; the
+           old scoped selector silently stopped matching Зведення's own copy the moment that block
+           was removed, so this line had been rendering at the unstyled browser default (caught
+           2026-08-14 by inspecting the live page, not by reading the CSS in isolation). */
+        .adjust {
+            font-size: 0.72rem;
             color: var(--muted);
             padding-top: 2px;
         }
-        /* Object-level payments card + timeline. */
-        .payments-list { display: grid; gap: 10px; margin-top: 6px; }
+        /* Зведення — one compact line per shown estimate, top of page. */
+        .summary-list { display: grid; gap: 12px; }
+        .summary-row + .summary-row { border-top: 1px solid var(--line); padding-top: 12px; }
+        .summary-figures {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 4px 14px;
+            font-size: 0.82rem;
+            color: var(--muted);
+            font-family: var(--mono);
+            font-variant-numeric: tabular-nums;
+        }
+        .summary-figures .summary-total { color: var(--ink); font-weight: 700; }
+        /* Object-level payments card — compact list: one line per payment. Received (fully paid)
+           stages + unplanned receipts collapse into a single tappable history row; upcoming
+           (partial/planned/overdue) stay one line each, dot + name+date on the left, sum right. */
+        .payments-list { display: grid; margin-top: 4px; }
         .payment-row {
             display: flex;
-            align-items: flex-start;
-            gap: 10px;
-            padding: 10px 0;
+            align-items: center;
+            gap: 8px;
+            min-height: 44px;
+            padding: 7px 0;
             border-bottom: 1px solid var(--line);
         }
         .payment-row:last-child { border-bottom: none; }
+        /* A few px nudge so the dot itself doesn't sit flush against the card's own edge — via
+           `transform`, not margin: a flex item's margin still pushes every sibling after it (the
+           label/amount would have shifted right too, which isn't wanted here — only the dot should
+           move). `transform` shifts the rendered dot without touching layout, so the text stays
+           exactly where it already was. Applied once on the shared `.payment-dot` class so every
+           row type (collapsed group, expanded items, upcoming) keeps its dot aligned with the rest. */
         .payment-dot {
             flex-shrink: 0;
-            width: 12px;
-            height: 12px;
+            width: 10px;
+            height: 10px;
             border-radius: 50%;
-            margin-top: 4px;
             border: 2px solid var(--line);
             background: var(--white);
+            transform: translateX(4px);
         }
         .payment-dot.received { background: var(--success); border-color: var(--success); }
         .payment-dot.partial { background: var(--amber); border-color: var(--amber); }
         .payment-dot.overdue { background: var(--danger); border-color: var(--danger); }
-        .payment-body { flex: 1; min-width: 0; }
-        .payment-purpose { font-weight: 700; color: var(--ink); }
-        .payment-condition { font-size: 0.85rem; color: var(--muted); margin-top: 2px; }
+        .payment-label {
+            flex: 1;
+            min-width: 0;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            font-size: 0.88rem;
+            color: var(--ink);
+        }
+        .payment-label .payment-date { color: var(--muted); font-weight: 400; }
         .payment-amount {
             font-family: var(--mono);
             font-variant-numeric: tabular-nums;
             text-align: right;
             flex-shrink: 0;
+            font-size: 0.88rem;
             color: var(--ink);
             font-weight: 700;
+        }
+        /* The collapsed "✓ Отримано · N платежів" row — a real button, tap expands it in place. */
+        .payment-collapsed {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            width: 100%;
+            min-height: 44px;
+            /* Right padding so the chevron gets breathing room instead of sitting flush against
+               the card edge (looked like it was about to clip off — reported 2026-08-14; nudged
+               further left the same day, still felt tight against the edge). */
+            padding: 8px 10px 8px 0;
+            border: none;
+            border-bottom: 1px solid var(--line);
+            background: none;
+            font: inherit;
+            font-size: 0.88rem;
+            font-weight: 700;
+            color: var(--success);
+            text-align: left;
+            cursor: pointer;
+        }
+        .payment-collapsed:last-child { border-bottom: none; }
+        .payment-collapsed .chev { margin-left: auto; flex-shrink: 0; color: var(--muted); font-weight: 400; }
+        /* >5 payments: one highlighted "next" card instead of the full list. */
+        .payment-next {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-top: 8px;
+            padding: 10px 12px;
+            border: 1px solid var(--line);
+            border-radius: 10px;
+        }
+        .payment-next .payment-label { font-size: 0.92rem; }
+        .payment-next-label {
+            margin: 10px 0 4px;
+            font-size: 0.7rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: .04em;
+            color: var(--muted);
+        }
+        .payment-expand-toggle {
+            display: block;
+            width: 100%;
+            min-height: 44px;
+            margin-top: 6px;
+            padding: 8px 0;
+            border: none;
+            background: none;
+            font: inherit;
+            font-size: 0.85rem;
+            font-weight: 600;
+            color: var(--amber-deep);
+            text-align: center;
+            cursor: pointer;
+        }
+        .payment-all-done {
+            padding: 10px 0 2px;
+            text-align: center;
+            font-size: 0.9rem;
+            font-weight: 700;
+            color: var(--success);
         }
         .paybar { height: 10px; border-radius: 6px; background: var(--paper-2); overflow: hidden; margin: 8px 0 4px; }
         .paybar-fill { height: 100%; background: var(--amber); }
         .paybar-label { font-size: 0.85rem; color: var(--muted); display: flex; align-items: center; gap: 6px; }
-        /* One curated (i)-explanation near the payment graph — mirrors the app's InfoPopover
-           component (tap → panel, close on outside-tap/Esc/✕), reimplemented in plain JS since the
-           portal has no build step to share a React component with. */
+        /* One curated (i)-explanation next to the payments header — mirrors the app's InfoPopover
+           component (tap → panel, close on outside-tap/Esc/✕/scroll), reimplemented in plain JS
+           since the portal has no build step to share a React component with. Rebuilt from
+           scratch (2026-08-13): the earlier version had no scroll handling — position:fixed meant
+           the panel stayed pinned to its opening screen coordinates while the trigger scrolled
+           away underneath it, reading as visually "broken". This one just closes on scroll instead
+           of re-tracking the trigger — simpler and can't drift stale. */
         .info-trigger {
             display: inline-flex; flex-shrink: 0; align-items: center; justify-content: center;
             width: 18px; height: 18px; border-radius: 50%;
@@ -233,7 +339,6 @@
             color: var(--amber-deep); font-size: 0.7rem; font-weight: 700; line-height: 1;
             border: none; padding: 0; cursor: pointer;
         }
-        .info-scrim { position: fixed; inset: 0; z-index: 60; background: rgba(0,0,0,0.35); border: none; padding: 0; cursor: default; }
         .info-panel {
             position: fixed; z-index: 61; max-width: min(20rem, calc(100vw - 2rem));
             background: var(--white); border-radius: 14px; padding: 12px 30px 12px 14px;
@@ -371,7 +476,13 @@
            «Преміум» read as separate documents on one page. */
         .estimate-section { margin-top: 30px; }
         .estimate-section:first-of-type { margin-top: 0; }
-        .estimate-title {
+        /* `p.estimate-title`, not `.estimate-title` — this renders as a <p>, and inside a `.card`
+           (the Зведення summary rows) the earlier `.card p { color: var(--ink) }` rule has equal
+           class-specificity plus its own type selector, so it otherwise wins and silently turns
+           this band's white text back to ink-on-ink (invisible — caught 2026-08-14, reported as
+           "estimate names not visible"). The type selector here ties that specificity; declared
+           later in the file, so it wins the tie-break instead of needing `!important`. */
+        p.estimate-title {
             font-size: 1.15rem;
             font-weight: 800;
             letter-spacing: -0.01em;
@@ -437,28 +548,33 @@
 
 <script>
 (function () {
-    // Two token families: ?p= is the object-level portal (a section per shared
-    // estimate); ?t= is the legacy per-estimate link (URLs already sent to
-    // clients keep working). One render path — the legacy response is adapted
-    // into the portal shape below.
+    // Three token families: ?p= is the SIGNATURE portal (any-status estimates, a section per
+    // shared one, for signing); ?e= is the ECONOMY portal (SIGNED acts only, read-only, plus an
+    // optional payments card); ?t= is the legacy per-estimate link (URLs already sent to clients
+    // keep working). One render path — the legacy response is adapted into the portal shape below.
     const params = new URLSearchParams(window.location.search);
     const portalToken = params.get('p');
+    const economyToken = params.get('e');
     const legacyToken = params.get('t');
     const root = document.getElementById('root');
+    // ECONOMY acts are already SIGNED and immutable — no sign button/dialog for this mode.
+    const isEconomy = Boolean(economyToken);
 
-    if (!portalToken && !legacyToken) {
+    if (!portalToken && !economyToken && !legacyToken) {
         root.innerHTML = '<div class="error">Невірне посилання</div>';
         return;
     }
 
-    const apiBase = portalToken
+    const apiBase = economyToken
+        ? '/api/public/economy/' + encodeURIComponent(economyToken)
+        : portalToken
         ? '/api/public/portal/' + encodeURIComponent(portalToken)
         : '/api/public/estimates/' + encodeURIComponent(legacyToken);
 
-    // Where a section's sign / question / pdf endpoints live. The portal
-    // addresses them per estimate; the legacy link has exactly one estimate.
+    // Where a section's sign / question / pdf endpoints live. Both portal kinds address them
+    // per estimate; the legacy link has exactly one estimate.
     function sectionApi(estimateId) {
-        return portalToken
+        return (portalToken || economyToken)
             ? apiBase + '/estimates/' + encodeURIComponent(estimateId)
             : apiBase;
     }
@@ -466,9 +582,21 @@
     const moneyFormat = new Intl.NumberFormat('uk-UA', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
     const percentFormat = new Intl.NumberFormat('uk-UA', { maximumFractionDigits: 2 });
     const dateFormat = new Intl.DateTimeFormat('uk-UA', { dateStyle: 'medium' });
+    // Same shape as the app's own `estimateName()` fallback ("Кошторис від 18 листопада") — day +
+    // full month name, no year. An unnamed estimate must read identically everywhere it appears
+    // (Кошторис-tab list, Економіка panel, this page) rather than a different placeholder per spot.
+    const nameDateFormat = new Intl.DateTimeFormat('uk-UA', { day: 'numeric', month: 'long' });
+    // Payment dates read tighter — day + ABBREVIATED month, still no year ("11 серп."). A payment
+    // row has far less horizontal room than an estimate name band, so the full month name would
+    // force wrapping or truncation on a narrow phone.
+    const shortDateFormat = new Intl.DateTimeFormat('uk-UA', { day: 'numeric', month: 'short' });
+
+    function defaultEstimateName(est) {
+        return 'Кошторис від ' + nameDateFormat.format(new Date(est.createdAt));
+    }
 
     const UNIT_LABEL = {
-        M2: 'м²', M: 'м', LINEAR_METER: 'м.п.', PIECE: 'шт', KG: 'кг', HOUR: 'год', SET: 'компл'
+        M2: 'м²', M: 'м', LINEAR_METER: 'м.п.', PIECE: 'шт', KG: 'кг', HOUR: 'год', SET: 'компл', PERCENT: '%'
     };
 
     function money(value) {
@@ -595,112 +723,348 @@
         return `<div class="adjust">${parts.join(' · ')}</div>`;
     }
 
-    const PAYMENT_DOT_CLASS = { RECEIVED: 'received', PARTIAL: 'partial', OVERDUE: 'overdue', PLANNED: '' };
-
-    // Not a debt reminder — the condition for the NEXT stage of work. Same neutral framing the
-    // app uses: "оплатити до X, щоб почати Y", never "ви винні".
-    function paymentCondition(row) {
-        if (!row.dueDate && !row.nextStage) return '';
-        const date = row.dueDate ? dateFormat.format(new Date(row.dueDate)) : null;
-        if (date && row.nextStage) return `Оплатити до ${date}, щоб почати «${escapeHtml(row.nextStage)}»`;
-        if (date) return `Оплатити до ${date}`;
-        return `Щоб почати «${escapeHtml(row.nextStage)}»`;
+    // A TOTAL-kind (or frozen-consolidated) PERCENT line is already baked into its own type's
+    // subtotal (works/materials are summed by raw item type, percent line included) — so showing
+    // that subtotal next to «Разом» made the two look identical with no visible sign a discount
+    // ever applied. Backs the adjustment back OUT to get the pre-adjustment "base" figure instead,
+    // same math as the app's own TypeBreakdown (base + adjustment reconciles to the subtotal the
+    // total is built from). A POSITION/MANUAL percent line needs no such treatment — it already
+    // reads as an ordinary line with nothing to "explain away".
+    function typeBase(items, type, subtotal) {
+        const totalLines = (items || []).filter(i =>
+            i.type === type && i.unit === 'PERCENT' && (i.percentBaseKind || 'MANUAL') === 'TOTAL');
+        const adjust = totalLines.reduce((s, i) => s + Number(i.lineTotal || 0), 0);
+        const frozenLines = (items || []).filter(i => i.type === type && i.unit === 'PERCENT' && i.baseOriginLabel);
+        const frozenMarkup = frozenLines.filter(i => Number(i.lineTotal) > 0).reduce((s, i) => s + Number(i.lineTotal), 0);
+        const frozenDiscount = frozenLines.filter(i => Number(i.lineTotal) < 0).reduce((s, i) => s + Number(i.lineTotal), 0);
+        return Math.round((Number(subtotal || 0) - adjust - frozenMarkup - frozenDiscount) * 100) / 100;
     }
 
-    function renderPaymentRow(row) {
-        const dotClass = PAYMENT_DOT_CLASS[row.status] || '';
-        const amountText = row.received != null && Number(row.received) > 0
-            ? `${money(row.received)} з ${money(row.amount)}`
-            : money(row.amount);
+    // One line per shown estimate (name · Роботи · Матеріали · Разом, + a small discount/markup
+    // recap) plus a grand total — a quick top-of-page snapshot before the client scrolls into the
+    // full per-estimate detail. Built purely from fields the estimate sections already carry.
+    // Always shown, even for exactly one estimate (reverted 2026-08-14, per explicit instruction —
+    // this panel is the ONE place the estimate name and its totals live now; the redundant totals
+    // block that used to sit further down each per-estimate section is gone, see renderSection).
+    function renderSummary(estimates) {
+        if (!estimates || estimates.length === 0) return '';
+        const rows = estimates.map((e) => {
+            const title = e.name ? e.name : defaultEstimateName(e);
+            return `
+                <div class="summary-row">
+                    <p class="estimate-title">${escapeHtml(title)}</p>
+                    <div class="summary-figures">
+                        <span>Роботи: ${amount(typeBase(e.items, 'WORK', e.worksSubtotal))}</span>
+                        <span>Матеріали: ${amount(typeBase(e.items, 'MATERIAL', e.materialsSubtotal))}</span>
+                        <span class="summary-total">Разом: ${amount(e.total)}</span>
+                    </div>
+                    ${adjustNote(e.markupAmount, e.discountAmount, e.markupPercent, e.discountPercent)}
+                </div>`;
+        }).join('');
+        const grand = estimates.reduce((acc, e) => acc + Number(e.total || 0), 0);
         return `
-            <div class="payment-row">
-                <span class="payment-dot ${dotClass}"></span>
-                <div class="payment-body">
-                    <div class="payment-purpose">${escapeHtml(row.purpose)}</div>
-                    ${paymentCondition(row) ? `<div class="payment-condition">${paymentCondition(row)}</div>` : ''}
+            <section class="card">
+                <h2>Зведення</h2>
+                <div class="summary-list">${rows}</div>
+                <div class="totals" style="margin-top:10px">
+                    <div class="row grand"><span>Разом:</span><span>${money(grand)}</span></div>
                 </div>
-                <div class="payment-amount">${amountText}</div>
-            </div>
+            </section>
         `;
     }
 
-    // A payment with no matching planned stage ("Своє") — `card.received` above already sums it
-    // in, so without a row here the itemized list wouldn't add up to the total shown.
-    function renderUnplannedRow(row) {
+    const PAYMENT_DOT_CLASS = { RECEIVED: 'received', PARTIAL: 'partial', OVERDUE: 'overdue', PLANNED: '' };
+
+    // Session-only: the "✓ Отримано · N платежів" row starts collapsed on every load — it's the
+    // rarely-interesting half of the list (money already in). The >5-payment "show everything"
+    // toggle below is the one worth remembering across visits, via localStorage.
+    let receivedExpanded = false;
+    let lastPaymentsCard = null;
+
+    // Per-link, not per-device-global — a master's other objects must not inherit one client's
+    // "I expanded the full list" choice, and a private/incognito localStorage throw must not break
+    // the page (falls back to always-collapsed).
+    const expandStorageKey = 'majstr-portal-payments-expanded:' + (economyToken || portalToken || legacyToken || '');
+    function isAllExpanded() {
+        try { return localStorage.getItem(expandStorageKey) === '1'; } catch (e) { return false; }
+    }
+    function setAllExpanded(v) {
+        try { localStorage.setItem(expandStorageKey, v ? '1' : '0'); } catch (e) { /* ignore */ }
+    }
+
+    // Not a debt reminder — the condition for the NEXT stage of work, never "ви винні". Only used
+    // for upcoming (not-yet-fully-received) rows — a received row's own date carries no condition.
+    function upcomingCondition(row) {
+        if (!row.dueDate && !row.nextStage) return '';
+        const date = row.dueDate ? shortDateFormat.format(new Date(row.dueDate)) : null;
+        if (date && row.nextStage) return `до ${date} — почати ${escapeHtml(row.nextStage)}`;
+        if (date) return `до ${date}`;
+        return `щоб почати «${escapeHtml(row.nextStage)}»`;
+    }
+
+    function paymentsWord(n) {
+        const mod10 = n % 10, mod100 = n % 100;
+        if (mod10 === 1 && mod100 !== 11) return 'платіж';
+        if (mod10 >= 2 && mod10 <= 4 && (mod100 < 10 || mod100 >= 20)) return 'платежі';
+        return 'платежів';
+    }
+
+    // Splits the raw card into what the compact view actually needs: fully-RECEIVED stages plus
+    // every unplanned receipt (both just "money that already landed", so they merge into one
+    // group) vs. still-open stages (PARTIAL/PLANNED/OVERDUE), sorted by their due-date condition.
+    function groupPayments(card) {
+        const received = [];
+        const upcoming = [];
+        (card.payments || []).forEach((p) => {
+            if (p.status === 'RECEIVED') {
+                received.push({ label: p.purpose, amount: p.amount, date: p.lastReceivedAt });
+            } else {
+                upcoming.push(p);
+            }
+        });
+        (card.unplannedReceipts || []).forEach((r) => {
+            received.push({ label: r.label, amount: r.amount, date: r.receivedAt });
+        });
+        received.sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0));
+        upcoming.sort((a, b) => {
+            if (!a.dueDate && !b.dueDate) return 0;
+            if (!a.dueDate) return 1;
+            if (!b.dueDate) return -1;
+            return a.dueDate < b.dueDate ? -1 : 1;
+        });
+        return { received, upcoming };
+    }
+
+    function renderReceivedItemRow(item) {
         return `
             <div class="payment-row">
                 <span class="payment-dot received"></span>
-                <div class="payment-body">
-                    <div class="payment-purpose">${escapeHtml(row.label)}</div>
-                    <div class="payment-condition">${dateFormat.format(new Date(row.receivedAt))}</div>
-                </div>
-                <div class="payment-amount">${money(row.amount)}</div>
+                <div class="payment-label">${escapeHtml(item.label)}${item.date ? ` <span class="payment-date">· ${shortDateFormat.format(new Date(item.date))}</span>` : ''}</div>
+                <div class="payment-amount">${amount(item.amount)}</div>
             </div>
         `;
     }
 
-    // The payment strip: filled = received, empty = remaining. One horizontal bar — no legend,
-    // the caption spells out the split. Mobile-first: no charting library, no vertical axis.
+    // Collapsed by default (one row, tap to expand in place) — the individual receipts are
+    // history, not something a client needs to scan on every visit.
+    function renderReceivedSection(received, expanded) {
+        if (!received.length) return '';
+        const header = `
+            <button type="button" class="payment-collapsed" data-toggle-received="1">
+                <span class="payment-dot received"></span>
+                ✓ Отримано · ${received.length} ${paymentsWord(received.length)}
+                <span class="chev">${expanded ? '︿' : '⌄'}</span>
+            </button>
+        `;
+        return expanded ? header + received.map(renderReceivedItemRow).join('') : header;
+    }
+
+    function upcomingAmountText(row) {
+        return row.received != null && Number(row.received) > 0
+            ? `${amount(row.received)}/${amount(row.amount)}`
+            : money(row.amount);
+    }
+
+    function renderUpcomingRow(row) {
+        const dotClass = PAYMENT_DOT_CLASS[row.status] || '';
+        const cond = upcomingCondition(row);
+        return `
+            <div class="payment-row">
+                <span class="payment-dot ${dotClass}"></span>
+                <div class="payment-label">${escapeHtml(row.purpose)}${cond ? ` <span class="payment-date">· ${cond}</span>` : ''}</div>
+                <div class="payment-amount">${upcomingAmountText(row)}</div>
+            </div>
+        `;
+    }
+
+    // >5 payments: instead of the full list, one highlighted card for the nearest unpaid stage
+    // plus an "Усі платежі (N)" toggle that reveals the same 2+1 list the ≤5 case shows inline.
+    function renderNextCard(row) {
+        const dotClass = PAYMENT_DOT_CLASS[row.status] || '';
+        const cond = upcomingCondition(row);
+        return `
+            <p class="payment-next-label">Наступний платіж</p>
+            <div class="payment-next">
+                <span class="payment-dot ${dotClass}"></span>
+                <div class="payment-label">${escapeHtml(row.purpose)}${cond ? ` <span class="payment-date">· ${cond}</span>` : ''}</div>
+                <div class="payment-amount">${upcomingAmountText(row)}</div>
+            </div>
+        `;
+    }
+
+    // Compact mobile card: a thin progress bar + one-line header ("Отримано X з Y ₴ · Z%") with
+    // its own (i) explainer, then either a short "2+1" list (≤5 payments: one collapsed received
+    // row + one line per upcoming stage), an "Усе сплачено ✓" terminal state, or — past 5 — a
+    // single "next payment" card plus an expand toggle for the full list. No charting library.
     function renderPaymentsBody(card) {
         const total = Number(card.contractedTotal || 0);
         const received = Number(card.received || 0);
         const pct = total > 0 ? Math.min(100, Math.round((received / total) * 100)) : 0;
-        const rowsHtml = [
-            ...(card.payments || []).map(renderPaymentRow),
-            ...(card.unplannedReceipts || []).map(renderUnplannedRow),
-        ].join('');
-        const rows = rowsHtml ? `<div class="payments-list">${rowsHtml}</div>` : '';
-        return `
-            <div class="totals">
-                <div class="row"><span>Разом за договором:</span><span>${money(total)}</span></div>
-                <div class="row"><span>Отримано:</span><span>${money(received)}</span></div>
-                <div class="row grand"><span>Залишок:</span><span>${money(card.remaining)}</span></div>
+        const groups = groupPayments(card);
+        const count = groups.received.length + groups.upcoming.length;
+
+        let body;
+        if (count === 0) {
+            body = '';
+        } else if (groups.upcoming.length === 0) {
+            // "Усе сплачено" is a headline, never a replacement for the breakdown — a receipt
+            // survives its plan stage being deleted (kept as unplanned, by design) and one logged
+            // before an estimate had a contracted total to compare against is real money too. Hiding
+            // the list here read as "де ці гроші взялись?" the moment contractedTotal was 0 or
+            // otherwise didn't obviously explain the received figure (reported 2026-08-14).
+            body = `<p class="payment-all-done">Усе сплачено ✓</p>
+                <div class="payments-list">${renderReceivedSection(groups.received, receivedExpanded)}</div>`;
+        } else if (count <= 5) {
+            body = `<div class="payments-list">
+                ${renderReceivedSection(groups.received, receivedExpanded)}
+                ${groups.upcoming.map(renderUpcomingRow).join('')}
+            </div>`;
+        } else if (!isAllExpanded()) {
+            body = `
+                ${renderNextCard(groups.upcoming[0])}
+                <button type="button" class="payment-expand-toggle" data-expand-payments="1">Усі платежі (${count}) ⌄</button>
+            `;
+        } else {
+            body = `<div class="payments-list">
+                ${renderReceivedSection(groups.received, receivedExpanded)}
+                ${groups.upcoming.map(renderUpcomingRow).join('')}
             </div>
-            <div class="paybar"><div class="paybar-fill" style="width:${pct}%"></div></div>
+            <button type="button" class="payment-expand-toggle" data-expand-payments="0">Згорнути ︿</button>`;
+        }
+
+        return `
             <p class="paybar-label">
-                ${money(received)} з ${money(total)} · ${pct}%
-                <button type="button" class="info-trigger" data-info="Оплатити до вказаної дати, щоб майстер почав наступний етап робіт." aria-label="Пояснення">i</button>
+                Отримано ${amount(received)} з ${amount(total)} ₴ · ${pct}%
+                <button type="button" class="info-trigger" data-info="payments" aria-label="Пояснення">i</button>
             </p>
-            ${rows}
+            <div class="paybar"><div class="paybar-fill" style="width:${pct}%"></div></div>
+            ${body}
         `;
     }
 
-    // One estimate → one section: name band (multi-estimate portals), items,
-    // totals, terms and its own sign / PDF / question actions. `paymentsCard`, when given,
-    // is the SINGLE-estimate case — the object's payments join the same totals block rather
-    // than getting a separate top-level card (there's only one estimate to relate them to).
-    function renderSection(est, index, showTitle, paymentsCard) {
+    function refreshPaymentsBody() {
+        const el = document.getElementById('paymentsBody');
+        if (el && lastPaymentsCard) el.innerHTML = renderPaymentsBody(lastPaymentsCard);
+    }
+
+    // The one curated (i)-explainer this page has: what the aggregate header LINE means — how much
+    // of the total contracted sum has actually been received. Deliberately does NOT talk about "the
+    // next payment / due date" — that's already spelled out per-row in the list below it, in plain
+    // text, so repeating it here would just be noise next to the wrong metric.
+    const INFO_TEXTS = {
+        payments: 'Скільки клієнт уже реально сплатив із суми за договором.',
+    };
+
+    let infoPanelEl = null;
+
+    function closeInfoPopover() {
+        if (infoPanelEl) { infoPanelEl.remove(); infoPanelEl = null; }
+        window.removeEventListener('scroll', closeInfoPopover, true);
+    }
+
+    // No full-viewport scrim — a real element there (even fully transparent) sits between the
+    // cursor and everything else on the page for as long as the popover is open, which is exactly
+    // what a one-line tooltip must never do. Dismiss-on-outside-click instead: the delegated click
+    // handler below closes it whenever a click lands outside the panel itself. Caught 2026-08-14
+    // from a live report ("fine while the mouse stays over the tooltip, breaks the moment it
+    // leaves") — the scrim, not any content change, was the cause all along.
+    function openInfoPopover(trigger, text) {
+        closeInfoPopover();
+        const panel = document.createElement('div');
+        panel.className = 'info-panel';
+        panel.innerHTML = `${escapeHtml(text)}<button type="button" class="info-panel-close" aria-label="Закрити">✕</button>`;
+        panel.querySelector('.info-panel-close').addEventListener('click', closeInfoPopover);
+        document.body.appendChild(panel);
+        infoPanelEl = panel;
+
+        // Positioned once at open time under the trigger, then simply dismissed on scroll instead
+        // of continuously re-tracked — the trigger sits inside a page that can scroll under a
+        // position:fixed panel, and closing beats a stale/drifting position.
+        const rect = trigger.getBoundingClientRect();
+        const panelRect = panel.getBoundingClientRect();
+        let left = rect.left;
+        if (left + panelRect.width > window.innerWidth - 16) left = window.innerWidth - panelRect.width - 16;
+        if (left < 16) left = 16;
+        let top = rect.bottom + 8;
+        if (top + panelRect.height > window.innerHeight - 16) top = rect.top - panelRect.height - 8;
+        panel.style.left = left + 'px';
+        panel.style.top = Math.max(16, top) + 'px';
+
+        window.addEventListener('scroll', closeInfoPopover, true);
+    }
+
+    document.addEventListener('click', (e) => {
+        const infoTrigger = e.target.closest('[data-info]');
+        if (infoTrigger) {
+            const key = infoTrigger.getAttribute('data-info');
+            openInfoPopover(infoTrigger, INFO_TEXTS[key] || '');
+            return;
+        }
+        // Dismiss on any click outside the popover itself — the scrim used to do this instead.
+        if (infoPanelEl && !infoPanelEl.contains(e.target)) {
+            closeInfoPopover();
+        }
+        const toggleReceived = e.target.closest('[data-toggle-received]');
+        if (toggleReceived) {
+            receivedExpanded = !receivedExpanded;
+            refreshPaymentsBody();
+            return;
+        }
+        const expandToggle = e.target.closest('[data-expand-payments]');
+        if (expandToggle) {
+            setAllExpanded(expandToggle.getAttribute('data-expand-payments') === '1');
+            refreshPaymentsBody();
+        }
+    });
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') closeInfoPopover();
+    });
+
+    // One estimate → one section: name band (ALWAYS shown — 2026-08-14, per explicit instruction;
+    // previously suppressed for a single unnamed estimate, which made the estimate's identity
+    // disappear from the page entirely), items, an OPTIONAL totals block (see `showTotals` below),
+    // terms and its own sign / PDF / question actions. Payments (ECONOMY only) render as their own
+    // standalone top-level card via render() now, right after Зведення — never folded into a single
+    // estimate's own card, so the money view stays in one place regardless of how many acts are shown.
+    //
+    // `showTotals` (true only when the portal has 2+ estimates — see render()): for a single
+    // estimate, Зведення at the top already carries works/materials/total/discount and repeating it
+    // here would just be the exact same figures twice. With several estimates, though, a client
+    // scrolling through a long multi-estimate page has long lost sight of Зведення by the time they
+    // reach any one estimate's item tables — restored per explicit instruction, 2026-08-14.
+    function renderSection(est, showTotals) {
         const signed = est.signature != null;
         const signedBanner = signed
             ? `<p class="signed">✓ Підписано клієнтом ${est.signature.signerName ? '(' + escapeHtml(est.signature.signerName) + ')' : ''} ${dateFormat.format(new Date(est.signature.signedAt))}</p>`
             : '';
-        const title = est.name ? est.name : 'Кошторис ' + (index + 1);
+        const title = est.name ? est.name : defaultEstimateName(est);
         const api = sectionApi(est.id);
 
         return `
             <div class="estimate-section">
-                ${showTitle ? `<p class="estimate-title">${escapeHtml(title)}</p>` : ''}
+                <p class="estimate-title">${escapeHtml(title)}</p>
                 ${est.validUntil ? `<p style="margin:4px 0 10px;color:var(--muted);">Дійсний до ${dateFormat.format(new Date(est.validUntil))}</p>` : ''}
 
                 ${renderItems(est.items, 'WORK')}
                 ${renderItems(est.items, 'MATERIAL')}
 
+                ${showTotals ? `
                 <section class="card">
                     <div class="totals">
-                        <div class="row"><span>Сума робіт:</span><span>${money(est.worksSubtotal)}</span></div>
-                        <div class="row"><span>Сума матеріалів:</span><span>${money(est.materialsSubtotal)}</span></div>
+                        <div class="row"><span>Сума робіт:</span><span>${money(typeBase(est.items, 'WORK', est.worksSubtotal))}</span></div>
+                        <div class="row"><span>Сума матеріалів:</span><span>${money(typeBase(est.items, 'MATERIAL', est.materialsSubtotal))}</span></div>
                         <div class="row grand"><span>РАЗОМ:</span><span>${money(est.total)}</span></div>
                     </div>
                     ${adjustNote(est.markupAmount, est.discountAmount, est.markupPercent, est.discountPercent)}
-                    ${paymentsCard ? `<div style="margin-top:14px;padding-top:14px;border-top:1px solid var(--line)">${renderPaymentsBody(paymentsCard)}</div>` : ''}
                 </section>
+                ` : ''}
 
                 ${est.notes ? `<section class="card"><h2>Умови</h2><p>${escapeHtml(est.notes)}</p></section>` : ''}
 
                 <section class="card">
                     ${signedBanner}
                     <div class="actions">
-                        <button class="primary" data-sign="${escapeHtml(est.id ?? '')}" data-title="${escapeHtml(title)}" ${signed ? 'disabled' : ''}>Підписати</button>
+                        ${isEconomy ? '' : `<button class="primary" data-sign="${escapeHtml(est.id ?? '')}" data-title="${escapeHtml(title)}" ${signed ? 'disabled' : ''}>Підписати</button>`}
                         <a class="btn" href="${api}/pdf">Завантажити PDF</a>
                         <button data-ask="${escapeHtml(est.id ?? '')}" data-title="${escapeHtml(title)}">Задати питання</button>
                     </div>
@@ -710,15 +1074,19 @@
     }
 
     function render(data) {
-        // Section name bands only when there is something to tell apart
-        // (a multi-estimate portal, or an estimate the master named).
-        const showTitles = data.estimates.length > 1 || data.estimates.some(e => e.name);
-        // ≥2 shown estimates → a standalone payments card, one level up (there's no single
-        // estimate to fold it into); exactly 1 → passed into that section instead (see
-        // renderSection's paymentsCard param). Either way it's the SAME toggle/data — data.payments
-        // is simply absent (not just empty) when the master hasn't turned the card on.
-        const standalonePayments = data.payments && data.estimates.length >= 2;
-        const inlinePayments = data.payments && data.estimates.length === 1 ? data.payments : null;
+        // The info popup lives outside #root (appended straight to document.body, so it can sit
+        // position:fixed above everything) — a full re-render here does NOT remove it on its own.
+        // Without this, an open popup survives into whatever replaces the page next (e.g. the
+        // load() re-fetch after signing), orphaned and floating over content it no longer explains
+        // — reported 2026-08-14 as "the whole page went blank except the popup" after the
+        // underlying reload landed on a since-invalidated link.
+        closeInfoPopover();
+        // Kept so a received/expand-toggle tap can re-render just this card's body in place
+        // (refreshPaymentsBody) without a full reload — toggling is a pure UI state change.
+        lastPaymentsCard = data.payments || null;
+        // Per-section totals block is only worth repeating when there's more than one estimate to
+        // scroll past — see renderSection's own comment for why.
+        const showSectionTotals = data.estimates.length > 1;
 
         root.innerHTML = `
             <header class="card contractor">
@@ -736,10 +1104,12 @@
                 ${data.project.clientName ? `<p style="margin:4px 0;">Клієнт: ${escapeHtml(data.project.clientName)}</p>` : ''}
             </section>
 
-            ${standalonePayments ? `<section class="card"><h2>Платежі</h2>${renderPaymentsBody(data.payments)}</section>` : ''}
+            ${renderSummary(data.estimates)}
+
+            ${data.payments ? `<section class="card"><h2>Платежі</h2><div id="paymentsBody">${renderPaymentsBody(data.payments)}</div></section>` : ''}
 
             ${data.estimates.length
-                ? data.estimates.map((e, i) => renderSection(e, i, showTitles, inlinePayments)).join('')
+                ? data.estimates.map((e) => renderSection(e, showSectionTotals)).join('')
                 : '<section class="card"><p style="text-align:center;color:var(--muted);">Майстер ще не додав кошторисів на портал.</p></section>'}
 
             ${renderPhotos(data.sharedPhotos)}
@@ -751,16 +1121,14 @@
             if (b.disabled) return;
             b.addEventListener('click', () => {
                 dialogTarget = b.getAttribute('data-sign') || null;
-                document.querySelector('#signDialog h3').textContent =
-                    showTitles ? 'Підписати: ' + b.getAttribute('data-title') : 'Підписати кошторис';
+                document.querySelector('#signDialog h3').textContent = 'Підписати: ' + b.getAttribute('data-title');
                 openDialog('signDialog');
             });
         });
         root.querySelectorAll('[data-ask]').forEach(b => {
             b.addEventListener('click', () => {
                 dialogTarget = b.getAttribute('data-ask') || null;
-                document.querySelector('#questionDialog h3').textContent =
-                    showTitles ? 'Питання: ' + b.getAttribute('data-title') : 'Задати питання';
+                document.querySelector('#questionDialog h3').textContent = 'Питання: ' + b.getAttribute('data-title');
                 openDialog('questionDialog');
             });
         });
@@ -792,6 +1160,9 @@
     // a blank screen or a raw error. Retryable failures get a retry button;
     // a dead link tells the client to ask the contractor for a fresh one.
     function showError(message, canRetry) {
+        // Same reasoning as render() — an open info popup is appended outside #root and must not
+        // survive into the error state it no longer has anything to do with.
+        closeInfoPopover();
         root.innerHTML = `
             <div class="card">
                 <div class="error">${escapeHtml(message)}</div>
@@ -891,68 +1262,6 @@
         };
     }
 
-    // One curated (i)-popover, delegated (triggers are re-rendered on every load(), so a listener
-    // bound once up front — rather than re-wired per render — is the simpler correct choice).
-    // Closes on: a tap on the scrim, Esc, or the ✕ inside the panel — same three ways the app's own
-    // InfoPopover component closes.
-    let openInfoPanel = null;
-
-    function closeInfoPopover() {
-        if (!openInfoPanel) return;
-        openInfoPanel.remove();
-        openInfoPanel = null;
-    }
-
-    function openInfoPopover(trigger) {
-        closeInfoPopover();
-        const scrim = document.createElement('button');
-        scrim.type = 'button';
-        scrim.className = 'info-scrim';
-        scrim.setAttribute('aria-label', 'Закрити');
-        scrim.addEventListener('click', closeInfoPopover);
-
-        const panel = document.createElement('div');
-        panel.className = 'info-panel';
-        panel.setAttribute('role', 'dialog');
-        panel.textContent = trigger.dataset.info;
-        const close = document.createElement('button');
-        close.type = 'button';
-        close.className = 'info-panel-close';
-        close.setAttribute('aria-label', 'Закрити');
-        close.textContent = '✕';
-        close.addEventListener('click', closeInfoPopover);
-        panel.appendChild(close);
-
-        document.body.appendChild(scrim);
-        document.body.appendChild(panel);
-        // Both tracked as one unit so a single closeInfoPopover() call removes the pair.
-        openInfoPanel = { remove: () => { scrim.remove(); panel.remove(); } };
-
-        // Positioned after insertion so panel.getBoundingClientRect() reflects real content size —
-        // clamped the same way the app's InfoPopover is, so it can't run off a 375px screen.
-        const button = trigger.getBoundingClientRect();
-        const rect = panel.getBoundingClientRect();
-        const margin = 8;
-        const maxWidth = Math.min(320, window.innerWidth - margin * 2);
-        panel.style.maxWidth = maxWidth + 'px';
-        const left = Math.min(Math.max(margin, button.left), window.innerWidth - maxWidth - margin);
-        const below = button.bottom + 6;
-        const dropUp = below + rect.height > window.innerHeight - margin;
-        panel.style.left = left + 'px';
-        panel.style.top = (dropUp ? Math.max(margin, button.top - 6 - rect.height) : below) + 'px';
-    }
-
-    document.addEventListener('click', (e) => {
-        const trigger = e.target.closest('.info-trigger');
-        if (trigger) {
-            e.preventDefault();
-            openInfoPopover(trigger);
-        }
-    });
-    document.addEventListener('keydown', (e) => {
-        if (e.key === 'Escape') closeInfoPopover();
-    });
-
     async function load() {
         try {
             const resp = await fetch(apiBase);
@@ -965,7 +1274,7 @@
                 return;
             }
             const data = await resp.json();
-            render(portalToken ? data : adaptLegacy(data));
+            render((portalToken || economyToken) ? data : adaptLegacy(data));
         } catch (e) {
             showError('Не вдалося завантажити кошторис. Перевірте інтернет-з\'єднання і спробуйте ще раз.', true);
         }

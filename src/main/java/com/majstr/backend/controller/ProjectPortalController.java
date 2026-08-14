@@ -1,5 +1,6 @@
 package com.majstr.backend.controller;
 
+import com.majstr.backend.dto.EconomyUpdateRequest;
 import com.majstr.backend.dto.PortalStateResponse;
 import com.majstr.backend.dto.PortalUpdateRequest;
 import com.majstr.backend.security.UserPrincipal;
@@ -34,19 +35,41 @@ public class ProjectPortalController {
         return portalService.state(projectId, principal.id());
     }
 
-    @Operation(summary = "Publish the portal: set the visible estimates, mint/reuse the link")
+    @Operation(summary = "Publish the SIGNATURE portal: set the visible estimates, mint/reuse the link")
     @PutMapping
     public PortalStateResponse update(@PathVariable UUID projectId,
                                       @Valid @RequestBody PortalUpdateRequest req,
                                       @AuthenticationPrincipal UserPrincipal principal) {
-        return portalService.update(projectId, req.estimateIds(),
-                Boolean.TRUE.equals(req.paymentsVisible()), principal.id());
+        return portalService.update(projectId, req.estimateIds(), principal.id());
     }
 
-    @Operation(summary = "Email the portal link to the object's client")
+    @Operation(summary = "Email the SIGNATURE portal link to the object's client")
     @PostMapping("/send-email")
     public PortalStateResponse sendEmail(@PathVariable UUID projectId,
                                          @AuthenticationPrincipal UserPrincipal principal) {
         return portalService.sendEmail(projectId, principal.id());
+    }
+
+    @Operation(summary = "Current ECONOMY portal state: share URL (if published) + per-estimate visibility")
+    @GetMapping("/economy")
+    public PortalStateResponse economyState(@PathVariable UUID projectId,
+                                            @AuthenticationPrincipal UserPrincipal principal) {
+        return portalService.economyState(projectId, principal.id());
+    }
+
+    @Operation(summary = "Publish the ECONOMY portal: set the visible SIGNED estimates + payments toggle, mint/reuse the link")
+    @PutMapping("/economy")
+    public PortalStateResponse updateEconomy(@PathVariable UUID projectId,
+                                             @Valid @RequestBody EconomyUpdateRequest req,
+                                             @AuthenticationPrincipal UserPrincipal principal) {
+        return portalService.updateEconomy(projectId, req.estimateIds(),
+                Boolean.TRUE.equals(req.paymentsVisible()), principal.id());
+    }
+
+    @Operation(summary = "Email the ECONOMY portal link to the object's client")
+    @PostMapping("/economy/send-email")
+    public PortalStateResponse sendEconomyEmail(@PathVariable UUID projectId,
+                                                @AuthenticationPrincipal UserPrincipal principal) {
+        return portalService.sendEconomyEmail(projectId, principal.id());
     }
 }

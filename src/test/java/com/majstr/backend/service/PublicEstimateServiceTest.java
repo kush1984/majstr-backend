@@ -110,6 +110,26 @@ class PublicEstimateServiceTest {
     }
 
     @Test
+    void view_exposesPercentBaseKindOnlyForPercentLines_forTheClientPageToBackTheAdjustmentOut() {
+        // The page needs to tell a TOTAL-kind percent line (already baked into its type's
+        // subtotal — back it out to show a pre-adjustment "base" figure) from an ordinary line
+        // (nothing to back out). A non-percent line must not carry a stray percentBaseKind.
+        Estimate estimate = sampleEstimate();
+        given(shareLinkRepository.findByToken(token)).willReturn(Optional.of(usableLink(estimate)));
+        given(itemRepository.findByEstimateIdOrderBySortOrderAscIdAsc(estimate.getId())).willReturn(List.of(
+                workItem(estimate),
+                totalPercentItem(estimate, "-15.00", "-688.50")));
+
+        PublicEstimateView view = publicService.view(token);
+
+        var ordinary = view.items().stream().filter(i -> i.unit() != Unit.PERCENT).findFirst().orElseThrow();
+        var percent = view.items().stream().filter(i -> i.unit() == Unit.PERCENT).findFirst().orElseThrow();
+        assertThat(ordinary.percentBaseKind()).isNull();
+        assertThat(percent.percentBaseKind()).isEqualTo(PercentBaseKind.TOTAL);
+        assertThat(percent.baseOriginLabel()).isNull(); // not a frozen/consolidated line
+    }
+
+    @Test
     void view_namesAPercentWhenExactlyOneLiveTotalLineExplainsIt() {
         // Mirrors TypeBreakdown's own rule (EstimateEditorPage.tsx): a % is shown only when a single
         // live TOTAL-kind line accounts for the whole markup/discount figure.
@@ -359,74 +379,198 @@ class PublicEstimateServiceTest {
 
         PublicPortalView view = publicService.viewPortal(token);
 
+        assertThat(view.mode()).isEqualTo(PublicPortalView.Mode.SIGNATURE);
         assertThat(view.estimates()).hasSize(2);
         assertThat(view.estimates().get(0).name()).isEqualTo("Економ");
         assertThat(view.estimates().get(0).total()).isEqualByComparingTo("4590.00");
         assertThat(view.estimates().get(1).name()).isEqualTo("Преміум");
         assertThat(view.estimates().get(1).total()).isEqualByComparingTo("2220.00");
         assertThat(view.contractor().companyName()).isEqualTo("Іван-Електрик ФОП");
+        assertThat(view.payments()).isNull(); // SIGNATURE never has a payments card
+    }
+
+    @Test
+    void viewPortal_stillRendersASignedEstimate_soTheJustSignedConfirmationBannerCanShow() {
+        // Regression guard: viewPortal must NOT filter by status. signPortal returns this exact
+        // view immediately after signing (see signPortal_signsAVisibleEstimateOfTheTokensProject)
+        // — the client needs to see their own estimate re-render with the «✓ Підписано» banner,
+        // not vanish. Cleanup of a genuinely STALE portalVisible flag (signed a while ago,
+        // unrelated to this request) belongs to ProjectPortalService.state's masking instead,
+        // which is what the share-sheet's ticked-set — and so every future re-publish — reads.
+        Estimate signed = sampleEstimate();
+        signed.setStatus(EstimateStatus.SIGNED);
+        signed.setPortalVisible(true);
+        given(projectShareLinkRepository.findByTokenAndKind(token, ShareLinkKind.PORTAL))
+                .willReturn(Optional.of(usablePortalLink(signed.getProject())));
+        given(estimateRepository.findByProjectIdAndPortalVisibleTrueOrderByCreatedAtAsc(signed.getProject().getId()))
+                .willReturn(List.of(signed));
+        given(itemRepository.findByEstimateIdOrderBySortOrderAscIdAsc(signed.getId()))
+                .willReturn(List.of(workItem(signed)));
+
+        PublicPortalView view = publicService.viewPortal(token);
+
+        assertThat(view.estimates()).hasSize(1);
+    }
+
+    @Test
+    void viewPortal_neverBuildsAPaymentsCard_evenIfTheLinkTogglesPaymentsVisible() {
+        // payments_visible is an ECONOMY-only concept now — a stale/legacy true value on a
+        // PORTAL link must never leak a payments card into the signing portal.
+        Estimate shared = sampleEstimate();
+        ProjectShareLink link = ProjectShareLink.builder()
+                .id(UUID.randomUUID()).project(shared.getProject()).token(token)
+                .createdAt(Instant.now()).revoked(false).paymentsVisible(true).build();
+        given(projectShareLinkRepository.findByTokenAndKind(token, ShareLinkKind.PORTAL))
+                .willReturn(Optional.of(link));
+        given(estimateRepository.findByProjectIdAndPortalVisibleTrueOrderByCreatedAtAsc(shared.getProject().getId()))
+                .willReturn(List.of(shared));
+        given(itemRepository.findByEstimateIdOrderBySortOrderAscIdAsc(shared.getId()))
+                .willReturn(List.of(workItem(shared)));
+
+        PublicPortalView view = publicService.viewPortal(token);
+
+        assertThat(view.payments()).isNull();
+        verify(projectPaymentRepository, never()).findByProjectIdOrderBySortOrderAscIdAsc(any());
+    }
+
+    @Test
+    void viewEconomyPortal_rendersOnlySignedActs_withSignatureModeAndPaymentsCardHidden() {
+        Estimate act = economyEstimate();
+        act.setName("Підписаний акт");
+        given(projectShareLinkRepository.findByTokenAndKind(token, ShareLinkKind.ECONOMY))
+                .willReturn(Optional.of(usableEconomyLink(act.getProject())));
+        given(estimateRepository.findByProjectIdAndEconomyVisibleTrueOrderByCreatedAtAsc(act.getProject().getId()))
+                .willReturn(List.of(act));
+        given(itemRepository.findByEstimateIdOrderBySortOrderAscIdAsc(act.getId()))
+                .willReturn(List.of(workItem(act)));
+
+        PublicPortalView view = publicService.viewEconomyPortal(token);
+
+        assertThat(view.mode()).isEqualTo(PublicPortalView.Mode.ECONOMY);
+        assertThat(view.estimates()).hasSize(1);
+        assertThat(view.estimates().get(0).name()).isEqualTo("Підписаний акт");
         assertThat(view.payments()).isNull(); // toggle off by default
     }
 
     @Test
-    void viewPortal_paymentsVisible_cardSumsOnlySharedEstimates_neverAllOfTheMasters() {
-        // Isolation: the object may have OTHER (private, unshared) counted estimates — the
-        // portal's contractedTotal must sum only what THIS client is actually shown.
-        Estimate shared = sampleEstimate();
-        shared.setName("Економ");
-        ProjectShareLink link = ProjectShareLink.builder()
-                .id(UUID.randomUUID()).project(shared.getProject()).token(token)
-                .createdAt(Instant.now()).revoked(false).paymentsVisible(true).build();
-        given(projectShareLinkRepository.findByTokenAndKind(token, ShareLinkKind.PORTAL))
-                .willReturn(Optional.of(link));
-        given(estimateRepository.findByProjectIdAndPortalVisibleTrueOrderByCreatedAtAsc(shared.getProject().getId()))
-                .willReturn(List.of(shared));
-        given(itemRepository.findByEstimateIdOrderBySortOrderAscIdAsc(shared.getId()))
-                .willReturn(List.of(workItem(shared)));
-        given(projectPaymentRepository.findByProjectIdOrderBySortOrderAscIdAsc(shared.getProject().getId()))
-                .willReturn(List.of());
-        given(paymentReceiptRepository.sumByProjectId(shared.getProject().getId()))
-                .willReturn(new BigDecimal("1000.00"));
+    void viewEconomyPortal_excludesAnActWhoseFlagOutlivedItsSignedStatus() {
+        // Defense-in-depth: economyVisible can outlive SIGNED (auto-reopen on a superseding
+        // duplicate flips status back to DRAFT without clearing the flag) — the ECONOMY portal
+        // must never show an unsettled draft just because the flag is still set.
+        Estimate reopened = economyEstimate();
+        reopened.setStatus(EstimateStatus.DRAFT);
+        given(projectShareLinkRepository.findByTokenAndKind(token, ShareLinkKind.ECONOMY))
+                .willReturn(Optional.of(usableEconomyLink(reopened.getProject())));
+        given(estimateRepository.findByProjectIdAndEconomyVisibleTrueOrderByCreatedAtAsc(reopened.getProject().getId()))
+                .willReturn(List.of(reopened));
 
-        PublicPortalView view = publicService.viewPortal(token);
+        PublicPortalView view = publicService.viewEconomyPortal(token);
 
-        assertThat(view.payments()).isNotNull();
-        assertThat(view.payments().contractedTotal()).isEqualByComparingTo("4590.00"); // shared estimate only
-        assertThat(view.payments().received()).isEqualByComparingTo("1000.00");
-        assertThat(view.payments().remaining()).isEqualByComparingTo("3590.00");
-        assertThat(view.payments().unplannedReceipts()).isEmpty();
+        assertThat(view.estimates()).isEmpty();
     }
 
     @Test
-    void viewPortal_anUnplannedReceipt_appearsAsItsOwnLineItem() {
-        // Regression: `received` already includes unplanned receipts (no matching plan stage),
-        // but without their own row the client sees a total the itemized rows don't add up to.
-        Estimate shared = sampleEstimate();
+    void viewEconomyPortal_paymentsVisible_cardSumsOnlySharedActs_neverAllOfTheMasters() {
+        // Isolation: the object may have OTHER (private, unshared) counted estimates — the
+        // portal's contractedTotal must sum only what THIS client is actually shown.
+        Estimate shared = economyEstimate();
         shared.setName("Економ");
         ProjectShareLink link = ProjectShareLink.builder()
                 .id(UUID.randomUUID()).project(shared.getProject()).token(token)
                 .createdAt(Instant.now()).revoked(false).paymentsVisible(true).build();
-        given(projectShareLinkRepository.findByTokenAndKind(token, ShareLinkKind.PORTAL))
+        com.majstr.backend.entity.ProjectPayment stage = com.majstr.backend.entity.ProjectPayment.builder()
+                .id(UUID.randomUUID()).project(shared.getProject()).purpose("Аванс")
+                .amount(new BigDecimal("1000.00")).sortOrder(0).build();
+        given(projectShareLinkRepository.findByTokenAndKind(token, ShareLinkKind.ECONOMY))
                 .willReturn(Optional.of(link));
-        given(estimateRepository.findByProjectIdAndPortalVisibleTrueOrderByCreatedAtAsc(shared.getProject().getId()))
+        given(estimateRepository.findByProjectIdAndEconomyVisibleTrueOrderByCreatedAtAsc(shared.getProject().getId()))
+                .willReturn(List.of(shared));
+        given(itemRepository.findByEstimateIdOrderBySortOrderAscIdAsc(shared.getId()))
+                .willReturn(List.of(workItem(shared)));
+        given(projectPaymentRepository.findByProjectIdOrderBySortOrderAscIdAsc(shared.getProject().getId()))
+                .willReturn(List.of(stage));
+        given(paymentReceiptRepository.findByProjectIdOrderByReceivedAtAscCreatedAtAsc(shared.getProject().getId()))
+                .willReturn(List.of(com.majstr.backend.entity.PaymentReceipt.builder()
+                        .id(UUID.randomUUID()).project(shared.getProject()).planPayment(stage)
+                        .amount(new BigDecimal("1000.00")).receivedAt(java.time.LocalDate.now())
+                        .build()));
+
+        PublicPortalView view = publicService.viewEconomyPortal(token);
+
+        assertThat(view.payments()).isNotNull();
+        assertThat(view.payments().contractedTotal()).isEqualByComparingTo("4590.00"); // shared act only
+        assertThat(view.payments().received()).isEqualByComparingTo("1000.00");
+        assertThat(view.payments().remaining()).isEqualByComparingTo("3590.00");
+        assertThat(view.payments().unplannedReceipts()).isEmpty();
+        assertThat(view.payments().payments()).hasSize(1);
+        assertThat(view.payments().payments().get(0).received()).isEqualByComparingTo("1000.00");
+    }
+
+    @Test
+    void viewEconomyPortal_anUnplannedReceipt_appearsAsItsOwnLineItem() {
+        // Regression: `received` already includes unplanned receipts (no matching plan stage),
+        // but without their own row the client sees a total the itemized rows don't add up to.
+        Estimate shared = economyEstimate();
+        shared.setName("Економ");
+        ProjectShareLink link = ProjectShareLink.builder()
+                .id(UUID.randomUUID()).project(shared.getProject()).token(token)
+                .createdAt(Instant.now()).revoked(false).paymentsVisible(true).build();
+        given(projectShareLinkRepository.findByTokenAndKind(token, ShareLinkKind.ECONOMY))
+                .willReturn(Optional.of(link));
+        given(estimateRepository.findByProjectIdAndEconomyVisibleTrueOrderByCreatedAtAsc(shared.getProject().getId()))
                 .willReturn(List.of(shared));
         given(itemRepository.findByEstimateIdOrderBySortOrderAscIdAsc(shared.getId()))
                 .willReturn(List.of(workItem(shared)));
         given(projectPaymentRepository.findByProjectIdOrderBySortOrderAscIdAsc(shared.getProject().getId()))
                 .willReturn(List.of());
-        given(paymentReceiptRepository.sumByProjectId(shared.getProject().getId()))
-                .willReturn(new BigDecimal("2700.00"));
         given(paymentReceiptRepository.findByProjectIdOrderByReceivedAtAscCreatedAtAsc(shared.getProject().getId()))
                 .willReturn(List.of(com.majstr.backend.entity.PaymentReceipt.builder()
                         .id(UUID.randomUUID()).project(shared.getProject())
                         .amount(new BigDecimal("2700.00")).receivedAt(java.time.LocalDate.now())
                         .label("Частково за матеріали").build()));
 
-        PublicPortalView view = publicService.viewPortal(token);
+        PublicPortalView view = publicService.viewEconomyPortal(token);
 
         assertThat(view.payments().unplannedReceipts()).hasSize(1);
         assertThat(view.payments().unplannedReceipts().get(0).label()).isEqualTo("Частково за матеріали");
         assertThat(view.payments().unplannedReceipts().get(0).amount()).isEqualByComparingTo("2700.00");
+    }
+
+    @Test
+    void askEconomyQuestion_rejectsAnActHiddenFromEconomy() {
+        Estimate estimate = economyEstimate();
+        estimate.setEconomyVisible(false);
+        given(projectShareLinkRepository.findByTokenAndKind(token, ShareLinkKind.ECONOMY))
+                .willReturn(Optional.of(usableEconomyLink(estimate.getProject())));
+        given(estimateRepository.findById(estimate.getId())).willReturn(Optional.of(estimate));
+
+        assertThatThrownBy(() -> publicService.askEconomyQuestion(
+                token, estimate.getId(), new QuestionRequest("Олена", null, "Питання"), "203.0.113.42"))
+                .isInstanceOf(ResourceNotFoundException.class);
+    }
+
+    @Test
+    void askEconomyQuestion_persistsAQuestionAboutAVisibleSignedAct() {
+        Estimate estimate = economyEstimate();
+        estimate.setName("Економ");
+        given(projectShareLinkRepository.findByTokenAndKind(token, ShareLinkKind.ECONOMY))
+                .willReturn(Optional.of(usableEconomyLink(estimate.getProject())));
+        given(estimateRepository.findById(estimate.getId())).willReturn(Optional.of(estimate));
+        given(messageRepository.save(any(ProjectMessage.class))).willAnswer(inv -> {
+            ProjectMessage q = inv.getArgument(0);
+            q.setId(UUID.randomUUID());
+            q.setCreatedAt(Instant.now());
+            return q;
+        });
+
+        publicService.askEconomyQuestion(token, estimate.getId(),
+                new QuestionRequest("Олена", null, "Скільки триватиме?"), "203.0.113.42");
+
+        verify(pushService).sendToUser(
+                eq(estimate.getProject().getOwner()),
+                eq("Нове питання від клієнта"),
+                eq("«Економ»: Скільки триватиме?"),
+                contains("/projects/"));
     }
 
     @Test
@@ -511,6 +655,25 @@ class PublicEstimateServiceTest {
                 .createdAt(Instant.now())
                 .revoked(false)
                 .build();
+    }
+
+    private ProjectShareLink usableEconomyLink(Project project) {
+        return ProjectShareLink.builder()
+                .id(UUID.randomUUID())
+                .project(project)
+                .token(token)
+                .kind(ShareLinkKind.ECONOMY)
+                .createdAt(Instant.now())
+                .revoked(false)
+                .build();
+    }
+
+    /** A SIGNED, economy-visible act — the only shape the ECONOMY portal ever shows. */
+    private Estimate economyEstimate() {
+        Estimate estimate = sampleEstimate();
+        estimate.setStatus(EstimateStatus.SIGNED);
+        estimate.setEconomyVisible(true);
+        return estimate;
     }
 
     private EstimateShareLink usableLink(Estimate estimate) {

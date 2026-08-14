@@ -102,12 +102,20 @@ public class Estimate {
     @Column(name = "source_estimate_id", nullable = false)
     private Set<UUID> consolidationSourceIds = new LinkedHashSet<>();
 
-    /** Whether this estimate shows on the object's client portal. The master
-     *  picks the set explicitly in the share sheet — nothing is shared by
-     *  default. Distinct from legacy per-estimate share links, which stay
-     *  usable for URLs already sent out. */
+    /** Whether this estimate shows on the object's SIGNATURE portal (any status — this is where an
+     *  unsigned estimate goes to be signed). The master picks the set explicitly in the Кошторис
+     *  tab's share sheet — nothing is shared by default. Distinct from legacy per-estimate share
+     *  links, which stay usable for URLs already sent out. */
     @Column(name = "portal_visible", nullable = false)
     private boolean portalVisible;
+
+    /** Whether this estimate shows on the object's ECONOMY portal (a master-chosen set of already-
+     *  SIGNED acts, alongside a summary and optional payments card). A deliberately separate flag
+     *  from {@link #portalVisible} — the two answer independent questions (this act needing to be
+     *  in the client's money summary says nothing about whether there is still something to sign),
+     *  picked from the Економіка tab's own share sheet. */
+    @Column(name = "economy_visible", nullable = false)
+    private boolean economyVisible;
 
     @Column(name = "signed_at")
     private Instant signedAt;

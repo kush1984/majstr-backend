@@ -156,8 +156,11 @@ public class ObjectExpenseService {
             BigDecimal materials = toBigDecimal(row[5]);
             BigDecimal markup = toBigDecimal(row[6]);
             BigDecimal discount = toBigDecimal(row[7]);
+            // works/materials are gross (pre-adjustment) now — the actual signed total adds the
+            // markup back and subtracts the discount back in (discount is already negative).
+            BigDecimal total = works.add(materials).add(markup).add(discount);
             panels.add(new SignedEstimatePanelResponse(
-                    id, name, works, materials, markup, discount, works.add(materials), counted, signedAt));
+                    id, name, works, materials, markup, discount, total, counted, signedAt));
         }
         return panels;
     }

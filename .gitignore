@@ -4,12 +4,20 @@ build/
 !**/src/main/**/build/
 !**/src/test/**/build/
 
+# IntelliJ's own compiler output (separate from Gradle's build/) when the IDE is set to build/run
+# the project itself rather than delegating to Gradle — lands in bin/main, bin/test.
+bin/
+
 .idea/
 *.iml
 *.iws
 *.ipr
 out/
 .vscode/
+
+# Local config for the Serena coding-assistant tool (LSP-based code navigation) — personal tooling
+# state, not part of the app.
+.serena/
 
 .env
 .env.local

@@ -13,6 +13,7 @@ import com.majstr.backend.entity.ProjectShareLink;
 import com.majstr.backend.entity.User;
 import com.majstr.backend.exception.ClientEmailMissingException;
 import com.majstr.backend.exception.EmailNotVerifiedException;
+import com.majstr.backend.exception.InvalidEstimateStatusException;
 import com.majstr.backend.exception.ResourceNotFoundException;
 import com.majstr.backend.feature.FeatureGuard;
 import com.majstr.backend.repository.EstimateRepository;
@@ -72,6 +73,18 @@ class ProjectPortalServiceTest {
         return e;
     }
 
+    private Estimate economyEstimate(Project p, EstimateStatus status, boolean visible) {
+        Estimate e = Estimate.builder()
+                .id(UUID.randomUUID())
+                .project(p)
+                .status(status)
+                .createdAt(Instant.now())
+                .updatedAt(Instant.now())
+                .build();
+        e.setEconomyVisible(visible);
+        return e;
+    }
+
     @Test
     void update_setsExactVisibleSet_flipsNewDraftsToSent_andMintsOneLink() {
         Project p = project(true, null);
@@ -86,30 +99,54 @@ class ProjectPortalServiceTest {
         given(linkRepository.save(any(ProjectShareLink.class))).willAnswer(inv -> inv.getArgument(0));
         given(portalProperties.publicBaseUrl()).willReturn("https://majstr.pro");
 
-        PortalStateResponse state = portalService.update(projectId, List.of(wanted.getId()), false, ownerId);
+        PortalStateResponse state = portalService.update(projectId, List.of(wanted.getId()), ownerId);
 
         assertThat(wanted.isPortalVisible()).isTrue();
         assertThat(wanted.getStatus()).isEqualTo(EstimateStatus.SENT); // DRAFT flipped on publish
         assertThat(other.isPortalVisible()).isFalse();                 // unticked → hidden
         assertThat(state.url()).startsWith("https://majstr.pro/portal/index.html?p=");
-        assertThat(state.paymentsVisible()).isFalse();
+        assertThat(state.paymentsVisible()).isFalse(); // SIGNATURE portal never has a payments card
         verify(linkRepository).save(any(ProjectShareLink.class));
     }
 
     @Test
-    void update_setsPaymentsVisibleOnTheLink_onFirstPublishAndOnReuse() {
+    void update_coercesASignedEstimateToNeverBePortalVisible_evenIfRequested() {
+        // A SIGNED estimate has "moved" to ECONOMY — the SIGNATURE portal must never show one,
+        // regardless of what the caller asked for (defense-in-depth; the picker never legitimately
+        // offers a SIGNED id to tick, but a stale client request must still be refused server-side).
         Project p = project(true, null);
+        Estimate signed = estimate(p, EstimateStatus.SIGNED, false);
         given(projectService.loadOwned(projectId, ownerId)).willReturn(p);
-        given(estimateRepository.findByProjectIdOrderByCreatedAtDesc(projectId)).willReturn(List.of());
+        given(estimateRepository.findByProjectIdOrderByCreatedAtDesc(projectId))
+                .willReturn(List.of(signed));
         given(linkRepository.findFirstByProjectIdAndKindAndRevokedFalseOrderByCreatedAtDesc(
                 projectId, ShareLinkKind.PORTAL))
                 .willReturn(Optional.empty());
         given(linkRepository.save(any(ProjectShareLink.class))).willAnswer(inv -> inv.getArgument(0));
         given(portalProperties.publicBaseUrl()).willReturn("https://majstr.pro");
 
-        PortalStateResponse state = portalService.update(projectId, List.of(), true, ownerId);
+        PortalStateResponse state = portalService.update(projectId, List.of(signed.getId()), ownerId);
 
-        assertThat(state.paymentsVisible()).isTrue();
+        assertThat(signed.isPortalVisible()).isFalse();
+        assertThat(state.estimates().get(0).visible()).isFalse();
+    }
+
+    @Test
+    void state_masksASignedEstimateAsNeverVisible_evenIfTheStoredFlagIsStillTrue() {
+        // Self-healing: a link published BEFORE signing leaves portalVisible=true stored on a now-
+        // SIGNED estimate (nothing clears it on sign). state() must mask it so the picker's ticked
+        // set — seeded from this — drops the id, and the next publish clears the stale flag for real.
+        Project p = project(true, null);
+        Estimate signed = estimate(p, EstimateStatus.SIGNED, true);
+        given(projectService.loadOwned(projectId, ownerId)).willReturn(p);
+        given(linkRepository.findFirstByProjectIdAndKindAndRevokedFalseOrderByCreatedAtDesc(
+                projectId, ShareLinkKind.PORTAL))
+                .willReturn(Optional.empty());
+        given(estimateRepository.findByProjectIdOrderByCreatedAtDesc(projectId)).willReturn(List.of(signed));
+
+        PortalStateResponse state = portalService.state(projectId, ownerId);
+
+        assertThat(state.estimates().get(0).visible()).isFalse();
     }
 
     @Test
@@ -124,7 +161,7 @@ class ProjectPortalServiceTest {
                         .createdAt(Instant.now()).revoked(false).build()));
         given(portalProperties.publicBaseUrl()).willReturn("https://majstr.pro");
 
-        PortalStateResponse state = portalService.update(projectId, List.of(), false, ownerId);
+        PortalStateResponse state = portalService.update(projectId, List.of(), ownerId);
 
         assertThat(state.url()).endsWith("?p=existing-token");
         verify(linkRepository, never()).save(any());
@@ -136,7 +173,7 @@ class ProjectPortalServiceTest {
         given(projectService.loadOwned(projectId, ownerId)).willReturn(p);
         given(estimateRepository.findByProjectIdOrderByCreatedAtDesc(projectId)).willReturn(List.of());
 
-        assertThatThrownBy(() -> portalService.update(projectId, List.of(UUID.randomUUID()), false, ownerId))
+        assertThatThrownBy(() -> portalService.update(projectId, List.of(UUID.randomUUID()), ownerId))
                 .isInstanceOf(ResourceNotFoundException.class);
     }
 
@@ -145,14 +182,93 @@ class ProjectPortalServiceTest {
         Project p = project(false, null);
         given(projectService.loadOwned(projectId, ownerId)).willReturn(p);
 
-        assertThatThrownBy(() -> portalService.update(projectId, List.of(), false, ownerId))
+        assertThatThrownBy(() -> portalService.update(projectId, List.of(), ownerId))
                 .isInstanceOf(EmailNotVerifiedException.class);
+    }
+
+    @Test
+    void updateEconomy_setsExactVisibleSetAndPaymentsVisible_mintsOneLink() {
+        Project p = project(true, null);
+        Estimate wanted = economyEstimate(p, EstimateStatus.SIGNED, false);
+        Estimate other = economyEstimate(p, EstimateStatus.SIGNED, true);
+        given(projectService.loadOwned(projectId, ownerId)).willReturn(p);
+        given(estimateRepository.findByProjectIdOrderByCreatedAtDesc(projectId))
+                .willReturn(List.of(wanted, other));
+        given(linkRepository.findFirstByProjectIdAndKindAndRevokedFalseOrderByCreatedAtDesc(
+                projectId, ShareLinkKind.ECONOMY))
+                .willReturn(Optional.empty());
+        given(linkRepository.save(any(ProjectShareLink.class))).willAnswer(inv -> inv.getArgument(0));
+        given(portalProperties.publicBaseUrl()).willReturn("https://majstr.pro");
+
+        PortalStateResponse state = portalService.updateEconomy(
+                projectId, List.of(wanted.getId()), true, ownerId);
+
+        assertThat(wanted.isEconomyVisible()).isTrue();
+        assertThat(other.isEconomyVisible()).isFalse();
+        assertThat(state.url()).startsWith("https://majstr.pro/portal/index.html?e=");
+        assertThat(state.paymentsVisible()).isTrue();
+        verify(linkRepository).save(any(ProjectShareLink.class));
+    }
+
+    @Test
+    void updateEconomy_rejectsANonSignedEstimate() {
+        Project p = project(true, null);
+        Estimate draft = economyEstimate(p, EstimateStatus.DRAFT, false);
+        given(projectService.loadOwned(projectId, ownerId)).willReturn(p);
+        given(estimateRepository.findByProjectIdOrderByCreatedAtDesc(projectId))
+                .willReturn(List.of(draft));
+
+        assertThatThrownBy(() -> portalService.updateEconomy(
+                projectId, List.of(draft.getId()), false, ownerId))
+                .isInstanceOf(InvalidEstimateStatusException.class);
+    }
+
+    @Test
+    void economyState_returnsNullUrlUntilPublished() {
+        Project p = project(true, null);
+        given(projectService.loadOwned(projectId, ownerId)).willReturn(p);
+        given(linkRepository.findFirstByProjectIdAndKindAndRevokedFalseOrderByCreatedAtDesc(
+                projectId, ShareLinkKind.ECONOMY))
+                .willReturn(Optional.empty());
+        Estimate e = economyEstimate(p, EstimateStatus.SIGNED, false);
+        given(estimateRepository.findByProjectIdOrderByCreatedAtDesc(projectId)).willReturn(List.of(e));
+
+        PortalStateResponse state = portalService.economyState(projectId, ownerId);
+
+        assertThat(state.url()).isNull();
+        assertThat(state.estimates()).hasSize(1);
+        assertThat(state.estimates().get(0).visible()).isFalse();
+    }
+
+    @Test
+    void sendEconomyEmail_sendsTheEconomyUrlToTheClient() {
+        Project p = project(true, "olena@x.ua");
+        given(projectService.loadOwned(projectId, ownerId)).willReturn(p);
+        given(linkRepository.findFirstByProjectIdAndKindAndRevokedFalseOrderByCreatedAtDesc(
+                projectId, ShareLinkKind.ECONOMY))
+                .willReturn(Optional.of(ProjectShareLink.builder()
+                        .id(UUID.randomUUID()).project(p).token("tok")
+                        .createdAt(Instant.now()).revoked(false).build()));
+        given(estimateRepository.findByProjectIdOrderByCreatedAtDesc(projectId)).willReturn(List.of());
+        given(portalProperties.publicBaseUrl()).willReturn("https://majstr.pro");
+
+        portalService.sendEconomyEmail(projectId, ownerId);
+
+        verify(emailService).sendEstimateShareEmail(
+                eq("olena@x.ua"), eq("Олена"), eq("ФОП Іван"), eq("Квартира"),
+                eq("https://majstr.pro/portal/index.html?e=tok"));
     }
 
     @Test
     void sendEmail_requiresAClientEmail() {
         Project p = project(true, null);
         given(projectService.loadOwned(projectId, ownerId)).willReturn(p);
+        given(linkRepository.findFirstByProjectIdAndKindAndRevokedFalseOrderByCreatedAtDesc(
+                projectId, ShareLinkKind.PORTAL))
+                .willReturn(Optional.of(ProjectShareLink.builder()
+                        .id(UUID.randomUUID()).project(p).token("tok")
+                        .createdAt(Instant.now()).revoked(false).build()));
+        given(portalProperties.publicBaseUrl()).willReturn("https://majstr.pro");
 
         assertThatThrownBy(() -> portalService.sendEmail(projectId, ownerId))
                 .isInstanceOf(ClientEmailMissingException.class);

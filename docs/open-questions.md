@@ -437,6 +437,10 @@ one-line summary — keep the item in the file as a record.
 - **Since:** step 3
 - **Context:** `EstimateShareLink.token` stores the raw token so the contractor can re-copy the URL later. DB compromise reveals all live share URLs. Since the portal-multi-estimate iteration (2026-07-22) the same trade-off applies to `project_share_links.token`.
 - **Notes / options:** Hash like refresh tokens; lose the "show URL again" feature, gain breach safety. Decide once we have real users.
+- **Update (portal-two-contexts iteration, 2026-08-11):** a third link kind, ECONOMY, was added
+  alongside PORTAL/MESSAGE. Decided to keep it raw too — consistent with the other two, and this
+  item already covers all of `project_share_links.token` regardless of kind. If hashing ever
+  happens, it's one change across all three kinds, not a per-kind decision.
 
 ### Refresh-token reuse detection (session-family revocation)
 - **Status:** OPEN — but see the note below; the *first* half shipped 2026-07-26
@@ -1721,9 +1725,34 @@ one-line summary — keep the item in the file as a record.
   fuller split/mark-received flows) open to FREE so a FREE master can still show a simple
   завдаток figure on the portal. The prompt this shipped under deferred the decision explicitly —
   revisit once real FREE-plan portal usage data exists.
+- **Update (portal-two-contexts iteration, 2026-08-11):** re-confirmed, now scoped precisely —
+  the payments card is no longer reachable from the SIGNATURE portal at all (`viewPortal` always
+  passes `payments: null`, no `payments_visible` read); it exists **only** on the new ECONOMY
+  portal (`viewEconomyPortal`, gated by the same `payments_visible` toggle on the `ECONOMY`-kind
+  link). The FREE-vs-PRO question above is unchanged in substance, just now unambiguously "should
+  the ECONOMY payments card require PRO" rather than "the portal's" (there is only one portal that
+  can ever show one). Still open — same revisit-with-real-usage-data plan.
+
+### Should the client be able to sign directly from the ECONOMY portal? (currently no)
+- **Status:** OPEN
+- **Since:** Portal-two-contexts iteration (2026-08-11)
+- **Context:** The ECONOMY portal only ever shows SIGNED acts (`economyVisible` requires SIGNED,
+  enforced both at write time in `ProjectPortalService.updateEconomy` and read time in
+  `PublicEstimateService.viewEconomyPortal`'s defense-in-depth filter), so it was built read-only
+  by design — no sign button, no `POST .../sign` endpoint on `PublicEconomyPortalController` at
+  all. This is correct for the common case (an act shown there is already a done deal) but doesn't
+  cover every real workflow: e.g. a master duplicates a signed act with a markup change and wants
+  the client to re-sign the new one from the SAME link/context they're already looking at, rather
+  than being sent back to the (separate) SIGNATURE portal.
+- **Notes / options:** Decided **no** for this iteration — keep ECONOMY strictly read-only, since
+  mixing "read the settled deal" and "sign a new one" on one page blurs the two-context split the
+  whole prompt was about. If this becomes a real friction point, the duplicate's own SIGNATURE
+  portal link is always the correct place to route the client to sign it, not a sign button bolted
+  onto ECONOMY. Revisit only if masters actually ask for it.
 
 ### Raw «Знижка PERCENT −15» line in the portal/PDF items table
-- **Status:** OPEN — explicitly deferred by the prompt that touched the neighboring recap
+- **Status:** IN_PROGRESS — portal side fixed in the portal-two-contexts iteration (2026-08-11);
+  PDF side still open.
 - **Since:** Portal-pdf-polish iteration (2026-08-09)
 - **Context:** `portal-pdf-polish` added the % to the markup/discount RECAP row (the small line
   under the totals — «Знижка 15% · 3 900 грн»). It deliberately left the raw TABLE row for a
@@ -1737,6 +1766,13 @@ one-line summary — keep the item in the file as a record.
   `EstimatePdfService.addItemsTable`, format a `PERCENT`-unit line's quantity cell as `−15%`/`15%`
   instead of the bare number + a `PERCENT`/unit-code cell. Small, isolated change — deferred only
   because the prompt scoped this iteration to the recap, not the raw table.
+- **Update (portal-two-contexts iteration, 2026-08-11):** fixed the portal half — `UNIT_LABEL` in
+  `static/portal/index.html` now maps `PERCENT` → `'%'`, same as every other unit code, so a
+  PERCENT line's unit cell reads «%» instead of the raw enum text (the quantity cell already
+  carried the correct signed number, e.g. `−15`, so this alone resolves the portal's items table).
+  `EstimatePdfService.addItemsTable` (the PDF's own items table) was **not** touched — out of
+  scope for this iteration, which only had a reason to be inside the portal HTML file. Still
+  IN_PROGRESS until the PDF side is done too.
 
 ### Additional works vs. a replacement estimate — how not to double-count income
 - **Status:** OPEN — the REPLACES half got a real (partial) answer; ADDITIONAL is still manual

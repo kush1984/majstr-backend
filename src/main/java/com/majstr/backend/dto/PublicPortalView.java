@@ -17,14 +17,22 @@ import java.util.UUID;
  * it is only reachable through a valid portal token.
  */
 public record PublicPortalView(
+        /** Which context minted this page — SIGNATURE (Кошторис tab, any-status, for signing,
+         *  never payments) or ECONOMY (Економіка tab, SIGNED acts only, optional payments card).
+         *  The two link kinds already keep the data separate; this just lets the page (and any
+         *  future consumer) branch without re-deriving the mode from which fields are populated. */
+        Mode mode,
         PublicEstimateView.Contractor contractor,
         PublicEstimateView.ProjectSummary project,
         List<Section> estimates,
         List<PublicEstimateView.SharedPhoto> sharedPhotos,
         /** Null unless the master turned the object-level payments toggle on
-         *  ({@code project_share_links.payments_visible}) — off by default. */
+         *  ({@code project_share_links.payments_visible}) — off by default, and never
+         *  populated for {@code SIGNATURE} (the signing portal has no payments card at all). */
         PaymentsCard payments
 ) {
+    public enum Mode { SIGNATURE, ECONOMY }
+
     /**
      * {@code contractedTotal} sums ONLY the {@code estimates} above (the SHARED subset) — never
      * the master's private "all counted estimates" total, which could include work this client
@@ -47,6 +55,10 @@ public record PublicPortalView(
             BigDecimal amount,
             /** Σ of this stage's payment_receipt rows (V100) — replaces the old single paidAmount. */
             BigDecimal received,
+            /** Date of the most recent payment_receipt against this stage, null if none yet —
+             *  the compact mobile card reads this for "отримано {date}" (received) or, combined
+             *  with {@code dueDate}, "до {date}" (planned, framed as a condition not a debt). */
+            LocalDate lastReceivedAt,
             LocalDate dueDate,
             String nextStage,
             ProjectPaymentStatus status

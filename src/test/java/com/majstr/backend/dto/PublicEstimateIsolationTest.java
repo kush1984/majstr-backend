@@ -73,7 +73,7 @@ class PublicEstimateIsolationTest {
         // "received" appears twice (PaymentsCard's own aggregate + each PaymentRow's); "amount"
         // appears twice too (PaymentRow's + UnplannedReceiptRow's).
         assertThat(names).containsExactlyInAnyOrder("contractedTotal", "received", "remaining", "payments",
-                "purpose", "amount", "received", "dueDate", "nextStage", "status",
+                "purpose", "amount", "received", "lastReceivedAt", "dueDate", "nextStage", "status",
                 "unplannedReceipts", "label", "amount", "receivedAt");
     }
 

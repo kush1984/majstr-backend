@@ -27,6 +27,7 @@ import com.majstr.backend.exception.ResourceNotFoundException;
 import com.majstr.backend.feature.Feature;
 import com.majstr.backend.feature.FeatureGuard;
 import com.majstr.backend.push.PushService;
+import com.majstr.backend.entity.PaymentReceipt;
 import com.majstr.backend.entity.ProjectPayment;
 import com.majstr.backend.repository.EstimateItemRepository;
 import com.majstr.backend.repository.ProjectMessageRepository;
@@ -47,15 +48,19 @@ import java.text.DecimalFormat;
 import java.text.DecimalFormatSymbols;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 /**
- * Everything a client can reach without authentication. Two token families
+ * Everything a client can reach without authentication. Three token families
  * resolve here: the legacy per-estimate {@code ?t=} links (kept alive for URLs
- * already sent out) and the object-level portal {@code ?p=} links, whose page
- * shows a section per {@code portalVisible} estimate. Sign / question / PDF
- * share one core; only the token resolution differs.
+ * already sent out), the SIGNATURE portal {@code ?p=} links ({@link ShareLinkKind#PORTAL},
+ * any-status estimates, for signing, never payments), and the ECONOMY portal {@code ?e=} links
+ * ({@link ShareLinkKind#ECONOMY}, SIGNED acts only, optional payments card). Sign / question / PDF
+ * share one core; only the token resolution — and which kind it must resolve against — differs.
  */
 @Service
 @RequiredArgsConstructor
@@ -114,11 +119,25 @@ public class PublicEstimateService {
         return projectPhotoService.readSharedFile(estimate.getProject().getId(), photoId);
     }
 
-    // ---- project portal token (?p=) ---------------------------------------
+    // ---- SIGNATURE portal token (?p=) --------------------------------------
 
+    /**
+     * The SIGNATURE portal never has a payments card — it exists to get an estimate signed, not
+     * to show money. {@code payments_visible} on the link is an ECONOMY-only concept now.
+     *
+     * <p>Deliberately does NOT filter out a SIGNED estimate here: {@code signPortal} returns this
+     * same view immediately after signing, and the client needs to see the estimate they just
+     * signed render with its «✓ Підписано» confirmation banner (existing behavior, {@code
+     * renderSection}'s {@code signedBanner}) — a status-based filter here would make it vanish
+     * from its own confirmation response instead. A SIGNED estimate whose {@code portalVisible}
+     * flag is genuinely stale (from before this session, unrelated to any signing that just
+     * happened) is instead kept out of what {@link ProjectPortalService#state} reports as visible,
+     * so the master's own share-sheet ticked-set — and therefore every future re-publish — drops
+     * it for real; see that class for the actual fix.</p>
+     */
     @Transactional(readOnly = true)
     public PublicPortalView viewPortal(String token) {
-        ProjectShareLink link = resolveLink(token);
+        ProjectShareLink link = resolveLink(token, ShareLinkKind.PORTAL);
         Project project = link.getProject();
         List<PublicPortalView.Section> sections =
                 estimateRepository.findByProjectIdAndPortalVisibleTrueOrderByCreatedAtAsc(project.getId())
@@ -131,10 +150,8 @@ public class PublicEstimateService {
                 .stream()
                 .map(p -> new PublicEstimateView.SharedPhoto(p.getId(), p.getCaption()))
                 .toList();
-        PublicPortalView.PaymentsCard paymentsCard = link.isPaymentsVisible()
-                ? buildPaymentsCard(project.getId(), sections)
-                : null;
         return new PublicPortalView(
+                PublicPortalView.Mode.SIGNATURE,
                 contractorOf(contractor),
                 new PublicEstimateView.ProjectSummary(
                         project.getName(),
@@ -142,38 +159,7 @@ public class PublicEstimateService {
                         client == null ? null : client.getFullName()),
                 sections,
                 sharedPhotos,
-                paymentsCard);
-    }
-
-    /**
-     * {@code contractedTotal} sums only the SHARED sections passed in — never the master's
-     * private "all counted estimates" total, which could include work this client was never
-     * shown (isolation). {@code received}/{@code payments} are genuinely object-level: payments
-     * were never tied to one estimate even before this iteration, so the full list is safe.
-     */
-    private PublicPortalView.PaymentsCard buildPaymentsCard(UUID objectId, List<PublicPortalView.Section> sections) {
-        BigDecimal contracted = sections.stream()
-                .map(PublicPortalView.Section::total)
-                .reduce(BigDecimal.ZERO, BigDecimal::add);
-        List<ProjectPayment> rows = projectPaymentRepository.findByProjectIdOrderBySortOrderAscIdAsc(objectId);
-        BigDecimal received = paymentReceiptRepository.sumByProjectId(objectId);
-        BigDecimal remaining = contracted.subtract(received).max(BigDecimal.ZERO);
-        LocalDate today = LocalDate.now(LocalizationConfig.ZONE);
-        List<PublicPortalView.PaymentRow> paymentRows = rows.stream()
-                .map(p -> {
-                    BigDecimal stageReceived = paymentReceiptRepository.sumByPlanPaymentId(p.getId());
-                    return new PublicPortalView.PaymentRow(
-                            p.getPurpose(), p.getAmount(), stageReceived,
-                            p.getDueDate(), p.getNextStage(), p.status(today, stageReceived));
-                })
-                .toList();
-        List<PublicPortalView.UnplannedReceiptRow> unplannedRows = paymentReceiptRepository
-                .findByProjectIdOrderByReceivedAtAscCreatedAtAsc(objectId).stream()
-                .filter(r -> r.getPlanPayment() == null)
-                .map(r -> new PublicPortalView.UnplannedReceiptRow(
-                        r.getLabel() != null ? r.getLabel() : "Оплата", r.getAmount(), r.getReceivedAt()))
-                .toList();
-        return new PublicPortalView.PaymentsCard(contracted, received, remaining, paymentRows, unplannedRows);
+                null);
     }
 
     @Transactional
@@ -195,8 +181,110 @@ public class PublicEstimateService {
 
     @Transactional(readOnly = true)
     public ProjectPhotoService.PhotoFile readPortalSharedPhoto(String token, UUID photoId) throws IOException {
-        Project project = resolveProject(token);
+        Project project = resolveProject(token, ShareLinkKind.PORTAL);
         return projectPhotoService.readSharedFile(project.getId(), photoId);
+    }
+
+    // ---- ECONOMY portal token (?e=) ----------------------------------------
+
+    /** Acts are already SIGNED and immutable — no sign endpoint exists for this mode, only
+     *  view / question / PDF / photo, same core as the SIGNATURE portal. */
+    @Transactional(readOnly = true)
+    public PublicPortalView viewEconomyPortal(String token) {
+        ProjectShareLink link = resolveLink(token, ShareLinkKind.ECONOMY);
+        Project project = link.getProject();
+        List<PublicPortalView.Section> sections =
+                estimateRepository.findByProjectIdAndEconomyVisibleTrueOrderByCreatedAtAsc(project.getId())
+                        .stream()
+                        // Defense-in-depth: economyVisible can outlive a SIGNED status (auto-reopen
+                        // on supersede leaves the flag set while the estimate flips back to DRAFT) —
+                        // the ECONOMY portal is a settled-money view, never an unsettled draft.
+                        .filter(e -> e.getStatus() == EstimateStatus.SIGNED)
+                        .map(this::sectionOf)
+                        .toList();
+        Client client = project.getClient();
+        User contractor = project.getOwner();
+        List<PublicEstimateView.SharedPhoto> sharedPhotos = projectPhotoService.sharedPhotos(project.getId())
+                .stream()
+                .map(p -> new PublicEstimateView.SharedPhoto(p.getId(), p.getCaption()))
+                .toList();
+        PublicPortalView.PaymentsCard paymentsCard = link.isPaymentsVisible()
+                ? buildPaymentsCard(project.getId(), sections)
+                : null;
+        return new PublicPortalView(
+                PublicPortalView.Mode.ECONOMY,
+                contractorOf(contractor),
+                new PublicEstimateView.ProjectSummary(
+                        project.getName(),
+                        project.getAddress(),
+                        client == null ? null : client.getFullName()),
+                sections,
+                sharedPhotos,
+                paymentsCard);
+    }
+
+    @Transactional
+    public QuestionResponse askEconomyQuestion(String token, UUID estimateId, QuestionRequest req, String clientIp) {
+        return doAsk(resolveEconomyEstimate(token, estimateId), req, clientIp);
+    }
+
+    @Transactional(readOnly = true)
+    public byte[] renderEconomyPdf(String token, UUID estimateId) throws IOException, DocumentException {
+        return estimateService.renderPdf(resolveEconomyEstimate(token, estimateId));
+    }
+
+    @Transactional(readOnly = true)
+    public ProjectPhotoService.PhotoFile readEconomySharedPhoto(String token, UUID photoId) throws IOException {
+        Project project = resolveProject(token, ShareLinkKind.ECONOMY);
+        return projectPhotoService.readSharedFile(project.getId(), photoId);
+    }
+
+    /**
+     * {@code contractedTotal} sums only the SHARED sections passed in — never the master's
+     * private "all counted estimates" total, which could include work this client was never
+     * shown (isolation). {@code received}/{@code payments} are genuinely object-level: payments
+     * were never tied to one estimate even before this iteration, so the full list is safe.
+     * One receipts query, grouped in memory by plan stage (or left unplanned) — same shape as
+     * {@code PaymentService.buildSummary}, and it also yields each stage's most recent receipt
+     * date "for free" (the list arrives oldest-first, so the last entry per group is the latest).
+     */
+    private PublicPortalView.PaymentsCard buildPaymentsCard(UUID objectId, List<PublicPortalView.Section> sections) {
+        BigDecimal contracted = sections.stream()
+                .map(PublicPortalView.Section::total)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        List<ProjectPayment> rows = projectPaymentRepository.findByProjectIdOrderBySortOrderAscIdAsc(objectId);
+        List<PaymentReceipt> allReceipts =
+                paymentReceiptRepository.findByProjectIdOrderByReceivedAtAscCreatedAtAsc(objectId);
+
+        Map<UUID, List<PaymentReceipt>> byPlan = new LinkedHashMap<>();
+        List<PublicPortalView.UnplannedReceiptRow> unplannedRows = new ArrayList<>();
+        BigDecimal received = BigDecimal.ZERO;
+        for (PaymentReceipt r : allReceipts) {
+            received = received.add(r.getAmount());
+            if (r.getPlanPayment() != null) {
+                byPlan.computeIfAbsent(r.getPlanPayment().getId(), k -> new ArrayList<>()).add(r);
+            } else {
+                unplannedRows.add(new PublicPortalView.UnplannedReceiptRow(
+                        r.getLabel() != null ? r.getLabel() : "Оплата", r.getAmount(), r.getReceivedAt()));
+            }
+        }
+
+        BigDecimal remaining = contracted.subtract(received).max(BigDecimal.ZERO);
+        LocalDate today = LocalDate.now(LocalizationConfig.ZONE);
+        List<PublicPortalView.PaymentRow> paymentRows = rows.stream()
+                .map(p -> {
+                    List<PaymentReceipt> stageReceipts = byPlan.getOrDefault(p.getId(), List.of());
+                    BigDecimal stageReceived = stageReceipts.stream()
+                            .map(PaymentReceipt::getAmount)
+                            .reduce(BigDecimal.ZERO, BigDecimal::add);
+                    LocalDate lastReceivedAt = stageReceipts.isEmpty()
+                            ? null : stageReceipts.get(stageReceipts.size() - 1).getReceivedAt();
+                    return new PublicPortalView.PaymentRow(
+                            p.getPurpose(), p.getAmount(), stageReceived, lastReceivedAt,
+                            p.getDueDate(), p.getNextStage(), p.status(today, stageReceived));
+                })
+                .toList();
+        return new PublicPortalView.PaymentsCard(contracted, received, remaining, paymentRows, unplannedRows);
     }
 
     // ---- shared core ------------------------------------------------------
@@ -292,33 +380,53 @@ public class PublicEstimateService {
     }
 
     /** Portal token → project, same neutral 404 on every failure mode. */
-    private Project resolveProject(String token) {
-        return resolveLink(token).getProject();
+    private Project resolveProject(String token, ShareLinkKind kind) {
+        return resolveLink(token, kind).getProject();
     }
 
-    /** Portal token → the link itself (needed by {@link #viewPortal} for
-     *  {@code isPaymentsVisible()}, not just the project it points at). */
-    private ProjectShareLink resolveLink(String token) {
+    /** Portal token → the link itself (needed by {@link #viewPortal}/{@link #viewEconomyPortal}
+     *  for {@code isPaymentsVisible()}, not just the project it points at). */
+    private ProjectShareLink resolveLink(String token, ShareLinkKind kind) {
         if (token == null || token.isBlank()) {
             throw new ResourceNotFoundException("Share link not found");
         }
-        // Kind matters here, not just the token: a MESSAGE link must never open the portal, or a
-        // supplier sent the form URL would be shown the client's prices instead.
+        // Kind matters here, not just the token: a MESSAGE link must never open a portal, and a
+        // SIGNATURE link must never open the ECONOMY one (or vice versa) — a supplier sent the
+        // MESSAGE form URL, or a client sent the signing link, must never see prices/money that
+        // belong to the other context.
         ProjectShareLink link = projectShareLinkRepository
-                .findByTokenAndKind(token, ShareLinkKind.PORTAL).orElse(null);
+                .findByTokenAndKind(token, kind).orElse(null);
         if (link == null || !link.isUsable(Instant.now())) {
             throw new ResourceNotFoundException("Share link not found");
         }
         return link;
     }
 
-    /** An estimate is reachable through the portal only while the master shows it there. */
+    /** An estimate is reachable through the SIGNATURE portal only while the master shows it there.
+     *  Deliberately allows an already-SIGNED one through — the client still needs to ask a
+     *  question about, or download the PDF of, an estimate they (or the master) already signed
+     *  while it's shown with its confirmation banner; {@code doSign} itself is what rejects a
+     *  double sign (409 {@code ESTIMATE_SIGNED}), not this resolver. */
     private Estimate resolvePortalEstimate(String token, UUID estimateId) {
-        Project project = resolveProject(token);
+        Project project = resolveProject(token, ShareLinkKind.PORTAL);
         Estimate estimate = estimateRepository.findById(estimateId).orElse(null);
         if (estimate == null
                 || !estimate.getProject().getId().equals(project.getId())
                 || !estimate.isPortalVisible()) {
+            throw new ResourceNotFoundException("Estimate not found");
+        }
+        return estimate;
+    }
+
+    /** An estimate is reachable through the ECONOMY portal only while the master shows it there
+     *  AND it is still SIGNED — same defense-in-depth reasoning as {@link #viewEconomyPortal}. */
+    private Estimate resolveEconomyEstimate(String token, UUID estimateId) {
+        Project project = resolveProject(token, ShareLinkKind.ECONOMY);
+        Estimate estimate = estimateRepository.findById(estimateId).orElse(null);
+        if (estimate == null
+                || !estimate.getProject().getId().equals(project.getId())
+                || !estimate.isEconomyVisible()
+                || estimate.getStatus() != EstimateStatus.SIGNED) {
             throw new ResourceNotFoundException("Estimate not found");
         }
         return estimate;
@@ -487,7 +595,9 @@ public class PublicEstimateService {
                 item.getUnitPrice(),
                 line,
                 item.getSortOrder(),
-                item.getCategory()
+                item.getCategory(),
+                item.getUnit() == Unit.PERCENT ? item.getPercentBaseKind() : null,
+                item.getBaseOriginLabel()
         );
     }
 

@@ -6,12 +6,11 @@ import java.util.List;
 import java.util.UUID;
 
 /**
- * The full set of estimates that should be visible on the object's portal —
- * everything else is hidden. An empty list is legal (portal shows none).
- * {@code paymentsVisible} is the object-level toggle for the new payments card — off by
- * default, sent explicitly every publish (mirrors the estimate checkboxes' all-or-nothing shape).
+ * The full set of estimates that should show on the object's SIGNATURE portal (any status) —
+ * everything else is hidden. An empty list is legal (portal shows none). No payments field —
+ * the SIGNATURE portal never shows money beyond the estimate itself; see {@link EconomyUpdateRequest}
+ * for the object-level payments toggle, which now lives only on the ECONOMY link.
  */
 public record PortalUpdateRequest(
-        @NotNull List<UUID> estimateIds,
-        @NotNull Boolean paymentsVisible
+        @NotNull List<UUID> estimateIds
 ) {}

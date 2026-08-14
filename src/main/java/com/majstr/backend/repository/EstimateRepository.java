@@ -25,6 +25,9 @@ public interface EstimateRepository extends JpaRepository<Estimate, UUID> {
     /** Portal sections, oldest first — so «Кошторис 1» stays first as new ones are added. */
     List<Estimate> findByProjectIdAndPortalVisibleTrueOrderByCreatedAtAsc(UUID projectId);
 
+    /** Economy portal acts, oldest first — same ordering rule as the SIGNATURE portal. */
+    List<Estimate> findByProjectIdAndEconomyVisibleTrueOrderByCreatedAtAsc(UUID projectId);
+
     /** All estimates of a project, any status — the live count for the FREE
      *  per-project estimate limit (deleting one frees a slot). */
     long countByProjectId(UUID projectId);
@@ -171,9 +174,16 @@ public interface EstimateRepository extends JpaRepository<Estimate, UUID> {
      * can flag a panel whose amount is NOT folded into the counted-only summary total, rather than
      * let the two numbers silently disagree.
      *
-     * <p>markup/discount mirror {@code PublicEstimateService.totalsOf}'s recap (a «TOTAL» percent
-     * line, or a frozen consolidated one, split by sign) — already folded into works/materials by
-     * type, so {@code total = works + materials} stays correct without adding them again.</p>
+     * <p>works/materials are the <b>pre-adjustment (gross)</b> per-type subtotals — a «TOTAL»
+     * percent line (or a frozen consolidated one) is excluded from its type's sum here and reported
+     * separately via markup/discount instead, the same math {@code TypeBreakdown} (PWA) and
+     * {@code typeBase()} (portal) already use for a single estimate's own view. Folding the
+     * adjustment INTO works/materials here (the pre-2026-08-14 shape) made an estimate's panel on
+     * this tab disagree with what it shows when opened directly — «Роботи» read as the already-
+     * discounted figure with no visible «before» to compare the Знижка recap against. The caller
+     * reconstitutes the actual signed total as {@code works + materials + markup + discount}
+     * (discount is negative), not {@code works + materials} — see {@link
+     * com.majstr.backend.service.ObjectExpenseService#signedEstimatePanels}.</p>
      *
      * <p>Row shape: {@code [id (UUID), name (String), count_in_economy (Boolean),
      * signed_at (Timestamp), works (BigDecimal), materials (BigDecimal), markup (BigDecimal),
@@ -181,8 +191,14 @@ public interface EstimateRepository extends JpaRepository<Estimate, UUID> {
      */
     @Query(value = """
             SELECT e.id, e.name, e.count_in_economy, e.signed_at,
-                   COALESCE(SUM(CASE WHEN i.type = 'WORK' THEN i.line_total ELSE 0 END), 0) AS works,
-                   COALESCE(SUM(CASE WHEN i.type = 'MATERIAL' THEN i.line_total ELSE 0 END), 0) AS materials,
+                   COALESCE(SUM(CASE WHEN i.type = 'WORK'
+                                       AND NOT (i.unit = 'PERCENT'
+                                                AND (i.percent_base_kind = 'TOTAL' OR i.base_origin_label IS NOT NULL))
+                                  THEN i.line_total ELSE 0 END), 0) AS works,
+                   COALESCE(SUM(CASE WHEN i.type = 'MATERIAL'
+                                       AND NOT (i.unit = 'PERCENT'
+                                                AND (i.percent_base_kind = 'TOTAL' OR i.base_origin_label IS NOT NULL))
+                                  THEN i.line_total ELSE 0 END), 0) AS materials,
                    COALESCE(SUM(CASE WHEN i.unit = 'PERCENT' AND i.line_total > 0
                                        AND (i.percent_base_kind = 'TOTAL' OR i.base_origin_label IS NOT NULL)
                                   THEN i.line_total ELSE 0 END), 0) AS markup,
