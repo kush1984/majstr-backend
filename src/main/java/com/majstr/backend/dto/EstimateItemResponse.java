@@ -45,9 +45,20 @@ public record EstimateItemResponse(
          * detached-but-not-frozen line, e.g. a deleted POSITION base, has no origin snapshot either
          * — {@code baseDetached} alone covers that case).
          */
-        String baseOriginLabel
+        String baseOriginLabel,
+        /**
+         * How much of this line has already been closed by SIGNED work acts (acts iteration) — drives
+         * the estimate board's «✓ закрито» / «40 / 136,5» chip. {@code null} when nothing is closed
+         * or the estimate isn't SIGNED (only a signed estimate's lines can be closed by an act); a
+         * DRAFT act never contributes, same rule as the running total.
+         */
+        BigDecimal closedByActs
 ) {
     public static EstimateItemResponse from(EstimateItem item) {
+        return from(item, null);
+    }
+
+    public static EstimateItemResponse from(EstimateItem item, BigDecimal closedByActs) {
         // The STORED amount (V88), never recomputed here. A percentage of the estimate's own
         // subtotal cannot be derived from one row, and re-deriving on read is exactly how a signed
         // estimate would drift behind the client's back.
@@ -69,7 +80,8 @@ public record EstimateItemResponse(
                 item.getPercentBaseKind(),
                 item.getPercentBaseItemId(),
                 item.isBaseDetached(),
-                item.getBaseOriginLabel()
+                item.getBaseOriginLabel(),
+                closedByActs
         );
     }
 }

@@ -1,11 +1,13 @@
 package com.majstr.backend.dto;
 
+import com.majstr.backend.entity.ActNumberFormat;
 import com.majstr.backend.entity.Plan;
 import com.majstr.backend.entity.Role;
 import com.majstr.backend.entity.Trade;
 import com.majstr.backend.entity.User;
 import com.majstr.backend.entity.UserTrade;
 
+import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -43,7 +45,19 @@ public record UserResponse(
         Instant trialStartedAt,
         // This master's personal referral code — the PWA builds the invite link
         // majstr.pro/?ref=m-<referralCode> from it.
-        String referralCode
+        String referralCode,
+        // Document requisites (acts iteration) — all nullable; feed the profile form + act PDF.
+        String legalName,
+        String taxId,
+        String legalAddress,
+        String iban,
+        String bankName,
+        boolean vatPayer,
+        String vatId,
+        Short taxGroup,
+        BigDecimal taxRate,
+        String docCity,
+        ActNumberFormat actNumberFormat
 ) {
     /** {@code customTrades} is a separate explicit query, deliberately NOT a lazy collection on
      *  {@link User} — this factory is called from many places (auth, profile, billing), and riding
@@ -70,7 +84,18 @@ public record UserResponse(
                 user.isAutoRenew(),
                 user.getCardMask(),
                 user.getTrialStartedAt(),
-                user.getReferralCode()
+                user.getReferralCode(),
+                user.getLegalName(),
+                user.getTaxId(),
+                user.getLegalAddress(),
+                user.getIban(),
+                user.getBankName(),
+                user.isVatPayer(),
+                user.getVatId(),
+                user.getTaxGroup(),
+                user.getTaxRate(),
+                user.getDocCity(),
+                user.getActNumberFormat()
         );
     }
 

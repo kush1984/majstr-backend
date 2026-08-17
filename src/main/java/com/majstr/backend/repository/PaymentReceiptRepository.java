@@ -27,4 +27,9 @@ public interface PaymentReceiptRepository extends JpaRepository<PaymentReceipt, 
     /** Σ received against one plan stage — used when resolving an overpayment against it. */
     @Query("SELECT COALESCE(SUM(r.amount), 0) FROM PaymentReceipt r WHERE r.planPayment.id = :planPaymentId")
     BigDecimal sumByPlanPaymentId(@Param("planPaymentId") UUID planPaymentId);
+
+    /** Σ every receipt of the object («Отримано грошей») — the FREE-visible works axis needs this
+     *  without going through the PRO-gated {@code PaymentsSummaryResponse}. */
+    @Query("SELECT COALESCE(SUM(r.amount), 0) FROM PaymentReceipt r WHERE r.project.id = :projectId")
+    BigDecimal sumByProjectId(@Param("projectId") UUID projectId);
 }

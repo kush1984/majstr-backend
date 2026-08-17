@@ -1,6 +1,7 @@
 package com.majstr.backend.service;
 
 import com.majstr.backend.config.PortalProperties;
+import com.majstr.backend.dto.ActShareStateResponse;
 import com.majstr.backend.dto.PortalStateResponse;
 import com.majstr.backend.email.EmailService;
 import com.majstr.backend.entity.Client;
@@ -11,6 +12,9 @@ import com.majstr.backend.entity.Project;
 import com.majstr.backend.entity.ShareLinkKind;
 import com.majstr.backend.entity.ProjectShareLink;
 import com.majstr.backend.entity.User;
+import com.majstr.backend.entity.WorkAct;
+import com.majstr.backend.entity.WorkActKind;
+import com.majstr.backend.entity.WorkActStatus;
 import com.majstr.backend.exception.ClientEmailMissingException;
 import com.majstr.backend.exception.EmailNotVerifiedException;
 import com.majstr.backend.exception.InvalidEstimateStatusException;
@@ -18,6 +22,7 @@ import com.majstr.backend.exception.ResourceNotFoundException;
 import com.majstr.backend.feature.FeatureGuard;
 import com.majstr.backend.repository.EstimateRepository;
 import com.majstr.backend.repository.ProjectShareLinkRepository;
+import com.majstr.backend.repository.WorkActRepository;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
@@ -47,6 +52,7 @@ class ProjectPortalServiceTest {
     @Mock FeatureGuard featureGuard;
     @Mock PortalProperties portalProperties;
     @Mock EmailService emailService;
+    @Mock WorkActRepository workActRepository;
     @InjectMocks ProjectPortalService portalService;
 
     private final UUID projectId = UUID.randomUUID();
@@ -308,5 +314,43 @@ class ProjectPortalServiceTest {
         assertThat(state.url()).isNull();
         assertThat(state.estimates()).hasSize(1);
         assertThat(state.estimates().get(0).visible()).isFalse();
+    }
+
+    // ---- ACT share (prompt 5) ----------------------------------------------
+
+    private WorkAct act(Project p, WorkActStatus status) {
+        return WorkAct.builder().id(UUID.randomUUID()).userId(ownerId).project(p)
+                .number("7").kind(WorkActKind.INTERIM).status(status)
+                .issuedAt(java.time.LocalDate.now()).periodFrom(java.time.LocalDate.now())
+                .periodTo(java.time.LocalDate.now()).build();
+    }
+
+    @Test
+    void updateAct_flipsDraftToSent_andMintsTheActLink() {
+        Project p = project(true, null);
+        WorkAct a = act(p, WorkActStatus.DRAFT);
+        given(workActRepository.findByIdAndUserId(a.getId(), ownerId)).willReturn(Optional.of(a));
+        given(linkRepository.findFirstByWorkActIdAndRevokedFalseOrderByCreatedAtDesc(a.getId()))
+                .willReturn(Optional.empty());
+        given(linkRepository.save(any(ProjectShareLink.class))).willAnswer(inv -> inv.getArgument(0));
+        given(portalProperties.publicBaseUrl()).willReturn("https://majstr.pro");
+
+        ActShareStateResponse state = portalService.updateAct(a.getId(), ownerId);
+
+        assertThat(a.getStatus()).isEqualTo(WorkActStatus.SENT);
+        assertThat(a.getSentAt()).isNotNull();
+        assertThat(state.url()).contains("?a=");
+        assertThat(state.shared()).isTrue();
+    }
+
+    @Test
+    void updateAct_rejectedAct_cannotBeShared() {
+        Project p = project(true, null);
+        WorkAct a = act(p, WorkActStatus.REJECTED);
+        given(workActRepository.findByIdAndUserId(a.getId(), ownerId)).willReturn(Optional.of(a));
+
+        assertThatThrownBy(() -> portalService.updateAct(a.getId(), ownerId))
+                .isInstanceOf(InvalidEstimateStatusException.class);
+        verify(linkRepository, never()).save(any());
     }
 }

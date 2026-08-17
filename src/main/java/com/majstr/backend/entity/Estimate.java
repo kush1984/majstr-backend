@@ -55,6 +55,14 @@ public class Estimate {
     @Column(name = "status", nullable = false, length = 50)
     private EstimateStatus status;
 
+    /** REGULAR for everything the master authored; ADDENDUM for the auto-created «Додаткові роботи
+     *  до акта № N» rollup (acts iteration) — excluded from the estimate pickers and the Кошториси
+     *  list, shown as a sub-line of the act that spawned it. */
+    @Enumerated(EnumType.STRING)
+    @Builder.Default
+    @Column(name = "kind", nullable = false, length = 20)
+    private EstimateKind kind = EstimateKind.REGULAR;
+
     @Column(name = "valid_until")
     private LocalDate validUntil;
 

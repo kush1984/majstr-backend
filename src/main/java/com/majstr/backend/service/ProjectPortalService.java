@@ -1,6 +1,7 @@
 package com.majstr.backend.service;
 
 import com.majstr.backend.config.PortalProperties;
+import com.majstr.backend.dto.ActShareStateResponse;
 import com.majstr.backend.dto.PortalStateResponse;
 import com.majstr.backend.email.EmailService;
 import com.majstr.backend.entity.Client;
@@ -10,6 +11,8 @@ import com.majstr.backend.entity.Project;
 import com.majstr.backend.entity.ShareLinkKind;
 import com.majstr.backend.entity.ProjectShareLink;
 import com.majstr.backend.entity.User;
+import com.majstr.backend.entity.WorkAct;
+import com.majstr.backend.entity.WorkActStatus;
 import com.majstr.backend.exception.ClientEmailMissingException;
 import com.majstr.backend.exception.EmailNotVerifiedException;
 import com.majstr.backend.exception.InvalidEstimateStatusException;
@@ -18,6 +21,7 @@ import com.majstr.backend.feature.Feature;
 import com.majstr.backend.feature.FeatureGuard;
 import com.majstr.backend.repository.EstimateRepository;
 import com.majstr.backend.repository.ProjectShareLinkRepository;
+import com.majstr.backend.repository.WorkActRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -49,12 +53,15 @@ public class ProjectPortalService {
     private static final int TOKEN_BYTES = 32;
     private static final SecureRandom RNG = new SecureRandom();
     private static final Base64.Encoder ENCODER = Base64.getUrlEncoder().withoutPadding();
-    /** Distinct query params per kind — legacy {@code ?t=}, signature {@code ?p=}, economy {@code ?e=}. */
+    /** Distinct query params per kind — legacy {@code ?t=}, signature {@code ?p=}, economy {@code ?e=},
+     *  act {@code ?a=}. */
     private static final String PORTAL_PATH = "/portal/index.html?p=";
     private static final String ECONOMY_PATH = "/portal/index.html?e=";
+    private static final String ACT_PATH = "/portal/index.html?a=";
 
     private final ProjectShareLinkRepository linkRepository;
     private final EstimateRepository estimateRepository;
+    private final WorkActRepository workActRepository;
     private final ProjectService projectService;
     private final FeatureGuard featureGuard;
     private final PortalProperties portalProperties;
@@ -157,6 +164,71 @@ public class ProjectPortalService {
         ProjectShareLink link = requireUsableLink(projectId, ShareLinkKind.ECONOMY);
         emailLink(project, buildUrl(link.getToken(), ShareLinkKind.ECONOMY));
         return stateOf(project, Optional.of(link), ShareLinkKind.ECONOMY, Estimate::isEconomyVisible);
+    }
+
+    // ---- ACT portal — one link per act (Акти tab) ------------------------------------------
+
+    @Transactional(readOnly = true)
+    public ActShareStateResponse actState(UUID actId, UUID ownerId) {
+        WorkAct act = loadOwnedAct(actId, ownerId);
+        return actStateOf(act, actLink(actId));
+    }
+
+    /**
+     * Publishes ONE act to its client link: flips a DRAFT act to SENT (a document the client can now
+     * see and sign) and mints/reuses the act's own link. A REJECTED act cannot be shared. Idempotent
+     * — re-publishing a SENT/SIGNED act just returns the existing link.
+     */
+    @Transactional
+    public ActShareStateResponse updateAct(UUID actId, UUID ownerId) {
+        WorkAct act = loadOwnedAct(actId, ownerId);
+        requireSharable(act.getProject().getOwner());
+        if (act.getStatus() == WorkActStatus.REJECTED) {
+            throw new InvalidEstimateStatusException("error.work-act.not-shareable");
+        }
+        if (act.getStatus() == WorkActStatus.DRAFT) {
+            act.setStatus(WorkActStatus.SENT);
+            act.setSentAt(Instant.now());
+        }
+        return actStateOf(act, Optional.of(mintOrReuseActLink(act)));
+    }
+
+    /** Emails the act link to the client. Requires a published link — the PWA always PUTs first. */
+    @Transactional(readOnly = true)
+    public ActShareStateResponse sendActEmail(UUID actId, UUID ownerId) {
+        WorkAct act = loadOwnedAct(actId, ownerId);
+        requireSharable(act.getProject().getOwner());
+        ProjectShareLink link = actLink(actId)
+                .orElseThrow(() -> new ResourceNotFoundException("ACT link not found for act " + actId));
+        emailLink(act.getProject(), portalProperties.publicBaseUrl() + ACT_PATH + link.getToken());
+        return actStateOf(act, Optional.of(link));
+    }
+
+    private WorkAct loadOwnedAct(UUID actId, UUID ownerId) {
+        return workActRepository.findByIdAndUserId(actId, ownerId)
+                .orElseThrow(() -> new ResourceNotFoundException("Work act not found: " + actId));
+    }
+
+    private Optional<ProjectShareLink> actLink(UUID actId) {
+        return linkRepository.findFirstByWorkActIdAndRevokedFalseOrderByCreatedAtDesc(actId)
+                .filter(l -> l.isUsable(Instant.now()));
+    }
+
+    private ProjectShareLink mintOrReuseActLink(WorkAct act) {
+        return actLink(act.getId())
+                .orElseGet(() -> linkRepository.save(ProjectShareLink.builder()
+                        .project(act.getProject())
+                        .token(generateToken())
+                        .kind(ShareLinkKind.ACT)
+                        .workAct(act)
+                        .revoked(false)
+                        .build()));
+    }
+
+    private ActShareStateResponse actStateOf(WorkAct act, Optional<ProjectShareLink> link) {
+        boolean shareable = act.getStatus() == WorkActStatus.SENT || act.getStatus() == WorkActStatus.SIGNED;
+        String url = link.map(l -> portalProperties.publicBaseUrl() + ACT_PATH + l.getToken()).orElse(null);
+        return new ActShareStateResponse(url, url != null && shareable);
     }
 
     // ---- shared helpers ---------------------------------------------------------------------

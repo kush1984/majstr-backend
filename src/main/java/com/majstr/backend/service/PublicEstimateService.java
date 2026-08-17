@@ -305,14 +305,18 @@ public class PublicEstimateService {
         // Economy counting is default-on and owner-curated (a signed consolidated
         // must stay excluded), so signing no longer force-sets the flag.
         // A duplicate signed while its parent is STILL signed is a real deal replacing an old one,
-        // not a second live deal — auto-reopen the parent to DRAFT (an "act" panel only exists for
-        // SIGNED, so this alone drops it out of the economy) and mark which duplicate did it, so
-        // the master sees a banner instead of two competing signed prices with no explanation
-        // (economy-rework iteration; replaces the old "negative difference" double-count guard).
+        // not a second live deal. It used to auto-reopen the parent to DRAFT (applyReopen) — but
+        // that rewrote a signature the client really gave and, once work acts exist, could pull a
+        // SIGNED estimate out from under an act already sent to the client. The signature is a
+        // historical fact, not a state. The ONLY thing that ever needed to happen is that the
+        // object's economy stops counting the same deal twice; countInEconomy says exactly that,
+        // and the master can flip it back if we guessed wrong. The parent keeps its signature, its
+        // signed date, its signer, its place in the Економіка tab — just uncounted in the summary.
+        // supersededByEstimateId still records which duplicate replaced it (drives the banner).
         if (estimate.getDuplicatedFromId() != null) {
             estimateRepository.findById(estimate.getDuplicatedFromId()).ifPresent(parent -> {
                 if (parent.getStatus() == EstimateStatus.SIGNED) {
-                    estimateService.applyReopen(parent, null);
+                    parent.setCountInEconomy(false);
                     parent.setSupersededByEstimateId(estimate.getId());
                 }
             });

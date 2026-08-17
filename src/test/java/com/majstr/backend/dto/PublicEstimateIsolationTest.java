@@ -20,7 +20,10 @@ import static org.assertj.core.api.Assertions.assertThat;
 class PublicEstimateIsolationTest {
 
     private static final String[] FORBIDDEN = {"expense", "profit", "economy", "cost", "margin"};
-    private static final Class<?>[] PUBLIC_ROOTS = {PublicEstimateView.class, PublicPortalView.class};
+    // PublicActView (acts iteration) is a third public DTO tree — the client-facing view of one
+    // signed act. Walked here too, so an accidental economy/note leak on it fails at build time.
+    private static final Class<?>[] PUBLIC_ROOTS =
+            {PublicEstimateView.class, PublicPortalView.class, PublicActView.class};
 
     @Test
     void publicViewsCarryNoEconomyData() {

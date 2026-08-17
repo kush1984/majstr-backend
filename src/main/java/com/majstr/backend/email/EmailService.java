@@ -21,6 +21,10 @@ public interface EmailService {
     /** Send a client the portal link to their estimate. Must not throw — a failure is logged, not propagated. */
     void sendEstimateShareEmail(String toEmail, String clientName, String contractorName, String projectName, String shareUrl);
 
+    /** Emails the client a signed-act PDF copy (acts iteration) — an independent external trail,
+     *  fail-soft. {@code pdf} is attached as {@code act.pdf}. */
+    void sendSignedActCopyEmail(String toEmail, String clientName, String contractorName, String actNumber, byte[] pdf);
+
     /** Auto-renew T-3 warning: "we'll charge {amount} on {chargeDate}; disable in your profile". */
     void sendRenewReminderEmail(User user, Instant chargeDate, BigDecimal amount);
 

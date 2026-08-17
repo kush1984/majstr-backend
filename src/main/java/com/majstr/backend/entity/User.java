@@ -80,6 +80,56 @@ public class User {
     @Column(name = "logo_url", length = 512)
     private String logoUrl;
 
+    // ---- Document requisites (acts iteration, V103) — all optional; used to render an «Акт
+    //      виконаних робіт» PDF. Fallbacks at render time: legalName → companyName → fullName;
+    //      a blank docCity omits the city line. ---------------------------------------------------
+
+    /** ПІБ ФОП / повна назва юрособи (fallback for the PDF: companyName → fullName). */
+    @Column(name = "legal_name", length = 255)
+    private String legalName;
+
+    /** РНОКПП — the individual tax number. Distinct from {@link #vatId}. */
+    @Column(name = "tax_id", length = 20)
+    private String taxId;
+
+    @Column(name = "legal_address", length = 512)
+    private String legalAddress;
+
+    @Column(name = "iban", length = 64)
+    private String iban;
+
+    @Column(name = "bank_name", length = 255)
+    private String bankName;
+
+    /** Whether the master is a VAT payer. When true the PDF prints the VAT block
+     *  ({@link #vatId} + «Разом без ПДВ / ПДВ 20% / Разом з ПДВ»); when false, «Не є платником ПДВ»
+     *  + the simplified-tax line. */
+    @Builder.Default
+    @Column(name = "vat_payer", nullable = false)
+    private boolean vatPayer = false;
+
+    /** ІПН платника ПДВ — the VAT payer number, only meaningful when {@link #vatPayer}. */
+    @Column(name = "vat_id", length = 20)
+    private String vatId;
+
+    /** Єдиний податок group (2 / 3); null = not on the simplified system, or unset. */
+    @Column(name = "tax_group")
+    private Short taxGroup;
+
+    /** Єдиний податок rate, %. */
+    @Column(name = "tax_rate", precision = 5, scale = 2)
+    private java.math.BigDecimal taxRate;
+
+    /** Місто складання документів; blank → the city line is simply omitted from the PDF. */
+    @Column(name = "doc_city", length = 120)
+    private String docCity;
+
+    /** How act numbers are formatted for this master («7» vs «7/2026»). */
+    @Enumerated(EnumType.STRING)
+    @Builder.Default
+    @Column(name = "act_number_format", nullable = false, length = 20)
+    private ActNumberFormat actNumberFormat = ActNumberFormat.PLAIN;
+
     @Enumerated(EnumType.STRING)
     @Column(name = "plan", nullable = false, length = 20)
     @Builder.Default

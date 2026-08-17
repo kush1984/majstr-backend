@@ -3,6 +3,7 @@ package com.majstr.backend.service;
 import com.majstr.backend.dto.ClientRequest;
 import com.majstr.backend.dto.ClientResponse;
 import com.majstr.backend.entity.Client;
+import com.majstr.backend.entity.ClientType;
 import com.majstr.backend.entity.User;
 import com.majstr.backend.exception.ResourceNotFoundException;
 import com.majstr.backend.repository.ClientRepository;
@@ -54,6 +55,12 @@ public class ClientService {
                 .phone(req.phone().trim())
                 .address(normalize(req.address()))
                 .email(normalize(req.email()))
+                .clientType(req.clientType() == null ? ClientType.PERSON : req.clientType())
+                .taxId(normalize(req.taxId()))
+                .legalName(normalize(req.legalName()))
+                .legalAddress(normalize(req.legalAddress()))
+                .signatoryTitle(normalize(req.signatoryTitle()))
+                .signatoryName(normalize(req.signatoryName()))
                 .build();
         return ClientResponse.from(clientRepository.save(client));
     }
@@ -77,6 +84,17 @@ public class ClientService {
         client.setPhone(req.phone().trim());
         client.setAddress(normalize(req.address()));
         client.setEmail(normalize(req.email()));
+        // Document requisites (acts iteration) — a full-PUT form, so a blank field clears. A null
+        // clientType (older client) leaves the existing type untouched rather than resetting to
+        // PERSON, so a supplier-app update can't silently strip a company's type.
+        if (req.clientType() != null) {
+            client.setClientType(req.clientType());
+        }
+        client.setTaxId(normalize(req.taxId()));
+        client.setLegalName(normalize(req.legalName()));
+        client.setLegalAddress(normalize(req.legalAddress()));
+        client.setSignatoryTitle(normalize(req.signatoryTitle()));
+        client.setSignatoryName(normalize(req.signatoryName()));
         return ClientResponse.from(client);
     }
 

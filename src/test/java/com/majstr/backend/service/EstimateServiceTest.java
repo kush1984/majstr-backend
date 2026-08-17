@@ -32,6 +32,7 @@ import com.majstr.backend.repository.EstimateItemRepository;
 import com.majstr.backend.repository.EstimateRepository;
 import com.majstr.backend.repository.ProjectPhotoRepository;
 import com.majstr.backend.repository.ProjectRepository;
+import com.majstr.backend.repository.WorkActItemRepository;
 import com.majstr.backend.storage.StorageService;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -73,6 +74,7 @@ class EstimateServiceTest {
     @Mock private EstimatePdfService pdfService;
     @Mock private ProjectPhotoRepository photoRepository;
     @Mock private StorageService storage;
+    @Mock private WorkActItemRepository workActItemRepository;
 
     @InjectMocks private EstimateService estimateService;
 

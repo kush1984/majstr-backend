@@ -329,6 +329,35 @@ public class GlobalExceptionHandler {
         return build(HttpStatus.BAD_REQUEST, msg(ex.getMessage()), req);
     }
 
+    @ExceptionHandler(WorkActSignedException.class)
+    public ResponseEntity<ErrorResponse> handleWorkActSigned(WorkActSignedException ex, HttpServletRequest req) {
+        ErrorResponse body = ErrorResponse.coded(HttpStatus.CONFLICT.value(),
+                HttpStatus.CONFLICT.getReasonPhrase(), msg("error.work-act.signed"), req.getRequestURI(), "WORK_ACT_SIGNED");
+        return ResponseEntity.status(HttpStatus.CONFLICT).body(body);
+    }
+
+    @ExceptionHandler(WorkActOpenException.class)
+    public ResponseEntity<ErrorResponse> handleWorkActOpen(WorkActOpenException ex, HttpServletRequest req) {
+        ErrorResponse body = ErrorResponse.coded(HttpStatus.CONFLICT.value(),
+                HttpStatus.CONFLICT.getReasonPhrase(), msg("error.work-act.open", ex.getNumber()),
+                req.getRequestURI(), "WORK_ACT_OPEN");
+        return ResponseEntity.status(HttpStatus.CONFLICT).body(body);
+    }
+
+    @ExceptionHandler(WorkActConflictException.class)
+    public ResponseEntity<ErrorResponse> handleWorkActConflict(WorkActConflictException ex, HttpServletRequest req) {
+        ErrorResponse body = ErrorResponse.coded(HttpStatus.CONFLICT.value(),
+                HttpStatus.CONFLICT.getReasonPhrase(), msg(ex.getMessage()), req.getRequestURI(), ex.getCode());
+        return ResponseEntity.status(HttpStatus.CONFLICT).body(body);
+    }
+
+    @ExceptionHandler(WorkActValidationException.class)
+    public ResponseEntity<ErrorResponse> handleWorkActValidation(WorkActValidationException ex, HttpServletRequest req) {
+        ErrorResponse body = ErrorResponse.coded(HttpStatus.BAD_REQUEST.value(),
+                HttpStatus.BAD_REQUEST.getReasonPhrase(), msg(ex.getMessage()), req.getRequestURI(), ex.getCode());
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(body);
+    }
+
     @ExceptionHandler(TrialNotAvailableException.class)
     public ResponseEntity<ErrorResponse> handleTrialNotAvailable(TrialNotAvailableException ex, HttpServletRequest req) {
         ErrorResponse body = ErrorResponse.coded(HttpStatus.CONFLICT.value(),

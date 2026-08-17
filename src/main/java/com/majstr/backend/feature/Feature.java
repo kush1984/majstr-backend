@@ -32,5 +32,9 @@ public enum Feature {
     /** Import a designer's project documentation (PDF sheets / photos) into measurement
      *  rooms with a package of elements (floor/ceiling/walls/skirting) per room (PRO+).
      *  Text-layer extraction first, vision only for scans; the LLM never computes geometry. */
-    PROJECT_IMPORT
+    PROJECT_IMPORT,
+    /** Work acts (Акти виконаних робіт): a document built from a signed estimate's positions,
+     *  signed separately by the client (acts iteration). Temporarily on FREE alongside
+     *  {@link #OBJECT_ECONOMY}/{@link #MEASUREMENTS} — see {@code PlanConfig}. No LLM involved. */
+    WORK_ACTS
 }

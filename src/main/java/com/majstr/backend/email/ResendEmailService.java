@@ -77,6 +77,44 @@ public class ResendEmailService implements EmailService {
                 estimateShareHtml(clientName, contractorName, projectName, shareUrl));
     }
 
+    @Override
+    @Async
+    public void sendSignedActCopyEmail(String toEmail, String clientName, String contractorName,
+                                       String actNumber, byte[] pdf) {
+        if (!props.isConfigured()) {
+            log.warn("RESEND_API_KEY not set — skipping signed-act copy to {} (act {})", toEmail, actNumber);
+            return;
+        }
+        String greeting = clientName == null || clientName.isBlank() ? "" : ", " + clientName;
+        String html = """
+                <div style="font-family:Arial,sans-serif;max-width:480px;margin:0 auto;color:#1a1a1a">
+                  <h2 style="color:#F26B1F">Акт № %s підписано%s</h2>
+                  <p>Ви підтвердили приймання виконаних робіт за актом № %s (%s).
+                     Копію підписаного акта додано до цього листа у форматі PDF.</p>
+                  <p style="font-size:13px;color:#666">Це проста електронна форма підтвердження, а не
+                     кваліфікований електронний підпис.</p>
+                </div>
+                """.formatted(actNumber, greeting, actNumber, contractorName);
+        String base64 = java.util.Base64.getEncoder().encodeToString(pdf);
+        try {
+            restClient.post()
+                    .uri(RESEND_URL)
+                    .header("Authorization", "Bearer " + props.resendApiKey())
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .body(Map.of(
+                            "from", props.fromAddress(),
+                            "to", List.of(toEmail),
+                            "subject", "Акт № " + actNumber + " підписано",
+                            "html", html,
+                            "attachments", List.of(Map.of("filename", "act-" + actNumber + ".pdf", "content", base64))))
+                    .retrieve()
+                    .toBodilessEntity();
+            log.info("Signed-act copy sent to {} (act {})", toEmail, actNumber);
+        } catch (Exception e) {
+            log.error("Failed to send signed-act copy to {} (act {}): {}", toEmail, actNumber, e.getMessage());
+        }
+    }
+
     private static final DateTimeFormatter DATE =
             DateTimeFormatter.ofPattern("dd.MM.yyyy").withLocale(Locale.forLanguageTag("uk"));
 

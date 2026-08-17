@@ -1,0 +1,42 @@
+package com.majstr.backend.dto;
+
+import com.majstr.backend.entity.WorkActKind;
+import com.majstr.backend.entity.WorkActStatus;
+
+import java.math.BigDecimal;
+import java.time.Instant;
+import java.time.LocalDate;
+import java.util.List;
+import java.util.UUID;
+
+/**
+ * A work act with its frozen lines and computed money. {@code total} sums the included lines;
+ * {@code payable} nets off {@code advanceOffset} (→ «До сплати»). Owner-only.
+ */
+public record WorkActResponse(
+        UUID id,
+        UUID projectId,
+        String number,
+        WorkActKind kind,
+        WorkActStatus status,
+        LocalDate issuedAt,
+        LocalDate periodFrom,
+        LocalDate periodTo,
+        String place,
+        String contractRef,
+        String note,
+        boolean showMaterials,
+        boolean showCumulative,
+        BigDecimal advanceOffset,
+        BigDecimal retentionPercent,
+        Instant sentAt,
+        Instant signedAt,
+        String signerName,
+        boolean signedOffline,
+        UUID addendumEstimateId,
+        List<WorkActItemResponse> items,
+        BigDecimal total,
+        BigDecimal payable,
+        Instant createdAt,
+        Instant updatedAt
+) {}

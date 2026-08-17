@@ -276,13 +276,17 @@ class PublicEstimateServiceTest {
     }
 
     @Test
-    void sign_ofADuplicate_autoReopensAStillSignedParent() {
-        // Economy-rework: A was signed first, the master duplicated it with a discount → B, and
-        // now the client signs B too. A must auto-reopen to DRAFT and be stamped with which
-        // duplicate superseded it — the whole "negative difference" workaround this replaces.
+    void sign_ofADuplicate_stopsCountingTheSupersededParent_butKeepsItsSignature() {
+        // Acts iteration: A was signed first, the master duplicated it with a discount → B, and now
+        // the client signs B too. A must NOT be reopened — its signature is a historical fact and
+        // (once acts reference it) reopening could pull it out from under an act already sent. The
+        // only correction is that the object's economy stops counting the same deal twice:
+        // countInEconomy → false, and A is stamped with which duplicate superseded it.
         Estimate parent = sampleEstimate();
         parent.setStatus(EstimateStatus.SIGNED);
         parent.setSignedAt(Instant.now());
+        parent.setSignerName("Олена Іваненко");
+        parent.setCountInEconomy(true);
         Estimate duplicate = Estimate.builder()
                 .id(UUID.randomUUID())
                 .project(parent.getProject())
@@ -296,10 +300,16 @@ class PublicEstimateServiceTest {
                 .willReturn(List.of(workItem(duplicate)));
         given(estimateRepository.findById(parent.getId())).willReturn(Optional.of(parent));
 
-        publicService.sign(token, new SignRequest("Олена Іваненко", "+380671234567"), "203.0.113.42");
+        publicService.sign(token, new SignRequest("Марія Петренко", "+380671234567"), "203.0.113.42");
 
         assertThat(duplicate.getStatus()).isEqualTo(EstimateStatus.SIGNED);
-        verify(estimateService).applyReopen(parent, null); // system call, no owner attribution
+        // The parent keeps its signature and status — nothing rewritten.
+        verify(estimateService, never()).applyReopen(any(), any());
+        assertThat(parent.getStatus()).isEqualTo(EstimateStatus.SIGNED);
+        assertThat(parent.getSignedAt()).isNotNull();
+        assertThat(parent.getSignerName()).isEqualTo("Олена Іваненко");
+        // …but it stops counting in the economy, and records which duplicate replaced it.
+        assertThat(parent.isCountInEconomy()).isFalse();
         assertThat(parent.getSupersededByEstimateId()).isEqualTo(duplicate.getId());
     }
 
@@ -326,6 +336,7 @@ class PublicEstimateServiceTest {
 
         verify(estimateService, never()).applyReopen(any(), any());
         assertThat(parent.getSupersededByEstimateId()).isNull();
+        assertThat(parent.isCountInEconomy()).isTrue(); // untouched — nothing to correct
     }
 
     @Test

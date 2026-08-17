@@ -14,7 +14,9 @@ import com.majstr.backend.entity.User;
 import com.majstr.backend.feature.DefaultFeatureGuard;
 import com.majstr.backend.repository.EstimateRepository;
 import com.majstr.backend.repository.ObjectExpenseRepository;
+import com.majstr.backend.repository.PaymentReceiptRepository;
 import com.majstr.backend.repository.UserRepository;
+import com.majstr.backend.repository.WorkActItemRepository;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
@@ -42,13 +44,15 @@ class ObjectExpenseServiceTest {
     @Mock ProjectService projectService;
     @Mock UserRepository userRepository;
     @Mock PaymentService paymentService;
+    @Mock WorkActItemRepository workActItemRepository;
+    @Mock PaymentReceiptRepository paymentReceiptRepository;
 
     // The REAL gate (backed by PlanConfig) so the PRO/FREE decision is genuinely tested.
     private final DefaultFeatureGuard featureGuard = new DefaultFeatureGuard();
 
     private ObjectExpenseService service() {
         return new ObjectExpenseService(expenseRepository, estimateRepository, projectService,
-                userRepository, featureGuard, paymentService);
+                userRepository, featureGuard, paymentService, workActItemRepository, paymentReceiptRepository);
     }
 
     private void user(UUID id, Plan plan) {

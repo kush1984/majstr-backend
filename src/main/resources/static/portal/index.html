@@ -555,17 +555,20 @@
     const params = new URLSearchParams(window.location.search);
     const portalToken = params.get('p');
     const economyToken = params.get('e');
+    const actToken = params.get('a');
     const legacyToken = params.get('t');
     const root = document.getElementById('root');
     // ECONOMY acts are already SIGNED and immutable — no sign button/dialog for this mode.
     const isEconomy = Boolean(economyToken);
 
-    if (!portalToken && !economyToken && !legacyToken) {
+    if (!portalToken && !economyToken && !actToken && !legacyToken) {
         root.innerHTML = '<div class="error">Невірне посилання</div>';
         return;
     }
 
-    const apiBase = economyToken
+    const apiBase = actToken
+        ? '/api/public/act/' + encodeURIComponent(actToken)
+        : economyToken
         ? '/api/public/economy/' + encodeURIComponent(economyToken)
         : portalToken
         ? '/api/public/portal/' + encodeURIComponent(portalToken)
@@ -784,7 +787,7 @@
     // Per-link, not per-device-global — a master's other objects must not inherit one client's
     // "I expanded the full list" choice, and a private/incognito localStorage throw must not break
     // the page (falls back to always-collapsed).
-    const expandStorageKey = 'majstr-portal-payments-expanded:' + (economyToken || portalToken || legacyToken || '');
+    const expandStorageKey = 'majstr-portal-payments-expanded:' + (economyToken || portalToken || actToken || legacyToken || '');
     function isAllExpanded() {
         try { return localStorage.getItem(expandStorageKey) === '1'; } catch (e) { return false; }
     }
@@ -1156,6 +1159,104 @@
         }
     }
 
+    // The work-act (?a=) page: one signed-or-signable document. A different shape from the estimate
+    // portal, so its own renderer. Honest wording — «Підтвердити приймання робіт», never «юридично
+    // рівнозначно власноручному підпису» (a simple e-signature has no such presumption).
+    function actDate(iso) {
+        if (!iso) return '';
+        const p = String(iso).slice(0, 10).split('-');
+        return p.length === 3 ? p[2] + '.' + p[1] + '.' + p[0] : iso;
+    }
+
+    function renderAct(a) {
+        closeInfoPopover();
+        const signed = a.status === 'SIGNED';
+        const rows = (a.items || []).map((it, i) => `
+            <tr>
+                <td style="text-align:right;color:var(--muted)">${i + 1}</td>
+                <td>${escapeHtml(it.name)}${it.estimateName ? `<div style="font-size:12px;color:var(--muted)">${escapeHtml(it.estimateName)}</div>` : ''}</td>
+                <td style="text-align:center;white-space:nowrap">${escapeHtml(it.unit)}</td>
+                <td style="text-align:right;white-space:nowrap">${amount(it.quantity)}</td>
+                <td style="text-align:right;white-space:nowrap">${amount(it.unitPrice)}</td>
+                <td style="text-align:right;white-space:nowrap">${amount(it.lineTotal)}</td>
+            </tr>`).join('');
+        const advanceRow = a.advanceOffset && Number(a.advanceOffset) > 0
+            ? `<div style="display:flex;justify-content:space-between"><span>Зараховано авансу</span><span>− ${money(a.advanceOffset)}</span></div>` : '';
+        const signBlock = signed
+            ? `<div class="card" style="background:var(--ok-soft,#e8f5e9)">
+                   <p style="margin:0;font-weight:600">✓ Роботи прийнято ${a.signedAt ? '· ' + actDate(a.signedAt) : ''}</p>
+                   ${a.signerName ? `<p style="margin:4px 0 0;color:var(--muted)">Підписав(ла): ${escapeHtml(a.signerName)}</p>` : ''}
+               </div>`
+            : `<div class="card">
+                   <h3 style="margin:0 0 8px">Підтвердити приймання робіт</h3>
+                   <input id="actSignName" placeholder="Ваше ім'я" style="width:100%;box-sizing:border-box;margin-bottom:8px">
+                   <input id="actSignPhone" placeholder="Телефон" style="width:100%;box-sizing:border-box;margin-bottom:8px">
+                   <button id="actSignBtn" class="primary" style="width:100%">Підтвердити приймання робіт</button>
+                   <p style="font-size:12px;color:var(--muted);margin:8px 0 0">
+                     Підтвердження за посиланням — проста електронна форма згоди, а не кваліфікований
+                     електронний підпис.</p>
+               </div>`;
+        root.innerHTML = `
+            <div class="card">
+                <p style="margin:0 0 4px;color:var(--muted)">${escapeHtml(a.contractorName || '')}</p>
+                <h2 style="margin:0">АКТ № ${escapeHtml(a.number)} приймання-передачі виконаних робіт</h2>
+                ${a.kind === 'INTERIM' ? '<p style="margin:2px 0 0;color:var(--muted)">(проміжний)</p>' : ''}
+                ${a.contractRef ? `<p style="margin:6px 0 0">За договором: ${escapeHtml(a.contractRef)}</p>` : ''}
+                <p style="margin:8px 0 0">Дата складання: ${actDate(a.issuedAt)}</p>
+                <p style="margin:2px 0 0">Роботи виконано в період: з ${actDate(a.periodFrom)} по ${actDate(a.periodTo)}</p>
+                <p style="margin:8px 0 0">Об'єкт: ${escapeHtml(a.objectName || '')}${a.objectAddress ? ', ' + escapeHtml(a.objectAddress) : ''}</p>
+                ${a.clientName ? `<p style="margin:2px 0 0">Замовник: ${escapeHtml(a.clientName)}</p>` : ''}
+            </div>
+            <div class="card">
+                <table style="width:100%;border-collapse:collapse;font-size:14px">
+                    <thead><tr style="text-align:left;color:var(--muted)">
+                        <th></th><th>Найменування</th><th style="text-align:center">Од.</th>
+                        <th style="text-align:right">К-сть</th><th style="text-align:right">Ціна</th><th style="text-align:right">Сума, грн</th>
+                    </tr></thead>
+                    <tbody>${rows}</tbody>
+                </table>
+                <div style="margin-top:12px;border-top:1px solid var(--border,#ddd);padding-top:8px">
+                    <div style="display:flex;justify-content:space-between;font-weight:600"><span>Разом за актом</span><span>${money(a.total)}</span></div>
+                    ${advanceRow}
+                    <div style="display:flex;justify-content:space-between;font-weight:700;font-size:16px"><span>До сплати</span><span>${money(a.payable)}</span></div>
+                    ${a.payableInWords ? `<p style="margin:6px 0 0;font-size:13px;color:var(--muted)">Прописом: ${escapeHtml(a.payableInWords)}</p>` : ''}
+                </div>
+            </div>
+            ${signBlock}
+            <div class="actions" style="justify-content:center;margin-top:8px">
+                <a href="${apiBase}/pdf" target="_blank" rel="noopener" class="secondary" style="text-decoration:none">Завантажити PDF</a>
+            </div>
+        `;
+        if (!signed) {
+            document.getElementById('actSignBtn').addEventListener('click', async () => {
+                const clientName = document.getElementById('actSignName').value.trim();
+                const clientPhone = document.getElementById('actSignPhone').value.trim();
+                if (!clientName || !clientPhone) return;
+                const btn = document.getElementById('actSignBtn');
+                btn.disabled = true;
+                btn.textContent = 'Надсилаємо…';
+                try {
+                    const resp = await fetch(apiBase + '/sign', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ clientName, clientPhone })
+                    });
+                    if (!resp.ok) {
+                        btn.disabled = false;
+                        btn.textContent = 'Підтвердити приймання робіт';
+                        alert(resp.status === 409 ? 'Акт уже підписано.' : 'Не вдалося підписати. Спробуйте ще раз.');
+                        return;
+                    }
+                    renderAct(await resp.json());
+                } catch (e) {
+                    btn.disabled = false;
+                    btn.textContent = 'Підтвердити приймання робіт';
+                    alert('Не вдалося підписати. Перевірте інтернет і спробуйте ще раз.');
+                }
+            });
+        }
+    }
+
     // A failure on this page lands on the CONTRACTOR's reputation — never show
     // a blank screen or a raw error. Retryable failures get a retry button;
     // a dead link tells the client to ask the contractor for a fresh one.
@@ -1274,7 +1375,13 @@
                 return;
             }
             const data = await resp.json();
-            render((portalToken || economyToken) ? data : adaptLegacy(data));
+            // The act view (?a=) is a different document shape entirely — its own render branch,
+            // BEFORE adaptLegacy, which expects the estimate shape and would render garbage.
+            if (actToken) {
+                renderAct(data);
+            } else {
+                render((portalToken || economyToken) ? data : adaptLegacy(data));
+            }
         } catch (e) {
             showError('Не вдалося завантажити кошторис. Перевірте інтернет-з\'єднання і спробуйте ще раз.', true);
         }

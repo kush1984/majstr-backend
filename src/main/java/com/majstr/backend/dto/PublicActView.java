@@ -1,0 +1,46 @@
+package com.majstr.backend.dto;
+
+import java.math.BigDecimal;
+import java.time.Instant;
+import java.time.LocalDate;
+import java.util.List;
+
+/**
+ * The client-facing view of ONE work-completion act, reached by its {@code ?a=} share token. A
+ * settled document the client reviews and signs — deliberately a fresh, minimal shape (not the
+ * owner's {@code WorkActResponse}, which carries internal flags): only what the portal page renders.
+ * Units are pre-formatted Ukrainian labels so the page prints them as-is.
+ *
+ * <p>Never carries anything the client shouldn't see: no economy figures, no other acts, no
+ * estimate internals — just this act's own lines and totals.</p>
+ */
+public record PublicActView(
+        String number,
+        String kind,          // INTERIM / FINAL
+        String status,        // SENT / SIGNED
+        LocalDate issuedAt,
+        LocalDate periodFrom,
+        LocalDate periodTo,
+        String contractRef,
+        String objectName,
+        String objectAddress,
+        String contractorName,
+        String clientName,
+        List<Item> items,
+        BigDecimal total,
+        BigDecimal advanceOffset,
+        BigDecimal payable,
+        String payableInWords,
+        Instant signedAt,
+        String signerName
+) {
+    public record Item(
+            String name,
+            String category,
+            String estimateName,   // which estimate this line came from (null for additional works)
+            String unit,           // pre-formatted label
+            BigDecimal quantity,
+            BigDecimal unitPrice,
+            BigDecimal lineTotal
+    ) {}
+}

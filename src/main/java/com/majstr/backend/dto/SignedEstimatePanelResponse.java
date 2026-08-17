@@ -6,7 +6,9 @@ import java.util.UUID;
 
 /**
  * One panel in the object economy's per-estimate list — every SIGNED estimate gets one
- * (the "act" framing), <b>regardless of</b> {@code countInEconomy}. {@code countedInEconomy} is
+ * (a signed-estimate panel; the old "act" framing was renamed in the acts iteration, when a real
+ * «Акт виконаних робіт» became a separate document), <b>regardless of</b> {@code countInEconomy}.
+ * {@code countedInEconomy} is
  * carried through so the PWA can honestly flag a panel whose amount is NOT folded into the
  * summary total below it (owner excluded it, or it's a consolidation source) — never silently.
  *

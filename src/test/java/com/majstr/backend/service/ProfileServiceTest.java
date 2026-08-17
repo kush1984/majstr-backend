@@ -56,7 +56,9 @@ class ProfileServiceTest {
 
     private ProfileUpdateRequest req(String email) {
         return new ProfileUpdateRequest("Іван Новий", "+380671112233", "Нова Компанія",
-                Set.of(Trade.TILING, Trade.PLUMBING), email);
+                Set.of(Trade.TILING, Trade.PLUMBING), email,
+                // No document requisites in the basic request.
+                null, null, null, null, null, null, null, null, null, null, null);
     }
 
     @Test
@@ -73,6 +75,48 @@ class ProfileServiceTest {
         assertThat(resp.fullName()).isEqualTo("Іван Новий");
         // Email unchanged (same value) → no re-verification.
         verify(emailVerificationService, never()).replaceForNewEmail(any());
+    }
+
+    @Test
+    void update_savesDocumentRequisites_andTrimsBlanksToNull() {
+        User u = user(true, "ivan@example.com");
+        given(userRepository.findById(userId)).willReturn(Optional.of(u));
+
+        ProfileUpdateRequest req = new ProfileUpdateRequest(
+                "Іван Новий", "+380671112233", "Нова Компанія",
+                Set.of(Trade.TILING), "ivan@example.com",
+                "ФОП Іваненко Іван", "  1234567890  ", "Київ, вул. Хрещатик 1",
+                "UA123456789012345678901234567", "ПриватБанк",
+                true, "123456789012", (short) 3, new java.math.BigDecimal("5.00"),
+                "  ", com.majstr.backend.entity.ActNumberFormat.WITH_YEAR);
+
+        UserResponse resp = profileService.updateProfile(userId, req);
+
+        assertThat(u.getLegalName()).isEqualTo("ФОП Іваненко Іван");
+        assertThat(u.getTaxId()).isEqualTo("1234567890");      // trimmed
+        assertThat(u.getIban()).isEqualTo("UA123456789012345678901234567");
+        assertThat(u.isVatPayer()).isTrue();
+        assertThat(u.getVatId()).isEqualTo("123456789012");
+        assertThat(u.getTaxGroup()).isEqualTo((short) 3);
+        assertThat(u.getTaxRate()).isEqualByComparingTo("5.00");
+        assertThat(u.getDocCity()).isNull();                   // blank → null
+        assertThat(u.getActNumberFormat()).isEqualTo(com.majstr.backend.entity.ActNumberFormat.WITH_YEAR);
+        assertThat(resp.legalName()).isEqualTo("ФОП Іваненко Іван");
+        assertThat(resp.actNumberFormat()).isEqualTo(com.majstr.backend.entity.ActNumberFormat.WITH_YEAR);
+    }
+
+    @Test
+    void update_nullVatPayerAndFormat_leaveExistingValuesUntouched() {
+        // An older client that doesn't send the flags must not reset them.
+        User u = user(true, "ivan@example.com");
+        u.setVatPayer(true);
+        u.setActNumberFormat(com.majstr.backend.entity.ActNumberFormat.WITH_YEAR);
+        given(userRepository.findById(userId)).willReturn(Optional.of(u));
+
+        profileService.updateProfile(userId, req("ivan@example.com")); // both flags null
+
+        assertThat(u.isVatPayer()).isTrue();
+        assertThat(u.getActNumberFormat()).isEqualTo(com.majstr.backend.entity.ActNumberFormat.WITH_YEAR);
     }
 
     @Test

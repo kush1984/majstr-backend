@@ -17,4 +17,7 @@ public interface ProjectShareLinkRepository extends JpaRepository<ProjectShareLi
 
     Optional<ProjectShareLink> findFirstByProjectIdAndKindAndRevokedFalseOrderByCreatedAtDesc(
             UUID projectId, ShareLinkKind kind);
+
+    /** An ACT link is keyed by its act, not by (project, kind) — one link per act. */
+    Optional<ProjectShareLink> findFirstByWorkActIdAndRevokedFalseOrderByCreatedAtDesc(UUID workActId);
 }

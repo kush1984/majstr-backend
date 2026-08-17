@@ -1,6 +1,7 @@
 package com.majstr.backend.dto;
 
 import com.majstr.backend.entity.Estimate;
+import com.majstr.backend.entity.EstimateKind;
 import com.majstr.backend.entity.EstimateStatus;
 
 import java.math.BigDecimal;
@@ -41,7 +42,11 @@ public record EstimateSummary(
          * підписав похідний" banner; the duplicate's own name is already in this same list (both
          * sides of the pair belong to the same project), so no extra lookup is needed here.
          */
-        UUID supersededByEstimateId
+        UUID supersededByEstimateId,
+        /** REGULAR vs ADDENDUM (acts iteration). An ADDENDUM rollup is normally filtered out of the
+         *  Кошториси list / pickers by the service, but the field rides along so a caller that does
+         *  fetch one can attribute it to the act that spawned it. */
+        EstimateKind kind
 ) {
     public static EstimateSummary from(Estimate estimate) {
         return new EstimateSummary(
@@ -55,7 +60,8 @@ public record EstimateSummary(
                 estimate.isCountInEconomy(),
                 estimate.getMarkupPercent(),
                 estimate.getDuplicatedFromId(),
-                estimate.getSupersededByEstimateId()
+                estimate.getSupersededByEstimateId(),
+                estimate.getKind()
         );
     }
 }

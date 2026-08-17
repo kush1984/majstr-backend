@@ -1751,7 +1751,13 @@ one-line summary — keep the item in the file as a record.
   onto ECONOMY. Revisit only if masters actually ask for it.
 
 ### Raw «Знижка PERCENT −15» line in the portal/PDF items table
-- **Status:** IN_PROGRESS — portal side fixed in the portal-two-contexts iteration (2026-08-11);
+- **Status:** RESOLVED (acts iteration, Prompt 4 verification) — the PDF side was already covered:
+  `UnitLabel.ua(Unit.PERCENT)` returns «%» (added by the `percent-unit-fix`), and
+  `EstimatePdfService.addItemsTable` renders the unit column via `UnitLabel.ua`, so a PERCENT line's
+  unit cell already shows «%», not the raw enum. Portal side was fixed in portal-two-contexts. Both
+  client-facing tables now read «%». No code change needed — the fix «belongs in UnitLabel», and it
+  is there.
+- **(historical) Status:** IN_PROGRESS — portal side fixed in the portal-two-contexts iteration (2026-08-11);
   PDF side still open.
 - **Since:** Portal-pdf-polish iteration (2026-08-09)
 - **Context:** `portal-pdf-polish` added the % to the markup/discount RECAP row (the small line
@@ -1773,6 +1779,40 @@ one-line summary — keep the item in the file as a record.
   `EstimatePdfService.addItemsTable` (the PDF's own items table) was **not** touched — out of
   scope for this iteration, which only had a reason to be inside the portal HTML file. Still
   IN_PROGRESS until the PDF side is done too.
+
+### The act «ДОВІДКОВО» block is live/object-wide and excluded from doc_hash — is that the right trade?
+- **Status:** RESOLVED (acts-fix, 2026-08-17) — deliberate design decision, logged so it isn't
+  "fixed" back into a bug.
+- **Since:** Acts-fix iteration (2026-08-17)
+- **Context:** The rewritten «ДОВІДКОВО» reference (виконано з початку / за кошторисами / залишок)
+  is sourced from the SAME live, object-wide queries as the economy works axis, so PDF and app can
+  never disagree. But those figures grow as *later* acts/estimates sign, while `doc_hash` (Prompt 5)
+  hashes the whole rendered PDF — so if the block were hashed, a signed act would stop reproducing
+  its own hash the moment any later act signed.
+- **Resolution / rationale:** The canonical (hashed) render passes `cumulative = null`, so the block
+  is **excluded from doc_hash** — it is an informational, live, object-wide reference, explicitly NOT
+  part of the tamper-evidence guarantee. The client's binding acceptance (priced works table, totals,
+  signatures) IS hashed. Alternatives rejected: freezing the figures onto the act at sign time
+  contradicts the codebase's "progress is never denormalized" rule and re-introduces drift between PDF
+  and app; leaving the block in the hash breaks reproducibility for every multi-act object. If a
+  regulator ever needs the reference itself to be tamper-evident, the freeze-at-sign approach is the
+  fallback — but only then.
+
+### Do masters work on budget (state-funded) objects → is a КБ-2в act needed?
+- **Status:** OPEN — needs field validation before building anything
+- **Since:** Acts iteration, Prompt 5 (2026-08-16)
+- **Context:** The work-completion act shipped (Prompts 3–5) is a **free-form** «Акт виконаних робіт»,
+  which is the correct and sufficient primary document for private/commercial subcontracting (ст. 882
+  ЦК). State-funded / budget construction, however, is legally required to use the **КБ-2в (форма
+  ДБН)** «Акт приймання виконаних будівельних робіт» + **КБ-3** «Довідка про вартість» — a rigid
+  form tied to ДСТУ Б Д.1.1 estimating, with коефіцієнти, накладні, прибуток, etc. Our masters are
+  individual contractors / ФОП doing apartments and private houses, for whom КБ-2в is overkill and
+  usually not required.
+- **Notes / options:** Before investing in КБ-2в generation (a large, form-rigid feature): validate
+  whether ANY meaningful share of our masters take budget/subcontract-to-a-general-contractor jobs
+  where the GC demands КБ-2в. If yes → a separate export format on top of the existing act data, not
+  a change to the free-form act. If no (the likely answer) → leave it; a free-form act is what our
+  segment needs. Do NOT build speculatively.
 
 ### Additional works vs. a replacement estimate — how not to double-count income
 - **Status:** OPEN — the REPLACES half got a real (partial) answer; ADDITIONAL is still manual

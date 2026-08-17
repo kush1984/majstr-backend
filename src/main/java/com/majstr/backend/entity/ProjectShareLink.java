@@ -68,6 +68,12 @@ public class ProjectShareLink {
     @Column(name = "payments_visible", nullable = false)
     private boolean paymentsVisible;
 
+    /** The act this link opens — set only for {@link ShareLinkKind#ACT} (one link = one act, unlike
+     *  the set-based PORTAL/ECONOMY links); {@code null} for every other kind (DB CHECK enforces it). */
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "work_act_id", updatable = false)
+    private WorkAct workAct;
+
     @PrePersist
     void onCreate() {
         if (id == null) {

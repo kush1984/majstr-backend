@@ -31,12 +31,12 @@ public final class PlanConfig {
         // variants, but it closes the "unlimited drafts on 2 projects" hole that
         // sidestepped the paid plan). Only BRANDED_PDF and AI_ASSISTANT stay paid.
         //
-        // OBJECT_ECONOMY and MEASUREMENTS are a TEMPORARY addition (business decision, revert by
-        // removing these two lines): opened up to FREE while the AI-calling flows (ESTIMATE_IMPORT,
-        // RECEIPT_IMPORT, SKETCH_IMPORT, PROJECT_IMPORT — all still PRO-only below) are hidden in
-        // the PWA to cut AI spend, to give FREE masters more value while that's the case. Neither
-        // feature calls an LLM, so this doesn't reintroduce the cost that was just cut. The PWA
-        // mirrors this at features/plan/tempFreeUnlocks.ts — revert both sides together.
+        // OBJECT_ECONOMY, MEASUREMENTS and WORK_ACTS are a TEMPORARY addition (business decision,
+        // revert by removing these lines): opened up to FREE while the AI-calling flows
+        // (ESTIMATE_IMPORT, RECEIPT_IMPORT, SKETCH_IMPORT, PROJECT_IMPORT — all still PRO-only below)
+        // are hidden in the PWA to cut AI spend, to give FREE masters more value while that's the
+        // case. None of the three calls an LLM, so this doesn't reintroduce the cost that was just
+        // cut. The PWA mirrors this at features/plan/tempFreeUnlocks.ts — revert both sides together.
         MATRIX.put(Plan.FREE, new Definition(
                 Map.of(
                         Limit.MAX_PROJECTS, 2,
@@ -51,7 +51,8 @@ public final class PlanConfig {
                         Feature.ONLINE_SIGNATURE,
                         Feature.PHOTO_REPORTS,
                         Feature.OBJECT_ECONOMY,
-                        Feature.MEASUREMENTS
+                        Feature.MEASUREMENTS,
+                        Feature.WORK_ACTS
                 )
         ));
 
@@ -72,7 +73,8 @@ public final class PlanConfig {
                         Feature.MEASUREMENTS,
                         Feature.RECEIPT_IMPORT,
                         Feature.SKETCH_IMPORT,
-                        Feature.PROJECT_IMPORT
+                        Feature.PROJECT_IMPORT,
+                        Feature.WORK_ACTS
                 )
         ));
 
@@ -94,7 +96,8 @@ public final class PlanConfig {
                         Feature.MEASUREMENTS,
                         Feature.RECEIPT_IMPORT,
                         Feature.SKETCH_IMPORT,
-                        Feature.PROJECT_IMPORT
+                        Feature.PROJECT_IMPORT,
+                        Feature.WORK_ACTS
                 )
         ));
     }

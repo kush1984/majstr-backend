@@ -31,6 +31,7 @@ import com.majstr.backend.feature.LimitService;
 import com.majstr.backend.repository.EstimateItemRepository;
 import com.majstr.backend.repository.EstimateRepository;
 import com.majstr.backend.repository.ProjectPhotoRepository;
+import com.majstr.backend.repository.WorkActItemRepository;
 import com.majstr.backend.repository.ProjectRepository;
 import com.majstr.backend.storage.StorageService;
 import lombok.RequiredArgsConstructor;
@@ -46,6 +47,7 @@ import java.math.RoundingMode;
 import java.time.Instant;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -75,6 +77,7 @@ public class EstimateService {
 
     private final EstimateRepository estimateRepository;
     private final EstimateItemRepository itemRepository;
+    private final WorkActItemRepository workActItemRepository;
     private final ProjectService projectService;
     private final ProjectRepository projectRepository;
     private final CatalogService catalogService;
@@ -446,6 +449,11 @@ public class EstimateService {
     public List<EstimateSummary> listForProject(UUID projectId, UUID ownerId) {
         projectService.loadOwned(projectId, ownerId);
         return estimateRepository.findByProjectIdOrderByCreatedAtDesc(projectId).stream()
+                // ADDENDUM rollups (auto-created «Додаткові роботи до акта № N», acts iteration) are
+                // never shown as a standalone estimate — the master didn't create them, and they'd
+                // otherwise appear in the Кошториси tab and the share pickers. They're attributed to
+                // the act that spawned them instead.
+                .filter(e -> e.getKind() != com.majstr.backend.entity.EstimateKind.ADDENDUM)
                 .map(EstimateSummary::from)
                 .toList();
     }
@@ -1178,8 +1186,15 @@ public class EstimateService {
      * which is exactly why {@code line_total} is a column (V88).</p>
      */
     EstimateResponse toResponse(Estimate estimate, List<EstimateItem> items) {
+        // Only a SIGNED estimate can have lines closed by an act (acts iteration). One aggregate over
+        // the whole project's SIGNED acts, mapped per line — no N+1; skipped entirely otherwise.
+        // A HashMap (not Map.of()) even when empty: an unpersisted consolidation line has a null id,
+        // and Map.of().get(null) throws — HashMap.get(null) safely returns null.
+        Map<UUID, BigDecimal> closedByActs = estimate.getStatus() == EstimateStatus.SIGNED
+                ? signedActClosedByItem(estimate.getProject().getId())
+                : new HashMap<>();
         List<EstimateItemResponse> itemDtos = items.stream()
-                .map(EstimateItemResponse::from)
+                .map(item -> EstimateItemResponse.from(item, closedByActs.get(item.getId())))
                 .toList();
         // Amounts are already rounded per line, so subtotals add up to the total exactly — the
         // arithmetic a master can check by hand.
@@ -1217,6 +1232,15 @@ public class EstimateService {
                 balance,
                 List.copyOf(estimate.getConsolidationSourceIds())
         );
+    }
+
+    /** Σ SIGNED-act quantity per estimate line for a project, keyed by {@code estimate_item_id}. */
+    private Map<UUID, BigDecimal> signedActClosedByItem(UUID projectId) {
+        Map<UUID, BigDecimal> byItem = new HashMap<>();
+        for (Object[] row : workActItemRepository.sumSignedQuantitiesByEstimateItem(projectId)) {
+            byItem.put((UUID) row[0], (BigDecimal) row[1]);
+        }
+        return byItem;
     }
 
     private static String normalize(String s) {

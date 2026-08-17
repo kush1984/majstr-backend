@@ -309,7 +309,9 @@ class AuthControllerTest {
                 false,
                 null,
                 null,
-                "refcode1");
+                "refcode1",
+                // Document requisites (acts iteration) — none set in this sample.
+                null, null, null, null, null, false, null, null, null, null, null);
         return AuthResponse.of("access-jwt", "refresh-token", 900L, user);
     }
 }

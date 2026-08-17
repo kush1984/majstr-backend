@@ -34,6 +34,11 @@ class ClientServiceTest {
     @Mock ClientRepository clientRepository;
     @InjectMocks ClientService clientService;
 
+    /** A PERSON-type request with no document requisites — the common shape for these tests. */
+    private static ClientRequest person(String fullName, String phone, String address, String email) {
+        return new ClientRequest(fullName, phone, address, email, null, null, null, null, null, null);
+    }
+
     @Test
     void create_freePlanCanCreateManyClientsWithoutLimitError() {
         UUID ownerId = UUID.randomUUID();
@@ -44,7 +49,7 @@ class ClientServiceTest {
         assertThatCode(() -> {
             for (int i = 0; i < 50; i++) {
                 clientService.create(
-                        new ClientRequest("Client #" + i, "+38050" + i, null, null),
+                        person("Client #" + i, "+38050" + i, null, null),
                         ownerId);
             }
         }).doesNotThrowAnyException();
@@ -57,9 +62,36 @@ class ClientServiceTest {
         given(clientRepository.save(any(Client.class))).willAnswer(inv -> inv.getArgument(0));
 
         var resp = clientService.create(
-                new ClientRequest("Олена", "+380671234567", "Київ", "olena@example.com"), ownerId);
+                person("Олена", "+380671234567", "Київ", "olena@example.com"), ownerId);
 
         assertThat(resp.email()).isEqualTo("olena@example.com");
+    }
+
+    @Test
+    void create_and_update_saveDocumentRequisites() {
+        UUID id = UUID.randomUUID();
+        UUID ownerId = UUID.randomUUID();
+        given(userRepository.getReferenceById(ownerId)).willReturn(User.builder().id(ownerId).build());
+        given(clientRepository.save(any(Client.class))).willAnswer(inv -> inv.getArgument(0));
+
+        var created = clientService.create(new ClientRequest(
+                "ТОВ Ромашка", "+380441234567", "Київ", "office@romashka.ua",
+                com.majstr.backend.entity.ClientType.COMPANY, "12345678", "Товариство «Ромашка»",
+                "Київ, вул. Хрещатик 1", "Директор", "Петренко П.П."), ownerId);
+
+        assertThat(created.clientType()).isEqualTo(com.majstr.backend.entity.ClientType.COMPANY);
+        assertThat(created.taxId()).isEqualTo("12345678");
+        assertThat(created.legalName()).isEqualTo("Товариство «Ромашка»");
+        assertThat(created.signatoryTitle()).isEqualTo("Директор");
+        assertThat(created.signatoryName()).isEqualTo("Петренко П.П.");
+
+        // A null clientType on update leaves the stored type untouched (older clients don't send it).
+        Client existing = Client.builder().id(id).owner(User.builder().id(ownerId).build())
+                .fullName("ТОВ Ромашка").phone("+380441234567")
+                .clientType(com.majstr.backend.entity.ClientType.COMPANY).build();
+        given(clientRepository.findById(id)).willReturn(Optional.of(existing));
+        clientService.update(id, person("ТОВ Ромашка", "+380441234567", null, null), ownerId);
+        assertThat(existing.getClientType()).isEqualTo(com.majstr.backend.entity.ClientType.COMPANY);
     }
 
     @Test
@@ -74,7 +106,7 @@ class ClientServiceTest {
         given(clientRepository.findById(id)).willReturn(Optional.of(existing));
 
         var resp = clientService.update(id,
-                new ClientRequest("Нове Ім'я", "+380671112233", "Київ, вул. Хрещатик 1", "new@example.com"),
+                person("Нове Ім'я", "+380671112233", "Київ, вул. Хрещатик 1", "new@example.com"),
                 ownerId);
 
         assertThat(existing.getFullName()).isEqualTo("Нове Ім'я");
@@ -98,7 +130,7 @@ class ClientServiceTest {
         given(clientRepository.findById(id)).willReturn(Optional.of(existing));
 
         assertThatThrownBy(() -> clientService.update(id,
-                new ClientRequest("Hacker", "+2", null, null), stranger))
+                person("Hacker", "+2", null, null), stranger))
                 .isInstanceOf(AccessDeniedException.class);
         // Original data untouched.
         assertThat(existing.getFullName()).isEqualTo("X");
@@ -115,7 +147,7 @@ class ClientServiceTest {
         given(clientRepository.save(any(Client.class))).willAnswer(inv -> inv.getArgument(0));
 
         var resp = clientService.create(
-                new ClientRequest("Офлайн", "+380670000000", null, null), ownerId, requestedId);
+                person("Офлайн", "+380670000000", null, null), ownerId, requestedId);
 
         assertThat(resp.id()).isEqualTo(requestedId);
     }
@@ -132,7 +164,7 @@ class ClientServiceTest {
         given(clientRepository.findById(requestedId)).willReturn(Optional.of(existing));
 
         var resp = clientService.create(
-                new ClientRequest("Дубль", "+380672222222", null, null), ownerId, requestedId);
+                person("Дубль", "+380672222222", null, null), ownerId, requestedId);
 
         // Replay returns the existing client and never inserts a duplicate.
         assertThat(resp.id()).isEqualTo(requestedId);
@@ -153,7 +185,7 @@ class ClientServiceTest {
         given(clientRepository.findById(requestedId)).willReturn(Optional.of(existing));
 
         assertThatThrownBy(() -> clientService.create(
-                new ClientRequest("Викрадач", "+2", null, null), ownerId, requestedId))
+                person("Викрадач", "+2", null, null), ownerId, requestedId))
                 .isInstanceOf(AccessDeniedException.class);
     }
 

@@ -99,7 +99,37 @@ public class ProfileService {
         // (down to none, relying on custom trades instead) is a supported end state.
         user.setTrades(new LinkedHashSet<>(req.trades()));
         applyEmailChange(user, req.email());
+        applyRequisites(user, req);
         return response(user);
+    }
+
+    /**
+     * Document requisites (acts iteration) — all optional. The profile form is a full PUT, so a
+     * blank field genuinely means "clear this". The two flag fields are the exception: they are
+     * only overwritten when the request actually carries a value, so a caller that omits them (an
+     * older client, a partial update) never accidentally resets the master's VAT status or act
+     * number format.
+     */
+    private void applyRequisites(User user, ProfileUpdateRequest req) {
+        user.setLegalName(trimToNull(req.legalName()));
+        user.setTaxId(trimToNull(req.taxId()));
+        user.setLegalAddress(trimToNull(req.legalAddress()));
+        user.setIban(trimToNull(req.iban()));
+        user.setBankName(trimToNull(req.bankName()));
+        user.setVatId(trimToNull(req.vatId()));
+        user.setTaxGroup(req.taxGroup());
+        user.setTaxRate(req.taxRate());
+        user.setDocCity(trimToNull(req.docCity()));
+        if (req.vatPayer() != null) {
+            user.setVatPayer(req.vatPayer());
+        }
+        if (req.actNumberFormat() != null) {
+            user.setActNumberFormat(req.actNumberFormat());
+        }
+    }
+
+    private static String trimToNull(String s) {
+        return (s == null || s.isBlank()) ? null : s.trim();
     }
 
     // ---- custom trades (user_trade) ---------------------------------------

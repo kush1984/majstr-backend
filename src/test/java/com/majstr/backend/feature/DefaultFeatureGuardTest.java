@@ -83,6 +83,16 @@ class DefaultFeatureGuardTest {
         assertThat(PlanConfig.minimumPlanFor(Feature.MEASUREMENTS)).isEqualTo(Plan.FREE);
     }
 
+    @Test
+    void workActsAreTemporarilyOpenToFreeToo() {
+        // Same TEMPORARY decision (acts iteration) — work acts don't call an LLM, so opening them
+        // to FREE while the AI flows stay hidden doesn't reintroduce AI cost.
+        assertThat(guard.isEnabled(userOnPlan(Plan.FREE), Feature.WORK_ACTS)).isTrue();
+        assertThat(guard.isEnabled(userOnPlan(Plan.PRO),  Feature.WORK_ACTS)).isTrue();
+        assertThat(guard.isEnabled(userOnPlan(Plan.TEAM), Feature.WORK_ACTS)).isTrue();
+        assertThat(PlanConfig.minimumPlanFor(Feature.WORK_ACTS)).isEqualTo(Plan.FREE);
+    }
+
     private User userOnPlan(Plan plan) {
         return User.builder().id(UUID.randomUUID()).plan(plan).build();
     }

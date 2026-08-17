@@ -21,6 +21,11 @@ Six changes, all "надбудова" over the payments-economy-portal work (V93
    "+ Отриманий платіж") — UI-only, `project_payment`'s schema is unchanged.
 6. Signing a duplicate whose parent is still SIGNED auto-reopens the parent to DRAFT
    (`superseded_by_estimate_id`) instead of the old "negative difference" double-count workaround.
+   > ⚠️ **Superseded by the acts iteration (Prompt 0, `iteration-work-acts.md`).** The auto-reopen
+   > was removed: `doSign` now sets `parent.countInEconomy = false` (keeping the signature — it's a
+   > historical fact, and a work act can reference a SIGNED estimate) rather than calling
+   > `applyReopen`. Everything else here (`superseded_by_estimate_id`, dismiss endpoint, banner)
+   > stands; the banner is just suppressed for DRAFT rows now.
 
 ## Recon findings (see prompt's own recon-first instruction)
 

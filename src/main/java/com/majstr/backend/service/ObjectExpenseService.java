@@ -2,6 +2,7 @@ package com.majstr.backend.service;
 
 import com.majstr.backend.dto.ExpenseRequest;
 import com.majstr.backend.dto.ExpenseResponse;
+import com.majstr.backend.dto.ObjectEconomyActsResponse;
 import com.majstr.backend.dto.ObjectEconomyInternalsResponse;
 import com.majstr.backend.dto.ObjectEconomyResponse;
 import com.majstr.backend.dto.PaymentsSummaryResponse;
@@ -15,7 +16,9 @@ import com.majstr.backend.feature.Feature;
 import com.majstr.backend.feature.FeatureGuard;
 import com.majstr.backend.repository.EstimateRepository;
 import com.majstr.backend.repository.ObjectExpenseRepository;
+import com.majstr.backend.repository.PaymentReceiptRepository;
 import com.majstr.backend.repository.UserRepository;
+import com.majstr.backend.repository.WorkActItemRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
@@ -52,6 +55,8 @@ public class ObjectExpenseService {
     private final UserRepository userRepository;
     private final FeatureGuard featureGuard;
     private final PaymentService paymentService;
+    private final WorkActItemRepository workActItemRepository;
+    private final PaymentReceiptRepository paymentReceiptRepository;
 
     @Transactional
     public ExpenseResponse add(UUID objectId, UUID ownerId, ExpenseRequest req) {
@@ -131,12 +136,23 @@ public class ObjectExpenseService {
         User user = loadUser(ownerId);
         projectService.loadOwned(objectId, ownerId); // existence + ownership (404 / 403)
         List<SignedEstimatePanelResponse> panels = signedEstimatePanels(objectId);
+        ObjectEconomyActsResponse acts = actsAxis(objectId);
         boolean enabled = featureGuard.isEnabled(user, Feature.OBJECT_ECONOMY);
         PaymentsSummaryResponse payments = enabled ? paymentService.summaryUnchecked(objectId) : null;
         ObjectEconomyInternalsResponse internals = enabled
                 ? internalsOf(objectId, payments.contractedTotal())
                 : null;
-        return new ObjectEconomyResponse(panels, payments, internals);
+        return new ObjectEconomyResponse(panels, acts, payments, internals);
+    }
+
+    /** The FREE-visible works axis (acts iteration): contracted / accepted-by-acts / received,
+     *  computed unconditionally — the same {@code sumIncomeCounted} the payments summary uses for
+     *  «За договором», so the two figures never disagree. */
+    private ObjectEconomyActsResponse actsAxis(UUID objectId) {
+        BigDecimal contracted = estimateRepository.sumIncomeCounted(objectId);
+        BigDecimal accepted = workActItemRepository.sumSignedActLineTotals(objectId);
+        BigDecimal received = paymentReceiptRepository.sumByProjectId(objectId);
+        return new ObjectEconomyActsResponse(contracted, accepted, received);
     }
 
     private ObjectEconomyInternalsResponse internalsOf(UUID objectId, BigDecimal contracted) {
