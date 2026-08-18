@@ -67,7 +67,7 @@ controllers return DTOs. `passwordHash` never appears in any response (`UserResp
 
 `hibernate.ddl-auto: validate` — never express schema changes in entity annotations. Add a new
 `V<N>__<desc>.sql` under `src/main/resources/db/migration/`; **check the highest number first** (`ls`
-+ sort numerically — latest is **V106**). **Never edit an applied migration** — Flyway checksums it and
++ sort numerically — latest is **V107**). **Never edit an applied migration** — Flyway checksums it and
 a changed file fails startup. New `Trade` enum constant → migration to extend the `user_trades` CHECK
 (a master-invented trade instead goes in `user_trade` — no migration needed, see index below).
 (Detail + the "testing a DATA migration" pattern: index → Flyway / catalog.)
@@ -148,6 +148,7 @@ One line per non-obvious fact; **full detail in [docs/architecture.md](docs/arch
 the section before working in that area.
 
 - **Auth flow** — register/login/refresh/logout/me; `LoginRateLimitFilter` runs before `JwtAuthenticationFilter`.
+- **FREE object cap counts LIFETIME creations, not live rows (V107)** — `users.lifetime_project_count` (seeded from the current object count) is the basis, so **deleting a completed/cancelled object can't slip past the cap** (anti-abuse). `LimitService.reserveProjectSlot` locks the user, checks `lifetime >= MAX_PROJECTS`, and increments in the same tx (a delete never decrements); the idempotency check in `ProjectService.create` runs first so an offline replay never re-reserves. `PlanLimitsResponse.projectsUsed` (= lifetime) is what the PWA gate/banner read — NOT the live list length. Permanent delete (`useDeleteProject`, cascade) is offered from the object-row ⋮ **only on a terminal object**, behind a strong destructive `ConfirmDialog`.
 - **Refresh tokens** — hashed at rest (SHA-256), rotated (old revoked on use), swept daily; **the PWA must single-flight `/refresh`** or a burst of 401s self-logs-out.
 - **Email verification is soft** — `@Async` fail-soft; only `POST /estimates/{id}/share` is gated (403 `EMAIL_NOT_VERIFIED`); email editable only while unverified.
 - **Web push** — VAPID, `@Async`, env-gated fail-soft; `deliver()` MUST pass `Encoding.AES128GCM` (legacy `aesgcm` → FCM 403).

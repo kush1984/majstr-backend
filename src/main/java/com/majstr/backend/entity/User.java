@@ -135,6 +135,12 @@ public class User {
     @Builder.Default
     private Plan plan = Plan.FREE;
 
+    /** Objects this master has EVER created (never decremented on delete) — the basis for the FREE
+     *  object cap, so a delete can't be used to slip past it. Seeded from the current object count
+     *  for accounts predating V107. */
+    @Column(name = "lifetime_project_count", nullable = false)
+    private int lifetimeProjectCount;
+
     @Enumerated(EnumType.STRING)
     @Column(name = "role", nullable = false, length = 20)
     @Builder.Default

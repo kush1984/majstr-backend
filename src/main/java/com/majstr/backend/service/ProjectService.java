@@ -71,7 +71,7 @@ public class ProjectService {
                 return ProjectResponse.from(p); // idempotent replay
             }
         }
-        limitService.requireWithinLimit(ownerId, Limit.MAX_PROJECTS);
+        limitService.reserveProjectSlot(ownerId);
         User owner = userRepository.getReferenceById(ownerId);
         Client client = req.clientId() == null ? null : clientService.loadOwned(req.clientId(), ownerId);
         Project project = Project.builder()

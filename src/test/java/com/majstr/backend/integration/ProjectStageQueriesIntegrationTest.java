@@ -7,7 +7,6 @@ import com.majstr.backend.entity.Project;
 import com.majstr.backend.entity.ProjectStatus;
 import com.majstr.backend.entity.User;
 import com.majstr.backend.exception.LimitExceededException;
-import com.majstr.backend.feature.Limit;
 import com.majstr.backend.feature.LimitService;
 import com.majstr.backend.repository.EstimateRepository;
 import com.majstr.backend.repository.ProjectRepository;
@@ -120,12 +119,13 @@ class ProjectStageQueriesIntegrationTest extends IntegrationTestBase {
         assertThat(byId).doesNotContainKey(noEstimates.getId());
     }
 
-    // ---- FREE limit: cancel is a SOFT status, does not free a MAX_PROJECTS slot ---------------
+    // ---- object counting + the lifetime FREE cap ---------------------------------------------
 
     @Test
     void countByOwnerId_stillCountsACancelledObject() {
-        // ProjectRepository.countByOwnerId has no status predicate at all — cancel must not be
-        // able to free a slot the way a real delete does.
+        // ProjectRepository.countByOwnerId has no status predicate — it counts every live row
+        // (admin stats, dashboards). The FREE cap itself no longer reads this; it reads the lifetime
+        // counter (see reserveProjectSlot tests below).
         User freeOwner = freeUser();
         projectRepository.save(Project.builder()
                 .owner(freeOwner).name("Обʼєкт 1").address("вул. 1").status(ProjectStatus.CANCELLED).build());
@@ -134,16 +134,28 @@ class ProjectStageQueriesIntegrationTest extends IntegrationTestBase {
     }
 
     @Test
-    void requireWithinLimit_freeUserAtCapWithACancelledObject_stillRejectsANewOne() {
-        // The exact FREE-bypass the prompt worried about: 2 objects, cancel one, try to create a
-        // 3rd — must still be rejected, because the cancelled one still occupies a slot.
+    void reserveProjectSlot_freeUserWhoCreatedTwoIsRejected_evenAfterDeletingObjects() {
+        // The exact FREE-bypass the prompt worried about: the cap counts objects EVER created
+        // (lifetime), so a user who already created 2 is refused a 3rd — deleting the earlier ones
+        // (lifetime count unchanged) does not give a slot back. No live rows here on purpose: it
+        // proves the guard reads the lifetime counter, not the current row count.
         User freeOwner = freeUser();
-        projectRepository.save(Project.builder()
-                .owner(freeOwner).name("Обʼєкт 1").address("вул. 1").status(ProjectStatus.CANCELLED).build());
-        projectRepository.save(Project.builder()
-                .owner(freeOwner).name("Обʼєкт 2").address("вул. 2").status(ProjectStatus.IN_PROGRESS).build());
+        freeOwner.setLifetimeProjectCount(2);
+        userRepository.save(freeOwner);
 
-        assertThatThrownBy(() -> limitService.requireWithinLimit(freeOwner.getId(), Limit.MAX_PROJECTS))
+        assertThatThrownBy(() -> limitService.reserveProjectSlot(freeOwner.getId()))
+                .isInstanceOf(LimitExceededException.class);
+    }
+
+    @Test
+    void reserveProjectSlot_incrementsLifetimeSoASecondCreateFillsTheCap() {
+        User freeOwner = freeUser(); // lifetime 0
+        limitService.reserveProjectSlot(freeOwner.getId()); // 0 → 1
+        limitService.reserveProjectSlot(freeOwner.getId()); // 1 → 2
+
+        assertThat(userRepository.findById(freeOwner.getId()).orElseThrow().getLifetimeProjectCount())
+                .isEqualTo(2);
+        assertThatThrownBy(() -> limitService.reserveProjectSlot(freeOwner.getId())) // 2 → rejected
                 .isInstanceOf(LimitExceededException.class);
     }
 

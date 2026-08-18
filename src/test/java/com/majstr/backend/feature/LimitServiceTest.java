@@ -7,7 +7,6 @@ import com.majstr.backend.entity.User;
 import com.majstr.backend.exception.LimitExceededException;
 import com.majstr.backend.repository.EstimateRepository;
 import com.majstr.backend.repository.ProjectPhotoRepository;
-import com.majstr.backend.repository.ProjectRepository;
 import com.majstr.backend.repository.UserRepository;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -27,7 +26,6 @@ import static org.mockito.BDDMockito.given;
 class LimitServiceTest {
 
     @Mock UserRepository userRepository;
-    @Mock ProjectRepository projectRepository;
     @Mock EstimateRepository estimateRepository;
     @Mock ProjectPhotoRepository projectPhotoRepository;
     @InjectMocks LimitService limitService;
@@ -36,13 +34,12 @@ class LimitServiceTest {
     private final UUID projectId = UUID.randomUUID();
 
     @Test
-    void requireWithinLimit_freePlanRejectsThirdProject() {
-        givenUserOnPlan(Plan.FREE);
-        given(projectRepository.countByOwnerId(userId)).willReturn(2L);
+    void reserveProjectSlot_freePlanRejectsThirdProject() {
+        // The cap counts objects EVER created (lifetime), not the live row count — a FREE user who
+        // already created 2 is refused a third even after deleting some.
+        givenUserWithLifetime(Plan.FREE, 2);
 
-        // The user-facing text is built from the message bundle in the advice
-        // (covered by GlobalExceptionHandlerTest); here we assert the carried facts.
-        assertThatThrownBy(() -> limitService.requireWithinLimit(userId, Limit.MAX_PROJECTS))
+        assertThatThrownBy(() -> limitService.reserveProjectSlot(userId))
                 .isInstanceOfSatisfying(LimitExceededException.class, ex -> {
                     assertThat(ex.getMaxAllowed()).isEqualTo(2);
                     assertThat(ex.getCurrentPlan()).isEqualTo(Plan.FREE);
@@ -51,33 +48,28 @@ class LimitServiceTest {
     }
 
     @Test
-    void requireWithinLimit_freePlanAllowsSecondProject() {
-        givenUserOnPlan(Plan.FREE);
-        given(projectRepository.countByOwnerId(userId)).willReturn(1L);
+    void reserveProjectSlot_freePlanAllowsSecondProjectAndIncrementsLifetime() {
+        User user = givenUserWithLifetime(Plan.FREE, 1);
 
-        assertThatCode(() -> limitService.requireWithinLimit(userId, Limit.MAX_PROJECTS))
-                .doesNotThrowAnyException();
+        assertThatCode(() -> limitService.reserveProjectSlot(userId)).doesNotThrowAnyException();
+        // The reservation is the increment — a delete never gives this slot back.
+        assertThat(user.getLifetimeProjectCount()).isEqualTo(2);
     }
 
     @Test
-    void requireWithinLimit_proPlanIsUnlimited() {
-        givenUserOnPlan(Plan.PRO);
-        // No count call expected — early-return when max is -1.
+    void reserveProjectSlot_proPlanIsUnlimited() {
+        User user = givenUserWithLifetime(Plan.PRO, 50);
 
-        assertThatCode(() -> limitService.requireWithinLimit(userId, Limit.MAX_PROJECTS))
-                .doesNotThrowAnyException();
+        assertThatCode(() -> limitService.reserveProjectSlot(userId)).doesNotThrowAnyException();
+        assertThat(user.getLifetimeProjectCount()).isEqualTo(51); // still counted, just never capped
     }
 
     @Test
-    void requireWithinLimit_afterUpgradeToProPreviouslyBlockedUserCanCreate() {
-        // Same user, count above the FREE cap; once we say PRO the limit
-        // disappears — proves the plan is looked up at check time, not cached.
-        givenUserOnPlan(Plan.PRO);
-        // count would still be 10 in reality, but we never reach the count
-        // because PRO is unlimited.
+    void reserveProjectSlot_afterUpgradeToProPreviouslyBlockedUserCanCreate() {
+        // Lifetime above the FREE cap; once PRO the limit disappears — plan looked up at check time.
+        givenUserWithLifetime(Plan.PRO, 10);
 
-        assertThatCode(() -> limitService.requireWithinLimit(userId, Limit.MAX_PROJECTS))
-                .doesNotThrowAnyException();
+        assertThatCode(() -> limitService.reserveProjectSlot(userId)).doesNotThrowAnyException();
     }
 
     // ---- per-project estimate limit (FREE) ---------------------------------
@@ -174,6 +166,13 @@ class LimitServiceTest {
     private void givenUserOnPlan(Plan plan) {
         User user = User.builder().id(userId).plan(plan).build();
         given(userRepository.findByIdForUpdate(userId)).willReturn(Optional.of(user));
+    }
+
+    /** A locked user with a preset lifetime object count — the basis of the project cap. */
+    private User givenUserWithLifetime(Plan plan, int lifetime) {
+        User user = User.builder().id(userId).plan(plan).lifetimeProjectCount(lifetime).build();
+        given(userRepository.findByIdForUpdate(userId)).willReturn(Optional.of(user));
+        return user;
     }
 
     /** limitsFor is a pure read — no lock, hence the plain finder. */

@@ -7,7 +7,6 @@ import com.majstr.backend.exception.LimitExceededException;
 import com.majstr.backend.exception.ResourceNotFoundException;
 import com.majstr.backend.repository.EstimateRepository;
 import com.majstr.backend.repository.ProjectPhotoRepository;
-import com.majstr.backend.repository.ProjectRepository;
 import com.majstr.backend.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -41,22 +40,26 @@ import java.util.UUID;
 public class LimitService {
 
     private final UserRepository userRepository;
-    private final ProjectRepository projectRepository;
     private final EstimateRepository estimateRepository;
     private final ProjectPhotoRepository projectPhotoRepository;
 
+    /**
+     * Reserve one object slot for a create. The FREE cap counts objects EVER created
+     * ({@code lifetime_project_count}), NOT the live row count — so deleting a completed/cancelled
+     * object can't be used to slip past the limit (anti-abuse). On success the lifetime counter is
+     * incremented in the SAME transaction (dirty-checked); a delete never decrements it. The user
+     * row is locked ({@code findByIdForUpdate}) so the offline outbox replaying a burst of creates
+     * can't race two past the cap (see the class doc).
+     */
     @Transactional
-    public void requireWithinLimit(UUID userId, Limit limit) {
+    public void reserveProjectSlot(UUID userId) {
         User user = userRepository.findByIdForUpdate(userId)
                 .orElseThrow(() -> new ResourceNotFoundException("User not found: " + userId));
-        int max = PlanConfig.limit(user.getPlan(), limit);
-        if (max < 0) {
-            return; // unlimited
+        int max = PlanConfig.limit(user.getPlan(), Limit.MAX_PROJECTS);
+        if (max >= 0 && user.getLifetimeProjectCount() >= max) {
+            throw new LimitExceededException(Limit.MAX_PROJECTS, max, user.getPlan());
         }
-        long current = countFor(userId, limit);
-        if (current >= max) {
-            throw new LimitExceededException(limit, max, user.getPlan());
-        }
+        user.setLifetimeProjectCount(user.getLifetimeProjectCount() + 1);
     }
 
     /**
@@ -100,22 +103,13 @@ public class LimitService {
         }
     }
 
-    /** The current user's plan limits, for the UI to disable "create" buttons
-     *  preemptively (null = unlimited). The backend check stays the source of truth. */
+    /** The current user's plan limits + how many objects they've already used (lifetime), for the UI
+     *  to disable "create" buttons preemptively and word the over-limit hint honestly (null cap =
+     *  unlimited). The backend check stays the source of truth. */
     @Transactional(readOnly = true)
     public PlanLimitsResponse limitsFor(UUID userId) {
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new ResourceNotFoundException("User not found: " + userId));
-        return PlanLimitsResponse.of(user.getPlan());
-    }
-
-    private long countFor(UUID userId, Limit limit) {
-        return switch (limit) {
-            case MAX_PROJECTS -> projectRepository.countByOwnerId(userId);
-            case MAX_ESTIMATES_PER_PROJECT ->
-                    throw new IllegalArgumentException("Per-project limit needs a project; use requireCanAddEstimate");
-            case MAX_PHOTOS_PER_OBJECT, MAX_RECEIPT_PHOTOS_PER_OBJECT ->
-                    throw new IllegalArgumentException("Per-object photo limit needs a project; use requireCanAddPhoto");
-        };
+        return PlanLimitsResponse.of(user);
     }
 }

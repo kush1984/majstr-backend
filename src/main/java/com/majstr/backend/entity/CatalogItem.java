@@ -87,6 +87,7 @@ public class CatalogItem {
      */
     @Enumerated(EnumType.STRING)
     @Column(name = "source", nullable = false, length = 20)
+    @Builder.Default
     private CatalogItemSource source = CatalogItemSource.MANUAL;
 
     /**

@@ -251,10 +251,10 @@ class ProjectServiceTest {
 
         assertThat(r.id()).isEqualTo(requestedId);
         assertThat(r.name()).isEqualTo("Вже є");
-        // A replay must NOT insert again and must NOT re-hit the FREE limit.
+        // A replay must NOT insert again and must NOT re-reserve a lifetime slot.
         org.mockito.Mockito.verify(projectRepository, org.mockito.Mockito.never()).save(any(Project.class));
         org.mockito.Mockito.verify(limitService, org.mockito.Mockito.never())
-                .requireWithinLimit(any(), any());
+                .reserveProjectSlot(any());
     }
 
     @Test
