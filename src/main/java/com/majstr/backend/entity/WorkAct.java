@@ -55,6 +55,11 @@ public class WorkAct {
     @Column(name = "number", nullable = false, length = 20)
     private String number;
 
+    /** Optional stage name («Штукатурні роботи») — how masters actually label interim acts. Shown
+     *  after the number in the list, the PDF heading and the portal; frozen by signing. */
+    @Column(name = "title", length = 120)
+    private String title;
+
     @Enumerated(EnumType.STRING)
     @Column(name = "kind", nullable = false, length = 20)
     private WorkActKind kind;
@@ -82,6 +87,9 @@ public class WorkAct {
     @Column(name = "note", columnDefinition = "text")
     private String note;
 
+    /** Editor preference, persisted per act: when off, the PWA hides MATERIAL estimate lines from
+     *  the act editor AND excludes them from the saved lines/totals (WYSIWYG — review fix). The
+     *  PDF/portal render whatever lines the act actually holds, so they need no filter of their own. */
     @Builder.Default
     @Column(name = "show_materials", nullable = false)
     private boolean showMaterials = true;

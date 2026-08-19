@@ -56,7 +56,10 @@ class WorkActPdfServiceTest {
         String text = textOf(pdfService.render(sampleModel(WorkActKind.INTERIM)));
 
         assertThat(text).contains("АКТ № 7 приймання-передачі виконаних робіт");
-        assertThat(text).contains("проміжний");
+        assertThat(text).contains("Штукатурні роботи"); // the stage name right under the heading
+        // With a stage name the «(проміжний)» LABEL is dropped (master feedback) — but the legal
+        // interim DISCLAIMER below still renders: it hangs on the kind, not the label.
+        assertThat(text).doesNotContain("(проміжний)");
         // Two DISTINCT dates.
         assertThat(text).contains("Дата складання");
         assertThat(text).contains("Роботи виконано в період");
@@ -69,6 +72,17 @@ class WorkActPdfServiceTest {
         assertThat(text).contains("прописом").contains("Шістнадцять тисяч гривень");
         // Interim disclaimer.
         assertThat(text).contains("Цей Акт є проміжним");
+    }
+
+    @Test
+    void render_untitledInterim_keepsTheInterimLabel() throws Exception {
+        // No stage name → «(проміжний)» is the only descriptor and must stay (master feedback:
+        // the label is dropped only when a custom name replaces it).
+        given(featureGuard.isEnabled(any(), eq(Feature.BRANDED_PDF))).willReturn(false);
+
+        String text = textOf(pdfService.render(sampleModel(WorkActKind.INTERIM, null, null)));
+
+        assertThat(text).contains("(проміжний)");
     }
 
     @Test
@@ -117,6 +131,12 @@ class WorkActPdfServiceTest {
 
     private WorkActPdfService.PdfModel sampleModel(WorkActKind kind,
                                                    WorkActPdfService.CumulativeReference cumulative) {
+        return sampleModel(kind, cumulative, "Штукатурні роботи");
+    }
+
+    private WorkActPdfService.PdfModel sampleModel(WorkActKind kind,
+                                                   WorkActPdfService.CumulativeReference cumulative,
+                                                   String title) {
         User contractor = User.builder()
                 .id(UUID.randomUUID()).email("i@e.com").companyName("ФОП Іваненко").fullName("Іван Іваненко")
                 .phone("+380501112233").passwordHash("x")
@@ -136,6 +156,7 @@ class WorkActPdfServiceTest {
         UUID estimateId = UUID.randomUUID();
         WorkAct act = WorkAct.builder()
                 .id(UUID.randomUUID()).userId(contractor.getId()).project(project).number("7").kind(kind)
+                .title(title)
                 .status(WorkActStatus.DRAFT).issuedAt(LocalDate.of(2026, 8, 14))
                 .periodFrom(LocalDate.of(2026, 8, 1)).periodTo(LocalDate.of(2026, 8, 14))
                 .showMaterials(true).showCumulative(true)

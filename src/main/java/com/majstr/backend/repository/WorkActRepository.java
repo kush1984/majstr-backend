@@ -24,6 +24,10 @@ public interface WorkActRepository extends JpaRepository<WorkAct, UUID> {
     /** One open act per object: true if any DRAFT/SENT act already exists on the project. */
     boolean existsByProjectIdAndStatusIn(UUID projectId, Collection<WorkActStatus> statuses);
 
+    /** Same, excluding the act being transitioned — the REJECTED→DRAFT guard (review fix): another
+     *  act may have been opened while this one sat rejected. */
+    boolean existsByProjectIdAndStatusInAndIdNot(UUID projectId, Collection<WorkActStatus> statuses, UUID id);
+
     /** A FINAL act (any status) blocks creating another act on the object. */
     boolean existsByProjectIdAndKind(UUID projectId, WorkActKind kind);
 

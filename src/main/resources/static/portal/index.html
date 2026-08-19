@@ -1200,7 +1200,8 @@
             <div class="card">
                 <p style="margin:0 0 4px;color:var(--muted)">${escapeHtml(a.contractorName || '')}</p>
                 <h2 style="margin:0">АКТ № ${escapeHtml(a.number)} приймання-передачі виконаних робіт</h2>
-                ${a.kind === 'INTERIM' ? '<p style="margin:2px 0 0;color:var(--muted)">(проміжний)</p>' : ''}
+                ${a.title ? `<p style="margin:2px 0 0;font-weight:600">${escapeHtml(a.title)}</p>` : ''}
+                ${a.kind === 'INTERIM' && !a.title ? '<p style="margin:2px 0 0;color:var(--muted)">(проміжний)</p>' : ''}
                 ${a.contractRef ? `<p style="margin:6px 0 0">За договором: ${escapeHtml(a.contractRef)}</p>` : ''}
                 <p style="margin:8px 0 0">Дата складання: ${actDate(a.issuedAt)}</p>
                 <p style="margin:2px 0 0">Роботи виконано в період: з ${actDate(a.periodFrom)} по ${actDate(a.periodTo)}</p>

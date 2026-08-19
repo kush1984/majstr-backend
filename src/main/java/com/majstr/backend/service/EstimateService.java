@@ -27,6 +27,7 @@ import com.majstr.backend.exception.EmailNotVerifiedException;
 import com.majstr.backend.exception.EstimateSignedException;
 import com.majstr.backend.exception.InvalidEstimateStatusException;
 import com.majstr.backend.exception.ResourceNotFoundException;
+import com.majstr.backend.exception.WorkActConflictException;
 import com.majstr.backend.feature.LimitService;
 import com.majstr.backend.repository.EstimateItemRepository;
 import com.majstr.backend.repository.EstimateRepository;
@@ -179,16 +180,20 @@ public class EstimateService {
      * Until now that meant typing the estimate twice and an object economy with no way to tell
      * which figure was his: counting both said he earned his crew's wages as well as his margin.</p>
      *
-     * <p><b>Every copied line records what it cost in the source</b> ({@code sourceUnitPrice}),
-     * whether it was marked up or not. That single field is what the economy subtracts, and it is
-     * deliberately not "the markup percent on the estimate": the percent stops being true the
-     * moment the master marks up only some lines, edits one price afterwards, adds a line the crew
-     * is not paid for, or deletes the source. The subtraction survives all four.</p>
+     * <p><b>What actually keeps the money honest is the flag flip below</b>: the SOURCE stops
+     * counting in the economy here, so «За договором» carries the client's copy only, and the
+     * foreman logs what he pays the crew in the expense journal — profit = contracted − expenses
+     * (the V95 simplified model). This is the one automatic edit to another estimate in the whole
+     * service, so it is stated rather than buried: the master can switch it back on the estimate
+     * list if his object really works the other way.</p>
      *
-     * <p>The SOURCE stops counting in the economy here. It is what the foreman pays out, so leaving
-     * it counted would report his crew's wages as his income — and this is the one automatic edit
-     * to another estimate in the whole service, so it is stated rather than buried: the master can
-     * switch it back on the estimate list if his object really works the other way.</p>
+     * <p><b>{@code sourceUnitPrice} is recorded but, today, read by nothing</b> (economy-review
+     * 2026-08): every copied line keeps what it cost in the source — data for a possible future
+     * automatic-margin view, deliberately per-line rather than "the markup percent" (the percent
+     * stops being true the moment the master marks up only some lines, edits a price afterwards,
+     * adds a line the crew is not paid for, or deletes the source). Do NOT wire it into the
+     * economy without retiring the expense-journal convention above, or crew costs would be
+     * subtracted twice.</p>
      *
      * <p>Not copied: the deposit (money already received against the source, not against this copy)
      * and portal visibility (nothing is ever shared by default). Measurement links ARE copied —
@@ -199,6 +204,14 @@ public class EstimateService {
         Estimate source = loadOwned(estimateId, ownerId);
         UUID projectId = source.getProject().getId();
         limitService.requireCanAddEstimate(ownerId, projectId);
+        // A SIGNED act has closed lines against this estimate (review fix, same family as the
+        // reopen guard): duplicating excludes the SOURCE from the economy right below, which would
+        // silently drop those accepted works from «Прийнято актами» — and the copy's lines are new
+        // ids with done=0, so the progress picker forgets them and the same work could be acted
+        // twice. 409; new positions belong in a NEW estimate, not a re-quote of an acted one.
+        if (workActItemRepository.existsSignedLineForEstimate(estimateId)) {
+            throw new WorkActConflictException("error.estimate.duplicate-has-acts", "ESTIMATE_HAS_SIGNED_ACTS");
+        }
 
         List<EstimateItem> sourceItems = itemRepository.findByEstimateIdOrderBySortOrderAscIdAsc(estimateId);
         Set<UUID> toMarkUp = req.itemIds() == null
@@ -530,6 +543,13 @@ public class EstimateService {
         Estimate estimate = loadOwned(estimateId, ownerId);
         if (estimate.getStatus() != EstimateStatus.SIGNED) {
             throw new InvalidEstimateStatusException("error.estimate.not-signed-reopen");
+        }
+        // A SIGNED act has closed lines against this estimate (review fix): reopening would drop it
+        // from «За договором» (SIGNED-only) while the act's frozen lines keep counting in «Прийнято
+        // актами» — and a reopened DRAFT becomes editable and deletable, making the drift permanent.
+        // 409, same family as the delete-a-SIGNED-estimate refusal.
+        if (workActItemRepository.existsSignedLineForEstimate(estimateId)) {
+            throw new WorkActConflictException("error.estimate.reopen-has-acts", "ESTIMATE_HAS_SIGNED_ACTS");
         }
         applyReopen(estimate, ownerId);
         List<EstimateItem> items = itemRepository.findByEstimateIdOrderBySortOrderAscIdAsc(estimateId);

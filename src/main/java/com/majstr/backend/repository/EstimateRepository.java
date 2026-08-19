@@ -204,11 +204,12 @@ public interface EstimateRepository extends JpaRepository<Estimate, UUID> {
                                   THEN i.line_total ELSE 0 END), 0) AS markup,
                    COALESCE(SUM(CASE WHEN i.unit = 'PERCENT' AND i.line_total < 0
                                        AND (i.percent_base_kind = 'TOTAL' OR i.base_origin_label IS NOT NULL)
-                                  THEN i.line_total ELSE 0 END), 0) AS discount
+                                  THEN i.line_total ELSE 0 END), 0) AS discount,
+                   e.kind
             FROM estimates e
             LEFT JOIN estimate_items i ON i.estimate_id = e.id
             WHERE e.project_id = :projectId AND e.status = 'SIGNED'
-            GROUP BY e.id, e.name, e.count_in_economy, e.signed_at
+            GROUP BY e.id, e.name, e.count_in_economy, e.signed_at, e.kind
             ORDER BY e.signed_at ASC
             """, nativeQuery = true)
     List<Object[]> findSignedEstimateSummaries(@Param("projectId") UUID projectId);

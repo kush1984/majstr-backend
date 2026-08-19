@@ -17,7 +17,7 @@ import com.majstr.backend.entity.WorkActItem;
 import com.majstr.backend.entity.WorkActStatus;
 import com.majstr.backend.exception.ResourceNotFoundException;
 import com.majstr.backend.exception.WorkActSignedException;
-import com.majstr.backend.email.EmailService;
+import com.majstr.backend.exception.WorkActValidationException;
 import com.majstr.backend.push.PushService;
 import com.majstr.backend.repository.EstimateRepository;
 import com.majstr.backend.repository.ProjectMessageRepository;
@@ -32,8 +32,6 @@ import org.springframework.transaction.annotation.Transactional;
 import java.io.IOException;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -63,8 +61,8 @@ public class PublicActPortalService {
     private final WorkActPdfService pdfService;
     private final ActCumulativeCalculator cumulativeCalculator;
     private final ActAddendumCreator addendumCreator;
+    private final ActSignedCopyService signedCopy;
     private final PushService pushService;
-    private final EmailService emailService;
     private final MessageSource messages;
 
     @Transactional(readOnly = true)
@@ -89,6 +87,13 @@ public class PublicActPortalService {
         if (act.getStatus() != WorkActStatus.SENT) {
             throw new ResourceNotFoundException("Act not available");
         }
+        // Belt-and-braces (review fix): share and offline-sign already refuse an empty act, but the
+        // owner can still empty a SENT act via PUT /items — never let that emptiness become SIGNED
+        // (immutable, undeletable).
+        List<WorkActItem> items = itemRepository.findByWorkActIdOrderBySortOrderAscIdAsc(act.getId());
+        if (items.isEmpty()) {
+            throw new WorkActValidationException("error.work-act.empty", "WORK_ACT_EMPTY");
+        }
         // Roll any additional (off-estimate) works into a SIGNED ADDENDUM estimate FIRST — so «За
         // договором» absorbs them and «Прийнято актами» can never exceed it (acts-fix; the portal
         // path used to skip this, unlike the offline path).
@@ -101,14 +106,11 @@ public class PublicActPortalService {
         act.setSignerUserAgent(truncate(userAgent, 512));
         act.setSignedOffline(false);
 
-        List<WorkActItem> items = itemRepository.findByWorkActIdOrderBySortOrderAscIdAsc(act.getId());
-        // The canonical (hashed) PDF omits the live «ДОВІДКОВО» block — cumulative=null — so a later
-        // signing on the object never invalidates this act's stored doc_hash.
-        byte[] canonical = pdfService.render(model(act, items, null, null));
-        act.setDocHash(sha256Hex(canonical));
-
+        // Tamper stamp + client copy — the SAME artifacts the offline path produces (review fix:
+        // extracted into ActSignedCopyService so neither path can drift from the other).
+        act.setDocHash(signedCopy.computeDocHash(act, items));
         notifyContractor(act, items);
-        emailClientCopy(act, items);
+        signedCopy.emailClientCopy(act, items);
         return toView(act, items);
     }
 
@@ -188,7 +190,7 @@ public class PublicActPortalService {
         User owner = project.getOwner();
         Client client = project.getClient();
         return new PublicActView(
-                act.getNumber(), act.getKind().name(), act.getStatus().name(),
+                act.getNumber(), act.getTitle(), act.getKind().name(), act.getStatus().name(),
                 act.getIssuedAt(), act.getPeriodFrom(), act.getPeriodTo(), act.getContractRef(),
                 project.getName(), project.getAddress(),
                 contractorName(owner), clientName(client),
@@ -223,21 +225,6 @@ public class PublicActPortalService {
                 "Акт № " + act.getNumber(), "/projects/" + act.getProject().getId());
     }
 
-    private void emailClientCopy(WorkAct act, List<WorkActItem> items) {
-        Client client = act.getProject().getClient();
-        if (client == null || client.getEmail() == null || client.getEmail().isBlank()) {
-            return;
-        }
-        try {
-            byte[] stamped = pdfService.render(model(act, items, act.getDocHash(),
-                    cumulativeCalculator.forDownload(act, items)));
-            emailService.sendSignedActCopyEmail(client.getEmail(), client.getFullName(),
-                    contractorName(act.getProject().getOwner()), act.getNumber(), stamped);
-        } catch (Exception e) {
-            // Fail-soft: the signature already landed; the emailed copy is a bonus trail.
-        }
-    }
-
     // ---- helpers ----------------------------------------------------------
 
     private static String contractorName(User owner) {
@@ -254,19 +241,6 @@ public class PublicActPortalService {
 
     private static String money(BigDecimal amount) {
         return amount.setScale(MONEY_SCALE, ROUNDING).toPlainString() + " грн";
-    }
-
-    private static String sha256Hex(byte[] bytes) {
-        try {
-            byte[] digest = MessageDigest.getInstance("SHA-256").digest(bytes);
-            StringBuilder sb = new StringBuilder(digest.length * 2);
-            for (byte b : digest) {
-                sb.append(Character.forDigit((b >> 4) & 0xF, 16)).append(Character.forDigit(b & 0xF, 16));
-            }
-            return sb.toString();
-        } catch (NoSuchAlgorithmException e) {
-            throw new IllegalStateException("SHA-256 unavailable", e); // never on a standard JRE
-        }
     }
 
     private static String truncate(String s, int max) {

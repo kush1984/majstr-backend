@@ -61,6 +61,7 @@ class WorkActResponseFactory {
                 act.getId(),
                 act.getProject().getId(),
                 act.getNumber(),
+                act.getTitle(),
                 act.getKind(),
                 act.getStatus(),
                 act.getIssuedAt(),

@@ -18,6 +18,25 @@ public interface WorkActItemRepository extends JpaRepository<WorkActItem, UUID> 
     /** Wholesale-replace helper: the PUT /items path clears and re-inserts the act's lines. */
     void deleteByWorkActId(UUID workActId);
 
+    /** Empty-act guard (review fix): an act with no lines can be neither shared nor signed. */
+    boolean existsByWorkActId(UUID workActId);
+
+    /**
+     * Whether any SIGNED act holds a line frozen from this estimate — the guard that blocks
+     * {@code EstimateService#reopen} (review fix): reopening (and then editing or deleting) an
+     * estimate that SIGNED acts closed lines against removes it from «За договором» while the act
+     * lines keep counting in «Прийнято актами» — the exact drift the acts-fix eliminated. Checked
+     * via the line's frozen {@code estimateId} (survives item edits), SIGNED acts only — an open
+     * DRAFT/SENT act is still editable, so it can absorb the change.
+     */
+    @Query("""
+            SELECT COUNT(wai) > 0
+            FROM WorkActItem wai
+            WHERE wai.estimateId = :estimateId
+              AND wai.workAct.status = com.majstr.backend.entity.WorkActStatus.SIGNED
+            """)
+    boolean existsSignedLineForEstimate(@Param("estimateId") UUID estimateId);
+
     /**
      * How much of each estimate line has been closed by SIGNED acts of an object — the source of
      * both the progress endpoint's «виконано з початку» and the {@code cumulative_before} a new act

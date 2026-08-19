@@ -17,10 +17,12 @@ import com.majstr.backend.exception.ClientEmailMissingException;
 import com.majstr.backend.exception.EmailNotVerifiedException;
 import com.majstr.backend.exception.InvalidEstimateStatusException;
 import com.majstr.backend.exception.ResourceNotFoundException;
+import com.majstr.backend.exception.WorkActValidationException;
 import com.majstr.backend.feature.Feature;
 import com.majstr.backend.feature.FeatureGuard;
 import com.majstr.backend.repository.EstimateRepository;
 import com.majstr.backend.repository.ProjectShareLinkRepository;
+import com.majstr.backend.repository.WorkActItemRepository;
 import com.majstr.backend.repository.WorkActRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -62,6 +64,7 @@ public class ProjectPortalService {
     private final ProjectShareLinkRepository linkRepository;
     private final EstimateRepository estimateRepository;
     private final WorkActRepository workActRepository;
+    private final WorkActItemRepository workActItemRepository;
     private final ProjectService projectService;
     private final FeatureGuard featureGuard;
     private final PortalProperties portalProperties;
@@ -187,6 +190,11 @@ public class ProjectPortalService {
             throw new InvalidEstimateStatusException("error.work-act.not-shareable");
         }
         if (act.getStatus() == WorkActStatus.DRAFT) {
+            // An empty act must never leave DRAFT (review fix): once SENT the client could sign it,
+            // and a SIGNED act is immutable and undeletable.
+            if (!workActItemRepository.existsByWorkActId(actId)) {
+                throw new WorkActValidationException("error.work-act.empty", "WORK_ACT_EMPTY");
+            }
             act.setStatus(WorkActStatus.SENT);
             act.setSentAt(Instant.now());
         }

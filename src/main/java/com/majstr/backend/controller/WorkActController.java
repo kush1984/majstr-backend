@@ -6,6 +6,7 @@ import com.majstr.backend.dto.WorkActCreateRequest;
 import com.majstr.backend.dto.WorkActItemsRequest;
 import com.majstr.backend.dto.WorkActResponse;
 import com.majstr.backend.dto.WorkActSignOfflineRequest;
+import com.majstr.backend.dto.WorkActStatusRequest;
 import com.majstr.backend.dto.WorkActUpdateRequest;
 import com.lowagie.text.DocumentException;
 import com.majstr.backend.security.UserPrincipal;
@@ -111,8 +112,18 @@ public class WorkActController {
     @PostMapping("/api/acts/{id}/sign-offline")
     public WorkActResponse signOffline(@PathVariable UUID id,
                                        @Valid @RequestBody WorkActSignOfflineRequest req,
-                                       @AuthenticationPrincipal UserPrincipal principal) {
+                                       @AuthenticationPrincipal UserPrincipal principal)
+            throws IOException, DocumentException {
         return workActService.signOffline(id, req, principal.id());
+    }
+
+    @Operation(summary = "Owner-side status move: SENT→DRAFT (recall), SENT→REJECTED (client "
+            + "declined), REJECTED→DRAFT — anything else is a 409")
+    @PatchMapping("/api/acts/{id}/status")
+    public WorkActResponse changeStatus(@PathVariable UUID id,
+                                        @Valid @RequestBody WorkActStatusRequest req,
+                                        @AuthenticationPrincipal UserPrincipal principal) {
+        return workActService.changeStatus(id, req.status(), principal.id());
     }
 
     @Operation(summary = "Download the act as a PDF")

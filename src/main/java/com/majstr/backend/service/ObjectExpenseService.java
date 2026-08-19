@@ -7,6 +7,7 @@ import com.majstr.backend.dto.ObjectEconomyInternalsResponse;
 import com.majstr.backend.dto.ObjectEconomyResponse;
 import com.majstr.backend.dto.PaymentsSummaryResponse;
 import com.majstr.backend.dto.SignedEstimatePanelResponse;
+import com.majstr.backend.entity.EstimateKind;
 import com.majstr.backend.entity.ExpenseSource;
 import com.majstr.backend.entity.ObjectExpense;
 import com.majstr.backend.entity.Project;
@@ -175,8 +176,9 @@ public class ObjectExpenseService {
             // works/materials are gross (pre-adjustment) now — the actual signed total adds the
             // markup back and subtracts the discount back in (discount is already negative).
             BigDecimal total = works.add(materials).add(markup).add(discount);
+            EstimateKind kind = EstimateKind.valueOf((String) row[8]);
             panels.add(new SignedEstimatePanelResponse(
-                    id, name, works, materials, markup, discount, total, counted, signedAt));
+                    id, name, works, materials, markup, discount, total, counted, signedAt, kind));
         }
         return panels;
     }

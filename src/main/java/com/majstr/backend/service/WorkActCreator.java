@@ -52,6 +52,12 @@ class WorkActCreator {
             Optional<WorkAct> existing = workActRepository.findById(requestedId);
             if (existing.isPresent()) {
                 WorkAct act = existing.get();
+                // Owner FIRST (review fix): without it, a caller replaying someone else's UUID pair
+                // would be handed that act's response — the replay path must be as owner-scoped as
+                // the create it stands in for.
+                if (!act.getProject().getOwner().getId().equals(ownerId)) {
+                    throw new AccessDeniedException("Work act does not belong to the current user");
+                }
                 if (!act.getProject().getId().equals(projectId)) {
                     throw new AccessDeniedException("Work act belongs to a different project");
                 }
@@ -77,6 +83,7 @@ class WorkActCreator {
                 .userId(owner.getId())
                 .project(project)
                 .number(nextNumber(owner, req))
+                .title(trim(req.title()))
                 .kind(req.kind())
                 .status(WorkActStatus.DRAFT)
                 .issuedAt(req.issuedAt())

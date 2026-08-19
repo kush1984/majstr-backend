@@ -4,8 +4,10 @@ import com.lowagie.text.DocumentException;
 import com.majstr.backend.dto.PublicPortalView;
 import com.majstr.backend.dto.QuestionRequest;
 import com.majstr.backend.dto.QuestionResponse;
+import com.majstr.backend.exception.TooManyRequestsException;
 import com.majstr.backend.service.ProjectPhotoService;
 import com.majstr.backend.service.PublicEstimateService;
+import com.majstr.backend.service.QuestionRateLimiter;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.servlet.http.HttpServletRequest;
@@ -40,6 +42,7 @@ import java.util.UUID;
 public class PublicEconomyPortalController {
 
     private final PublicEstimateService publicService;
+    private final QuestionRateLimiter questionRateLimiter;
 
     @Operation(summary = "Get the object's economy portal: a section per shared SIGNED act")
     @GetMapping("/{token}")
@@ -53,8 +56,15 @@ public class PublicEconomyPortalController {
                                                 @PathVariable UUID estimateId,
                                                 @Valid @RequestBody QuestionRequest req,
                                                 HttpServletRequest request) {
+        String ip = clientIp(request);
+        // A question WRITES (stored message + push to the master's phone) — tighter limit than the
+        // blanket public-read one, keyed IP+token like the message link (review fix).
+        QuestionRateLimiter.ConsumeResult probe = questionRateLimiter.tryConsume(ip + "|" + token);
+        if (!probe.allowed()) {
+            throw new TooManyRequestsException("error.rate.question", probe.retryAfterSeconds());
+        }
         return ResponseEntity.status(HttpStatus.CREATED)
-                .body(publicService.askEconomyQuestion(token, estimateId, req, clientIp(request)));
+                .body(publicService.askEconomyQuestion(token, estimateId, req, ip));
     }
 
     @Operation(summary = "Download one act's PDF (public)")

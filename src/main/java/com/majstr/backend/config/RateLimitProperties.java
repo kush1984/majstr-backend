@@ -13,7 +13,8 @@ public record RateLimitProperties(
         Portal portal,
         Verification verification,
         EstimateEmail estimateEmail,
-        MessageLink messageLink
+        MessageLink messageLink,
+        Question question
 ) {
     public record Login(
             @Positive int maxAttempts,
@@ -55,6 +56,16 @@ public record RateLimitProperties(
      * and one leaked link cannot be filled from a hundred addresses either.</p>
      */
     public record MessageLink(
+            @Positive int maxAttempts,
+            @Positive int windowMinutes
+    ) {}
+
+    /**
+     * Cap on client questions through ANY public portal (legacy/signature/economy/act), per IP AND
+     * per token — same reasoning as {@link MessageLink}: a question WRITES (stored message + push to
+     * the master's phone), so it must be tighter than the blanket read limit.
+     */
+    public record Question(
             @Positive int maxAttempts,
             @Positive int windowMinutes
     ) {}

@@ -96,7 +96,7 @@ class WorkActIntegrationTest extends IntegrationTestBase {
     }
 
     @Test
-    void cumulativeProgressAccumulatesAcrossSignedActs_frozenPerAct() {
+    void cumulativeProgressAccumulatesAcrossSignedActs_frozenPerAct() throws Exception {
         User owner = newOwner();
         Project p = newProject(owner);
         Estimate est = signedEstimateWithLine(p, "Шпаклювання", "100.000", "145.00");
@@ -128,6 +128,128 @@ class WorkActIntegrationTest extends IntegrationTestBase {
     }
 
     @Test
+    void actTitleRoundTrips_andClearsToNull() {
+        // The stage name («Штукатурні роботи») — optional, editable until signed, blank → null.
+        User owner = newOwner();
+        Project p = newProject(owner);
+        signedEstimateWithLine(p, "Робота", "100.000", "145.00");
+
+        WorkActResponse created = workActService.create(p.getId(),
+                new WorkActCreateRequest(WorkActKind.INTERIM, "Штукатурні роботи", LocalDate.now(),
+                        LocalDate.now().minusDays(7), LocalDate.now(), null, null, null, null, null, null),
+                owner.getId(), null);
+        assertThat(created.title()).isEqualTo("Штукатурні роботи");
+
+        WorkActResponse updated = workActService.updateHeader(created.id(),
+                new com.majstr.backend.dto.WorkActUpdateRequest(WorkActKind.INTERIM, "  ", LocalDate.now(),
+                        LocalDate.now().minusDays(7), LocalDate.now(), null, null, null, null, null, null),
+                owner.getId());
+        assertThat(updated.title()).isNull();
+    }
+
+    @Test
+    void sentAct_canBeRecalledToDraft_orMarkedRejected_andRejectedCanComeBack() throws Exception {
+        // REJECTED used to be unreachable — a SENT act the client declined wedged the object
+        // forever (one-open-act + SENT is neither editable in status nor deletable). Review fix:
+        // the owner records the outcome himself.
+        User owner = newOwner();
+        Project p = newProject(owner);
+        Estimate est = signedEstimateWithLine(p, "Робота", "100.000", "145.00");
+        UUID lineId = estimateItemRepository.findByEstimateIdOrderBySortOrderAscIdAsc(est.getId()).get(0).getId();
+        WorkActResponse act = createInterim(p.getId(), owner.getId());
+        setSingleLine(act.id(), owner.getId(), est.getId(), lineId, "10.000", "145.00");
+        markSent(act.id());
+
+        // SENT → REJECTED: the declined act stays as history and stops blocking new acts…
+        WorkActResponse rejected = workActService.changeStatus(act.id(), WorkActStatus.REJECTED, owner.getId());
+        assertThat(rejected.status()).isEqualTo(WorkActStatus.REJECTED);
+        assertThat(createInterim(p.getId(), owner.getId()).status()).isEqualTo(WorkActStatus.DRAFT);
+    }
+
+    @Test
+    void rejectedToDraft_reentersTheOneOpenActRule() throws Exception {
+        User owner = newOwner();
+        Project p = newProject(owner);
+        Estimate est = signedEstimateWithLine(p, "Робота", "100.000", "145.00");
+        UUID lineId = estimateItemRepository.findByEstimateIdOrderBySortOrderAscIdAsc(est.getId()).get(0).getId();
+        WorkActResponse first = createInterim(p.getId(), owner.getId());
+        setSingleLine(first.id(), owner.getId(), est.getId(), lineId, "10.000", "145.00");
+        markSent(first.id());
+        workActService.changeStatus(first.id(), WorkActStatus.REJECTED, owner.getId());
+        createInterim(p.getId(), owner.getId()); // a NEW open act appeared meanwhile
+
+        // …so the rejected one cannot come back to DRAFT while another act is open.
+        assertThatThrownBy(() -> workActService.changeStatus(first.id(), WorkActStatus.DRAFT, owner.getId()))
+                .isInstanceOf(WorkActConflictException.class);
+    }
+
+    @Test
+    void recallToDraft_clearsSentAt_andSignedActsCannotBeMoved() throws Exception {
+        User owner = newOwner();
+        Project p = newProject(owner);
+        Estimate est = signedEstimateWithLine(p, "Робота", "100.000", "145.00");
+        UUID lineId = estimateItemRepository.findByEstimateIdOrderBySortOrderAscIdAsc(est.getId()).get(0).getId();
+        WorkActResponse act = createInterim(p.getId(), owner.getId());
+        setSingleLine(act.id(), owner.getId(), est.getId(), lineId, "10.000", "145.00");
+        markSent(act.id());
+
+        WorkActResponse recalled = workActService.changeStatus(act.id(), WorkActStatus.DRAFT, owner.getId());
+        assertThat(recalled.status()).isEqualTo(WorkActStatus.DRAFT);
+        assertThat(recalled.sentAt()).isNull();
+
+        workActService.signOffline(act.id(), new WorkActSignOfflineRequest("Клієнт"), owner.getId());
+        assertThatThrownBy(() -> workActService.changeStatus(act.id(), WorkActStatus.DRAFT, owner.getId()))
+                .isInstanceOf(WorkActConflictException.class);
+    }
+
+    @Test
+    void offlineSign_leavesTheSameDocHashStampAsThePortal() throws Exception {
+        // Review fix: the offline path used to leave NO tamper stamp — now both sign paths share
+        // ActSignedCopyService.
+        User owner = newOwner();
+        Project p = newProject(owner);
+        Estimate est = signedEstimateWithLine(p, "Робота", "100.000", "145.00");
+        UUID lineId = estimateItemRepository.findByEstimateIdOrderBySortOrderAscIdAsc(est.getId()).get(0).getId();
+        WorkActResponse act = createInterim(p.getId(), owner.getId());
+        setSingleLine(act.id(), owner.getId(), est.getId(), lineId, "10.000", "145.00");
+
+        workActService.signOffline(act.id(), new WorkActSignOfflineRequest("Клієнт"), owner.getId());
+
+        assertThat(workActRepository.findById(act.id()).orElseThrow().getDocHash())
+                .isNotNull().hasSize(64);
+    }
+
+    @Test
+    void withYearNumber_followsTheIssueYearWhileOpen() {
+        // «7/2026» is display + identity split: the year part follows issuedAt while the act is
+        // open (review fix); the sequence — unique across years — never changes.
+        User owner = newOwner();
+        owner.setActNumberFormat(com.majstr.backend.entity.ActNumberFormat.WITH_YEAR);
+        userRepository.save(owner);
+        Project p = newProject(owner);
+        signedEstimateWithLine(p, "Робота", "100.000", "145.00");
+        WorkActResponse act = createInterim(p.getId(), owner.getId());
+        int year = LocalDate.now().getYear();
+        assertThat(act.number()).isEqualTo("1/" + year);
+
+        WorkActResponse updated = workActService.updateHeader(act.id(),
+                new com.majstr.backend.dto.WorkActUpdateRequest(WorkActKind.INTERIM, null,
+                        LocalDate.now().plusYears(1), LocalDate.now().minusDays(7), LocalDate.now(),
+                        null, null, null, null, null, null),
+                owner.getId());
+
+        assertThat(updated.number()).isEqualTo("1/" + (year + 1));
+    }
+
+    /** Arrange helper: DRAFT → SENT without dragging the share/portal machinery into these tests. */
+    private void markSent(UUID actId) {
+        WorkAct entity = workActRepository.findById(actId).orElseThrow();
+        entity.setStatus(WorkActStatus.SENT);
+        entity.setSentAt(java.time.Instant.now());
+        workActRepository.save(entity);
+    }
+
+    @Test
     void exceedsEstimateFlaggedWhenOverTheEstimateQuantity() {
         User owner = newOwner();
         Project p = newProject(owner);
@@ -141,7 +263,7 @@ class WorkActIntegrationTest extends IntegrationTestBase {
     }
 
     @Test
-    void signedActIsImmutable_andOnlyDraftOrRejectedDeletable() {
+    void signedActIsImmutable_andOnlyDraftOrRejectedDeletable() throws Exception {
         User owner = newOwner();
         Project p = newProject(owner);
         Estimate est = signedEstimateWithLine(p, "Робота", "100.000", "145.00");
@@ -158,7 +280,7 @@ class WorkActIntegrationTest extends IntegrationTestBase {
     }
 
     @Test
-    void signingWithAdditionalWorks_createsSignedAddendumEstimate() {
+    void signingWithAdditionalWorks_createsSignedAddendumEstimate() throws Exception {
         User owner = newOwner();
         Project p = newProject(owner);
         signedEstimateWithLine(p, "Робота", "100.000", "145.00");
@@ -179,17 +301,25 @@ class WorkActIntegrationTest extends IntegrationTestBase {
         assertThat(estimateItemRepository.findByEstimateIdOrderBySortOrderAscIdAsc(addendum.getId()))
                 .singleElement()
                 .satisfies(i -> assertThat(i.getLineTotal()).isEqualByComparingTo("1500.00")); // 500 × 3
+
+        // The economy panel for the rollup carries its kind (economy-review) — the PWA badges it
+        // so it doesn't read as a кошторис the master forgot creating.
+        assertThat(objectExpenseService.economy(p.getId(), owner.getId()).estimates())
+                .anySatisfy(panel -> {
+                    assertThat(panel.kind()).isEqualTo(EstimateKind.ADDENDUM);
+                    assertThat(panel.total()).isEqualByComparingTo("1500.00");
+                });
     }
 
     @Test
-    void finalActClosesTheObject() {
+    void finalActClosesTheObject() throws Exception {
         User owner = newOwner();
         Project p = newProject(owner);
         Estimate est = signedEstimateWithLine(p, "Робота", "100.000", "145.00");
         UUID lineId = estimateItemRepository.findByEstimateIdOrderBySortOrderAscIdAsc(est.getId()).get(0).getId();
 
         WorkActResponse fin = workActService.create(p.getId(),
-                new WorkActCreateRequest(WorkActKind.FINAL, LocalDate.now(), LocalDate.now().minusDays(7),
+                new WorkActCreateRequest(WorkActKind.FINAL, null, LocalDate.now(), LocalDate.now().minusDays(7),
                         LocalDate.now(), null, null, null, null, null, null), owner.getId(), null);
         setSingleLine(fin.id(), owner.getId(), est.getId(), lineId, "100.000", "145.00");
         workActService.signOffline(fin.id(), new WorkActSignOfflineRequest("Клієнт"), owner.getId());
@@ -199,10 +329,12 @@ class WorkActIntegrationTest extends IntegrationTestBase {
     }
 
     @Test
-    void reopeningTheParentEstimate_doesNotBreakASignedAct() {
-        // The act's lines are frozen copies, and estimate_item_id / estimate_id are ON DELETE SET
-        // NULL — so an owner reopening the estimate (SIGNED → DRAFT, signature cleared) leaves an
-        // act already signed against it completely intact. This is the invariant Prompt 0 protects.
+    void reopeningTheParentEstimate_isBlockedOnceActsAreSigned() throws Exception {
+        // Supersedes the earlier "reopen leaves the act intact" contract (review fix): the act's
+        // frozen lines DID survive, but the economy did not — a reopened estimate drops out of «За
+        // договором» (SIGNED-only) while its act lines keep counting in «Прийнято актами», and once
+        // DRAFT it can even be deleted. So reopen is refused outright while SIGNED acts reference
+        // the estimate; the master creates a separate estimate for new positions instead.
         User owner = newOwner();
         Project p = newProject(owner);
         Estimate est = signedEstimateWithLine(p, "Робота", "100.000", "145.00");
@@ -212,13 +344,138 @@ class WorkActIntegrationTest extends IntegrationTestBase {
         setSingleLine(act.id(), owner.getId(), est.getId(), lineId, "60.000", "145.00");
         workActService.signOffline(act.id(), new WorkActSignOfflineRequest("Клієнт"), owner.getId());
 
-        // Owner reopens the estimate (allowed: it's SIGNED).
-        estimateService.reopen(est.getId(), owner.getId());
+        assertThatThrownBy(() -> estimateService.reopen(est.getId(), owner.getId()))
+                .isInstanceOf(WorkActConflictException.class);
 
+        // The signed act (and the estimate's signature) are exactly as they were.
         WorkActResponse reloaded = workActService.get(act.id(), owner.getId());
         assertThat(reloaded.status()).isEqualTo(WorkActStatus.SIGNED);
-        assertThat(reloaded.items()).singleElement()
-                .satisfies(i -> assertThat(i.quantity()).isEqualByComparingTo("60.000"));
+        assertThat(estimateRepository.findById(est.getId()).orElseThrow().getStatus())
+                .isEqualTo(EstimateStatus.SIGNED);
+    }
+
+    @Test
+    void reopeningWithOnlyAnOpenAct_isStillAllowed() {
+        // A DRAFT/SENT act is editable, so it can absorb an estimate change — only SIGNED acts
+        // freeze the estimate (review fix keeps reopen available until the first signature).
+        User owner = newOwner();
+        Project p = newProject(owner);
+        Estimate est = signedEstimateWithLine(p, "Робота", "100.000", "145.00");
+        UUID lineId = estimateItemRepository.findByEstimateIdOrderBySortOrderAscIdAsc(est.getId()).get(0).getId();
+        WorkActResponse act = createInterim(p.getId(), owner.getId());
+        setSingleLine(act.id(), owner.getId(), est.getId(), lineId, "60.000", "145.00");
+
+        estimateService.reopen(est.getId(), owner.getId());
+
+        assertThat(estimateRepository.findById(est.getId()).orElseThrow().getStatus())
+                .isEqualTo(EstimateStatus.DRAFT);
+    }
+
+    @Test
+    void duplicatingAnEstimate_isBlockedOnceActsAreSigned() throws Exception {
+        // duplicate() excludes the SOURCE from the economy on the spot — with signed acts against
+        // it, «Прийнято актами» would silently lose those works and the picker would forget them
+        // (the copy's lines are new ids with done=0). Same family as the reopen guard.
+        User owner = newOwner();
+        Project p = newProject(owner);
+        Estimate est = signedEstimateWithLine(p, "Робота", "100.000", "145.00");
+        UUID lineId = estimateItemRepository.findByEstimateIdOrderBySortOrderAscIdAsc(est.getId()).get(0).getId();
+        WorkActResponse act = createInterim(p.getId(), owner.getId());
+        setSingleLine(act.id(), owner.getId(), est.getId(), lineId, "60.000", "145.00");
+        workActService.signOffline(act.id(), new WorkActSignOfflineRequest("Клієнт"), owner.getId());
+
+        assertThatThrownBy(() -> estimateService.duplicate(est.getId(),
+                new com.majstr.backend.dto.EstimateDuplicateRequest(null, new BigDecimal("10"), false, null),
+                owner.getId()))
+                .isInstanceOf(WorkActConflictException.class);
+
+        // The source stayed in the economy — the failed duplicate must not have flipped it.
+        assertThat(estimateRepository.findById(est.getId()).orElseThrow().isCountInEconomy()).isTrue();
+    }
+
+    @Test
+    void duplicatingWithOnlyAnOpenAct_isStillAllowed() {
+        // Mirrors the reopen rule: an open DRAFT/SENT act is editable and can absorb the change —
+        // only a SIGNED act freezes the estimate.
+        User owner = newOwner();
+        Project p = newProject(owner);
+        Estimate est = signedEstimateWithLine(p, "Робота", "100.000", "145.00");
+        UUID lineId = estimateItemRepository.findByEstimateIdOrderBySortOrderAscIdAsc(est.getId()).get(0).getId();
+        WorkActResponse act = createInterim(p.getId(), owner.getId());
+        setSingleLine(act.id(), owner.getId(), est.getId(), lineId, "60.000", "145.00");
+
+        assertThat(estimateService.duplicate(est.getId(),
+                new com.majstr.backend.dto.EstimateDuplicateRequest(null, new BigDecimal("10"), false, null),
+                owner.getId())).isNotNull();
+    }
+
+    @Test
+    void emptyActCannotBeSignedOffline() throws Exception {
+        // A SIGNED act is immutable and undeletable — an empty one (worse: an empty FINAL) would be
+        // permanent junk that also blocks future acts, so signing requires at least one line.
+        User owner = newOwner();
+        Project p = newProject(owner);
+        signedEstimateWithLine(p, "Робота", "100.000", "145.00");
+        WorkActResponse act = createInterim(p.getId(), owner.getId());
+
+        assertThatThrownBy(() ->
+                workActService.signOffline(act.id(), new WorkActSignOfflineRequest("Клієнт"), owner.getId()))
+                .isInstanceOf(WorkActValidationException.class);
+    }
+
+    @Test
+    void lineFromAnotherProjectsEstimate_rejected() {
+        // The project pin (review fix): SIGNED+counted alone is not enough — the referenced item
+        // must belong to THIS act's object, or any known item UUID would pass the write path.
+        User owner = newOwner();
+        Project mine = newProject(owner);
+        Project other = newProject(owner);
+        signedEstimateWithLine(mine, "Робота", "100.000", "145.00");
+        Estimate foreign = signedEstimateWithLine(other, "Чужа робота", "50.000", "200.00");
+        UUID foreignLine = estimateItemRepository
+                .findByEstimateIdOrderBySortOrderAscIdAsc(foreign.getId()).get(0).getId();
+
+        WorkActResponse act = createInterim(mine.getId(), owner.getId());
+        assertThatThrownBy(() ->
+                setSingleLine(act.id(), owner.getId(), foreign.getId(), foreignLine, "10.000", "200.00"))
+                .isInstanceOf(WorkActValidationException.class);
+    }
+
+    @Test
+    void estimateIdOnActLines_isDerivedFromTheItem_notTheRequest() {
+        // A null (or wrong) client-sent estimateId must not land the line in the unconditional
+        // «IS NULL» branch of sumSignedActLineTotals (review fix) — the server re-derives it.
+        User owner = newOwner();
+        Project p = newProject(owner);
+        Estimate est = signedEstimateWithLine(p, "Робота", "100.000", "145.00");
+        UUID lineId = estimateItemRepository.findByEstimateIdOrderBySortOrderAscIdAsc(est.getId()).get(0).getId();
+        WorkActResponse act = createInterim(p.getId(), owner.getId());
+
+        WorkActResponse withItems = workActService.replaceItems(act.id(), new WorkActItemsRequest(List.of(
+                new WorkActItemsRequest.Line(lineId, null, ItemType.WORK, "Робота", null,
+                        Unit.M2, new BigDecimal("145.00"), new BigDecimal("10.000")))), owner.getId());
+
+        assertThat(withItems.items()).singleElement()
+                .satisfies(i -> assertThat(i.estimateId()).isEqualTo(est.getId()));
+    }
+
+    @Test
+    void idempotentReplay_requiresTheActsOwner() {
+        // The X-Entity-Uuid replay path must be as owner-scoped as the create it stands in for
+        // (review fix): replaying another master's act UUID + project UUID returns nothing.
+        User victim = newOwner();
+        Project victimProject = newProject(victim);
+        signedEstimateWithLine(victimProject, "Робота", "100.000", "145.00");
+        UUID actId = UUID.randomUUID();
+        workActService.create(victimProject.getId(),
+                new WorkActCreateRequest(WorkActKind.INTERIM, null, LocalDate.now(), LocalDate.now().minusDays(7),
+                        LocalDate.now(), null, null, null, null, null, null), victim.getId(), actId);
+        User attacker = newOwner();
+
+        assertThatThrownBy(() -> workActService.create(victimProject.getId(),
+                new WorkActCreateRequest(WorkActKind.INTERIM, null, LocalDate.now(), LocalDate.now().minusDays(7),
+                        LocalDate.now(), null, null, null, null, null, null), attacker.getId(), actId))
+                .isInstanceOf(org.springframework.security.access.AccessDeniedException.class);
     }
 
     @Test
@@ -243,7 +500,7 @@ class WorkActIntegrationTest extends IntegrationTestBase {
     }
 
     @Test
-    void acceptedByActs_countsCountedAndAdditionalOnly_neverExceedingContracted() {
+    void acceptedByActs_countsCountedAndAdditionalOnly_neverExceedingContracted() throws Exception {
         User owner = newOwner();
         Project p = newProject(owner);
         Estimate counted = signedEstimateWithLine(p, "Лічена", "100.000", "145.00", true); // 14 500
@@ -274,7 +531,7 @@ class WorkActIntegrationTest extends IntegrationTestBase {
 
     private WorkActResponse createInterim(UUID projectId, UUID ownerId) {
         return workActService.create(projectId,
-                new WorkActCreateRequest(WorkActKind.INTERIM, LocalDate.now(), LocalDate.now().minusDays(7),
+                new WorkActCreateRequest(WorkActKind.INTERIM, null, LocalDate.now(), LocalDate.now().minusDays(7),
                         LocalDate.now(), null, null, null, null, null, null), ownerId, null);
     }
 

@@ -113,7 +113,15 @@ public class WorkActPdfService {
         Paragraph title = new Paragraph("АКТ № " + act.getNumber() + " приймання-передачі виконаних робіт",
                 fonts.bold(14));
         titleCell.addElement(title);
-        if (act.getKind() == WorkActKind.INTERIM) {
+        // The stage name («Штукатурні роботи») right under the heading — how masters label
+        // interim acts in real life (master feedback).
+        if (notBlank(act.getTitle())) {
+            titleCell.addElement(new Paragraph(act.getTitle().trim(), fonts.bold(12)));
+        }
+        // «(проміжний)» only when the act has no name of its own (master feedback) — with a stage
+        // name the word is noise. The legal ч.3 ст.853 interim disclaimer below is UNAFFECTED: it
+        // hangs on the KIND, not on this label.
+        if (act.getKind() == WorkActKind.INTERIM && !notBlank(act.getTitle())) {
             titleCell.addElement(new Paragraph("(проміжний)", fonts.regular(11)));
         }
         if (notBlank(act.getContractRef())) {

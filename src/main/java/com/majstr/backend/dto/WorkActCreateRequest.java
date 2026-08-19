@@ -1,6 +1,8 @@
 package com.majstr.backend.dto;
 
 import com.majstr.backend.entity.WorkActKind;
+import jakarta.validation.constraints.DecimalMin;
+import jakarta.validation.constraints.Digits;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
 
@@ -14,6 +16,7 @@ import java.time.LocalDate;
  */
 public record WorkActCreateRequest(
         @NotNull WorkActKind kind,
+        @Size(max = 120) String title,
         @NotNull LocalDate issuedAt,
         @NotNull LocalDate periodFrom,
         @NotNull LocalDate periodTo,
@@ -22,5 +25,7 @@ public record WorkActCreateRequest(
         String note,
         Boolean showMaterials,
         Boolean showCumulative,
-        BigDecimal advanceOffset
+        // Never negative: a negative "advance" would INFLATE «До сплати» while the totals table
+        // hides the advance row (it only renders when > 0) — the PDF would contradict itself.
+        @DecimalMin("0.00") @Digits(integer = 13, fraction = 2) BigDecimal advanceOffset
 ) {}

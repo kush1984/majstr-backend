@@ -17,6 +17,7 @@ public record WorkActResponse(
         UUID id,
         UUID projectId,
         String number,
+        String title,
         WorkActKind kind,
         WorkActStatus status,
         LocalDate issuedAt,

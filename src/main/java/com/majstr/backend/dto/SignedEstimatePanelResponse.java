@@ -1,5 +1,7 @@
 package com.majstr.backend.dto;
 
+import com.majstr.backend.entity.EstimateKind;
+
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.UUID;
@@ -27,5 +29,9 @@ public record SignedEstimatePanelResponse(
         BigDecimal discount,
         BigDecimal total,
         boolean countedInEconomy,
-        Instant signedAt
+        Instant signedAt,
+        /** REGULAR vs ADDENDUM (economy-review): an auto-created «Додаткові роботи до акта № N»
+         *  panel is money the master never typed as an estimate — the PWA badges it so it doesn't
+         *  read as a кошторис he forgot creating. */
+        EstimateKind kind
 ) {}

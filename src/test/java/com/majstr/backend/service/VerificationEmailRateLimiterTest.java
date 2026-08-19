@@ -17,7 +17,8 @@ class VerificationEmailRateLimiterTest {
                 new RateLimitProperties.Portal(30, 1),
                 new RateLimitProperties.Verification(60),
                 new RateLimitProperties.EstimateEmail(20),
-                new RateLimitProperties.MessageLink(5, 10));
+                new RateLimitProperties.MessageLink(5, 10),
+                new RateLimitProperties.Question(5, 10));
         return new VerificationEmailRateLimiter(props);
     }
 

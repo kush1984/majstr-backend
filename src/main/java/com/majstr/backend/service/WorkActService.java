@@ -69,6 +69,7 @@ public class WorkActService {
     private final WorkActPdfService pdfService;
     private final ActCumulativeCalculator cumulativeCalculator;
     private final ActAddendumCreator addendumCreator;
+    private final ActSignedCopyService signedCopy;
     private final ProjectService projectService;
     private final EstimateRepository estimateRepository;
     private final EstimateItemRepository estimateItemRepository;
@@ -165,7 +166,15 @@ public class WorkActService {
     public WorkActResponse updateHeader(UUID id, WorkActUpdateRequest req, UUID ownerId) {
         WorkAct act = requireNotSigned(loadOwned(id, ownerId));
         act.setKind(req.kind());
+        act.setTitle(trim(req.title()));
         act.setIssuedAt(req.issuedAt());
+        // A «7/2026»-shaped number follows the issue year while the act is still open: the year in
+        // the string is display, the SEQUENCE is the identity — and continuous per-master numbering
+        // makes the sequence unique across years, so the rewrite cannot collide (review fix).
+        int slash = act.getNumber().indexOf('/');
+        if (slash > 0) {
+            act.setNumber(act.getNumber().substring(0, slash) + "/" + req.issuedAt().getYear());
+        }
         act.setPeriodFrom(req.periodFrom());
         act.setPeriodTo(req.periodTo());
         act.setPlace(trim(req.place()));
@@ -190,7 +199,7 @@ public class WorkActService {
     @Transactional
     public WorkActResponse replaceItems(UUID id, WorkActItemsRequest req, UUID ownerId) {
         WorkAct act = requireNotSigned(loadOwned(id, ownerId));
-        requireCountedEstimateLines(req.items());
+        Map<UUID, EstimateItem> linked = requireCountedEstimateLines(req.items(), act.getProject().getId());
         itemRepository.deleteByWorkActId(id);
         itemRepository.flush(); // clear before re-inserting so nothing collides
         Map<UUID, BigDecimal> done = signedDoneByEstimateItem(act.getProject().getId());
@@ -205,7 +214,11 @@ public class WorkActService {
             items.add(WorkActItem.builder()
                     .workAct(act)
                     .estimateItemId(line.estimateItemId())
-                    .estimateId(line.estimateId())
+                    // Derived from the item, never trusted from the request (review fix): a null or
+                    // mismatched estimateId would land the line in the «IS NULL» branch of
+                    // sumSignedActLineTotals and mis-group the PDF.
+                    .estimateId(line.estimateItemId() == null
+                            ? null : linked.get(line.estimateItemId()).getEstimate().getId())
                     .type(line.type())
                     .name(line.name().trim())
                     .category(CatalogService.normalizeCategory(line.category()))
@@ -233,16 +246,59 @@ public class WorkActService {
     /**
      * Sign an act on the client's behalf (the offline path — signer_ip/UA not recorded). Creates
      * the ADDENDUM estimate first (in this same transaction) if the act carries additional
-     * positions, so «За договором» absorbs them before the act counts as «Прийнято».
+     * positions, so «За договором» absorbs them before the act counts as «Прийнято». Leaves the
+     * SAME artifacts as the portal sign (review fix): the doc_hash tamper stamp and, when the
+     * client has an email, a PDF copy — an offline signature is exactly the case where an
+     * independent trace matters most.
      */
     @Transactional
-    public WorkActResponse signOffline(UUID id, WorkActSignOfflineRequest req, UUID ownerId) {
+    public WorkActResponse signOffline(UUID id, WorkActSignOfflineRequest req, UUID ownerId)
+            throws IOException, DocumentException {
         WorkAct act = requireNotSigned(loadOwned(id, ownerId));
+        requireItems(id); // a signed act is immutable and undeletable — never let an empty one in
         addendumCreator.createIfNeeded(act);
         act.setStatus(WorkActStatus.SIGNED);
         act.setSignerName(req.signerName().trim());
         act.setSignedOffline(true);
         act.setSignedAt(Instant.now());
+        List<WorkActItem> items = itemRepository.findByWorkActIdOrderBySortOrderAscIdAsc(id);
+        act.setDocHash(signedCopy.computeDocHash(act, items));
+        signedCopy.emailClientCopy(act, items);
+        return responseFactory.build(act);
+    }
+
+    /**
+     * Owner-side status moves for an act the client did NOT sign (review fix — REJECTED was
+     * unreachable, and with it a SENT act the client declines wedged the object forever: SENT can be
+     * neither edited into deletion nor bypassed, and the one-open-act rule blocked every new act).
+     *
+     * <p>Allowed: SENT→DRAFT (recall to edit), SENT→REJECTED (the client declined — kept as
+     * history), REJECTED→DRAFT (the client came around; re-enters the one-open-act rule, since
+     * another act may have been opened in between). A SIGNED act stays immutable; everything else
+     * is a 409. Going back to DRAFT clears {@code sentAt} and lets the share link 404 (the public
+     * read only serves SENT/SIGNED).</p>
+     */
+    @Transactional
+    public WorkActResponse changeStatus(UUID id, WorkActStatus target, UUID ownerId) {
+        WorkAct act = loadOwned(id, ownerId);
+        WorkActStatus from = act.getStatus();
+        boolean allowed =
+                (from == WorkActStatus.SENT
+                        && (target == WorkActStatus.DRAFT || target == WorkActStatus.REJECTED))
+                || (from == WorkActStatus.REJECTED && target == WorkActStatus.DRAFT);
+        if (!allowed) {
+            throw new WorkActConflictException("error.work-act.bad-transition", "WORK_ACT_BAD_TRANSITION");
+        }
+        if (from == WorkActStatus.REJECTED
+                && workActRepository.existsByProjectIdAndStatusInAndIdNot(
+                        act.getProject().getId(),
+                        List.of(WorkActStatus.DRAFT, WorkActStatus.SENT), id)) {
+            throw new WorkActConflictException("error.work-act.open-exists", "WORK_ACT_OPEN");
+        }
+        act.setStatus(target);
+        if (target == WorkActStatus.DRAFT) {
+            act.setSentAt(null);
+        }
         return responseFactory.build(act);
     }
 
@@ -250,25 +306,43 @@ public class WorkActService {
 
     /**
      * Defense-in-depth for the write path: an act line that references an estimate position must
-     * belong to a SIGNED, economy-counted kosторис — the same set the picker offers. The picker is
-     * UI; the contract holds here (acts-fix). Off-estimate lines (null estimateItemId) are exempt.
+     * belong to a SIGNED, economy-counted kosторис — the same set the picker offers — and that
+     * estimate must belong to THIS act's project (review fix: without the project pin, any
+     * SIGNED+counted item UUID passed, even another user's). The picker is UI; the contract holds
+     * here (acts-fix). Off-estimate lines (null estimateItemId) are exempt.
+     *
+     * @return the verified items by id, so the caller can derive each line's estimateId server-side.
      */
-    private void requireCountedEstimateLines(List<WorkActItemsRequest.Line> lines) {
+    private Map<UUID, EstimateItem> requireCountedEstimateLines(
+            List<WorkActItemsRequest.Line> lines, UUID projectId) {
         List<UUID> ids = lines.stream()
                 .map(WorkActItemsRequest.Line::estimateItemId)
                 .filter(Objects::nonNull).distinct().toList();
-        if (ids.isEmpty()) {
-            return;
-        }
         Map<UUID, EstimateItem> byId = new HashMap<>();
+        if (ids.isEmpty()) {
+            return byId;
+        }
         estimateItemRepository.findAllById(ids).forEach(it -> byId.put(it.getId(), it));
         for (UUID itemId : ids) {
             EstimateItem item = byId.get(itemId);
             Estimate e = item == null ? null : item.getEstimate();
-            if (e == null || e.getStatus() != EstimateStatus.SIGNED || !e.isCountInEconomy()) {
+            if (e == null || e.getStatus() != EstimateStatus.SIGNED || !e.isCountInEconomy()
+                    || !e.getProject().getId().equals(projectId)) {
                 throw new WorkActValidationException(
                         "error.work-act.estimate-excluded", "WORK_ACT_ESTIMATE_EXCLUDED");
             }
+        }
+        return byId;
+    }
+
+    /**
+     * An act must carry at least one line to leave the DRAFT stage (review fix). Without this, an
+     * empty act could be sent and signed — and a SIGNED act is immutable and undeletable, so an
+     * empty FINAL act would permanently block the object from ever having a real act.
+     */
+    void requireItems(UUID actId) {
+        if (!itemRepository.existsByWorkActId(actId)) {
+            throw new WorkActValidationException("error.work-act.empty", "WORK_ACT_EMPTY");
         }
     }
 

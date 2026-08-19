@@ -138,6 +138,12 @@ app:
     message-link:
       max-attempts: ${MESSAGE_LINK_MAX_ATTEMPTS:5}
       window-minutes: ${MESSAGE_LINK_WINDOW_MINUTES:10}
+    # Per IP + portal token, across ALL public portals (legacy/signature/economy/act). A question
+    # writes a message AND pushes to the master's phone — a real client asks a few, a firehose is
+    # abuse. Same shape and defaults as message-link.
+    question:
+      max-attempts: ${QUESTION_MAX_ATTEMPTS:5}
+      window-minutes: ${QUESTION_WINDOW_MINUTES:10}
   storage:
     # local = filesystem (dev default); s3 = any S3-compatible store (Cloudflare R2).
     kind: ${STORAGE_KIND:local}

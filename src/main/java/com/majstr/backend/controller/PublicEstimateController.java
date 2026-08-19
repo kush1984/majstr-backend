@@ -5,8 +5,10 @@ import com.majstr.backend.dto.PublicEstimateView;
 import com.majstr.backend.dto.QuestionRequest;
 import com.majstr.backend.dto.QuestionResponse;
 import com.majstr.backend.dto.SignRequest;
+import com.majstr.backend.exception.TooManyRequestsException;
 import com.majstr.backend.service.ProjectPhotoService;
 import com.majstr.backend.service.PublicEstimateService;
+import com.majstr.backend.service.QuestionRateLimiter;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.servlet.http.HttpServletRequest;
@@ -35,6 +37,7 @@ import java.util.UUID;
 public class PublicEstimateController {
 
     private final PublicEstimateService publicService;
+    private final QuestionRateLimiter questionRateLimiter;
 
     @Operation(summary = "Get the estimate behind a share link")
     @GetMapping("/{token}")
@@ -55,8 +58,15 @@ public class PublicEstimateController {
     public ResponseEntity<QuestionResponse> ask(@PathVariable String token,
                                                 @Valid @RequestBody QuestionRequest req,
                                                 HttpServletRequest request) {
+        String ip = clientIp(request);
+        // A question WRITES (stored message + push to the master's phone) — tighter limit than the
+        // blanket public-read one, keyed IP+token like the message link (review fix).
+        QuestionRateLimiter.ConsumeResult probe = questionRateLimiter.tryConsume(ip + "|" + token);
+        if (!probe.allowed()) {
+            throw new TooManyRequestsException("error.rate.question", probe.retryAfterSeconds());
+        }
         return ResponseEntity.status(HttpStatus.CREATED)
-                .body(publicService.askQuestion(token, req, clientIp(request)));
+                .body(publicService.askQuestion(token, req, ip));
     }
 
     @Operation(summary = "Download the estimate PDF (public)")

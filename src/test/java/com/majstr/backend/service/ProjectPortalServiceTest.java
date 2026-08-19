@@ -22,6 +22,8 @@ import com.majstr.backend.exception.ResourceNotFoundException;
 import com.majstr.backend.feature.FeatureGuard;
 import com.majstr.backend.repository.EstimateRepository;
 import com.majstr.backend.repository.ProjectShareLinkRepository;
+import com.majstr.backend.exception.WorkActValidationException;
+import com.majstr.backend.repository.WorkActItemRepository;
 import com.majstr.backend.repository.WorkActRepository;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -53,6 +55,7 @@ class ProjectPortalServiceTest {
     @Mock PortalProperties portalProperties;
     @Mock EmailService emailService;
     @Mock WorkActRepository workActRepository;
+    @Mock WorkActItemRepository workActItemRepository;
     @InjectMocks ProjectPortalService portalService;
 
     private final UUID projectId = UUID.randomUUID();
@@ -330,6 +333,7 @@ class ProjectPortalServiceTest {
         Project p = project(true, null);
         WorkAct a = act(p, WorkActStatus.DRAFT);
         given(workActRepository.findByIdAndUserId(a.getId(), ownerId)).willReturn(Optional.of(a));
+        given(workActItemRepository.existsByWorkActId(a.getId())).willReturn(true);
         given(linkRepository.findFirstByWorkActIdAndRevokedFalseOrderByCreatedAtDesc(a.getId()))
                 .willReturn(Optional.empty());
         given(linkRepository.save(any(ProjectShareLink.class))).willAnswer(inv -> inv.getArgument(0));
@@ -351,6 +355,22 @@ class ProjectPortalServiceTest {
 
         assertThatThrownBy(() -> portalService.updateAct(a.getId(), ownerId))
                 .isInstanceOf(InvalidEstimateStatusException.class);
+        verify(linkRepository, never()).save(any());
+    }
+
+    @Test
+    void updateAct_emptyDraft_isRefused() {
+        // An empty act must never leave DRAFT (review fix): once SENT the client could sign it, and
+        // a SIGNED act is immutable and undeletable — the object would carry permanent junk.
+        Project p = project(true, null);
+        WorkAct a = act(p, WorkActStatus.DRAFT);
+        given(workActRepository.findByIdAndUserId(a.getId(), ownerId)).willReturn(Optional.of(a));
+        given(workActItemRepository.existsByWorkActId(a.getId())).willReturn(false);
+
+        assertThatThrownBy(() -> portalService.updateAct(a.getId(), ownerId))
+                .isInstanceOf(WorkActValidationException.class);
+
+        assertThat(a.getStatus()).isEqualTo(WorkActStatus.DRAFT);
         verify(linkRepository, never()).save(any());
     }
 }

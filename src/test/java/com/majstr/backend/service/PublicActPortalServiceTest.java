@@ -2,7 +2,6 @@ package com.majstr.backend.service;
 
 import com.majstr.backend.dto.PublicActView;
 import com.majstr.backend.dto.SignRequest;
-import com.majstr.backend.email.EmailService;
 import com.majstr.backend.entity.Client;
 import com.majstr.backend.entity.ItemType;
 import com.majstr.backend.entity.Project;
@@ -16,6 +15,7 @@ import com.majstr.backend.entity.WorkActKind;
 import com.majstr.backend.entity.WorkActStatus;
 import com.majstr.backend.exception.ResourceNotFoundException;
 import com.majstr.backend.exception.WorkActSignedException;
+import com.majstr.backend.exception.WorkActValidationException;
 import com.majstr.backend.push.PushService;
 import com.majstr.backend.repository.EstimateRepository;
 import com.majstr.backend.repository.ProjectMessageRepository;
@@ -52,8 +52,8 @@ class PublicActPortalServiceTest {
     @Mock WorkActPdfService pdfService;
     @Mock ActCumulativeCalculator cumulativeCalculator;
     @Mock ActAddendumCreator addendumCreator;
+    @Mock ActSignedCopyService signedCopy;
     @Mock PushService pushService;
-    @Mock EmailService emailService;
     @Mock org.springframework.context.MessageSource messages;
     @InjectMocks PublicActPortalService service;
 
@@ -111,7 +111,7 @@ class PublicActPortalServiceTest {
         WorkAct a = act(WorkActStatus.SENT);
         stubToken(a);
         given(itemRepository.findByWorkActIdOrderBySortOrderAscIdAsc(a.getId())).willReturn(List.of(item(a)));
-        given(pdfService.render(any())).willReturn(new byte[]{1, 2, 3});
+        given(signedCopy.computeDocHash(any(), any())).willReturn("a".repeat(64));
         given(messages.getMessage(anyString(), any(), any())).willReturn("підписано");
 
         PublicActView view = service.sign(TOKEN, new SignRequest("Олена", "+380671112233"), "1.2.3.4", "UA");
@@ -131,5 +131,18 @@ class PublicActPortalServiceTest {
 
         assertThatThrownBy(() -> service.sign(TOKEN, new SignRequest("Олена", "+380671112233"), "1.2.3.4", "UA"))
                 .isInstanceOf(WorkActSignedException.class);
+    }
+
+    @Test
+    void sign_emptyAct_isRefused() {
+        // Belt-and-braces (review fix): share and offline-sign already refuse an empty act, but the
+        // owner can still empty a SENT act via PUT /items — that emptiness must never become SIGNED.
+        WorkAct a = act(WorkActStatus.SENT);
+        stubToken(a);
+        given(itemRepository.findByWorkActIdOrderBySortOrderAscIdAsc(a.getId())).willReturn(List.of());
+
+        assertThatThrownBy(() -> service.sign(TOKEN, new SignRequest("Олена", "+380671112233"), "1.2.3.4", "UA"))
+                .isInstanceOf(WorkActValidationException.class);
+        assertThat(a.getStatus()).isEqualTo(WorkActStatus.SENT);
     }
 }

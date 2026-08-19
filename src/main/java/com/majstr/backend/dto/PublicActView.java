@@ -16,6 +16,7 @@ import java.util.List;
  */
 public record PublicActView(
         String number,
+        String title,         // optional stage name («Штукатурні роботи»)
         String kind,          // INTERIM / FINAL
         String status,        // SENT / SIGNED
         LocalDate issuedAt,
