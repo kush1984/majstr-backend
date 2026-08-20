@@ -31,6 +31,10 @@ import static org.assertj.core.api.Assertions.assertThat;
  * pair breaks {@code EstimateTemplateService}'s purely-by-name lookup/dedup), and adds an
  * "Організаційні послуги" category mirroring tiling's, distributed into every default bundle.</p>
  *
+ * <p>V109 folds a third master's price list in on the same additive rule: median the price where the
+ * position already exists (6 rows), add only what is genuinely missing (14 rows), and append those
+ * to whichever bundles already cover that scope (13 lines).</p>
+ *
  * <p>Same discipline as the tiling test: a database migrated to V95, given real master state, then
  * migrated to head — and the 4 historical duplicate-pair positions this migration targets are left
  * for V27/V31/V50 to actually produce, not planted, so content-matching is tested against real
@@ -202,11 +206,13 @@ class PainterCatalogRebuildOnLiveDataIntegrationTest extends IntegrationTestBase
     // ---- V96: additive, not destructive ------------------------------------------------------------
 
     @Test
-    void theCatalogEndsUpNetPlus64() {
+    void theCatalogEndsUpNetPlus78() {
         // V96: +79 new, -4 duplicate leftovers. V99: -22 (†split LINEAR_METER halves collapsed
-        // away), +11 (organizational services). Net +64 vs whatever V95 actually shipped.
+        // away), +11 (organizational services). V109: +14 (the third master's genuinely-new
+        // positions; 6 more of their rows repriced in place, 5 dropped as already covered).
+        // Net +78 vs whatever V95 actually shipped.
         assertThat(count("SELECT count(*) FROM catalog_templates WHERE trade = 'PAINTER'"))
-                .isEqualTo(painterCatalogBeforeV96 + 64);
+                .isEqualTo(painterCatalogBeforeV96 + 78);
     }
 
     @Test
@@ -444,10 +450,10 @@ class PainterCatalogRebuildOnLiveDataIntegrationTest extends IntegrationTestBase
 
     @Test
     void theThreeExtendedBundlesGrewByTheNewPhases() {
-        // ШТУКАТУРКА: 13 old + 6 folded (phase 2) + 3 always-billed = 22.
+        // ШТУКАТУРКА: 13 old + 6 folded (phase 2) + 3 always-billed = 22, + 8 appended by V109 = 30.
         // Стіни під фарбування: 9 old + 15 folded (phase 3 + distinct phase 4) + 3 = 27.
         // Багети молдінги: 3 old + 5 folded (phase 5) + 3 = 11.
-        assertThat(itemCountOf("ШТУКАТУРКА")).isEqualTo(22);
+        assertThat(itemCountOf("ШТУКАТУРКА")).isEqualTo(30);
         assertThat(itemCountOf("Стіни під фарбування")).isEqualTo(27);
         assertThat(itemCountOf("Багети молдінги")).isEqualTo(11);
     }
@@ -491,5 +497,91 @@ class PainterCatalogRebuildOnLiveDataIntegrationTest extends IntegrationTestBase
                     .as("«%s» must be in every default PAINTER bundle", position)
                     .isZero();
         }
+    }
+
+    // ---- V109: a third master's price list folded in ----------------------------------------------
+
+    @Test
+    void theSixOverlappingPositionsAreRepricedToTheMedian() {
+        assertPrice("LINEAR_METER", "Армування стиків ГКЛ", 75);
+        assertPrice("LINEAR_METER", "Монтаж шпаклювальних кутиків", 110);
+        assertPrice("M2", "Грунтовка поверхонь перед штукатуркою армуванням", 35);
+        assertPrice("LINEAR_METER", "Поклейка стрічки «американка»", 110);
+        assertPrice("LINEAR_METER", "Закидання штраб (ел/сант)", 108);
+        assertPrice("M2", "Грунтування", 33);
+    }
+
+    @Test
+    void thePositionsAlreadyAtTheSourcePriceAreUntouched() {
+        assertPrice("LINEAR_METER", "Штукатурка укосів", 350);
+        assertPrice("M2", "Штукатурні роботи (від)", 350);
+        assertPrice("M2", "Фарбування стін/стель (у кольорі)", 180);
+    }
+
+    @Test
+    void theFourteenNewPositionsExistExactlyOnce() {
+        for (String name : new String[] {
+                "Грунтування укосів",
+                "Обезпилення та грунтування укосів перед фарбуванням",
+                "Фарбування укосів",
+                "Штукатурка криволінійних площин",
+                "Підготовка криволінійних площин під скловолокно",
+                "Приклеювання скловолокна на криволінійні площини",
+                "Шпаклювання криволінійних площин 3 рази зі шліфуванням",
+                "Монтаж ГКЛ у кілька шарів на укоси дверей прихованого монтажу та примикання",
+                "Шпаклювання з армуванням навколо дверей прихованого монтажу",
+                "Шпаклювання швів ГКЛ та шурупів зі шліфуванням",
+                "Місцевий ремонт цементно-вапняної штукатурки (перетяжка)",
+                "Шліфування бетонних стін та стель від напливів бетону",
+                "Шліфування торців бетонних колон від напливів бетону",
+                "Лакування бетонних стін"}) {
+            assertThat(count("""
+                    SELECT count(*) FROM catalog_templates
+                    WHERE trade = 'PAINTER' AND lower(trim(name)) = lower(trim(?))
+                    """, name))
+                    .as("«%s» must exist exactly once in the default PAINTER catalog", name)
+                    .isEqualTo(1);
+        }
+    }
+
+    @Test
+    void thePositionsCoveredByAnExistingRowWereNotAdded() {
+        // The source's «відкоси» wording must never land in the catalog — this vocabulary uses «укоси»
+        // (see V109's header note), and a second spelling would break the by-name template→price join.
+        assertThat(count("""
+                SELECT count(*) FROM catalog_templates
+                WHERE trade = 'PAINTER' AND lower(trim(name)) LIKE '%відкос%'
+                """))
+                .isZero();
+    }
+
+    @Test
+    void theTwoSlopeAndHiddenDoorBundlesGrewByTheNewPositions() {
+        assertBundleCarries("Укоси вікон", "Грунтування укосів");
+        assertBundleCarries("Укоси вікон", "Обезпилення та грунтування укосів перед фарбуванням");
+        assertBundleCarries("Укоси вікон", "Фарбування укосів");
+        assertBundleCarries("Приховані двері та тіньові шви",
+                "Монтаж ГКЛ у кілька шарів на укоси дверей прихованого монтажу та примикання");
+        assertBundleCarries("Приховані двері та тіньові шви",
+                "Шпаклювання з армуванням навколо дверей прихованого монтажу");
+    }
+
+    private void assertPrice(String unit, String name, int expected) {
+        assertThat(db.queryForObject("""
+                SELECT suggested_price FROM catalog_templates
+                WHERE trade = 'PAINTER' AND unit = ? AND name = ?
+                """, BigDecimal.class, unit, name))
+                .as("«%s» (%s)", name, unit)
+                .isEqualByComparingTo(BigDecimal.valueOf(expected));
+    }
+
+    private void assertBundleCarries(String bundle, String position) {
+        assertThat(count("""
+                SELECT count(*) FROM estimate_template_items ti
+                JOIN estimate_templates t ON t.id = ti.template_id
+                WHERE t.is_default AND t.trade = 'PAINTER' AND t.name = ? AND ti.name = ?
+                """, bundle, position))
+                .as("«%s» must carry «%s»", bundle, position)
+                .isEqualTo(1);
     }
 }

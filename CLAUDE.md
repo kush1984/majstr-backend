@@ -95,9 +95,10 @@ Spring Boot 4 removed all test-slice annotations (`@WebMvcTest`, `@DataJpaTest`,
 - **Boundaries of change**: keep changes scoped. Bug fix ≠ refactor. No abstractions for hypothetical
   future needs. **No backwards-compat shims** for code that hasn't shipped — greenfield, just change it.
 - **Tests + green build before push (hard gate)**: every change updates/adds tests, and the build must
-  be green **before any push** — keep `master` green. **Claude cannot run Gradle in its sandbox**
-  (loopback socket blocked). So: Claude writes the tests, **the user runs `./gradlew build` locally and
-  confirms green**, then Claude pushes. Red → user pastes output, Claude fixes to green first.
+  be green **before any push** — keep `master` green. **Claude runs `./gradlew build` itself** (this used
+  to be blocked by the sandbox's loopback restriction; it no longer is — Testcontainers and Docker work
+  too, a full run is ~2-3 min). So: Claude writes the tests, runs the build, and only pushes on green.
+  Red → Claude fixes to green first, never pushes red and never reports green without a run.
 - **PWA gate = MIRROR CI's `verify` job, in order** (`majstr-pwa/.github/workflows/ci.yml`):
   `npm run lint` → `npx tsc -b` → `npm run typecheck:tests` → `npx vitest run` → `npx vite build`.
   Two steps are easy to forget and each has reddened CI on its own: **`npm run lint`**
