@@ -372,3 +372,31 @@ excluded kosторис pushed the numerator past 100 %. **Prevent + fix, both:**
 PUT→400, +acceptedByActs counts counted+additional only and ≤ contracted);
 `WorkActCumulativeDefaultMigrationIntegrationTest` (V106 data-migration drill); PWA economy
 (+client-debt balance case). PWA gate green; **backend build on the user**.
+
+## Acts-improvement — title, status moves, shared signed-copy, rate limiting (committed 4a65f1d, V108)
+
+Master feedback + a self-review pass on top of the shipped acts feature (this was committed directly;
+documented here after the fact):
+
+- **`work_act.title`** (V108, varchar 120) — a real interim act reads «Штукатурні роботи» / «Шпаклювання»,
+  not just a number. Optional, frozen on sign. PWA suggests names from the object's estimate categories
+  and auto-fills when every selected line shares one category. Added to `WorkAct`, `WorkActResponse`,
+  `PublicActView`, `WorkActResponseFactory`, the create/update DTOs, and the portal `index.html` render.
+- **Owner status moves** — `PATCH /api/acts/{id}/status` (`WorkActStatusRequest` → `WorkActService.changeStatus`).
+  Allowed ONLY: `SENT→DRAFT` (recall a sent act), `SENT→REJECTED` (client declined), `REJECTED→DRAFT`
+  (client came around). Everything else, including any move on a SIGNED act, is 409
+  `WORK_ACT_BAD_TRANSITION`; `REJECTED→DRAFT` re-asserts one-open-act (409 `WORK_ACT_OPEN`). `DRAFT`
+  target clears `sent_at`.
+- **`ActSignedCopyService`** — extracted the docHash computation + client-copy email so BOTH sign paths
+  run them. **Review fix: the offline path (`signOffline`) previously produced neither** — an
+  offline-signed act had no tamper stamp and the client no independent copy. Canonical (unstamped,
+  no-ДОВІДКОВО) render for the hash, stamped render for the email; both fail-soft.
+- **`QuestionRateLimiter`** — a write-path rate limit for client questions on every public portal
+  (`?t`/`?p`/`?e`/`?a`), keyed IP+token (mirrors `MessageLinkRateLimiter`), because those endpoints
+  store a message AND push the master — the blanket 30/min read cap of `PortalRateLimiter` is the wrong
+  shape. Wired through all four public portal controllers; `RateLimitProperties.question` +
+  `application.yml`.
+- **PWA**: `useLeaveGuard` (warns on navigating away from an act with unsaved edits) and `openPdfTab`
+  (opens the act PDF via a pattern that survives iOS Safari's popup/focus rules — same class of fix as
+  the earlier copy-link iOS fix). Tests: `openPdfTab.test.ts`, expanded `WorkActIntegrationTest`,
+  `PublicActPortalControllerTest`, rate-limiter tests.
