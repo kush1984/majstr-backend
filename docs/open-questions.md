@@ -878,6 +878,13 @@ one-line summary — keep the item in the file as a record.
   into an estimate, not an attachment on an `object_expense` row) — but if this want is built,
   it can reuse `project_photo`'s private-storage + auth-stream pattern (a `MANUAL`/expense
   variant or a `receipt_url` on `object_expense`).
+- **Update (2026-08-21, act-receipts iteration — status unchanged, still OPEN):** act receipts
+  (`work_act_receipts`, V110) now carry a photo AND post a MATERIALS/RECEIPT `ObjectExpense` on
+  sign, so for materials billed through an act the photo-plus-expense pair exists in practice. The
+  link is one-way, though: the expense row has no pointer back to the receipt's photo, and an
+  expense logged directly in the journal still has nowhere to attach one. If this is picked up, the
+  cheapest honest shape is now a nullable `object_expense.receipt_photo_key` plus a back-reference
+  from the act-created rows, reusing the same private-storage + auth-stream path.
 
 ### Master referral reward when the referrer is on admin-granted (dateless) PRO
 - **Status:** OPEN

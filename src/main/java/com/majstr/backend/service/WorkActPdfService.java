@@ -74,12 +74,14 @@ public class WorkActPdfService {
             addDatesAndObject(document, model);
             addParties(document, model);
             BigDecimal total = addItemsTable(document, model);
-            BigDecimal payable = addTotals(document, model, total);
+            BigDecimal receiptsTotal = addReceiptsTable(document, model);
+            BigDecimal payable = addTotals(document, model, total, receiptsTotal);
             addSumInWords(document, payable);
             addCumulativeReference(document, model);
             addStatements(document, model);
             addSignatures(document, model);
             addDocHashFooter(document, model);
+            addReceiptPhotos(document, model);
         } finally {
             document.close();
         }
@@ -280,7 +282,51 @@ public class WorkActPdfService {
         return sum;
     }
 
-    private BigDecimal addTotals(Document doc, PdfModel model, BigDecimal total) throws DocumentException {
+    /**
+     * The «ЧЕКИ ТА РАХУНКИ» section — materials the master paid for and re-bills on this act. The
+     * receipt's own line items are deliberately not carried over (master feedback): a description,
+     * a date and one amount per receipt, plus a subtotal. Part of the CANONICAL (hashed) render —
+     * unlike the live «ДОВІДКОВО» block, a receipt is a frozen copy that can never change after
+     * signing.
+     *
+     * @return the receipts subtotal, or zero when the act has none.
+     */
+    private BigDecimal addReceiptsTable(Document doc, PdfModel model) throws DocumentException {
+        List<ReceiptRow> receipts = model.receipts();
+        if (receipts.isEmpty()) {
+            return BigDecimal.ZERO.setScale(MONEY_SCALE, MONEY_ROUNDING);
+        }
+        boolean hasAdditional = model.items().stream().anyMatch(i -> i.getEstimateItemId() == null);
+        Paragraph heading = new Paragraph((hasAdditional ? "ІІІ" : "ІІ") + ". ЧЕКИ ТА РАХУНКИ",
+                fonts.bold(12));
+        heading.setSpacingBefore(12);
+        heading.setSpacingAfter(4);
+        doc.add(heading);
+
+        PdfPTable table = new PdfPTable(4);
+        table.setWidthPercentage(100);
+        table.setWidths(new float[]{0.6f, 6.4f, 1.6f, 1.8f});
+        addColumnHeader(table, "№");
+        addColumnHeader(table, "Опис");
+        addColumnHeader(table, "Дата");
+        addColumnHeader(table, "Сума");
+
+        BigDecimal sum = BigDecimal.ZERO.setScale(MONEY_SCALE, MONEY_ROUNDING);
+        int n = 0;
+        for (ReceiptRow r : receipts) {
+            n++;
+            sum = sum.add(r.amount());
+            table.addCell(textCell(String.valueOf(n), Element.ALIGN_CENTER));
+            table.addCell(textCell(r.label(), Element.ALIGN_LEFT));
+            table.addCell(textCell(r.issuedAt() == null ? "—" : DATE.format(r.issuedAt()), Element.ALIGN_CENTER));
+            table.addCell(textCell(formatMoney(r.amount()), Element.ALIGN_RIGHT));
+        }
+        doc.add(table);
+        return sum.setScale(MONEY_SCALE, MONEY_ROUNDING);
+    }
+
+    private BigDecimal addTotals(Document doc, PdfModel model, BigDecimal total, BigDecimal receiptsTotal)
+            throws DocumentException {
         WorkAct act = model.act();
         PdfPTable table = new PdfPTable(2);
         table.setWidthPercentage(55);
@@ -291,15 +337,58 @@ public class WorkActPdfService {
         BigDecimal advance = act.getAdvanceOffset() == null
                 ? BigDecimal.ZERO.setScale(MONEY_SCALE, MONEY_ROUNDING) : act.getAdvanceOffset();
         boolean hasAdvance = advance.signum() > 0;
-        BigDecimal payable = total.subtract(advance).max(BigDecimal.ZERO).setScale(MONEY_SCALE, MONEY_ROUNDING);
+        boolean hasReceipts = receiptsTotal.signum() > 0;
+        BigDecimal grand = total.add(receiptsTotal).setScale(MONEY_SCALE, MONEY_ROUNDING);
+        BigDecimal payable = grand.subtract(advance).max(BigDecimal.ZERO).setScale(MONEY_SCALE, MONEY_ROUNDING);
 
-        addTotalRow(table, "Разом за актом:", formatMoney(total), !hasAdvance);
+        if (hasReceipts) {
+            addTotalRow(table, "Разом за роботами:", formatMoney(total), false);
+            addTotalRow(table, "Разом за чеками:", formatMoney(receiptsTotal), false);
+        }
+        addTotalRow(table, "Разом за актом:", formatMoney(grand), !hasAdvance);
         if (hasAdvance) {
             addTotalRow(table, "Зараховано авансів:", "− " + formatMoney(advance), false);
             addTotalRow(table, "До сплати:", formatMoney(payable), true);
         }
         doc.add(table);
         return payable;
+    }
+
+    /**
+     * The receipt photos as an appendix on their own page(s) at the end — proof of what was bought,
+     * unreadable if embedded mid-table (same choice as the estimate PDF's «ЧЕКИ» appendix). A
+     * receipt with no photo is simply skipped, and a corrupt image is logged, never fatal.
+     */
+    private void addReceiptPhotos(Document doc, PdfModel model) throws DocumentException {
+        List<ReceiptRow> withPhoto = model.receipts().stream()
+                .filter(r -> r.storageKey() != null && !r.storageKey().isBlank()).toList();
+        if (withPhoto.isEmpty()) {
+            return;
+        }
+        doc.newPage();
+        Paragraph heading = new Paragraph("ДОДАТОК: ФОТО ЧЕКІВ", fonts.bold(12));
+        heading.setSpacingAfter(8);
+        doc.add(heading);
+        int n = 0;
+        for (ReceiptRow r : withPhoto) {
+            n++;
+            try (InputStream stream = storage.open(r.storageKey()).orElse(null)) {
+                if (stream == null) {
+                    continue;
+                }
+                Image image = Image.getInstance(stream.readAllBytes());
+                image.scaleToFit(500, 620);
+                image.setAlignment(Element.ALIGN_CENTER);
+                Paragraph caption = new Paragraph(n + ". " + r.label() + " — " + formatMoney(r.amount()),
+                        fonts.regular(9));
+                caption.setSpacingBefore(6);
+                caption.setSpacingAfter(2);
+                doc.add(caption);
+                doc.add(image);
+            } catch (Exception e) {
+                log.warn("Could not embed act receipt image {}: {}", r.storageKey(), e.getMessage());
+            }
+        }
     }
 
     private void addSumInWords(Document doc, BigDecimal payable) throws DocumentException {
@@ -520,12 +609,22 @@ public class WorkActPdfService {
             Client client,
             WorkAct act,
             List<WorkActItem> items,
+            List<ReceiptRow> receipts,
             Map<UUID, String> estimateNames,
             String docHash,
             CumulativeReference cumulative
     ) {
         public PdfModel {
             estimateNames = estimateNames == null ? Map.of() : estimateNames;
+            receipts = receipts == null ? List.of() : receipts;
+        }
+    }
+
+    /** One «Чеки та рахунки» row. Frozen data straight off {@code work_act_receipt}, so unlike the
+     *  «ДОВІДКОВО» figures it is safe inside the canonical (hashed) render. */
+    public record ReceiptRow(String label, LocalDate issuedAt, BigDecimal amount, String storageKey) {
+        public static ReceiptRow from(com.majstr.backend.entity.WorkActReceipt r) {
+            return new ReceiptRow(r.getLabel(), r.getIssuedAt(), r.getAmount(), r.getStorageKey());
         }
     }
 

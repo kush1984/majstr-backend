@@ -125,6 +125,35 @@ class WorkActPdfServiceTest {
         assertThat(text).contains("Залишок");
     }
 
+    @Test
+    void render_withReceipts_addsTheReceiptsSectionAndBillsThemOnTopOfTheWorks() throws Exception {
+        given(featureGuard.isEnabled(any(), eq(Feature.BRANDED_PDF))).willReturn(false);
+
+        var receipts = List.of(
+                new WorkActPdfService.ReceiptRow("Епіцентр, клей + грунтовка",
+                        LocalDate.of(2026, 8, 3), new BigDecimal("2400.00"), null),
+                new WorkActPdfService.ReceiptRow("Нова Пошта, доставка",
+                        null, new BigDecimal("600.00"), null));
+        String text = textOf(pdfService.render(
+                sampleModel(WorkActKind.INTERIM, null, "Штукатурні роботи", receipts)));
+
+        assertThat(text).contains("ЧЕКИ ТА РАХУНКИ");
+        assertThat(text).contains("Епіцентр, клей + грунтовка").contains("Нова Пошта, доставка");
+        // Works 16 000 + receipts 3 000 → the payable in words must be the GRAND total, not the works.
+        assertThat(text).contains("Разом за роботами").contains("Разом за чеками");
+        assertThat(text).contains("Дев'ятнадцять тисяч гривень");
+    }
+
+    @Test
+    void render_withoutReceipts_omitsTheSectionEntirely() throws Exception {
+        given(featureGuard.isEnabled(any(), eq(Feature.BRANDED_PDF))).willReturn(false);
+
+        String text = textOf(pdfService.render(sampleModel(WorkActKind.INTERIM)));
+
+        assertThat(text).doesNotContain("ЧЕКИ ТА РАХУНКИ");
+        assertThat(text).doesNotContain("Разом за чеками");
+    }
+
     private WorkActPdfService.PdfModel sampleModel(WorkActKind kind) {
         return sampleModel(kind, null);
     }
@@ -137,6 +166,13 @@ class WorkActPdfServiceTest {
     private WorkActPdfService.PdfModel sampleModel(WorkActKind kind,
                                                    WorkActPdfService.CumulativeReference cumulative,
                                                    String title) {
+        return sampleModel(kind, cumulative, title, List.of());
+    }
+
+    private WorkActPdfService.PdfModel sampleModel(WorkActKind kind,
+                                                   WorkActPdfService.CumulativeReference cumulative,
+                                                   String title,
+                                                   List<WorkActPdfService.ReceiptRow> receipts) {
         User contractor = User.builder()
                 .id(UUID.randomUUID()).email("i@e.com").companyName("ФОП Іваненко").fullName("Іван Іваненко")
                 .phone("+380501112233").passwordHash("x")
@@ -173,7 +209,7 @@ class WorkActPdfServiceTest {
                 .cumulativeBefore(new BigDecimal("0.000")).sortOrder(1).build();
 
         return new WorkActPdfService.PdfModel(contractor, project, client, act,
-                List.of(main, additional), Map.of(estimateId, "Чорнові роботи"), null, cumulative);
+                List.of(main, additional), receipts, Map.of(estimateId, "Чорнові роботи"), null, cumulative);
     }
 
     private static String textOf(byte[] pdf) throws Exception {

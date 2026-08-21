@@ -1,11 +1,13 @@
 package com.majstr.backend.service;
 
 import com.majstr.backend.dto.WorkActItemResponse;
+import com.majstr.backend.dto.WorkActReceiptResponse;
 import com.majstr.backend.dto.WorkActResponse;
 import com.majstr.backend.entity.WorkAct;
 import com.majstr.backend.entity.WorkActItem;
 import com.majstr.backend.repository.EstimateItemRepository;
 import com.majstr.backend.repository.WorkActItemRepository;
+import com.majstr.backend.repository.WorkActReceiptRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
@@ -34,6 +36,7 @@ class WorkActResponseFactory {
 
     private final WorkActItemRepository itemRepository;
     private final EstimateItemRepository estimateItemRepository;
+    private final WorkActReceiptRepository receiptRepository;
 
     WorkActResponse build(WorkAct act) {
         List<WorkActItem> items = itemRepository.findByWorkActIdOrderBySortOrderAscIdAsc(act.getId());
@@ -54,9 +57,18 @@ class WorkActResponseFactory {
                         .compareTo(estimateQty.get(it.getEstimateItemId())) > 0;
             itemDtos.add(WorkActItemResponse.from(it, exceeds));
         }
+        List<WorkActReceiptResponse> receipts = receiptRepository
+                .findByWorkActIdOrderBySortOrderAscCreatedAtAsc(act.getId()).stream()
+                .map(WorkActReceiptResponse::from)
+                .toList();
+        BigDecimal receiptsTotal = receipts.stream()
+                .map(WorkActReceiptResponse::amount)
+                .reduce(BigDecimal.ZERO, BigDecimal::add)
+                .setScale(MONEY_SCALE, ROUNDING);
         BigDecimal advance = act.getAdvanceOffset() == null
                 ? BigDecimal.ZERO.setScale(MONEY_SCALE, ROUNDING) : act.getAdvanceOffset();
-        BigDecimal payable = total.subtract(advance).max(BigDecimal.ZERO).setScale(MONEY_SCALE, ROUNDING);
+        BigDecimal payable = total.add(receiptsTotal).subtract(advance)
+                .max(BigDecimal.ZERO).setScale(MONEY_SCALE, ROUNDING);
         return new WorkActResponse(
                 act.getId(),
                 act.getProject().getId(),
@@ -72,6 +84,7 @@ class WorkActResponseFactory {
                 act.getNote(),
                 act.isShowMaterials(),
                 act.isShowCumulative(),
+                act.isReceiptsToExpenses(),
                 act.getAdvanceOffset(),
                 act.getRetentionPercent(),
                 act.getSentAt(),
@@ -80,7 +93,9 @@ class WorkActResponseFactory {
                 act.isSignedOffline(),
                 act.getAddendumEstimateId(),
                 itemDtos,
+                receipts,
                 total,
+                receiptsTotal,
                 payable,
                 act.getCreatedAt(),
                 act.getUpdatedAt()

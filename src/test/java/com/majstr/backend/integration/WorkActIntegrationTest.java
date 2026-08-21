@@ -56,6 +56,7 @@ class WorkActIntegrationTest extends IntegrationTestBase {
     @Autowired EstimateRepository estimateRepository;
     @Autowired EstimateItemRepository estimateItemRepository;
     @Autowired WorkActRepository workActRepository;
+    @Autowired com.majstr.backend.service.WorkActReceiptService receiptService;
 
     @Test
     void numberingIsContinuousPerMaster_acrossObjects() {
@@ -142,7 +143,7 @@ class WorkActIntegrationTest extends IntegrationTestBase {
 
         WorkActResponse updated = workActService.updateHeader(created.id(),
                 new com.majstr.backend.dto.WorkActUpdateRequest(WorkActKind.INTERIM, "  ", LocalDate.now(),
-                        LocalDate.now().minusDays(7), LocalDate.now(), null, null, null, null, null, null),
+                        LocalDate.now().minusDays(7), LocalDate.now(), null, null, null, null, null, null, null),
                 owner.getId());
         assertThat(updated.title()).isNull();
     }
@@ -235,7 +236,7 @@ class WorkActIntegrationTest extends IntegrationTestBase {
         WorkActResponse updated = workActService.updateHeader(act.id(),
                 new com.majstr.backend.dto.WorkActUpdateRequest(WorkActKind.INTERIM, null,
                         LocalDate.now().plusYears(1), LocalDate.now().minusDays(7), LocalDate.now(),
-                        null, null, null, null, null, null),
+                        null, null, null, null, null, null, null),
                 owner.getId());
 
         assertThat(updated.number()).isEqualTo("1/" + (year + 1));
@@ -525,6 +526,82 @@ class WorkActIntegrationTest extends IntegrationTestBase {
         // work never enters the numerator, so the numerator stays within the denominator.
         assertThat(economy.acts().acceptedByActs()).isEqualByComparingTo("8250.00");
         assertThat(economy.acts().acceptedByActs()).isLessThanOrEqualTo(economy.acts().contracted());
+    }
+
+    // ---- receipts & invoices («Чеки та рахунки») ---------------------------------
+
+    @Test
+    void receipts_areBilledOnTopOfTheWorks_andFrozenOnceSigned() throws Exception {
+        User owner = newOwner();
+        Project p = newProject(owner);
+        Estimate est = signedEstimateWithLine(p, "Робота", "100.000", "145.00"); // 14 500
+        UUID line = estimateItemRepository.findByEstimateIdOrderBySortOrderAscIdAsc(est.getId()).get(0).getId();
+
+        WorkActResponse act = createInterim(p.getId(), owner.getId());
+        setSingleLine(act.id(), owner.getId(), est.getId(), line, "50.000", "145.00"); // 7 250
+        receiptService.add(act.id(), owner.getId(), null, "Епіцентр, клей",
+                new BigDecimal("2400.00"), LocalDate.now().minusDays(2));
+        receiptService.add(act.id(), owner.getId(), null, "Нова Пошта",
+                new BigDecimal("600.00"), null);
+
+        WorkActResponse withReceipts = workActService.get(act.id(), owner.getId());
+        assertThat(withReceipts.receipts()).hasSize(2);
+        assertThat(withReceipts.receiptsTotal()).isEqualByComparingTo("3000.00");
+        assertThat(withReceipts.total()).isEqualByComparingTo("7250.00");   // works only
+        assertThat(withReceipts.payable()).isEqualByComparingTo("10250.00"); // works + receipts
+
+        workActService.signOffline(act.id(), new WorkActSignOfflineRequest("Клієнт"), owner.getId());
+
+        // Signed = immutable, receipts included — they are part of the hashed document.
+        assertThatThrownBy(() -> receiptService.add(act.id(), owner.getId(), null, "Пізній чек",
+                new BigDecimal("100.00"), null)).isInstanceOf(WorkActSignedException.class);
+        assertThatThrownBy(() -> receiptService.delete(act.id(),
+                withReceipts.receipts().getFirst().id(), owner.getId()))
+                .isInstanceOf(WorkActSignedException.class);
+    }
+
+    @Test
+    void signedReceipts_landInBothEconomyAxes_soAcceptedNeverExceedsContracted() throws Exception {
+        // The invariant with receipts in play: ActAddendumCreator puts them into «За договором» and
+        // sumSignedActReceipts adds them to «Прийнято актами» — both halves or the axis lies.
+        User owner = newOwner();
+        Project p = newProject(owner);
+        Estimate est = signedEstimateWithLine(p, "Робота", "100.000", "145.00"); // 14 500
+        UUID line = estimateItemRepository.findByEstimateIdOrderBySortOrderAscIdAsc(est.getId()).get(0).getId();
+
+        WorkActResponse act = createInterim(p.getId(), owner.getId());
+        setSingleLine(act.id(), owner.getId(), est.getId(), line, "50.000", "145.00"); // 7 250
+        receiptService.add(act.id(), owner.getId(), null, "Епіцентр", new BigDecimal("2400.00"), null);
+        workActService.signOffline(act.id(), new WorkActSignOfflineRequest("Клієнт"), owner.getId());
+
+        ObjectEconomyResponse economy = objectExpenseService.economy(p.getId(), owner.getId());
+        assertThat(economy.acts().contracted()).isEqualByComparingTo("16900.00");     // 14 500 + 2 400
+        assertThat(economy.acts().acceptedByActs()).isEqualByComparingTo("9650.00");  // 7 250 + 2 400
+        assertThat(economy.acts().acceptedByActs()).isLessThanOrEqualTo(economy.acts().contracted());
+        // receiptsToExpenses defaults on: the pass-through money is booked so profit stays honest.
+        assertThat(economy.internals().expenses()).isEqualByComparingTo("2400.00");
+    }
+
+    @Test
+    void receiptsToExpensesOff_stillBillsTheClientButPostsNoExpense() throws Exception {
+        // A master who already logs his receipts in the expense journal turns this off — otherwise
+        // the same 2 400 would be subtracted from profit twice.
+        User owner = newOwner();
+        Project p = newProject(owner);
+        Estimate est = signedEstimateWithLine(p, "Робота", "100.000", "145.00");
+        UUID line = estimateItemRepository.findByEstimateIdOrderBySortOrderAscIdAsc(est.getId()).get(0).getId();
+
+        WorkActResponse act = createInterim(p.getId(), owner.getId());
+        setSingleLine(act.id(), owner.getId(), est.getId(), line, "50.000", "145.00");
+        receiptService.add(act.id(), owner.getId(), null, "Епіцентр", new BigDecimal("2400.00"), null);
+        workActService.updateHeader(act.id(), new com.majstr.backend.dto.WorkActUpdateRequest(
+                WorkActKind.INTERIM, null, LocalDate.now(), LocalDate.now().minusDays(7), LocalDate.now(),
+                null, null, null, null, null, false, null), owner.getId());
+        workActService.signOffline(act.id(), new WorkActSignOfflineRequest("Клієнт"), owner.getId());
+
+        ObjectEconomyResponse economy = objectExpenseService.economy(p.getId(), owner.getId());
+        assertThat(economy.acts().acceptedByActs()).isEqualByComparingTo("9650.00");
+        assertThat(economy.internals().expenses()).isEqualByComparingTo("0.00");
     }
 
     // ---- fixtures ---------------------------------------------------------------

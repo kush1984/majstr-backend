@@ -41,20 +41,22 @@ class ActSignedCopyService {
     private final EmailService emailService;
 
     /** Must be called AFTER the signer fields are set — they are part of what the hash certifies. */
-    String computeDocHash(WorkAct act, java.util.List<WorkActItem> items)
+    String computeDocHash(WorkAct act, java.util.List<WorkActItem> items,
+                          java.util.List<WorkActPdfService.ReceiptRow> receipts)
             throws IOException, DocumentException {
-        byte[] canonical = pdfService.render(model(act, items, null, null));
+        byte[] canonical = pdfService.render(model(act, items, receipts, null, null));
         return sha256Hex(canonical);
     }
 
-    void emailClientCopy(WorkAct act, java.util.List<WorkActItem> items) {
+    void emailClientCopy(WorkAct act, java.util.List<WorkActItem> items,
+                         java.util.List<WorkActPdfService.ReceiptRow> receipts) {
         Client client = act.getProject().getClient();
         if (client == null || client.getEmail() == null || client.getEmail().isBlank()) {
             return;
         }
         try {
-            byte[] stamped = pdfService.render(model(act, items, act.getDocHash(),
-                    cumulativeCalculator.forDownload(act, items)));
+            byte[] stamped = pdfService.render(model(act, items, receipts, act.getDocHash(),
+                    cumulativeCalculator.forDownload(act, items, receiptsTotal(receipts))));
             emailService.sendSignedActCopyEmail(client.getEmail(), client.getFullName(),
                     contractorName(act.getProject().getOwner()), act.getNumber(), stamped);
         } catch (Exception e) {
@@ -63,6 +65,7 @@ class ActSignedCopyService {
     }
 
     private WorkActPdfService.PdfModel model(WorkAct act, java.util.List<WorkActItem> items,
+                                             java.util.List<WorkActPdfService.ReceiptRow> receipts,
                                              String docHash, WorkActPdfService.CumulativeReference cumulative) {
         Project project = act.getProject();
         Map<UUID, String> names = new HashMap<>();
@@ -70,7 +73,13 @@ class ActSignedCopyService {
                 estimateRepository.findById(id).ifPresent(e ->
                         names.put(id, e.getName() == null || e.getName().isBlank() ? "Кошторис" : e.getName().trim())));
         return new WorkActPdfService.PdfModel(
-                project.getOwner(), project, project.getClient(), act, items, names, docHash, cumulative);
+                project.getOwner(), project, project.getClient(), act, items, receipts, names, docHash,
+                cumulative);
+    }
+
+    private static java.math.BigDecimal receiptsTotal(java.util.List<WorkActPdfService.ReceiptRow> receipts) {
+        return receipts.stream().map(WorkActPdfService.ReceiptRow::amount)
+                .reduce(java.math.BigDecimal.ZERO, java.math.BigDecimal::add);
     }
 
     private static String contractorName(User owner) {

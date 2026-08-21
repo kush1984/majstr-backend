@@ -4,44 +4,69 @@ import com.majstr.backend.entity.Estimate;
 import com.majstr.backend.entity.EstimateItem;
 import com.majstr.backend.entity.EstimateKind;
 import com.majstr.backend.entity.EstimateStatus;
+import com.majstr.backend.entity.ExpenseCategory;
+import com.majstr.backend.entity.ExpenseSource;
+import com.majstr.backend.entity.ItemType;
+import com.majstr.backend.entity.ObjectExpense;
+import com.majstr.backend.entity.Unit;
 import com.majstr.backend.entity.WorkAct;
 import com.majstr.backend.entity.WorkActItem;
+import com.majstr.backend.entity.WorkActReceipt;
 import com.majstr.backend.repository.EstimateItemRepository;
 import com.majstr.backend.repository.EstimateRepository;
+import com.majstr.backend.repository.ObjectExpenseRepository;
 import com.majstr.backend.repository.WorkActItemRepository;
+import com.majstr.backend.repository.WorkActReceiptRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
+import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
 
 /**
- * Rolls an act's ADDITIONAL (off-estimate) positions into a SIGNED, counted, non-shared «Додаткові
- * роботи до акта № N» estimate (kind ADDENDUM) when the act is signed. Shared by BOTH sign paths —
- * the offline {@link WorkActService#signOffline} and the client-facing {@link
- * PublicActPortalService#sign} — so «За договором» absorbs the extra works no matter how the act was
- * signed, and «Прийнято актами» can never exceed it (acts-fix; the portal path used to skip this).
+ * What a signed act writes back into the object's economy, shared by BOTH sign paths — the offline
+ * {@link WorkActService#signOffline} and the client-facing {@link PublicActPortalService#sign}:
+ *
+ * <ul>
+ *   <li>the act's ADDITIONAL (off-estimate) positions AND its re-billed receipts are rolled into a
+ *       SIGNED, counted, non-shared ADDENDUM estimate, so «За договором» absorbs them and «Прийнято
+ *       актами» can never exceed it (the invariant enforced in {@code ObjectExpenseService.actsAxis});</li>
+ *   <li>each receipt is optionally posted as a MATERIALS expense ({@code receipts_to_expenses}) so
+ *       «Прибуток» is not inflated by pass-through money the client merely reimburses.</li>
+ * </ul>
  */
 @Component
 @RequiredArgsConstructor
 class ActAddendumCreator {
 
+    private static final int MONEY_SCALE = 2;
+
     private final WorkActItemRepository itemRepository;
+    private final WorkActReceiptRepository receiptRepository;
     private final EstimateRepository estimateRepository;
     private final EstimateItemRepository estimateItemRepository;
+    private final ObjectExpenseRepository expenseRepository;
 
     /** Must run in the SAME transaction as the sign, BEFORE the act is stamped SIGNED (there is no
      *  per-row immutability guard, but keeping it pre-SIGNED matches the offline path's ordering). */
     void createIfNeeded(WorkAct act) {
         List<WorkActItem> additional = itemRepository.findByWorkActIdOrderBySortOrderAscIdAsc(act.getId())
                 .stream().filter(i -> i.getEstimateItemId() == null).toList();
-        if (additional.isEmpty()) {
+        List<WorkActReceipt> receipts = receiptRepository
+                .findByWorkActIdOrderBySortOrderAscCreatedAtAsc(act.getId());
+        if (additional.isEmpty() && receipts.isEmpty()) {
             return;
+        }
+        if (!receipts.isEmpty() && act.isReceiptsToExpenses()) {
+            postReceiptExpenses(act, receipts);
         }
         Estimate addendum = estimateRepository.save(Estimate.builder()
                 .project(act.getProject())
-                .name("Додаткові роботи до акта № " + act.getNumber())
+                .name(addendumName(act, additional, receipts))
                 .status(EstimateStatus.SIGNED)
                 .kind(EstimateKind.ADDENDUM)
                 .countInEconomy(true)
@@ -63,8 +88,47 @@ class ActAddendumCreator {
                     .sortOrder(sort++)
                     .build());
         }
+        // A receipt is re-billed as a whole — one MATERIAL line at quantity 1, never its parsed
+        // contents (the master explicitly did not want the receipt's positions inside the act).
+        for (WorkActReceipt r : receipts) {
+            lines.add(EstimateItem.builder()
+                    .estimate(addendum)
+                    .type(ItemType.MATERIAL)
+                    .name("Чек: " + r.getLabel())
+                    .category("Матеріали за чеками")
+                    .unit(Unit.PIECE)
+                    .quantity(BigDecimal.ONE)
+                    .unitPrice(r.getAmount())
+                    .sortOrder(sort++)
+                    .build());
+        }
         EstimateMath.recalculate(lines); // fills line_total
         estimateItemRepository.saveAll(lines);
         act.setAddendumEstimateId(addendum.getId());
+    }
+
+    private void postReceiptExpenses(WorkAct act, List<WorkActReceipt> receipts) {
+        List<ObjectExpense> expenses = new ArrayList<>(receipts.size());
+        for (WorkActReceipt r : receipts) {
+            expenses.add(ObjectExpense.builder()
+                    .objectId(act.getProject().getId())
+                    .amount(r.getAmount().setScale(MONEY_SCALE, RoundingMode.HALF_UP))
+                    .category(ExpenseCategory.MATERIALS)
+                    .source(ExpenseSource.RECEIPT)
+                    .note("Чек до акта № " + act.getNumber() + ": " + r.getLabel())
+                    .spentAt(r.getIssuedAt() == null ? LocalDate.now() : r.getIssuedAt())
+                    .build());
+        }
+        expenseRepository.saveAll(expenses);
+    }
+
+    private static String addendumName(WorkAct act, List<WorkActItem> additional, List<WorkActReceipt> receipts) {
+        if (additional.isEmpty()) {
+            return "Матеріали за чеками до акта № " + act.getNumber();
+        }
+        if (receipts.isEmpty()) {
+            return "Додаткові роботи до акта № " + act.getNumber();
+        }
+        return "Додатково до акта № " + act.getNumber();
     }
 }

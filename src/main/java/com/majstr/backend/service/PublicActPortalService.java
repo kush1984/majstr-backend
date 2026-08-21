@@ -14,6 +14,7 @@ import com.majstr.backend.entity.ShareLinkKind;
 import com.majstr.backend.entity.User;
 import com.majstr.backend.entity.WorkAct;
 import com.majstr.backend.entity.WorkActItem;
+import com.majstr.backend.entity.WorkActReceipt;
 import com.majstr.backend.entity.WorkActStatus;
 import com.majstr.backend.exception.ResourceNotFoundException;
 import com.majstr.backend.exception.WorkActSignedException;
@@ -23,6 +24,7 @@ import com.majstr.backend.repository.EstimateRepository;
 import com.majstr.backend.repository.ProjectMessageRepository;
 import com.majstr.backend.repository.ProjectShareLinkRepository;
 import com.majstr.backend.repository.WorkActItemRepository;
+import com.majstr.backend.repository.WorkActReceiptRepository;
 import com.majstr.backend.repository.WorkActRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.MessageSource;
@@ -56,12 +58,14 @@ public class PublicActPortalService {
     private final ProjectShareLinkRepository linkRepository;
     private final WorkActRepository actRepository;
     private final WorkActItemRepository itemRepository;
+    private final WorkActReceiptRepository receiptRepository;
     private final EstimateRepository estimateRepository;
     private final ProjectMessageRepository messageRepository;
     private final WorkActPdfService pdfService;
     private final ActCumulativeCalculator cumulativeCalculator;
     private final ActAddendumCreator addendumCreator;
     private final ActSignedCopyService signedCopy;
+    private final WorkActReceiptService receiptService;
     private final PushService pushService;
     private final MessageSource messages;
 
@@ -108,10 +112,13 @@ public class PublicActPortalService {
 
         // Tamper stamp + client copy — the SAME artifacts the offline path produces (review fix:
         // extracted into ActSignedCopyService so neither path can drift from the other).
-        act.setDocHash(signedCopy.computeDocHash(act, items));
+        List<WorkActReceipt> receipts = receiptRepository.findByWorkActIdOrderBySortOrderAscCreatedAtAsc(act.getId());
+        List<WorkActPdfService.ReceiptRow> receiptRows = receipts.stream()
+                .map(WorkActPdfService.ReceiptRow::from).toList();
+        act.setDocHash(signedCopy.computeDocHash(act, items, receiptRows));
         notifyContractor(act, items);
-        signedCopy.emailClientCopy(act, items);
-        return toView(act, items);
+        signedCopy.emailClientCopy(act, items, receiptRows);
+        return toView(act, items, receipts);
     }
 
     @Transactional
@@ -137,8 +144,19 @@ public class PublicActPortalService {
     public byte[] pdf(String token) throws IOException, DocumentException {
         WorkAct act = resolveShareableAct(token);
         List<WorkActItem> items = itemRepository.findByWorkActIdOrderBySortOrderAscIdAsc(act.getId());
-        return pdfService.render(model(act, items, act.getDocHash(),
-                cumulativeCalculator.forDownload(act, items)));
+        List<WorkActPdfService.ReceiptRow> receipts = receiptRepository
+                .findByWorkActIdOrderBySortOrderAscCreatedAtAsc(act.getId()).stream()
+                .map(WorkActPdfService.ReceiptRow::from).toList();
+        return pdfService.render(model(act, items, receipts, act.getDocHash(),
+                cumulativeCalculator.forDownload(act, items, receiptRepository.sumByWorkActId(act.getId()))));
+    }
+
+    /** The photo of one receipt, for the portal's «Чеки та рахунки» block. Same defense-in-depth as
+     *  every other public read: the act must be SENT/SIGNED, and the receipt must belong to it. */
+    @Transactional(readOnly = true)
+    public ProjectPhotoService.PhotoFile receiptFile(String token, UUID receiptId) throws IOException {
+        WorkAct act = resolveShareableAct(token);
+        return receiptService.readPublicFile(act.getId(), receiptId);
     }
 
     // ---- token resolution -------------------------------------------------
@@ -169,10 +187,11 @@ public class PublicActPortalService {
     // ---- view building ----------------------------------------------------
 
     private PublicActView toView(WorkAct act) {
-        return toView(act, itemRepository.findByWorkActIdOrderBySortOrderAscIdAsc(act.getId()));
+        return toView(act, itemRepository.findByWorkActIdOrderBySortOrderAscIdAsc(act.getId()),
+                receiptRepository.findByWorkActIdOrderBySortOrderAscCreatedAtAsc(act.getId()));
     }
 
-    private PublicActView toView(WorkAct act, List<WorkActItem> items) {
+    private PublicActView toView(WorkAct act, List<WorkActItem> items, List<WorkActReceipt> receipts) {
         Map<UUID, String> names = estimateNames(items);
         BigDecimal total = BigDecimal.ZERO.setScale(MONEY_SCALE, ROUNDING);
         List<PublicActView.Item> itemViews = new ArrayList<>(items.size());
@@ -183,9 +202,18 @@ public class PublicActPortalService {
                     it.getEstimateId() == null ? null : names.get(it.getEstimateId()),
                     UnitLabel.ua(it.getUnit()), it.getQuantity(), it.getUnitPrice(), it.getLineTotal()));
         }
+        BigDecimal receiptsTotal = BigDecimal.ZERO.setScale(MONEY_SCALE, ROUNDING);
+        List<PublicActView.Receipt> receiptViews = new ArrayList<>(receipts.size());
+        for (WorkActReceipt r : receipts) {
+            receiptsTotal = receiptsTotal.add(r.getAmount());
+            receiptViews.add(new PublicActView.Receipt(r.getId(), r.getLabel(), r.getIssuedAt(),
+                    r.getAmount(), r.getStorageKey() != null));
+        }
         BigDecimal advance = act.getAdvanceOffset() == null
                 ? BigDecimal.ZERO.setScale(MONEY_SCALE, ROUNDING) : act.getAdvanceOffset();
-        BigDecimal payable = total.subtract(advance).max(BigDecimal.ZERO).setScale(MONEY_SCALE, ROUNDING);
+        // The client owes the works plus the re-billed receipts, less any advance already paid.
+        BigDecimal payable = total.add(receiptsTotal).subtract(advance)
+                .max(BigDecimal.ZERO).setScale(MONEY_SCALE, ROUNDING);
         Project project = act.getProject();
         User owner = project.getOwner();
         Client client = project.getClient();
@@ -194,7 +222,8 @@ public class PublicActPortalService {
                 act.getIssuedAt(), act.getPeriodFrom(), act.getPeriodTo(), act.getContractRef(),
                 project.getName(), project.getAddress(),
                 contractorName(owner), clientName(client),
-                itemViews, total, act.getAdvanceOffset(), payable, HryvniaInWords.format(payable),
+                itemViews, receiptViews, total, receiptsTotal, act.getAdvanceOffset(), payable,
+                HryvniaInWords.format(payable),
                 act.getSignedAt(), act.getSignerName());
     }
 
@@ -206,12 +235,13 @@ public class PublicActPortalService {
         return names;
     }
 
-    private WorkActPdfService.PdfModel model(WorkAct act, List<WorkActItem> items, String docHash,
+    private WorkActPdfService.PdfModel model(WorkAct act, List<WorkActItem> items,
+                                             List<WorkActPdfService.ReceiptRow> receipts, String docHash,
                                              WorkActPdfService.CumulativeReference cumulative) {
         Project project = act.getProject();
         return new WorkActPdfService.PdfModel(
-                project.getOwner(), project, project.getClient(), act, items, estimateNames(items),
-                docHash, cumulative);
+                project.getOwner(), project, project.getClient(), act, items, receipts,
+                estimateNames(items), docHash, cumulative);
     }
 
     // ---- side effects -----------------------------------------------------

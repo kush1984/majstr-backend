@@ -17,6 +17,7 @@ import com.majstr.backend.repository.ObjectExpenseRepository;
 import com.majstr.backend.repository.PaymentReceiptRepository;
 import com.majstr.backend.repository.UserRepository;
 import com.majstr.backend.repository.WorkActItemRepository;
+import com.majstr.backend.repository.WorkActReceiptRepository;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
@@ -45,6 +46,7 @@ class ObjectExpenseServiceTest {
     @Mock UserRepository userRepository;
     @Mock PaymentService paymentService;
     @Mock WorkActItemRepository workActItemRepository;
+    @Mock WorkActReceiptRepository workActReceiptRepository;
     @Mock PaymentReceiptRepository paymentReceiptRepository;
 
     // The REAL gate (backed by PlanConfig) so the PRO/FREE decision is genuinely tested.
@@ -52,7 +54,15 @@ class ObjectExpenseServiceTest {
 
     private ObjectExpenseService service() {
         return new ObjectExpenseService(expenseRepository, estimateRepository, projectService,
-                userRepository, featureGuard, paymentService, workActItemRepository, paymentReceiptRepository);
+                userRepository, featureGuard, paymentService, workActItemRepository, workActReceiptRepository,
+                paymentReceiptRepository);
+    }
+
+    /** The works axis sums two queries (act lines + act receipts) and adds them — both are
+     *  COALESCE'd in SQL, so a mock must return a number, never null. */
+    private void actsAxisZero(UUID object) {
+        given(workActItemRepository.sumSignedActLineTotals(object)).willReturn(BigDecimal.ZERO);
+        given(workActReceiptRepository.sumSignedActReceipts(object)).willReturn(BigDecimal.ZERO);
     }
 
     private void user(UUID id, Plan plan) {
@@ -84,6 +94,7 @@ class ObjectExpenseServiceTest {
         UUID object = UUID.randomUUID();
         user(owner, Plan.FREE);
         given(projectService.loadOwned(object, owner)).willReturn(object(ProjectStatus.IN_PROGRESS));
+        actsAxisZero(object);
         given(paymentService.summaryUnchecked(object)).willReturn(payments(BigDecimal.ZERO));
         given(expenseRepository.sumAll(object)).willReturn(BigDecimal.ZERO);
 
@@ -99,6 +110,7 @@ class ObjectExpenseServiceTest {
         UUID object = UUID.randomUUID();
         user(owner, Plan.PRO);
         given(projectService.loadOwned(object, owner)).willReturn(object(ProjectStatus.IN_PROGRESS));
+        actsAxisZero(object);
         given(paymentService.summaryUnchecked(object)).willReturn(payments(BigDecimal.ZERO));
         given(expenseRepository.sumAll(object)).willReturn(BigDecimal.ZERO);
 
@@ -148,6 +160,7 @@ class ObjectExpenseServiceTest {
         UUID object = UUID.randomUUID();
         user(owner, Plan.PRO);
         given(projectService.loadOwned(object, owner)).willReturn(object(ProjectStatus.IN_PROGRESS));
+        actsAxisZero(object);
         given(paymentService.summaryUnchecked(object))
                 .willReturn(payments(new BigDecimal("14000.00"), new BigDecimal("6000.00")));
         given(expenseRepository.sumAll(object)).willReturn(new BigDecimal("3500.00"));
@@ -166,6 +179,7 @@ class ObjectExpenseServiceTest {
         UUID object = UUID.randomUUID();
         user(owner, Plan.PRO);
         given(projectService.loadOwned(object, owner)).willReturn(object(ProjectStatus.IN_PROGRESS));
+        actsAxisZero(object);
         given(paymentService.summaryUnchecked(object))
                 .willReturn(payments(new BigDecimal("3000.00"), new BigDecimal("3000.00")));
         given(expenseRepository.sumAll(object)).willReturn(new BigDecimal("5000.00"));

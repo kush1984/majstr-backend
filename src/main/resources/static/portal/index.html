@@ -1182,6 +1182,28 @@
             </tr>`).join('');
         const advanceRow = a.advanceOffset && Number(a.advanceOffset) > 0
             ? `<div style="display:flex;justify-content:space-between"><span>Зараховано авансу</span><span>− ${money(a.advanceOffset)}</span></div>` : '';
+        // Receipts & invoices the master re-bills as a whole — a row per receipt with the amount and,
+        // when there is a photo, a tap-through to it. Stacked (not a table) so it reads on a phone.
+        const receipts = a.receipts || [];
+        const receiptsBlock = receipts.length ? `
+            <div class="card">
+                <h3 style="margin:0 0 8px">Чеки та рахунки</h3>
+                ${receipts.map((r, i) => `
+                    <div style="display:flex;justify-content:space-between;gap:12px;align-items:baseline;padding:6px 0;border-bottom:1px solid var(--border,#eee)">
+                        <div style="min-width:0">
+                            <div>${i + 1}. ${escapeHtml(r.label)}</div>
+                            ${r.issuedAt ? `<div style="font-size:12px;color:var(--muted)">${actDate(r.issuedAt)}</div>` : ''}
+                            ${r.hasPhoto ? `<a href="${apiBase}/receipts/${encodeURIComponent(r.id)}/file" target="_blank" rel="noopener" style="font-size:13px">Переглянути фото</a>` : ''}
+                        </div>
+                        <div style="white-space:nowrap">${money(r.amount)}</div>
+                    </div>`).join('')}
+                <div style="display:flex;justify-content:space-between;font-weight:600;padding-top:8px">
+                    <span>Разом за чеками</span><span>${money(a.receiptsTotal)}</span>
+                </div>
+            </div>` : '';
+        const worksAndReceiptsRows = receipts.length ? `
+            <div style="display:flex;justify-content:space-between"><span>Разом за роботами</span><span>${money(a.total)}</span></div>
+            <div style="display:flex;justify-content:space-between"><span>Разом за чеками</span><span>${money(a.receiptsTotal)}</span></div>` : '';
         const signBlock = signed
             ? `<div class="card" style="background:var(--ok-soft,#e8f5e9)">
                    <p style="margin:0;font-weight:600">✓ Роботи прийнято ${a.signedAt ? '· ' + actDate(a.signedAt) : ''}</p>
@@ -1217,12 +1239,14 @@
                     <tbody>${rows}</tbody>
                 </table>
                 <div style="margin-top:12px;border-top:1px solid var(--border,#ddd);padding-top:8px">
-                    <div style="display:flex;justify-content:space-between;font-weight:600"><span>Разом за актом</span><span>${money(a.total)}</span></div>
+                    ${worksAndReceiptsRows}
+                    <div style="display:flex;justify-content:space-between;font-weight:600"><span>Разом за актом</span><span>${money(Number(a.total) + Number(a.receiptsTotal || 0))}</span></div>
                     ${advanceRow}
                     <div style="display:flex;justify-content:space-between;font-weight:700;font-size:16px"><span>До сплати</span><span>${money(a.payable)}</span></div>
                     ${a.payableInWords ? `<p style="margin:6px 0 0;font-size:13px;color:var(--muted)">Прописом: ${escapeHtml(a.payableInWords)}</p>` : ''}
                 </div>
             </div>
+            ${receiptsBlock}
             ${signBlock}
             <div class="actions" style="justify-content:center;margin-top:8px">
                 <a href="${apiBase}/pdf" target="_blank" rel="noopener" class="secondary" style="text-decoration:none">Завантажити PDF</a>

@@ -23,6 +23,7 @@ import com.majstr.backend.exception.WorkActValidationException;
 import com.majstr.backend.repository.EstimateItemRepository;
 import com.majstr.backend.repository.EstimateRepository;
 import com.majstr.backend.repository.WorkActItemRepository;
+import com.majstr.backend.repository.WorkActReceiptRepository;
 import com.majstr.backend.repository.WorkActRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -64,6 +65,7 @@ public class WorkActService {
 
     private final WorkActRepository workActRepository;
     private final WorkActItemRepository itemRepository;
+    private final WorkActReceiptRepository receiptRepository;
     private final WorkActCreator creator;
     private final WorkActResponseFactory responseFactory;
     private final WorkActPdfService pdfService;
@@ -101,8 +103,9 @@ public class WorkActService {
                         names.put(estId, e.getName() == null || e.getName().isBlank() ? "Кошторис" : e.getName().trim())));
         Project project = act.getProject();
         return pdfService.render(new WorkActPdfService.PdfModel(
-                project.getOwner(), project, project.getClient(), act, items, names, act.getDocHash(),
-                cumulativeCalculator.forDownload(act, items)));
+                project.getOwner(), project, project.getClient(), act, items,
+                receiptRows(id), names, act.getDocHash(),
+                cumulativeCalculator.forDownload(act, items, receiptRepository.sumByWorkActId(id))));
     }
 
     /**
@@ -186,6 +189,9 @@ public class WorkActService {
         if (req.showCumulative() != null) {
             act.setShowCumulative(req.showCumulative());
         }
+        if (req.receiptsToExpenses() != null) {
+            act.setReceiptsToExpenses(req.receiptsToExpenses());
+        }
         act.setAdvanceOffset(req.advanceOffset());
         return responseFactory.build(act);
     }
@@ -262,8 +268,9 @@ public class WorkActService {
         act.setSignedOffline(true);
         act.setSignedAt(Instant.now());
         List<WorkActItem> items = itemRepository.findByWorkActIdOrderBySortOrderAscIdAsc(id);
-        act.setDocHash(signedCopy.computeDocHash(act, items));
-        signedCopy.emailClientCopy(act, items);
+        List<WorkActPdfService.ReceiptRow> receipts = receiptRows(id);
+        act.setDocHash(signedCopy.computeDocHash(act, items, receipts));
+        signedCopy.emailClientCopy(act, items, receipts);
         return responseFactory.build(act);
     }
 
@@ -346,7 +353,7 @@ public class WorkActService {
         }
     }
 
-    private static WorkAct requireNotSigned(WorkAct act) {
+    static WorkAct requireNotSigned(WorkAct act) {
         if (act.getStatus() == WorkActStatus.SIGNED) {
             throw new WorkActSignedException();
         }
@@ -360,6 +367,12 @@ public class WorkActService {
             throw new AccessDeniedException("Work act does not belong to the current user");
         }
         return act;
+    }
+
+    List<WorkActPdfService.ReceiptRow> receiptRows(UUID actId) {
+        return receiptRepository.findByWorkActIdOrderBySortOrderAscCreatedAtAsc(actId).stream()
+                .map(WorkActPdfService.ReceiptRow::from)
+                .toList();
     }
 
     private Map<UUID, BigDecimal> signedDoneByEstimateItem(UUID projectId) {

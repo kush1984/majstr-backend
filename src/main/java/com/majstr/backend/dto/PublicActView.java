@@ -4,6 +4,7 @@ import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.List;
+import java.util.UUID;
 
 /**
  * The client-facing view of ONE work-completion act, reached by its {@code ?a=} share token. A
@@ -28,7 +29,9 @@ public record PublicActView(
         String contractorName,
         String clientName,
         List<Item> items,
+        List<Receipt> receipts,
         BigDecimal total,
+        BigDecimal receiptsTotal,
         BigDecimal advanceOffset,
         BigDecimal payable,
         String payableInWords,
@@ -43,5 +46,15 @@ public record PublicActView(
             BigDecimal quantity,
             BigDecimal unitPrice,
             BigDecimal lineTotal
+    ) {}
+
+    /** A receipt or invoice re-billed on the act: the amount is what counts, the photo is the proof.
+     *  {@code hasPhoto} tells the portal page whether to render a link to the image endpoint. */
+    public record Receipt(
+            UUID id,
+            String label,
+            LocalDate issuedAt,
+            BigDecimal amount,
+            boolean hasPhoto
     ) {}
 }

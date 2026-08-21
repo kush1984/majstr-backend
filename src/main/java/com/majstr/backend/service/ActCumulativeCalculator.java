@@ -5,6 +5,7 @@ import com.majstr.backend.entity.WorkActItem;
 import com.majstr.backend.entity.WorkActStatus;
 import com.majstr.backend.repository.EstimateRepository;
 import com.majstr.backend.repository.WorkActItemRepository;
+import com.majstr.backend.repository.WorkActReceiptRepository;
 import com.majstr.backend.repository.WorkActRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
@@ -29,12 +30,15 @@ class ActCumulativeCalculator {
 
     private final WorkActRepository actRepository;
     private final WorkActItemRepository itemRepository;
+    private final WorkActReceiptRepository receiptRepository;
     private final EstimateRepository estimateRepository;
 
     /** @param items the act's own lines (already loaded by the caller) — their total is added to
      *               «виконано з початку» only while the act is not yet SIGNED (once SIGNED it is
-     *               already inside {@code sumSignedActLineTotals}, so adding it would double-count). */
-    WorkActPdfService.CumulativeReference forDownload(WorkAct act, List<WorkActItem> items) {
+     *               already inside {@code sumSignedActLineTotals}, so adding it would double-count).
+     *  @param ownReceiptsTotal the act's own receipts, added under exactly the same rule. */
+    WorkActPdfService.CumulativeReference forDownload(WorkAct act, List<WorkActItem> items,
+                                                      BigDecimal ownReceiptsTotal) {
         if (!act.isShowCumulative()) {
             return null;
         }
@@ -42,11 +46,13 @@ class ActCumulativeCalculator {
         if (!actRepository.existsByProjectIdAndStatusAndIdNot(projectId, WorkActStatus.SIGNED, act.getId())) {
             return null; // first act on the object — no earlier work to reference
         }
-        BigDecimal accepted = itemRepository.sumSignedActLineTotals(projectId);
+        BigDecimal accepted = itemRepository.sumSignedActLineTotals(projectId)
+                .add(receiptRepository.sumSignedActReceipts(projectId));
         if (act.getStatus() != WorkActStatus.SIGNED) {
             accepted = accepted.add(items.stream()
                     .map(WorkActItem::getLineTotal)
                     .reduce(BigDecimal.ZERO, BigDecimal::add));
+            accepted = accepted.add(ownReceiptsTotal == null ? BigDecimal.ZERO : ownReceiptsTotal);
         }
         BigDecimal contracted = estimateRepository.sumIncomeCounted(projectId);
         return new WorkActPdfService.CumulativeReference(accepted, contracted);

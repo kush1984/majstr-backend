@@ -10,8 +10,9 @@ import java.util.List;
 import java.util.UUID;
 
 /**
- * A work act with its frozen lines and computed money. {@code total} sums the included lines;
- * {@code payable} nets off {@code advanceOffset} (→ «До сплати»). Owner-only.
+ * A work act with its frozen lines, receipts and computed money. {@code total} sums the included
+ * lines, {@code receiptsTotal} the attached receipts;
+ * {@code payable} adds the receipts and nets off {@code advanceOffset} (→ «До сплати»). Owner-only.
  */
 public record WorkActResponse(
         UUID id,
@@ -28,6 +29,7 @@ public record WorkActResponse(
         String note,
         boolean showMaterials,
         boolean showCumulative,
+        boolean receiptsToExpenses,
         BigDecimal advanceOffset,
         BigDecimal retentionPercent,
         Instant sentAt,
@@ -36,7 +38,9 @@ public record WorkActResponse(
         boolean signedOffline,
         UUID addendumEstimateId,
         List<WorkActItemResponse> items,
+        List<WorkActReceiptResponse> receipts,
         BigDecimal total,
+        BigDecimal receiptsTotal,
         BigDecimal payable,
         Instant createdAt,
         Instant updatedAt

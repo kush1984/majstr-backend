@@ -98,6 +98,13 @@ public class WorkAct {
     @Column(name = "show_cumulative", nullable = false)
     private boolean showCumulative = true;
 
+    /** On signing, post each attached receipt as a MATERIALS object expense so «Прибуток» is not
+     *  inflated by pass-through money (the client reimburses what the master already paid). Off for
+     *  a master who logs his receipts in the expense journal himself — otherwise they'd count twice. */
+    @Builder.Default
+    @Column(name = "receipts_to_expenses", nullable = false)
+    private boolean receiptsToExpenses = true;
+
     /** Advances to net off against this act's total (→ «До сплати»). */
     @Column(name = "advance_offset", precision = 15, scale = 2)
     private BigDecimal advanceOffset;

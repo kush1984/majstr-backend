@@ -21,6 +21,7 @@ public record WorkActUpdateRequest(
         String note,
         Boolean showMaterials,
         Boolean showCumulative,
+        Boolean receiptsToExpenses,
         // Same bound as the create request — see WorkActCreateRequest#advanceOffset.
         @DecimalMin("0.00") @Digits(integer = 13, fraction = 2) BigDecimal advanceOffset
 ) {}

@@ -20,6 +20,7 @@ import com.majstr.backend.repository.ObjectExpenseRepository;
 import com.majstr.backend.repository.PaymentReceiptRepository;
 import com.majstr.backend.repository.UserRepository;
 import com.majstr.backend.repository.WorkActItemRepository;
+import com.majstr.backend.repository.WorkActReceiptRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
@@ -57,6 +58,7 @@ public class ObjectExpenseService {
     private final FeatureGuard featureGuard;
     private final PaymentService paymentService;
     private final WorkActItemRepository workActItemRepository;
+    private final WorkActReceiptRepository workActReceiptRepository;
     private final PaymentReceiptRepository paymentReceiptRepository;
 
     @Transactional
@@ -151,7 +153,10 @@ public class ObjectExpenseService {
      *  «За договором», so the two figures never disagree. */
     private ObjectEconomyActsResponse actsAxis(UUID objectId) {
         BigDecimal contracted = estimateRepository.sumIncomeCounted(objectId);
-        BigDecimal accepted = workActItemRepository.sumSignedActLineTotals(objectId);
+        // Lines + re-billed receipts: both are on the act the client signed, and both were absorbed
+        // into «За договором» by ActAddendumCreator — count one without the other and the axis lies.
+        BigDecimal accepted = workActItemRepository.sumSignedActLineTotals(objectId)
+                .add(workActReceiptRepository.sumSignedActReceipts(objectId));
         BigDecimal received = paymentReceiptRepository.sumByProjectId(objectId);
         return new ObjectEconomyActsResponse(contracted, accepted, received);
     }

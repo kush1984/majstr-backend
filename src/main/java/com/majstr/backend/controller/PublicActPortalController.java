@@ -6,6 +6,7 @@ import com.majstr.backend.dto.QuestionRequest;
 import com.majstr.backend.dto.QuestionResponse;
 import com.majstr.backend.dto.SignRequest;
 import com.majstr.backend.exception.TooManyRequestsException;
+import com.majstr.backend.service.ProjectPhotoService.PhotoFile;
 import com.majstr.backend.service.PublicActPortalService;
 import com.majstr.backend.service.QuestionRateLimiter;
 import io.swagger.v3.oas.annotations.Operation;
@@ -13,6 +14,7 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.CacheControl;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
@@ -26,6 +28,8 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.io.IOException;
+import java.time.Duration;
+import java.util.UUID;
 
 /**
  * The public work-act portal ({@code ?a=} token): view / sign / question / pdf for ONE act. Unlike
@@ -80,6 +84,18 @@ public class PublicActPortalController {
                 .contentType(MediaType.APPLICATION_PDF)
                 .header(HttpHeaders.CONTENT_DISPOSITION, "inline; filename=\"act.pdf\"")
                 .body(body);
+    }
+
+    @Operation(summary = "Stream a receipt photo attached to the act (public, token-scoped)")
+    @GetMapping("/{token}/receipts/{receiptId}/file")
+    public ResponseEntity<byte[]> receiptFile(@PathVariable String token,
+                                              @PathVariable UUID receiptId) throws IOException {
+        PhotoFile f = service.receiptFile(token, receiptId);
+        return ResponseEntity.ok()
+                .contentType(MediaType.parseMediaType(f.contentType()))
+                .cacheControl(CacheControl.maxAge(Duration.ofMinutes(10)).cachePrivate())
+                .header(HttpHeaders.CONTENT_DISPOSITION, "inline")
+                .body(f.bytes());
     }
 
     private String clientIp(HttpServletRequest request) {

@@ -21,6 +21,7 @@ import com.majstr.backend.repository.EstimateRepository;
 import com.majstr.backend.repository.ProjectMessageRepository;
 import com.majstr.backend.repository.ProjectShareLinkRepository;
 import com.majstr.backend.repository.WorkActItemRepository;
+import com.majstr.backend.repository.WorkActReceiptRepository;
 import com.majstr.backend.repository.WorkActRepository;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -47,12 +48,14 @@ class PublicActPortalServiceTest {
     @Mock ProjectShareLinkRepository linkRepository;
     @Mock WorkActRepository actRepository;
     @Mock WorkActItemRepository itemRepository;
+    @Mock WorkActReceiptRepository receiptRepository;
     @Mock EstimateRepository estimateRepository;
     @Mock ProjectMessageRepository messageRepository;
     @Mock WorkActPdfService pdfService;
     @Mock ActCumulativeCalculator cumulativeCalculator;
     @Mock ActAddendumCreator addendumCreator;
     @Mock ActSignedCopyService signedCopy;
+    @Mock WorkActReceiptService receiptService;
     @Mock PushService pushService;
     @Mock org.springframework.context.MessageSource messages;
     @InjectMocks PublicActPortalService service;
@@ -74,6 +77,13 @@ class PublicActPortalServiceTest {
         return WorkActItem.builder().workAct(a).type(ItemType.WORK).name("Шпаклювання")
                 .unit(Unit.M2).unitPrice(new BigDecimal("145.00")).quantity(new BigDecimal("10.000"))
                 .lineTotal(new BigDecimal("1450.00")).cumulativeBefore(BigDecimal.ZERO).sortOrder(0).build();
+    }
+
+    private com.majstr.backend.entity.WorkActReceipt receipt(WorkAct a, String label, String amount,
+                                                             boolean withPhoto) {
+        return com.majstr.backend.entity.WorkActReceipt.builder()
+                .id(UUID.randomUUID()).workAct(a).label(label).amount(new BigDecimal(amount))
+                .storageKey(withPhoto ? "act-receipts/x.jpg" : null).sortOrder(0).build();
     }
 
     private void stubToken(WorkAct a) {
@@ -107,11 +117,33 @@ class PublicActPortalServiceTest {
     }
 
     @Test
+    void view_withReceipts_listsThemAndBillsThemOnTopOfTheWorks() {
+        // The master's ask: «чек1 — сума, чек2 — сума, разом», visible to the client. The receipts
+        // are money the client owes, so they are inside `payable`, not a decorative appendix.
+        WorkAct a = act(WorkActStatus.SENT);
+        stubToken(a);
+        given(itemRepository.findByWorkActIdOrderBySortOrderAscIdAsc(a.getId())).willReturn(List.of(item(a)));
+        given(receiptRepository.findByWorkActIdOrderBySortOrderAscCreatedAtAsc(a.getId()))
+                .willReturn(List.of(receipt(a, "Епіцентр", "2400.00", true),
+                        receipt(a, "Нова Пошта", "600.00", false)));
+
+        PublicActView view = service.view(TOKEN);
+
+        assertThat(view.receipts()).hasSize(2);
+        assertThat(view.receipts().getFirst().label()).isEqualTo("Епіцентр");
+        assertThat(view.receipts().getFirst().hasPhoto()).isTrue();
+        assertThat(view.receipts().getLast().hasPhoto()).isFalse();
+        assertThat(view.receiptsTotal()).isEqualByComparingTo("3000.00");
+        assertThat(view.total()).isEqualByComparingTo("1450.00");     // works only
+        assertThat(view.payable()).isEqualByComparingTo("4450.00");   // works + receipts
+    }
+
+    @Test
     void sign_setsSigned_computesDocHash_andPushesTheMaster() throws Exception {
         WorkAct a = act(WorkActStatus.SENT);
         stubToken(a);
         given(itemRepository.findByWorkActIdOrderBySortOrderAscIdAsc(a.getId())).willReturn(List.of(item(a)));
-        given(signedCopy.computeDocHash(any(), any())).willReturn("a".repeat(64));
+        given(signedCopy.computeDocHash(any(), any(), any())).willReturn("a".repeat(64));
         given(messages.getMessage(anyString(), any(), any())).willReturn("підписано");
 
         PublicActView view = service.sign(TOKEN, new SignRequest("Олена", "+380671112233"), "1.2.3.4", "UA");

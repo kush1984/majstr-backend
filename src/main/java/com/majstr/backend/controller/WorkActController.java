@@ -4,6 +4,8 @@ import com.majstr.backend.dto.ActProgressResponse;
 import com.majstr.backend.dto.ActShareStateResponse;
 import com.majstr.backend.dto.WorkActCreateRequest;
 import com.majstr.backend.dto.WorkActItemsRequest;
+import com.majstr.backend.dto.WorkActReceiptRequest;
+import com.majstr.backend.dto.WorkActReceiptResponse;
 import com.majstr.backend.dto.WorkActResponse;
 import com.majstr.backend.dto.WorkActSignOfflineRequest;
 import com.majstr.backend.dto.WorkActStatusRequest;
@@ -11,12 +13,16 @@ import com.majstr.backend.dto.WorkActUpdateRequest;
 import com.lowagie.text.DocumentException;
 import com.majstr.backend.security.UserPrincipal;
 import com.majstr.backend.service.ProjectPortalService;
+import com.majstr.backend.service.ProjectPhotoService.PhotoFile;
+import com.majstr.backend.service.WorkActReceiptService;
 import com.majstr.backend.service.WorkActService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.format.annotation.DateTimeFormat;
+import org.springframework.http.CacheControl;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
@@ -30,9 +36,14 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
+import java.math.BigDecimal;
+import java.time.Duration;
+import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
 
@@ -44,6 +55,7 @@ public class WorkActController {
 
     private final WorkActService workActService;
     private final ProjectPortalService portalService;
+    private final WorkActReceiptService receiptService;
 
     // ---- under a project --------------------------------------------------
 
@@ -136,6 +148,61 @@ public class WorkActController {
                 .contentType(MediaType.APPLICATION_PDF)
                 .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"act-" + id + ".pdf\"")
                 .body(body);
+    }
+
+    // ---- receipts & invoices («Чеки та рахунки») --------------------------
+
+    @Operation(summary = "List the act's receipts")
+    @GetMapping("/api/acts/{id}/receipts")
+    public List<WorkActReceiptResponse> receipts(@PathVariable UUID id,
+                                                 @AuthenticationPrincipal UserPrincipal principal) {
+        return receiptService.list(id, principal.id());
+    }
+
+    @Operation(summary = "Attach a receipt: a label, an amount and an optional photo of the paper "
+            + "(409 WORK_ACT_SIGNED once signed — receipts are part of the doc_hash)")
+    @PostMapping(value = "/api/acts/{id}/receipts", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public ResponseEntity<WorkActReceiptResponse> addReceipt(
+            @PathVariable UUID id,
+            @RequestParam(value = "file", required = false) MultipartFile file,
+            @RequestParam("label") String label,
+            @RequestParam("amount") BigDecimal amount,
+            @RequestParam(value = "issuedAt", required = false)
+            @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate issuedAt,
+            @AuthenticationPrincipal UserPrincipal principal) throws IOException {
+        return ResponseEntity.status(HttpStatus.CREATED)
+                .body(receiptService.add(id, principal.id(), file, label, amount, issuedAt));
+    }
+
+    @Operation(summary = "Edit a receipt's label / amount / date (the photo is set once, at upload)")
+    @PatchMapping("/api/acts/{id}/receipts/{receiptId}")
+    public WorkActReceiptResponse updateReceipt(@PathVariable UUID id,
+                                                @PathVariable UUID receiptId,
+                                                @Valid @RequestBody WorkActReceiptRequest req,
+                                                @AuthenticationPrincipal UserPrincipal principal) {
+        return receiptService.update(id, receiptId, principal.id(), req);
+    }
+
+    @Operation(summary = "Delete a receipt")
+    @DeleteMapping("/api/acts/{id}/receipts/{receiptId}")
+    public ResponseEntity<Void> deleteReceipt(@PathVariable UUID id,
+                                              @PathVariable UUID receiptId,
+                                              @AuthenticationPrincipal UserPrincipal principal) {
+        receiptService.delete(id, receiptId, principal.id());
+        return ResponseEntity.noContent().build();
+    }
+
+    @Operation(summary = "Stream a receipt photo (authenticated owner)")
+    @GetMapping("/api/acts/{id}/receipts/{receiptId}/file")
+    public ResponseEntity<byte[]> receiptFile(@PathVariable UUID id,
+                                              @PathVariable UUID receiptId,
+                                              @AuthenticationPrincipal UserPrincipal principal) throws IOException {
+        PhotoFile f = receiptService.readOwnedFile(id, receiptId, principal.id());
+        return ResponseEntity.ok()
+                .contentType(MediaType.parseMediaType(f.contentType()))
+                .cacheControl(CacheControl.maxAge(Duration.ofMinutes(10)).cachePrivate())
+                .header(HttpHeaders.CONTENT_DISPOSITION, "inline")
+                .body(f.bytes());
     }
 
     // ---- act share link (one link per act, prompt 5) ----------------------
