@@ -1,6 +1,7 @@
 package com.majstr.backend.service;
 
 import com.majstr.backend.config.PortalProperties;
+import com.majstr.backend.dto.ShareLinkResponse;
 import com.majstr.backend.email.EmailService;
 import com.majstr.backend.entity.Client;
 import com.majstr.backend.entity.Estimate;
@@ -19,6 +20,7 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import java.time.Instant;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -28,6 +30,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 
@@ -82,6 +85,44 @@ class ShareLinkServiceTest {
         shareLinkService.create(estimateId, ownerId);
 
         assertThat(estimate.getStatus()).isEqualTo(EstimateStatus.SIGNED);
+    }
+
+    @Test
+    void create_reusesTheEstimatesExistingUsableLink() {
+        // Tapping "поділитися" twice must hand back the SAME URL — a second mint would leave the
+        // first token live with nobody tracking it.
+        Estimate estimate = estimateWithStatus(EstimateStatus.SENT, true);
+        EstimateShareLink existing = EstimateShareLink.builder()
+                .id(UUID.randomUUID()).estimate(estimate).token("existing-token").revoked(false).build();
+        given(estimateService.loadOwned(estimateId, ownerId)).willReturn(estimate);
+        given(repository.findFirstByEstimateIdAndRevokedFalseOrderByCreatedAtDesc(estimateId))
+                .willReturn(Optional.of(existing));
+        given(portalProperties.publicBaseUrl()).willReturn("https://app.test");
+
+        ShareLinkResponse response = shareLinkService.create(estimateId, ownerId);
+
+        assertThat(response.url()).isEqualTo("https://app.test/portal/index.html?t=existing-token");
+        verify(repository, never()).save(any(EstimateShareLink.class));
+    }
+
+    @Test
+    void create_doesNotReuseAnExpiredLink() {
+        // Only revoked links are filtered by the query — an expired one would otherwise be handed
+        // out as a fresh share and 404 the moment the client opened it.
+        Estimate estimate = estimateWithStatus(EstimateStatus.SENT, true);
+        EstimateShareLink expired = EstimateShareLink.builder()
+                .id(UUID.randomUUID()).estimate(estimate).token("expired-token").revoked(false)
+                .expiresAt(Instant.now().minusSeconds(60)).build();
+        given(estimateService.loadOwned(estimateId, ownerId)).willReturn(estimate);
+        given(repository.findFirstByEstimateIdAndRevokedFalseOrderByCreatedAtDesc(estimateId))
+                .willReturn(Optional.of(expired));
+        given(repository.save(any(EstimateShareLink.class))).willAnswer(inv -> inv.getArgument(0));
+        given(portalProperties.publicBaseUrl()).willReturn("https://app.test");
+
+        ShareLinkResponse response = shareLinkService.create(estimateId, ownerId);
+
+        assertThat(response.url()).doesNotContain("expired-token");
+        verify(repository).save(any(EstimateShareLink.class));
     }
 
     @Test

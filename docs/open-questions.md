@@ -158,7 +158,11 @@ one-line summary — keep the item in the file as a record.
 ### Multi-instance support for in-memory state
 - **Status:** OPEN
 - **Since:** step 1 (login limiter), tightened in step 3 (portal limiter, lastActiveAt tracker)
-- **Context:** `LoginRateLimitFilter`, `PublicPortalRateLimitFilter` and `LastActiveTracker` all keep state in process-local `ConcurrentHashMap`s. Single-node is fine. On a second pod, users could double their rate-limit budget by being load-balanced across nodes, and `lastActiveAt` would underreport.
+- **Context:** Nine components keep state in process-local `ConcurrentHashMap`s — `LastActiveTracker`
+  plus eight rate limiters (`LoginRateLimiter`, `RegisterRateLimiter`, `PortalRateLimiter`,
+  `QuestionRateLimiter`, `EstimateEmailRateLimiter`, `ForgotPasswordRateLimiter`,
+  `MessageLinkRateLimiter`, `VerificationEmailRateLimiter`) — up from the three this item was
+  written about (re-checked 2026-08-20). Single-node is fine. On a second pod, users could double their rate-limit budget by being load-balanced across nodes, and `lastActiveAt` would underreport.
 - **Notes / options:** Backed by Redis (Bucket4j has a Redis backend, would also serve `lastActiveAt` as a TTL key).
 
 ### Background cleanup of expired refresh tokens
@@ -304,6 +308,10 @@ one-line summary — keep the item in the file as a record.
 - **Since:** Fix D (2026-06-02)
 - **Context:** Email verification ships, but real sending needs `RESEND_API_KEY` (env) and — to email anyone other than the Resend account owner — a Resend-verified sending domain in `EMAIL_FROM`. In dev the key is blank, so emails are logged & skipped: the feature works end-to-end but no mail actually goes out.
 - **Notes / options:** Sign up at Resend, add `RESEND_API_KEY`; for arbitrary recipients verify a domain (DNS records) and set `EMAIL_FROM=Majstr <noreply@domain>`. Until then only the account owner's own address receives mail (Resend sandbox via `onboarding@resend.dev`). Revisit before public launch and when wiring password reset + portal notifications (same transport). **Fix E sends estimate links to client emails (arbitrary third parties) — so a verified domain is a hard requirement for that feature to work at all in production.**
+- **Update (2026-08-20):** `RESEND_API_KEY` and `EMAIL_FROM` are both set on the production Railway
+  service, so the transport is live. Still unverified is the `EMAIL_FROM` *value*: if it is the
+  sandbox `onboarding@resend.dev`, mail to anyone but the Resend account owner is accepted and
+  silently dropped. One send to a third-party address settles it, and this item closes.
 
 ### PDF-download counter for the bypass metric
 - **Status:** OPEN
@@ -347,7 +355,8 @@ one-line summary — keep the item in the file as a record.
 ### MetricsService full table scans
 - **Status:** OPEN
 - **Since:** Fix I code review (2026-06-10)
-- **Context:** Admin metrics call `userRepository.findAll()` (twice for churn).
+- **Context:** Admin metrics call `userRepository.findAll()` — one call today
+  (`MetricsService.java:274`), not the two this item was written about (re-checked 2026-08-20).
   Fine for hundreds of users, not thousands.
 - **Notes / options:** Replace with aggregate queries (`COUNT ... GROUP BY`)
   when the user table grows; admin-only endpoint so urgency is low.
@@ -465,7 +474,14 @@ one-line summary — keep the item in the file as a record.
   PWA's legitimate single-flight races. Revisit before public launch.
 
 ### Multiple active share links per estimate
-- **Status:** OPEN
+- **Status:** RESOLVED (portal-single-estimate-link iteration, 2026-08-21) — `ShareLinkService.create`
+  is idempotent: it reuses the estimate's current link (`usableLink`) and only mints when there is
+  none or the existing one is **expired** (the repository query filters only `revoked`, so an
+  expired link would otherwise be handed out as a fresh share and 404 on open). `sendByEmail` uses
+  the same helper. This mattered again because the per-estimate link stopped being legacy — it is
+  now the single-estimate share path, minted on every share-sheet open. Old tokens minted before
+  this still stay valid until expiry; revoking-on-reshare was NOT added (see the raw-vs-hashed item
+  above — the trade-off there is unchanged).
 - **Since:** Fix I code review (2026-06-10)
 - **Context:** Every `POST /api/estimates/{id}/share` mints a new token; old
   ones stay valid until expiry. More live URLs than the contractor likely
@@ -630,6 +646,10 @@ one-line summary — keep the item in the file as a record.
   **Decided for now:** don't block — instead **monitor** it (admin shows per-object
   estimates created/deleted, so we can see if anyone actually churns) and revisit
   with the FREE-limit-numbers tuning above.
+- **Update (2026-08-20):** the two caps are now asymmetric. The OBJECT cap moved to LIFETIME
+  counting (V107 `users.lifetime_project_count`), so deleting an object no longer frees a slot,
+  while the estimate cap still counts concurrently (`LimitService.java:78`, `countByProjectId`).
+  Whatever gets decided here is now a decision about one remaining loophole, not two.
 
 ### Billing integration
 - **Status:** RESOLVED — self-serve one-time PRO checkout (phase 1) + tokenized
@@ -756,7 +776,12 @@ one-line summary — keep the item in the file as a record.
   Build after the fact-based economy proves used.
 
 ### Superseded (auto-reopened) estimate's history — no UI beyond "it's a draft now"
-- **Status:** OPEN
+- **Status:** RESOLVED (2026-08-20) — the premise is gone twice over. The acts iteration stopped
+  auto-reopening a superseded parent: it stays SIGNED with `count_in_economy = false`, so it is no
+  longer "an ordinary DRAFT" whose past disappears. And UI does exist —
+  `EstimateSummary.supersededByEstimateId` drives a named banner via `ProjectDetailPage` /
+  `economyNote.ts` (with tests), and the panel itself lives on in Економіка. A full timeline view
+  is still unbuilt and unrequested; raise it fresh if a master ever asks.
 - **Since:** Economy-rework iteration (2026-08-09)
 - **Context:** When a discount-duplicate supersedes its parent (V95 `superseded_by_estimate_id`),
   the parent just becomes an ordinary DRAFT with a one-time banner (Кошторис tab) that clears on
@@ -1614,7 +1639,12 @@ one-line summary — keep the item in the file as a record.
 - **Resolution:** Крок 8 (web push) — instead of email, real-time browser push (VAPID / Web Push) notifies the contractor when a client signs an estimate or leaves a question. `PushService.sendToUser` is wired into `PublicEstimateService.sign` and `askQuestion`, fail-soft. An email channel for the same events remains a possible future addition, but the "contractor only learns by refreshing" gap is closed.
 
 ### Production web push (VAPID keys + iOS installed-PWA requirement)
-- **Status:** OPEN
+- **Status:** RESOLVED (2026-08-20) — the production Railway service carries `VAPID_PUBLIC_KEY`,
+  `VAPID_PRIVATE_KEY` and `VAPID_SUBJECT`, so the keypair exists and is stable (never rotate it —
+  that invalidates every live subscription). The iOS half shipped too: `lib/push.ts` exports
+  `isIOS()`/`isStandalone()` and `ProfilePage` shows the "add to Home Screen" hint when a
+  non-installed iOS browser reports `unsupported`. NOT done: the optional periodic sweep of dead
+  subscriptions — lazy 404/410 pruning still carries it; reopen separately if the table grows.
 - **Since:** Крок 8 (2026-06-04)
 - **Context:** Web push ships behind VAPID keys supplied via env (`VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT`). In dev the keys may be blank — `PushService` then logs & skips, mirroring the email transport. For production a stable VAPID keypair must be generated once and kept (rotating it invalidates every existing browser subscription, forcing all clients to re-subscribe).
 - **Notes / options:** Generate the keypair once (any web-push tool / the README snippet), store the private key as a secret, expose the public key via `GET /api/push/vapid-public-key`. iOS only delivers web push to a PWA **added to the Home Screen** (installed / standalone) on iOS 16.4+ — a plain Safari tab gets nothing; the frontend must detect this and hint the user to install. Also: subscriptions accumulate in `push_subscriptions`; dead ones are pruned lazily on 404/410 from the push service, but a periodic sweep could join the refresh-token / verification-token cleanup job.
@@ -2031,7 +2061,11 @@ one-line summary — keep the item in the file as a record.
   only; the auto-hint is a distinct, smaller follow-up.
 
 ### Cancelled objects: no dedicated filter chip — should "Усі" hide them too?
-- **Status:** OPEN
+- **Status:** RESOLVED (2026-08-20) — answered by the archived-objects reveal, which took the
+  hidden reading for BOTH terminal stages: COMPLETED and CANCELLED are out of "Усі" by default and
+  come back — with their own two chips — via the list's FAB, so a mis-cancel is always recoverable.
+  The follow-up (FAB and chips disappearing together with the last archived object) is written and
+  green locally, pending the master's own test before it lands.
 - **Since:** Object-status-unification iteration (2026-08-09)
 - **Context:** The prompt's own spec left this genuinely undecided — "Скасовані — окремо/сховано"
   (separate, OR hidden). This session chose the less destructive reading: CANCELLED gets no
