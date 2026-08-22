@@ -351,6 +351,20 @@ public class GlobalExceptionHandler {
         return ResponseEntity.status(HttpStatus.CONFLICT).body(body);
     }
 
+    @ExceptionHandler(PhotoFolderValidationException.class)
+    public ResponseEntity<ErrorResponse> handlePhotoFolderValidation(PhotoFolderValidationException ex, HttpServletRequest req) {
+        ErrorResponse body = ErrorResponse.coded(HttpStatus.BAD_REQUEST.value(),
+                HttpStatus.BAD_REQUEST.getReasonPhrase(), msg(ex.getMessage()), req.getRequestURI(), "PHOTO_FOLDER_INVALID");
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(body);
+    }
+
+    @ExceptionHandler(PhotoFolderInUseException.class)
+    public ResponseEntity<ErrorResponse> handlePhotoFolderInUse(PhotoFolderInUseException ex, HttpServletRequest req) {
+        ErrorResponse body = ErrorResponse.coded(HttpStatus.CONFLICT.value(),
+                HttpStatus.CONFLICT.getReasonPhrase(), msg(ex.getMessage()), req.getRequestURI(), "PHOTO_FOLDER_NOT_EMPTY");
+        return ResponseEntity.status(HttpStatus.CONFLICT).body(body);
+    }
+
     @ExceptionHandler(WorkActValidationException.class)
     public ResponseEntity<ErrorResponse> handleWorkActValidation(WorkActValidationException ex, HttpServletRequest req) {
         ErrorResponse body = ErrorResponse.coded(HttpStatus.BAD_REQUEST.value(),

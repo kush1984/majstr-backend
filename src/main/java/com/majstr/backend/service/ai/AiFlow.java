@@ -18,6 +18,11 @@ public enum AiFlow {
     ESTIMATE,
     /** A retail receipt photo → purchased items appended to an estimate. */
     RECEIPT,
+    /** A receipt photo → just its DATE and TOTAL (+ a short label), for the act's «Чеки та рахунки»
+     *  list — three fields off a printed footer, the cheapest vision job here (act-receipts round 2).
+     *  When the master also wants the positions carried into the act, the {@link #RECEIPT} flow's
+     *  model is used instead — that is a full table read. */
+    ACT_RECEIPT,
     /** A hand-drawn room sketch photo → measurement rooms. */
     SKETCH,
     /** Electrical points counted off a plan against its legend. */

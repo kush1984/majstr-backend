@@ -192,6 +192,9 @@ public class WorkActService {
         if (req.receiptsToExpenses() != null) {
             act.setReceiptsToExpenses(req.receiptsToExpenses());
         }
+        if (req.showReceiptPhotos() != null) {
+            act.setShowReceiptPhotos(req.showReceiptPhotos());
+        }
         act.setAdvanceOffset(req.advanceOffset());
         return responseFactory.build(act);
     }
@@ -348,7 +351,9 @@ public class WorkActService {
      * empty FINAL act would permanently block the object from ever having a real act.
      */
     void requireItems(UUID actId) {
-        if (!itemRepository.existsByWorkActId(actId)) {
+        // Receipts count as content (round 2): «фінальний акт з матеріалами» may bill nothing but
+        // re-billed receipts — that is a legitimate, signable act.
+        if (!itemRepository.existsByWorkActId(actId) && !receiptRepository.existsByWorkActId(actId)) {
             throw new WorkActValidationException("error.work-act.empty", "WORK_ACT_EMPTY");
         }
     }

@@ -20,6 +20,8 @@ public record ProjectPhotoResponse(
         String caption,
         UUID estimateId,
         String estimateName,
+        /** «Чеки» = the reserved RECEIPTS value, «Інше» = null, anything else = a custom folder. */
+        String folder,
         String fileUrl,
         Instant createdAt
 ) {
@@ -31,6 +33,7 @@ public record ProjectPhotoResponse(
                 p.getCaption(),
                 p.getEstimateId(),
                 p.getEstimateNameSnapshot(),
+                p.getFolder(),
                 "/api/projects/" + p.getProjectId() + "/photos/" + p.getId() + "/file",
                 p.getCreatedAt()
         );

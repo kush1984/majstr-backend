@@ -15,6 +15,7 @@ import lombok.NoArgsConstructor;
 import lombok.Setter;
 
 import java.time.Instant;
+import java.util.List;
 import java.util.UUID;
 
 /**
@@ -63,8 +64,23 @@ public class ProjectPhoto {
     @Column(name = "estimate_name_snapshot")
     private String estimateNameSnapshot;
 
+    /** The Фото tab's folder (photo-folders): the reserved {@link #FOLDER_RECEIPTS} = «Чеки», null
+     *  = «Інше», anything else = a name the master invented. Just a label — a folder exists while
+     *  a photo carries it. Never shown to the client; the portal ignores it. */
+    @Column(name = "folder", length = 100)
+    private String folder;
+
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
+
+    /** Reserved folder value for receipt photos from ANY flow — rendered as «Чеки». */
+    public static final String FOLDER_RECEIPTS = "RECEIPTS";
+
+    /** The display labels the PWA renders for the two built-in folders, in every shipped locale.
+     *  A master typing one of them by hand must fold onto the system value instead of creating a
+     *  confusing twin folder, so the server matches them too. */
+    public static final List<String> RECEIPTS_FOLDER_ALIASES = List.of("Чеки", "Receipts");
+    public static final List<String> DEFAULT_FOLDER_ALIASES = List.of("Інше", "Other");
 
     @PrePersist
     void onCreate() {

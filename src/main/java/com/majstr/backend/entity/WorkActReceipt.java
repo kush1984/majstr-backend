@@ -62,6 +62,14 @@ public class WorkActReceipt {
     @Column(name = "storage_key", length = 255, updatable = false)
     private String storageKey;
 
+    /** The receipt's POSITIONS were recognized and carried into the act as its own lines (round 2):
+     *  the photo stays as proof, but the amount is NOT billed a second time — excluded from «Разом
+     *  за чеками»/payable, from the ADDENDUM rollup and from accepted-by-acts. The expense posting
+     *  is the one place it still counts: the master's own spend is real either way. */
+    @Builder.Default
+    @Column(name = "itemized", nullable = false)
+    private boolean itemized = false;
+
     @Column(name = "sort_order", nullable = false)
     private int sortOrder;
 

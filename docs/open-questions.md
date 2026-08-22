@@ -2014,6 +2014,14 @@ one-line summary — keep the item in the file as a record.
   `source=RECEIPT`). If it should stay PRO, the current shared-budget behavior already does that
   and nothing changes. Revisit when the master decides; today the receipts folder + share-toggle
   ships gated exactly the same way `RECEIPT_IMPORT` already was.
+- **Update (act-receipts round 2, 2026-08-21):** a third consumer now shares the same budget. An act
+  receipt's photo is mandatory (`WORK_ACT_RECEIPT_PHOTO_REQUIRED`) and its own `storage_key` is
+  act-scoped, but «Зберегти фото чека також у розділі Фото» copies it into the object's «Чеки»
+  folder as an ordinary `source = RECEIPT` `ProjectPhoto` — so it draws on
+  `MAX_RECEIPT_PHOTOS_PER_OBJECT` exactly like a parsed receipt does, even though nothing was
+  parsed. The copy is fail-soft (`REQUIRES_NEW` + catch at the caller: a hit cap skips the copy,
+  never fails the receipt). That sharpens the same undecided question rather than changing it —
+  proof-of-spend photos and LLM parsing still share one ceiling.
 
 ### Client payment reminders (email / portal)
 - **Status:** OPEN
@@ -2132,6 +2140,13 @@ one-line summary — keep the item in the file as a record.
 - **Notes / options:** Add `PATCH …/photos/{id}` support for `source`+`estimateId` (or a dedicated
   `…/as-receipt` action), make `source` mutable, invalidate the photos + estimate caches. Convenience
   only — the ad-hoc PDF pick already covers the actual need; build if masters ask.
+- **Update (act-receipts round 2, 2026-08-21):** photo **folders** shipped (V111) — `PATCH
+  …/photos/{photoId}/folder` moves a photo between «Чеки» / «Інше» / a custom folder. That is
+  placement only: `source` is still `updatable = false`, so moving a MANUAL photo into «Чеки» does
+  NOT make it a receipt (it stays out of the estimate's Materials section, isn't default-selected for
+  the PDF appendix, and doesn't count against the receipt budget). The «Це чек» promotion is still
+  unbuilt — but the affordance now sits right next to it, so a master mistaking the folder move for
+  it is the signal to build the real thing.
 
 ### AI_ASSISTANT
 - **Status:** OPEN

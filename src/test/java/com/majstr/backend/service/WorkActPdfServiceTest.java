@@ -131,9 +131,9 @@ class WorkActPdfServiceTest {
 
         var receipts = List.of(
                 new WorkActPdfService.ReceiptRow("Епіцентр, клей + грунтовка",
-                        LocalDate.of(2026, 8, 3), new BigDecimal("2400.00"), null),
+                        LocalDate.of(2026, 8, 3), new BigDecimal("2400.00"), null, false),
                 new WorkActPdfService.ReceiptRow("Нова Пошта, доставка",
-                        null, new BigDecimal("600.00"), null));
+                        null, new BigDecimal("600.00"), null, false));
         String text = textOf(pdfService.render(
                 sampleModel(WorkActKind.INTERIM, null, "Штукатурні роботи", receipts)));
 

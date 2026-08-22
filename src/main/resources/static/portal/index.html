@@ -1192,10 +1192,11 @@
                     <div style="display:flex;justify-content:space-between;gap:12px;align-items:baseline;padding:6px 0;border-bottom:1px solid var(--border,#eee)">
                         <div style="min-width:0">
                             <div>${i + 1}. ${escapeHtml(r.label)}</div>
+                            ${r.itemized ? '<div style="font-size:12px;color:var(--muted)">позиції цього чека включено в акт вище</div>' : ''}
                             ${r.issuedAt ? `<div style="font-size:12px;color:var(--muted)">${actDate(r.issuedAt)}</div>` : ''}
                             ${r.hasPhoto ? `<a href="${apiBase}/receipts/${encodeURIComponent(r.id)}/file" target="_blank" rel="noopener" style="font-size:13px">Переглянути фото</a>` : ''}
                         </div>
-                        <div style="white-space:nowrap">${money(r.amount)}</div>
+                        <div style="white-space:nowrap${r.itemized ? ';color:var(--muted)' : ''}">${money(r.amount)}</div>
                     </div>`).join('')}
                 <div style="display:flex;justify-content:space-between;font-weight:600;padding-top:8px">
                     <span>Разом за чеками</span><span>${money(a.receiptsTotal)}</span>

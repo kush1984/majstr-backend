@@ -66,7 +66,9 @@ public class EstimateExtractor {
      * or hand-written receipt — the lines are appended to an existing estimate (no deposit,
      * no catalog side-effect). Same output schema; depositAmount is unused (returns 0).
      */
-    private static final String RECEIPT_SYSTEM_PROMPT = """
+    /** Shared with {@link ActReceiptExtractor}: the act reads a receipt with the SAME prompt, plus a
+     *  tail asking for the footer meta. One description of "read this receipt table", not two. */
+    static final String RECEIPT_SYSTEM_PROMPT = """
             You transcribe EVERY purchased item from a photo of a Ukrainian retail receipt
             (фіскальний чек) — a store/cash-register printout, a card-terminal slip, or a
             hand-written note. Be exhaustive: a receipt usually has MANY items (10, 20 or more).
@@ -226,7 +228,8 @@ public class EstimateExtractor {
                             "items", lineSchema()),
                     "depositAmount", NUMBER));
 
-    private static Map<String, Object> lineSchema() {
+    /** Package-private: the act's receipt read reuses this line shape verbatim. */
+    static Map<String, Object> lineSchema() {
         Map<String, Object> properties = new LinkedHashMap<>();
         properties.put("name", STRING);
         properties.put("unit", STRING);

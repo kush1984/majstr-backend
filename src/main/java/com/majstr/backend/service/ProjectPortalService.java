@@ -23,6 +23,7 @@ import com.majstr.backend.feature.FeatureGuard;
 import com.majstr.backend.repository.EstimateRepository;
 import com.majstr.backend.repository.ProjectShareLinkRepository;
 import com.majstr.backend.repository.WorkActItemRepository;
+import com.majstr.backend.repository.WorkActReceiptRepository;
 import com.majstr.backend.repository.WorkActRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -65,6 +66,7 @@ public class ProjectPortalService {
     private final EstimateRepository estimateRepository;
     private final WorkActRepository workActRepository;
     private final WorkActItemRepository workActItemRepository;
+    private final WorkActReceiptRepository workActReceiptRepository;
     private final ProjectService projectService;
     private final FeatureGuard featureGuard;
     private final PortalProperties portalProperties;
@@ -192,7 +194,8 @@ public class ProjectPortalService {
         if (act.getStatus() == WorkActStatus.DRAFT) {
             // An empty act must never leave DRAFT (review fix): once SENT the client could sign it,
             // and a SIGNED act is immutable and undeletable.
-            if (!workActItemRepository.existsByWorkActId(actId)) {
+            if (!workActItemRepository.existsByWorkActId(actId)
+                    && !workActReceiptRepository.existsByWorkActId(actId)) {
                 throw new WorkActValidationException("error.work-act.empty", "WORK_ACT_EMPTY");
             }
             act.setStatus(WorkActStatus.SENT);

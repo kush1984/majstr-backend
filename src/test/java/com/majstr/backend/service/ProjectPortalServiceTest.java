@@ -24,6 +24,7 @@ import com.majstr.backend.repository.EstimateRepository;
 import com.majstr.backend.repository.ProjectShareLinkRepository;
 import com.majstr.backend.exception.WorkActValidationException;
 import com.majstr.backend.repository.WorkActItemRepository;
+import com.majstr.backend.repository.WorkActReceiptRepository;
 import com.majstr.backend.repository.WorkActRepository;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -56,6 +57,7 @@ class ProjectPortalServiceTest {
     @Mock EmailService emailService;
     @Mock WorkActRepository workActRepository;
     @Mock WorkActItemRepository workActItemRepository;
+    @Mock WorkActReceiptRepository workActReceiptRepository;
     @InjectMocks ProjectPortalService portalService;
 
     private final UUID projectId = UUID.randomUUID();
@@ -366,6 +368,7 @@ class ProjectPortalServiceTest {
         WorkAct a = act(p, WorkActStatus.DRAFT);
         given(workActRepository.findByIdAndUserId(a.getId(), ownerId)).willReturn(Optional.of(a));
         given(workActItemRepository.existsByWorkActId(a.getId())).willReturn(false);
+        given(workActReceiptRepository.existsByWorkActId(a.getId())).willReturn(false);
 
         assertThatThrownBy(() -> portalService.updateAct(a.getId(), ownerId))
                 .isInstanceOf(WorkActValidationException.class);

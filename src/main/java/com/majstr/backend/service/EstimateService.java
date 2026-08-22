@@ -574,11 +574,18 @@ public class EstimateService {
 
     /**
      * Toggle whether this estimate counts toward the object's economy (income). Owner-only;
-     * works in any status (you can flag a SIGNED deal or un-flag a superseded variant).
+     * works in any status (you can flag a SIGNED deal or un-flag a superseded variant) — EXCEPT
+     * on an ADDENDUM rollup (economy review): it is system-created by signing an act, and its
+     * being counted is one half of the «Прийнято ⊆ За договором» invariant — the act's frozen
+     * lines and re-billed receipts keep counting in «Прийнято» regardless of this flag, so
+     * unticking the rollup would push the ratio past 100 %.
      */
     @Transactional
     public EstimateResponse setCountInEconomy(UUID estimateId, boolean value, UUID ownerId) {
         Estimate estimate = loadOwned(estimateId, ownerId);
+        if (estimate.getKind() == com.majstr.backend.entity.EstimateKind.ADDENDUM) {
+            throw new WorkActConflictException("error.estimate.addendum-locked", "ESTIMATE_ADDENDUM_LOCKED");
+        }
         estimate.setCountInEconomy(value);
         return recalculatedResponse(estimate);
     }

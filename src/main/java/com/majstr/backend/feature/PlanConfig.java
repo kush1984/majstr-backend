@@ -42,9 +42,12 @@ public final class PlanConfig {
                         Limit.MAX_PROJECTS, 2,
                         Limit.MAX_ESTIMATES_PER_PROJECT, 3,
                         Limit.MAX_PHOTOS_PER_OBJECT, 5,
-                        // FREE can't reach receipt import (PRO-gated) — 0 is a defensive backstop,
-                        // NOT left unset (unset would read as -1 = unlimited).
-                        Limit.MAX_RECEIPT_PHOTOS_PER_OBJECT, 0
+                        // Receipt PHOTOS are not receipt IMPORT: filing a photographed receipt into
+                        // the receipts folder (or letting an act keep a gallery copy) calls no LLM,
+                        // so FREE gets the same budget as progress photos. This was 0 — a backstop
+                        // from when the only way to create one was the PRO-gated import — and it
+                        // made both flows fail silently for a FREE master (master decision).
+                        Limit.MAX_RECEIPT_PHOTOS_PER_OBJECT, 5
                 ),
                 EnumSet.of(
                         Feature.CLIENT_PORTAL,

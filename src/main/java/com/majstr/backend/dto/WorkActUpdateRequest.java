@@ -22,6 +22,8 @@ public record WorkActUpdateRequest(
         Boolean showMaterials,
         Boolean showCumulative,
         Boolean receiptsToExpenses,
+        /** PDF-appendix-only: whether «ДОДАТОК: ФОТО ЧЕКІВ» renders (default true; portal always shows). */
+        Boolean showReceiptPhotos,
         // Same bound as the create request — see WorkActCreateRequest#advanceOffset.
         @DecimalMin("0.00") @Digits(integer = 13, fraction = 2) BigDecimal advanceOffset
 ) {}

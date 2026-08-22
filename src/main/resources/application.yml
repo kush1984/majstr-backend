@@ -192,6 +192,9 @@ app:
     flows:
       estimate: ${AI_FLOW_ESTIMATE:}
       receipt: ${AI_FLOW_RECEIPT:anthropic:claude-sonnet-5}
+      # Date + total off a receipt footer for the act's «Чеки та рахунки» — three fields, read many
+      # times a day: the small model earns its keep here (positions mode uses `receipt` above).
+      act-receipt: ${AI_FLOW_ACT_RECEIPT:anthropic:claude-haiku-4-5-20251001}
       sketch: ${AI_FLOW_SKETCH:}
       electrical: ${AI_FLOW_ELECTRICAL:}
       project-docs: ${AI_FLOW_PROJECT_DOCS:}

@@ -1,5 +1,7 @@
 package com.majstr.backend.controller;
 
+import com.majstr.backend.dto.PhotoFolderRequest;
+import com.majstr.backend.dto.ProjectPhotoFolderResponse;
 import com.majstr.backend.dto.PhotoVisibilityRequest;
 import com.majstr.backend.dto.ProjectPhotoResponse;
 import com.majstr.backend.entity.PhotoSource;
@@ -63,9 +65,10 @@ public class ProjectPhotoController {
             @RequestParam(value = "source", defaultValue = "MANUAL") PhotoSource source,
             @RequestParam(value = "caption", required = false) String caption,
             @RequestParam(value = "estimateId", required = false) UUID estimateId,
+            @RequestParam(value = "folder", required = false) String folder,
             @AuthenticationPrincipal UserPrincipal principal) throws IOException {
         return ResponseEntity.status(HttpStatus.CREATED)
-                .body(photoService.upload(projectId, principal.id(), file, source, caption, estimateId));
+                .body(photoService.upload(projectId, principal.id(), file, source, caption, estimateId, folder));
     }
 
     @Operation(summary = "Show / hide a photo from the client portal (MANUAL only)")
@@ -75,6 +78,42 @@ public class ProjectPhotoController {
                                               @Valid @RequestBody PhotoVisibilityRequest req,
                                               @AuthenticationPrincipal UserPrincipal principal) {
         return photoService.setVisibility(projectId, photoId, principal.id(), req.visibility());
+    }
+
+    @Operation(summary = "List the object's CUSTOM photo folders (the «Чеки»/«Інше» defaults are virtual)")
+    @GetMapping("/folders")
+    public List<ProjectPhotoFolderResponse> folders(@PathVariable UUID projectId,
+                                                    @AuthenticationPrincipal UserPrincipal principal) {
+        return photoService.listFolders(projectId, principal.id());
+    }
+
+    @Operation(summary = "Create an EMPTY custom folder (idempotent on the name)")
+    @PostMapping("/folders")
+    public ResponseEntity<ProjectPhotoFolderResponse> createFolder(
+            @PathVariable UUID projectId,
+            @Valid @RequestBody PhotoFolderRequest req,
+            @AuthenticationPrincipal UserPrincipal principal) {
+        return ResponseEntity.status(HttpStatus.CREATED)
+                .body(photoService.createFolder(projectId, principal.id(), req.folder()));
+    }
+
+    @Operation(summary = "Delete a custom folder — only while it holds no photos")
+    @DeleteMapping("/folders/{folderId}")
+    public ResponseEntity<Void> deleteFolder(@PathVariable UUID projectId,
+                                             @PathVariable UUID folderId,
+                                             @AuthenticationPrincipal UserPrincipal principal) {
+        photoService.deleteFolder(projectId, folderId, principal.id());
+        return ResponseEntity.noContent().build();
+    }
+
+    @Operation(summary = "Move a photo to another folder («Чеки» = RECEIPTS, «Інше» = null/blank, "
+            + "anything else = a custom folder created by simply being named)")
+    @PatchMapping("/{photoId}/folder")
+    public ProjectPhotoResponse setFolder(@PathVariable UUID projectId,
+                                          @PathVariable UUID photoId,
+                                          @RequestBody PhotoFolderRequest req,
+                                          @AuthenticationPrincipal UserPrincipal principal) {
+        return photoService.setFolder(projectId, photoId, principal.id(), req.folder());
     }
 
     @Operation(summary = "Delete a photo")

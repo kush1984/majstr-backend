@@ -14,10 +14,13 @@ public record WorkActReceiptResponse(
         BigDecimal amount,
         LocalDate issuedAt,
         boolean hasPhoto,
+        /** The positions were carried into the act (round 2) — the amount is shown as reference but
+         *  excluded from «Разом за чеками»/payable: the act's own lines already bill it. */
+        boolean itemized,
         int sortOrder
 ) {
     public static WorkActReceiptResponse from(WorkActReceipt r) {
         return new WorkActReceiptResponse(r.getId(), r.getLabel(), r.getAmount(), r.getIssuedAt(),
-                r.getStorageKey() != null, r.getSortOrder());
+                r.getStorageKey() != null, r.isItemized(), r.getSortOrder());
     }
 }

@@ -95,7 +95,7 @@ public class PublicActPortalService {
         // owner can still empty a SENT act via PUT /items — never let that emptiness become SIGNED
         // (immutable, undeletable).
         List<WorkActItem> items = itemRepository.findByWorkActIdOrderBySortOrderAscIdAsc(act.getId());
-        if (items.isEmpty()) {
+        if (items.isEmpty() && !receiptRepository.existsByWorkActId(act.getId())) {
             throw new WorkActValidationException("error.work-act.empty", "WORK_ACT_EMPTY");
         }
         // Roll any additional (off-estimate) works into a SIGNED ADDENDUM estimate FIRST — so «За
@@ -205,9 +205,11 @@ public class PublicActPortalService {
         BigDecimal receiptsTotal = BigDecimal.ZERO.setScale(MONEY_SCALE, ROUNDING);
         List<PublicActView.Receipt> receiptViews = new ArrayList<>(receipts.size());
         for (WorkActReceipt r : receipts) {
-            receiptsTotal = receiptsTotal.add(r.getAmount());
+            if (!r.isItemized()) {
+                receiptsTotal = receiptsTotal.add(r.getAmount()); // itemized = billed by act lines
+            }
             receiptViews.add(new PublicActView.Receipt(r.getId(), r.getLabel(), r.getIssuedAt(),
-                    r.getAmount(), r.getStorageKey() != null));
+                    r.getAmount(), r.getStorageKey() != null, r.isItemized()));
         }
         BigDecimal advance = act.getAdvanceOffset() == null
                 ? BigDecimal.ZERO.setScale(MONEY_SCALE, ROUNDING) : act.getAdvanceOffset();

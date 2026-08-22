@@ -1,6 +1,7 @@
 package com.majstr.backend.controller;
 
 import com.majstr.backend.dto.ActProgressResponse;
+import com.majstr.backend.dto.ActReceiptRecognizeResponse;
 import com.majstr.backend.dto.ActShareStateResponse;
 import com.majstr.backend.dto.WorkActCreateRequest;
 import com.majstr.backend.dto.WorkActItemsRequest;
@@ -169,9 +170,23 @@ public class WorkActController {
             @RequestParam("amount") BigDecimal amount,
             @RequestParam(value = "issuedAt", required = false)
             @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate issuedAt,
+            @RequestParam(value = "itemized", required = false, defaultValue = "false") boolean itemized,
+            @RequestParam(value = "saveToPhotos", required = false, defaultValue = "false") boolean saveToPhotos,
             @AuthenticationPrincipal UserPrincipal principal) throws IOException {
         return ResponseEntity.status(HttpStatus.CREATED)
-                .body(receiptService.add(id, principal.id(), file, label, amount, issuedAt));
+                .body(receiptService.add(id, principal.id(), file, label, amount, issuedAt, itemized, saveToPhotos));
+    }
+
+    @Operation(summary = "Recognize a receipt photo for the dialog: date + total (+ optionally the "
+            + "purchased positions, review-shaped). Persists nothing; an unreadable photo is a soft "
+            + "recognized=false, not an error")
+    @PostMapping(value = "/api/acts/{id}/receipts/recognize", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public ActReceiptRecognizeResponse recognizeReceipt(
+            @PathVariable UUID id,
+            @RequestParam("file") MultipartFile file,
+            @RequestParam(value = "withItems", required = false, defaultValue = "false") boolean withItems,
+            @AuthenticationPrincipal UserPrincipal principal) throws IOException {
+        return receiptService.recognize(id, principal.id(), file, withItems);
     }
 
     @Operation(summary = "Edit a receipt's label / amount / date (the photo is set once, at upload)")

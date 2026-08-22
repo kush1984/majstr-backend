@@ -55,6 +55,9 @@ public record PublicActView(
             String label,
             LocalDate issuedAt,
             BigDecimal amount,
-            boolean hasPhoto
+            boolean hasPhoto,
+            /** The receipt's positions are inside the act's own lines (round 2) — shown as proof,
+             *  excluded from «Разом за чеками»: the amount is already billed by those lines. */
+            boolean itemized
     ) {}
 }

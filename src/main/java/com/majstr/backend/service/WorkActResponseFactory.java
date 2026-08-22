@@ -61,7 +61,10 @@ class WorkActResponseFactory {
                 .findByWorkActIdOrderBySortOrderAscCreatedAtAsc(act.getId()).stream()
                 .map(WorkActReceiptResponse::from)
                 .toList();
+        // Itemized receipts are reference-only (their positions already bill the money as act
+        // lines, round 2) — they show in the list but never in the billed subtotal.
         BigDecimal receiptsTotal = receipts.stream()
+                .filter(r -> !r.itemized())
                 .map(WorkActReceiptResponse::amount)
                 .reduce(BigDecimal.ZERO, BigDecimal::add)
                 .setScale(MONEY_SCALE, ROUNDING);
@@ -85,6 +88,7 @@ class WorkActResponseFactory {
                 act.isShowMaterials(),
                 act.isShowCumulative(),
                 act.isReceiptsToExpenses(),
+                act.isShowReceiptPhotos(),
                 act.getAdvanceOffset(),
                 act.getRetentionPercent(),
                 act.getSentAt(),

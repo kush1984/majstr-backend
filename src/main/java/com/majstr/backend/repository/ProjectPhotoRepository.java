@@ -18,4 +18,7 @@ public interface ProjectPhotoRepository extends JpaRepository<ProjectPhoto, UUID
     List<ProjectPhoto> findByProjectIdAndVisibilityOrderByCreatedAtDesc(UUID projectId, PhotoVisibility visibility);
 
     Optional<ProjectPhoto> findByIdAndProjectId(UUID id, UUID projectId);
+
+    /** Folder-delete guard (photo-folders): a folder may go only when no photo carries its name. */
+    boolean existsByProjectIdAndFolder(UUID projectId, String folder);
 }

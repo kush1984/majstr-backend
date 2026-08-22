@@ -105,6 +105,13 @@ public class WorkAct {
     @Column(name = "receipts_to_expenses", nullable = false)
     private boolean receiptsToExpenses = true;
 
+    /** PDF-appendix-only toggle (master feedback): whether «ДОДАТОК: ФОТО ЧЕКІВ» pages render.
+     *  The receipts MONEY table always does (it explains «До сплати»), and the portal always shows
+     *  the photos. Frozen by signing like everything else. */
+    @Builder.Default
+    @Column(name = "show_receipt_photos", nullable = false)
+    private boolean showReceiptPhotos = true;
+
     /** Advances to net off against this act's total (→ «До сплати»). */
     @Column(name = "advance_offset", precision = 15, scale = 2)
     private BigDecimal advanceOffset;

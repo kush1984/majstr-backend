@@ -1,12 +1,9 @@
 package com.majstr.backend.service.importer;
 
 import com.majstr.backend.dto.EstimateImportParseResponse;
-import com.majstr.backend.dto.EstimateImportParseResponse.ParsedItem;
 import com.majstr.backend.dto.EstimateResponse;
 import com.majstr.backend.dto.ReceiptItemsCommitRequest;
 import com.majstr.backend.entity.EstimateStatus;
-import com.majstr.backend.entity.ItemType;
-import com.majstr.backend.entity.Unit;
 import com.majstr.backend.entity.User;
 import com.majstr.backend.exception.CatalogImportException;
 import com.majstr.backend.exception.EstimateSignedException;
@@ -20,8 +17,6 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
-import java.math.BigDecimal;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.UUID;
@@ -74,44 +69,8 @@ public class ReceiptImportService {
     // ---- extraction → review mapping ------------------------------------------
 
     private EstimateImportParseResponse toReview(EstimateExtractor.Extracted extracted) {
-        List<ParsedItem> items = new ArrayList<>();
-        for (EstimateExtractor.Extracted.Line line : extracted.items()) {
-            Unit unit = UnitNormalizer.normalize(line.unit());
-            ItemType type = parseType(line.type());
-            BigDecimal quantity = line.quantity();
-            BigDecimal unitPrice = line.unitPrice();
-
-            List<String> issues = new ArrayList<>();
-            if (unit == null) issues.add("unit");
-            if (quantity == null || quantity.signum() <= 0) issues.add("quantity");
-            if (unitPrice == null || unitPrice.signum() <= 0) issues.add("price");
-
-            items.add(new ParsedItem(
-                    line.name().trim(),
-                    unit,
-                    quantity,
-                    unitPrice,
-                    type,
-                    blankToNull(line.category()),
-                    issues));
-        }
-        // A receipt has no deposit.
-        return new EstimateImportParseResponse(items, null);
-    }
-
-    private static String blankToNull(String s) {
-        return s == null || s.isBlank() ? null : s.trim();
-    }
-
-    private static ItemType parseType(String raw) {
-        if (raw == null) {
-            return ItemType.MATERIAL; // a receipt is usually goods
-        }
-        String s = raw.trim().toUpperCase(Locale.ROOT);
-        if (s.startsWith("WORK") || s.contains("РОБОТ")) {
-            return ItemType.WORK;
-        }
-        return ItemType.MATERIAL;
+        // A receipt has no deposit. Normalization shared with the act's receipt recognition.
+        return new EstimateImportParseResponse(ReceiptLines.toParsedItems(extracted.items()), null);
     }
 
     /** The image media type to send to Claude, or null if this isn't a supported image upload. */

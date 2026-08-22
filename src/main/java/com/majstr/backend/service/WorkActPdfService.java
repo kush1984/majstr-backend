@@ -292,7 +292,9 @@ public class WorkActPdfService {
      * @return the receipts subtotal, or zero when the act has none.
      */
     private BigDecimal addReceiptsTable(Document doc, PdfModel model) throws DocumentException {
-        List<ReceiptRow> receipts = model.receipts();
+        // The MONEY table bills only non-itemized receipts: an itemized one's positions are already
+        // rows of the works table above (round 2). Its photo still lands in the appendix as proof.
+        List<ReceiptRow> receipts = model.receipts().stream().filter(r -> !r.itemized()).toList();
         if (receipts.isEmpty()) {
             return BigDecimal.ZERO.setScale(MONEY_SCALE, MONEY_ROUNDING);
         }
@@ -360,6 +362,11 @@ public class WorkActPdfService {
      * receipt with no photo is simply skipped, and a corrupt image is logged, never fatal.
      */
     private void addReceiptPhotos(Document doc, PdfModel model) throws DocumentException {
+        // PDF-appendix-only toggle (master feedback): a formal printout may not want the photo
+        // pages. The money table above ALWAYS renders, and the portal always shows the photos.
+        if (!model.act().isShowReceiptPhotos()) {
+            return;
+        }
         List<ReceiptRow> withPhoto = model.receipts().stream()
                 .filter(r -> r.storageKey() != null && !r.storageKey().isBlank()).toList();
         if (withPhoto.isEmpty()) {
@@ -622,9 +629,11 @@ public class WorkActPdfService {
 
     /** One «Чеки та рахунки» row. Frozen data straight off {@code work_act_receipt}, so unlike the
      *  «ДОВІДКОВО» figures it is safe inside the canonical (hashed) render. */
-    public record ReceiptRow(String label, LocalDate issuedAt, BigDecimal amount, String storageKey) {
+    public record ReceiptRow(String label, LocalDate issuedAt, BigDecimal amount, String storageKey,
+                             boolean itemized) {
         public static ReceiptRow from(com.majstr.backend.entity.WorkActReceipt r) {
-            return new ReceiptRow(r.getLabel(), r.getIssuedAt(), r.getAmount(), r.getStorageKey());
+            return new ReceiptRow(r.getLabel(), r.getIssuedAt(), r.getAmount(), r.getStorageKey(),
+                    r.isItemized());
         }
     }
 

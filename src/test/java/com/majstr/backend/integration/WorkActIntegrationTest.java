@@ -57,6 +57,7 @@ class WorkActIntegrationTest extends IntegrationTestBase {
     @Autowired EstimateItemRepository estimateItemRepository;
     @Autowired WorkActRepository workActRepository;
     @Autowired com.majstr.backend.service.WorkActReceiptService receiptService;
+    @Autowired com.majstr.backend.repository.ProjectPhotoRepository photoRepository;
 
     @Test
     void numberingIsContinuousPerMaster_acrossObjects() {
@@ -143,7 +144,7 @@ class WorkActIntegrationTest extends IntegrationTestBase {
 
         WorkActResponse updated = workActService.updateHeader(created.id(),
                 new com.majstr.backend.dto.WorkActUpdateRequest(WorkActKind.INTERIM, "  ", LocalDate.now(),
-                        LocalDate.now().minusDays(7), LocalDate.now(), null, null, null, null, null, null, null),
+                        LocalDate.now().minusDays(7), LocalDate.now(), null, null, null, null, null, null, null, null),
                 owner.getId());
         assertThat(updated.title()).isNull();
     }
@@ -236,10 +237,128 @@ class WorkActIntegrationTest extends IntegrationTestBase {
         WorkActResponse updated = workActService.updateHeader(act.id(),
                 new com.majstr.backend.dto.WorkActUpdateRequest(WorkActKind.INTERIM, null,
                         LocalDate.now().plusYears(1), LocalDate.now().minusDays(7), LocalDate.now(),
-                        null, null, null, null, null, null, null),
+                        null, null, null, null, null, null, null, null),
                 owner.getId());
 
         assertThat(updated.number()).isEqualTo("1/" + (year + 1));
+    }
+
+    @Test
+    void itemizedReceipt_billsThroughItsPositions_neverTwice() throws Exception {
+        // Round 2: the recognized positions live as act lines; the receipt row stays as proof but
+        // its amount must not be billed again — not in receiptsTotal, not in the ADDENDUM, not in
+        // «Прийнято актами». The expense posting is the one place it still counts.
+        User owner = newOwner();
+        Project p = newProject(owner);
+        Estimate est = signedEstimateWithLine(p, "Робота", "100.000", "145.00"); // 14 500
+        UUID line = estimateItemRepository.findByEstimateIdOrderBySortOrderAscIdAsc(est.getId()).get(0).getId();
+        WorkActResponse act = createInterim(p.getId(), owner.getId());
+        // The act: 50 м² of estimate works (7 250) + the receipt's positions as additional lines
+        // (2 × 241.75 = 483.50) + the itemized receipt itself (483.50, reference-only).
+        workActService.replaceItems(act.id(), new WorkActItemsRequest(List.of(
+                new WorkActItemsRequest.Line(line, est.getId(), ItemType.WORK, "Робота", null,
+                        Unit.M2, new BigDecimal("145.00"), new BigDecimal("50.000")),
+                new WorkActItemsRequest.Line(null, null, ItemType.MATERIAL, "Клей Ceresit CM-11", null,
+                        Unit.PIECE, new BigDecimal("241.75"), new BigDecimal("2.000")))), owner.getId());
+        receiptService.add(act.id(), owner.getId(), receiptPhoto(), "Епіцентр",
+                new BigDecimal("483.50"), null, true, false);
+
+        WorkActResponse before = workActService.get(act.id(), owner.getId());
+        assertThat(before.receiptsTotal()).isEqualByComparingTo("0.00"); // itemized = reference-only
+        assertThat(before.payable()).isEqualByComparingTo("7733.50");    // 7 250 + 483.50, once
+
+        workActService.signOffline(act.id(), new WorkActSignOfflineRequest("Клієнт"), owner.getId());
+
+        ObjectEconomyResponse economy = objectExpenseService.economy(p.getId(), owner.getId());
+        assertThat(economy.acts().contracted()).isEqualByComparingTo("14983.50");    // 14 500 + позиції
+        assertThat(economy.acts().acceptedByActs()).isEqualByComparingTo("7733.50"); // роботи + позиції
+        assertThat(economy.acts().acceptedByActs()).isLessThanOrEqualTo(economy.acts().contracted());
+        // The master's own spend is still real → one expense, from the receipt.
+        assertThat(economy.internals().expenses()).isEqualByComparingTo("483.50");
+    }
+
+    @Test
+    void receiptsOnlyAct_isSignable() throws Exception {
+        // «Фінальний акт з матеріалами»: an act that bills nothing but re-billed receipts is
+        // legitimate content (round 2 — the empty guard counts receipts too).
+        User owner = newOwner();
+        Project p = newProject(owner);
+        signedEstimateWithLine(p, "Робота", "100.000", "145.00");
+        WorkActResponse act = createInterim(p.getId(), owner.getId());
+        receiptService.add(act.id(), owner.getId(), receiptPhoto(), "Епіцентр",
+                new BigDecimal("2400.00"), null, false, false);
+
+        WorkActResponse signed = workActService.signOffline(
+                act.id(), new WorkActSignOfflineRequest("Клієнт"), owner.getId());
+
+        assertThat(signed.status()).isEqualTo(WorkActStatus.SIGNED);
+        assertThat(signed.payable()).isEqualByComparingTo("2400.00");
+    }
+
+    @Test
+    void receiptAdd_requiresAPhotoAndSaneFields() {
+        User owner = newOwner();
+        Project p = newProject(owner);
+        signedEstimateWithLine(p, "Робота", "100.000", "145.00");
+        WorkActResponse act = createInterim(p.getId(), owner.getId());
+
+        assertThatThrownBy(() -> receiptService.add(act.id(), owner.getId(), null, "Епіцентр",
+                new BigDecimal("100.00"), null, false, false))
+                .isInstanceOf(WorkActValidationException.class); // no photo
+        assertThatThrownBy(() -> receiptService.add(act.id(), owner.getId(), receiptPhoto(), "  ",
+                new BigDecimal("100.00"), null, false, false))
+                .isInstanceOf(WorkActValidationException.class); // blank label
+        assertThatThrownBy(() -> receiptService.add(act.id(), owner.getId(), receiptPhoto(), "Епіцентр",
+                new BigDecimal("-5.00"), null, false, false))
+                .isInstanceOf(WorkActValidationException.class); // negative → 400, not a DB 500
+    }
+
+    @Test
+    void addendumEstimate_cannotBeExcludedFromTheEconomy() throws Exception {
+        // The rollup's being counted is one half of «Прийнято ⊆ За договором» — unticking it would
+        // push the ratio past 100 % (economy review). 409.
+        User owner = newOwner();
+        Project p = newProject(owner);
+        Estimate est = signedEstimateWithLine(p, "Робота", "100.000", "145.00");
+        UUID line = estimateItemRepository.findByEstimateIdOrderBySortOrderAscIdAsc(est.getId()).get(0).getId();
+        WorkActResponse act = createInterim(p.getId(), owner.getId());
+        workActService.replaceItems(act.id(), new WorkActItemsRequest(List.of(
+                new WorkActItemsRequest.Line(line, est.getId(), ItemType.WORK, "Робота", null,
+                        Unit.M2, new BigDecimal("145.00"), new BigDecimal("10.000")),
+                new WorkActItemsRequest.Line(null, null, ItemType.WORK, "Демонтаж", null,
+                        Unit.M2, new BigDecimal("500.00"), new BigDecimal("2.000")))), owner.getId());
+        WorkActResponse signed = workActService.signOffline(
+                act.id(), new WorkActSignOfflineRequest("Клієнт"), owner.getId());
+
+        assertThatThrownBy(() -> estimateService.setCountInEconomy(
+                signed.addendumEstimateId(), false, owner.getId()))
+                .isInstanceOf(WorkActConflictException.class);
+    }
+
+    @Test
+    void saveToPhotos_filesACopyIntoTheReceiptsFolder() throws Exception {
+        // The act keeps ITS frozen copy; the gallery gets an independent one in «Чеки» — deleting
+        // or re-filing the gallery copy can never touch the signed document (photo-folders).
+        User owner = newOwner();
+        Project p = newProject(owner);
+        signedEstimateWithLine(p, "Робота", "100.000", "145.00");
+        WorkActResponse act = createInterim(p.getId(), owner.getId());
+
+        receiptService.add(act.id(), owner.getId(), receiptPhoto(), "Епіцентр",
+                new BigDecimal("483.50"), null, false, true);
+
+        var photos = photoRepository.findByProjectIdOrderByCreatedAtDesc(p.getId());
+        assertThat(photos).singleElement().satisfies(photo -> {
+            assertThat(photo.getFolder()).isEqualTo(com.majstr.backend.entity.ProjectPhoto.FOLDER_RECEIPTS);
+            assertThat(photo.getSource()).isEqualTo(com.majstr.backend.entity.PhotoSource.RECEIPT);
+            assertThat(photo.getCaption()).isEqualTo("Епіцентр");
+        });
+    }
+
+    /** A minimal valid JPEG upload — the photo became mandatory in round 2. */
+    private static org.springframework.mock.web.MockMultipartFile receiptPhoto() {
+        byte[] jpeg = {(byte) 0xFF, (byte) 0xD8, (byte) 0xFF, (byte) 0xE0, 0, 0, 0, 0};
+        return new org.springframework.mock.web.MockMultipartFile("file", "receipt.jpg", "image/jpeg", jpeg);
     }
 
     /** Arrange helper: DRAFT → SENT without dragging the share/portal machinery into these tests. */
@@ -539,10 +658,10 @@ class WorkActIntegrationTest extends IntegrationTestBase {
 
         WorkActResponse act = createInterim(p.getId(), owner.getId());
         setSingleLine(act.id(), owner.getId(), est.getId(), line, "50.000", "145.00"); // 7 250
-        receiptService.add(act.id(), owner.getId(), null, "Епіцентр, клей",
-                new BigDecimal("2400.00"), LocalDate.now().minusDays(2));
-        receiptService.add(act.id(), owner.getId(), null, "Нова Пошта",
-                new BigDecimal("600.00"), null);
+        receiptService.add(act.id(), owner.getId(), receiptPhoto(), "Епіцентр, клей",
+                new BigDecimal("2400.00"), LocalDate.now().minusDays(2), false, false);
+        receiptService.add(act.id(), owner.getId(), receiptPhoto(), "Нова Пошта",
+                new BigDecimal("600.00"), null, false, false);
 
         WorkActResponse withReceipts = workActService.get(act.id(), owner.getId());
         assertThat(withReceipts.receipts()).hasSize(2);
@@ -553,8 +672,8 @@ class WorkActIntegrationTest extends IntegrationTestBase {
         workActService.signOffline(act.id(), new WorkActSignOfflineRequest("Клієнт"), owner.getId());
 
         // Signed = immutable, receipts included — they are part of the hashed document.
-        assertThatThrownBy(() -> receiptService.add(act.id(), owner.getId(), null, "Пізній чек",
-                new BigDecimal("100.00"), null)).isInstanceOf(WorkActSignedException.class);
+        assertThatThrownBy(() -> receiptService.add(act.id(), owner.getId(), receiptPhoto(), "Пізній чек",
+                new BigDecimal("100.00"), null, false, false)).isInstanceOf(WorkActSignedException.class);
         assertThatThrownBy(() -> receiptService.delete(act.id(),
                 withReceipts.receipts().getFirst().id(), owner.getId()))
                 .isInstanceOf(WorkActSignedException.class);
@@ -571,7 +690,7 @@ class WorkActIntegrationTest extends IntegrationTestBase {
 
         WorkActResponse act = createInterim(p.getId(), owner.getId());
         setSingleLine(act.id(), owner.getId(), est.getId(), line, "50.000", "145.00"); // 7 250
-        receiptService.add(act.id(), owner.getId(), null, "Епіцентр", new BigDecimal("2400.00"), null);
+        receiptService.add(act.id(), owner.getId(), receiptPhoto(), "Епіцентр", new BigDecimal("2400.00"), null, false, false);
         workActService.signOffline(act.id(), new WorkActSignOfflineRequest("Клієнт"), owner.getId());
 
         ObjectEconomyResponse economy = objectExpenseService.economy(p.getId(), owner.getId());
@@ -593,10 +712,10 @@ class WorkActIntegrationTest extends IntegrationTestBase {
 
         WorkActResponse act = createInterim(p.getId(), owner.getId());
         setSingleLine(act.id(), owner.getId(), est.getId(), line, "50.000", "145.00");
-        receiptService.add(act.id(), owner.getId(), null, "Епіцентр", new BigDecimal("2400.00"), null);
+        receiptService.add(act.id(), owner.getId(), receiptPhoto(), "Епіцентр", new BigDecimal("2400.00"), null, false, false);
         workActService.updateHeader(act.id(), new com.majstr.backend.dto.WorkActUpdateRequest(
                 WorkActKind.INTERIM, null, LocalDate.now(), LocalDate.now().minusDays(7), LocalDate.now(),
-                null, null, null, null, null, false, null), owner.getId());
+                null, null, null, null, null, false, null, null), owner.getId());
         workActService.signOffline(act.id(), new WorkActSignOfflineRequest("Клієнт"), owner.getId());
 
         ObjectEconomyResponse economy = objectExpenseService.economy(p.getId(), owner.getId());

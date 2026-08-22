@@ -16,10 +16,18 @@ public interface WorkActReceiptRepository extends JpaRepository<WorkActReceipt, 
 
     Optional<WorkActReceipt> findByIdAndWorkActId(UUID id, UUID workActId);
 
+    /** Content check for the empty-act guard: receipts make an act signable too (round 2). */
+    boolean existsByWorkActId(UUID workActId);
+
     @Query("SELECT COALESCE(MAX(r.sortOrder), -1) FROM WorkActReceipt r WHERE r.workAct.id = :actId")
     int maxSortOrder(@Param("actId") UUID actId);
 
-    @Query("SELECT COALESCE(SUM(r.amount), 0) FROM WorkActReceipt r WHERE r.workAct.id = :actId")
+    /** This act's BILLED receipts (itemized ones are excluded — their positions already carry the
+     *  money as act lines, round 2). Feeds the «ДОВІДКОВО» accepted figure for an unsigned act. */
+    @Query("""
+            SELECT COALESCE(SUM(r.amount), 0) FROM WorkActReceipt r
+            WHERE r.workAct.id = :actId AND r.itemized = false
+            """)
     BigDecimal sumByWorkActId(@Param("actId") UUID actId);
 
     /**
@@ -37,6 +45,7 @@ public interface WorkActReceiptRepository extends JpaRepository<WorkActReceipt, 
             JOIN work_act wa ON wa.id = r.work_act_id
             WHERE wa.project_id = :projectId
               AND wa.status = 'SIGNED'
+              AND r.itemized = false
             """, nativeQuery = true)
     BigDecimal sumSignedActReceipts(@Param("projectId") UUID projectId);
 }

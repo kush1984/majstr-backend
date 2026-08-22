@@ -30,6 +30,7 @@ public record WorkActResponse(
         boolean showMaterials,
         boolean showCumulative,
         boolean receiptsToExpenses,
+        boolean showReceiptPhotos,
         BigDecimal advanceOffset,
         BigDecimal retentionPercent,
         Instant sentAt,

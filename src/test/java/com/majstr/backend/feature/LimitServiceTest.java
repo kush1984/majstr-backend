@@ -142,7 +142,9 @@ class LimitServiceTest {
         assertThat(limits.maxProjects()).isEqualTo(2);
         assertThat(limits.maxEstimatesPerProject()).isEqualTo(3);
         assertThat(limits.maxPhotosPerObject()).isEqualTo(5);
-        assertThat(limits.maxReceiptPhotosPerObject()).isEqualTo(0);
+        // Same budget as progress photos: photographing a receipt calls no LLM, so there is no
+        // cost reason to keep FREE at 0 — and 0 made the flows fail silently (master decision).
+        assertThat(limits.maxReceiptPhotosPerObject()).isEqualTo(5);
     }
 
     @Test

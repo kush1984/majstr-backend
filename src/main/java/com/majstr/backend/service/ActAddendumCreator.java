@@ -56,13 +56,20 @@ class ActAddendumCreator {
     void createIfNeeded(WorkAct act) {
         List<WorkActItem> additional = itemRepository.findByWorkActIdOrderBySortOrderAscIdAsc(act.getId())
                 .stream().filter(i -> i.getEstimateItemId() == null).toList();
-        List<WorkActReceipt> receipts = receiptRepository
+        List<WorkActReceipt> allReceipts = receiptRepository
                 .findByWorkActIdOrderBySortOrderAscCreatedAtAsc(act.getId());
-        if (additional.isEmpty() && receipts.isEmpty()) {
-            return;
+        // ITEMIZED receipts (round 2) are already inside the act as its own lines — rolling them up
+        // here too would bill the same money twice. The EXPENSE posting below deliberately takes
+        // them all: the master's own spend is real whichever way the client is billed.
+        List<WorkActReceipt> receipts = allReceipts.stream().filter(r -> !r.isItemized()).toList();
+        if (additional.isEmpty() && allReceipts.isEmpty()) {
+            return; // nothing on the act beyond the estimate positions it closes
         }
-        if (!receipts.isEmpty() && act.isReceiptsToExpenses()) {
-            postReceiptExpenses(act, receipts);
+        if (!allReceipts.isEmpty() && act.isReceiptsToExpenses()) {
+            postReceiptExpenses(act, allReceipts);
+        }
+        if (additional.isEmpty() && receipts.isEmpty()) {
+            return; // only itemized receipts — expenses posted, nothing to roll up
         }
         Estimate addendum = estimateRepository.save(Estimate.builder()
                 .project(act.getProject())

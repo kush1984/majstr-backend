@@ -1,15 +1,20 @@
 package com.majstr.backend.service;
 
 import com.majstr.backend.dto.EstimateResponse;
+import com.majstr.backend.dto.ProjectPhotoFolderResponse;
 import com.majstr.backend.dto.ProjectPhotoResponse;
 import com.majstr.backend.entity.PhotoSource;
 import com.majstr.backend.entity.PhotoVisibility;
 import com.majstr.backend.entity.ProjectPhoto;
+import com.majstr.backend.entity.ProjectPhotoFolder;
 import com.majstr.backend.entity.User;
+import com.majstr.backend.exception.PhotoFolderInUseException;
+import com.majstr.backend.exception.PhotoFolderValidationException;
 import com.majstr.backend.exception.ResourceNotFoundException;
 import com.majstr.backend.feature.Feature;
 import com.majstr.backend.feature.FeatureGuard;
 import com.majstr.backend.feature.LimitService;
+import com.majstr.backend.repository.ProjectPhotoFolderRepository;
 import com.majstr.backend.repository.ProjectPhotoRepository;
 import com.majstr.backend.repository.UserRepository;
 import com.majstr.backend.service.ImageContentTypeDetector.ImageKind;
@@ -20,6 +25,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -52,6 +58,7 @@ public class ProjectPhotoService {
     private static final long MAX_PHOTO_BYTES = 8L * 1024 * 1024;
 
     private final ProjectPhotoRepository photoRepository;
+    private final ProjectPhotoFolderRepository folderRepository;
     private final ProjectService projectService;
     private final EstimateService estimateService;
     private final UserRepository userRepository;
@@ -72,7 +79,8 @@ public class ProjectPhotoService {
 
     @Transactional
     public ProjectPhotoResponse upload(UUID projectId, UUID ownerId, MultipartFile file,
-                                       PhotoSource source, String caption, UUID estimateId) throws IOException {
+                                       PhotoSource source, String caption, UUID estimateId,
+                                       String folder) throws IOException {
         requirePhotos(projectId, ownerId);
         // Per-object cap (progress vs receipt have separate budgets); FREE < PRO.
         limitService.requireCanAddPhoto(ownerId, projectId, source);
@@ -114,8 +122,134 @@ public class ProjectPhotoService {
                 .caption(blankToNull(caption))
                 .estimateId(linkedEstimateId)
                 .estimateNameSnapshot(estimateName)
+                // Folder routing (photo-folders): an upload made from INSIDE a folder says so, and
+                // that wins. With nothing said, receipts from ANY flow land in «Чеки» and everything
+                // else in «Інше» (null) — no photo is ever left outside a folder.
+                .folder(resolveUploadFolder(projectId, source, folder))
                 .build());
         return ProjectPhotoResponse.from(photo);
+    }
+
+    /**
+     * Where an upload lands. {@code null} (the param absent) = "nothing said" → the source's own
+     * default folder; anything else is an explicit target, blank included ("" = «Інше»), so the
+     * Фото tab can upload straight into the folder the master is standing in.
+     */
+    private String resolveUploadFolder(UUID projectId, PhotoSource source, String requested) {
+        if (requested == null) {
+            return source == PhotoSource.RECEIPT ? ProjectPhoto.FOLDER_RECEIPTS : null;
+        }
+        String value = normalizeFolder(requested);
+        if (value != null && !ProjectPhoto.FOLDER_RECEIPTS.equals(value)) {
+            ensureFolderExists(projectId, value); // uploading into a new name creates the folder
+        }
+        return value;
+    }
+
+    /**
+     * Move a photo between the Фото tab's folders (photo-folders): the reserved
+     * {@link ProjectPhoto#FOLDER_RECEIPTS} = «Чеки», null/blank = «Інше», anything else = a
+     * master-invented name (created simply by being used). Internal organization only — the
+     * client portal never sees folders.
+     */
+    @Transactional
+    public ProjectPhotoResponse setFolder(UUID projectId, UUID photoId, UUID ownerId, String folder) {
+        requirePhotos(projectId, ownerId);
+        ProjectPhoto photo = loadPhoto(projectId, photoId);
+        String value = normalizeFolder(folder);
+        if (value != null && !ProjectPhoto.FOLDER_RECEIPTS.equals(value)) {
+            ensureFolderExists(projectId, value); // moving into a new name creates the folder
+        }
+        photo.setFolder(value);
+        return ProjectPhotoResponse.from(photo);
+    }
+
+    /** The object's CUSTOM folders (persisted so empty ones survive); the two defaults —
+     *  «Чеки»/«Інше» — are virtual and rendered by the PWA unconditionally. */
+    @Transactional(readOnly = true)
+    public List<ProjectPhotoFolderResponse> listFolders(UUID projectId, UUID ownerId) {
+        requirePhotos(projectId, ownerId);
+        return folderRepository.findByProjectIdOrderByCreatedAtAsc(projectId).stream()
+                .map(f -> new ProjectPhotoFolderResponse(f.getId(), f.getName()))
+                .toList();
+    }
+
+    /** Create an EMPTY folder ahead of its photos (master decision). Idempotent on the name. */
+    @Transactional
+    public ProjectPhotoFolderResponse createFolder(UUID projectId, UUID ownerId, String name) {
+        requirePhotos(projectId, ownerId);
+        String value = normalizeFolder(name);
+        if (value == null || ProjectPhoto.FOLDER_RECEIPTS.equals(value)) {
+            throw new PhotoFolderValidationException("error.photos.folder-name-invalid");
+        }
+        ProjectPhotoFolder folder = ensureFolderExists(projectId, value);
+        return new ProjectPhotoFolderResponse(folder.getId(), folder.getName());
+    }
+
+    /** Delete a custom folder — only while EMPTY: photos reference folders by name, and a delete
+     *  must never silently re-file someone's photos. */
+    @Transactional
+    public void deleteFolder(UUID projectId, UUID folderId, UUID ownerId) {
+        requirePhotos(projectId, ownerId);
+        ProjectPhotoFolder folder = folderRepository.findByIdAndProjectId(folderId, projectId)
+                .orElseThrow(() -> new ResourceNotFoundException("Folder not found: " + folderId));
+        if (photoRepository.existsByProjectIdAndFolder(projectId, folder.getName())) {
+            throw new PhotoFolderInUseException("error.photos.folder-not-empty");
+        }
+        folderRepository.delete(folder);
+    }
+
+    private ProjectPhotoFolder ensureFolderExists(UUID projectId, String name) {
+        return folderRepository.findByProjectIdAndName(projectId, name)
+                .orElseGet(() -> folderRepository.save(ProjectPhotoFolder.builder()
+                        .projectId(projectId).name(name).build()));
+    }
+
+    /** Trim; blank → null («Інше»); the localized default names map onto the system values so a
+     *  master typing «Чеки»/«Інше» by hand cannot create a confusing twin folder. */
+    private static String normalizeFolder(String folder) {
+        String value = blankToNull(folder);
+        if (value == null) {
+            return null;
+        }
+        if (value.length() > 100) {
+            throw new PhotoFolderValidationException("error.photos.folder-too-long");
+        }
+        if (value.equalsIgnoreCase(ProjectPhoto.FOLDER_RECEIPTS) || matchesAlias(value, ProjectPhoto.RECEIPTS_FOLDER_ALIASES)) {
+            return ProjectPhoto.FOLDER_RECEIPTS;
+        }
+        if (matchesAlias(value, ProjectPhoto.DEFAULT_FOLDER_ALIASES)) {
+            return null;
+        }
+        return value;
+    }
+
+    private static boolean matchesAlias(String value, List<String> aliases) {
+        return aliases.stream().anyMatch(a -> a.equalsIgnoreCase(value));
+    }
+
+    /**
+     * File an act receipt's photo into the Фото tab as its own copy («Чеки» folder) — the act keeps
+     * ITS copy untouched, so deleting this one can never change a signed act (frozen-copy rule).
+     * <p>REQUIRES_NEW on purpose: the caller (an act receipt add) is mid-transaction, and a failed
+     * repository write inside a JOINED transaction poisons that persistence context — the copy is a
+     * convenience, it must never cost the master the receipt. The caller swallows what escapes.</p>
+     */
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void saveReceiptCopy(UUID projectId, UUID ownerId, byte[] content, ImageKind kind,
+                                String caption) throws IOException {
+        limitService.requireCanAddPhoto(ownerId, projectId, PhotoSource.RECEIPT);
+        StoredObject stored = storage.store(
+                new ByteArrayInputStream(content), content.length,
+                PHOTO_PREFIX, kind.extension, kind.contentType);
+        photoRepository.save(ProjectPhoto.builder()
+                .projectId(projectId)
+                .storageKey(stored.key())
+                .source(PhotoSource.RECEIPT)
+                .visibility(PhotoVisibility.PRIVATE)
+                .caption(blankToNull(caption))
+                .folder(ProjectPhoto.FOLDER_RECEIPTS)
+                .build());
     }
 
     /**
