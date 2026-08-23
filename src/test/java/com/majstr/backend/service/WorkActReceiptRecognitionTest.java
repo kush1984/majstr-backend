@@ -61,6 +61,7 @@ class WorkActReceiptRecognitionTest {
     @Mock private FeatureGuard featureGuard;
     @Mock private UserRepository userRepository;
     @Mock private ProjectPhotoService photoService;
+    @Mock private com.majstr.backend.service.fiscal.FiscalQrService fiscalQr;
 
     @InjectMocks private WorkActReceiptService service;
 
@@ -106,6 +107,66 @@ class WorkActReceiptRecognitionTest {
                 .isInstanceOf(WorkActSignedException.class);
 
         verifyNoInteractions(recognizer);
+    }
+
+    // ---- the QR path (fiscal-qr iteration) --------------------------------
+
+    @Test
+    void qrPathIsFreeInBothModes() {
+        // The positions cost no model call here, so nothing about them is a paid capability —
+        // «безкоштовно все, що дав QR» (master decision, 2026-08-23).
+        when(actService.get(ACT, OWNER)).thenReturn(act(WorkActStatus.DRAFT));
+        when(fiscalQr.read(QR)).thenReturn(Optional.of(fiscalReceipt()));
+
+        ActReceiptRecognizeResponse read = service.readQr(ACT, OWNER, QR, true);
+
+        assertThat(read.recognized()).isTrue();
+        assertThat(read.label()).isEqualTo("Епіцентр");
+        assertThat(read.amount()).isEqualByComparingTo("690.00");
+        assertThat(read.issuedAt()).isEqualTo(LocalDate.of(2026, 8, 15));
+        assertThat(read.items()).singleElement()
+                .satisfies(item -> assertThat(item.name()).isEqualTo("Шпаклівка"));
+        verifyNoInteractions(featureGuard);
+    }
+
+    @Test
+    void qrWithoutTheTickCarriesNoPositions() {
+        // withItems is the master's «перенести позиції» tick, not a plan check — a receipt whose
+        // positions were not asked for must not quietly acquire them.
+        when(actService.get(ACT, OWNER)).thenReturn(act(WorkActStatus.DRAFT));
+        when(fiscalQr.read(QR)).thenReturn(Optional.of(fiscalReceipt()));
+
+        ActReceiptRecognizeResponse read = service.readQr(ACT, OWNER, QR, false);
+
+        assertThat(read.recognized()).isTrue();
+        assertThat(read.amount()).isEqualByComparingTo("690.00"); // the money still prefills
+        assertThat(read.items()).isEmpty();
+    }
+
+    @Test
+    void anUnreadableCodeIsSoftSoTheDialogCanFallBackToThePhoto() {
+        when(actService.get(ACT, OWNER)).thenReturn(act(WorkActStatus.DRAFT));
+        when(fiscalQr.read(QR)).thenReturn(Optional.empty());
+
+        assertThat(service.readQr(ACT, OWNER, QR, true).recognized()).isFalse();
+    }
+
+    @Test
+    void signedActRefusesTheQrPathToo() {
+        when(actService.get(ACT, OWNER)).thenReturn(act(WorkActStatus.SIGNED));
+
+        assertThatThrownBy(() -> service.readQr(ACT, OWNER, QR, false))
+                .isInstanceOf(WorkActSignedException.class);
+        verifyNoInteractions(fiscalQr);
+    }
+
+    private static final String QR = "fn=4000123456&id=17&date=20260815&time=143005&sm=690.00";
+
+    private static com.majstr.backend.service.fiscal.FiscalReceipt fiscalReceipt() {
+        return new com.majstr.backend.service.fiscal.FiscalReceipt(
+                "Епіцентр", LocalDate.of(2026, 8, 15), new BigDecimal("690.00"),
+                List.of(new com.majstr.backend.service.importer.EstimateExtractor.Extracted.Line(
+                        "Шпаклівка", "шт", new BigDecimal("2"), new BigDecimal("345"), "MATERIAL", null)));
     }
 
     private static MockMultipartFile jpeg() {

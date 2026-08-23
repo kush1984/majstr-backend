@@ -3,6 +3,7 @@ package com.majstr.backend.controller;
 import com.majstr.backend.dto.ActProgressResponse;
 import com.majstr.backend.dto.ActReceiptRecognizeResponse;
 import com.majstr.backend.dto.ActShareStateResponse;
+import com.majstr.backend.dto.FiscalQrRequest;
 import com.majstr.backend.dto.WorkActCreateRequest;
 import com.majstr.backend.dto.WorkActItemsRequest;
 import com.majstr.backend.dto.WorkActReceiptRequest;
@@ -194,6 +195,25 @@ public class WorkActController {
             throw new TooManyRequestsException("error.rate.receipt-scan", probe.retryAfterSeconds());
         }
         return receiptService.recognize(id, principal.id(), file, withItems);
+    }
+
+    @Operation(summary = "Read a receipt from its printed fiscal QR code — date + total (+ the "
+            + "purchased positions when withItems, which is the master's «перенести позиції» tick, "
+            + "not a plan check: this path is free). A code we cannot read is a soft "
+            + "recognized=false, so the dialog can fall back to the photo. Rate-limited per account")
+    @PostMapping("/api/acts/{id}/receipts/qr")
+    public ActReceiptRecognizeResponse readReceiptQr(
+            @PathVariable UUID id,
+            @Valid @RequestBody FiscalQrRequest req,
+            @RequestParam(value = "withItems", required = false, defaultValue = "false") boolean withItems,
+            @AuthenticationPrincipal UserPrincipal principal) {
+        // Same cap as the photo pass: no model call here, but there IS an outbound call to a public
+        // service, and this endpoint is reachable on FREE.
+        ReceiptScanRateLimiter.ConsumeResult probe = receiptScanRateLimiter.tryConsume(principal.id());
+        if (!probe.allowed()) {
+            throw new TooManyRequestsException("error.rate.receipt-scan", probe.retryAfterSeconds());
+        }
+        return receiptService.readQr(id, principal.id(), req.payload(), withItems);
     }
 
     @Operation(summary = "Edit a receipt's label / amount / date (the photo is set once, at upload)")

@@ -11,6 +11,10 @@ app:
     login:
       max-attempts: 5
       window-minutes: 15
+  fiscal-qr:
+    # Blank on purpose: a test run must never reach out to the tax service. Blank disables only the
+    # LOOKUP, so the QR's own total and date still parse — which is all any test here asserts.
+    base-url: ""
   ai:
     # PINNED, and not inherited from the environment on purpose.
     #

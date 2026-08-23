@@ -2237,7 +2237,9 @@ one-line summary — keep the item in the file as a record.
 
 ### ДПС QR receipt lookup — a free, exact alternative to reading the photo
 
-- **Status:** OPEN
+- **Status:** IN_PROGRESS — built in the fiscal-qr iteration (2026-08-23), see
+  [iteration-fiscal-qr.md](iteration-fiscal-qr.md). Stays IN_PROGRESS rather than RESOLVED until the
+  master has scanned real paper: the endpoint is undocumented, so only live receipts settle risks 1-3.
 - **Since:** 2026-08-23 (investigated after the act-receipt recognition rounds)
 - **Context:** Every Ukrainian fiscal receipt prints a QR whose payload is exactly
   `mac / date / time / id / sm / fn`. The tax service's Electronic Cabinet resolves it through an
@@ -2253,6 +2255,14 @@ one-line summary — keep the item in the file as a record.
   total **and its item table** with no LLM call at all — exact data instead of recognized data.
 - **Notes / options:** If this is ever built it must be a **fast path, never the only path**:
   «спробував QR → не вийшло → звичайне розпізнавання». The existing haiku/sonnet passes stay.
+- **What shipped (fiscal-qr iteration):** a separate «🔳 Зчитати QR» option on BOTH receipt dialogs
+  (estimate import and act receipts), the photo routes untouched beside it. Every risk below is
+  answered by degrading rather than failing: an unreadable payload → not recognized; the lookup
+  unreachable or refusing → still recognized, on the QR's own total and date, with no positions;
+  positions that do not sum to that total (± 0.02) → dropped wholesale, meta kept. Everything the QR
+  hands back is FREE, positions included (master decision) — the paid capability is reading a
+  receipt PHOTO, so `ReceiptImportService.commit` lost its `RECEIPT_IMPORT` gate and the PWA's
+  «перенести позиції» tick became free to tick, with the upsell moved onto the photo item-read.
 - **Risks that make this OPEN rather than planned:**
   1. **Undocumented.** The official docs describe only the UI page `/cashregs/check` and specify no
      response format; `ws/api_public/rro/*` is nowhere in them. No compatibility guarantee.

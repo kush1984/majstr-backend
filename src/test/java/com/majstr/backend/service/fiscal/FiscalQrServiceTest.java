@@ -1,0 +1,80 @@
+package com.majstr.backend.service.fiscal;
+
+import com.majstr.backend.config.FiscalQrProperties;
+import com.majstr.backend.service.importer.EstimateExtractor.Extracted.Line;
+import org.junit.jupiter.api.Test;
+
+import java.math.BigDecimal;
+import java.time.LocalDate;
+import java.util.List;
+import java.util.Optional;
+
+import static org.assertj.core.api.Assertions.assertThat;
+
+/**
+ * The degradation ladder, which is the whole design of this service: a fast path that is never the
+ * only path. Every rung below is a failure the master must not feel as an error.
+ */
+class FiscalQrServiceTest {
+
+    /** Lookup switched off — the same state as an unset FISCAL_QR_BASE_URL in a deploy. */
+    private final FiscalQrService service = new FiscalQrService(new FiscalQrProperties(""));
+
+    @Test
+    void anUnreadablePayloadIsNotRecognizedAtAll() {
+        // The one case where the caller should fall back to the photo, so it must be distinguishable
+        // from "recognized, but no positions".
+        assertThat(service.read("https://example.com/not-a-receipt")).isEmpty();
+        assertThat(service.read(null)).isEmpty();
+    }
+
+    @Test
+    void withoutTheLookupTheCodeItselfStillFillsTheDialog() {
+        Optional<FiscalReceipt> read =
+                service.read("fn=4000123456&id=17&date=20260815&time=143005&sm=1250.50");
+
+        assertThat(read).isPresent();
+        FiscalReceipt receipt = read.get();
+        assertThat(receipt.total()).isEqualByComparingTo("1250.50");
+        assertThat(receipt.issuedAt()).isEqualTo(LocalDate.of(2026, 8, 15));
+        assertThat(receipt.label()).isNull();   // the seller's name only comes from the lookup
+        assertThat(receipt.items()).isEmpty();  // and so do the positions
+    }
+
+    @Test
+    void positionsSurviveOnlyWhenTheyAddUpToTheReceiptTotal() {
+        List<Line> lines = List.of(
+                line("Шпаклівка", "2", "345.00"),
+                line("Грунтовка", "1", "210.00"));
+
+        assertThat(FiscalQrService.trustedItems(lines, new BigDecimal("900.00"))).hasSize(2);
+        // Within the rounding slack the decoder's scaling guess is still credible…
+        assertThat(FiscalQrService.trustedItems(lines, new BigDecimal("900.01"))).hasSize(2);
+        // …past it, the guess was wrong and no position is worth showing a master.
+        assertThat(FiscalQrService.trustedItems(lines, new BigDecimal("90.00"))).isEmpty();
+    }
+
+    @Test
+    void anIncompleteLineDropsTheWholeSet() {
+        // A line with no quantity cannot be checked, so the set cannot be — and a review screen that
+        // shows two trustworthy rows next to one unchecked one is worse than showing none.
+        List<Line> lines = List.of(
+                line("Шпаклівка", "2", "345.00"),
+                line("Пакет", null, "5.00"));
+
+        assertThat(FiscalQrService.trustedItems(lines, new BigDecimal("695.00"))).isEmpty();
+    }
+
+    @Test
+    void noLinesIsNotAFailure() {
+        assertThat(FiscalQrService.trustedItems(List.of(), BigDecimal.TEN)).isEmpty();
+        assertThat(FiscalQrService.trustedItems(null, BigDecimal.TEN)).isEmpty();
+    }
+
+    private static Line line(String name, String qty, String price) {
+        return new Line(name, "шт",
+                qty == null ? null : new BigDecimal(qty),
+                price == null ? null : new BigDecimal(price),
+                "MATERIAL", null);
+    }
+}

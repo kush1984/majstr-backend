@@ -14,6 +14,7 @@ import com.majstr.backend.feature.Feature;
 import com.majstr.backend.feature.FeatureGuard;
 import com.majstr.backend.repository.UserRepository;
 import com.majstr.backend.repository.WorkActReceiptRepository;
+import com.majstr.backend.service.fiscal.FiscalQrService;
 import com.majstr.backend.service.importer.ActReceiptExtractor;
 import com.majstr.backend.service.importer.ReceiptLines;
 import com.majstr.backend.service.ImageContentTypeDetector.ImageKind;
@@ -77,6 +78,7 @@ public class WorkActReceiptService {
     private final FeatureGuard featureGuard;
     private final UserRepository userRepository;
     private final ProjectPhotoService photoService;
+    private final FiscalQrService fiscalQr;
 
     @Transactional(readOnly = true)
     public List<WorkActReceiptResponse> list(UUID actId, UUID ownerId) {
@@ -178,6 +180,27 @@ public class WorkActReceiptService {
             log.info("Act receipt recognition fell back to manual entry: {}", e.getMessage());
             return ActReceiptRecognizeResponse.failed();
         }
+    }
+
+    /**
+     * Read a receipt from its printed fiscal QR code — the exact alternative to reading the photo.
+     *
+     * <p>Free, and deliberately gated by nothing (master decision, 2026-08-23): the positions cost
+     * us no model call here, so nothing about them is a paid capability on this path. The
+     * {@code withItems} flag is still honoured — it is the master's «перенести позиції» tick, not a
+     * plan check, and a receipt whose positions were not asked for must not quietly acquire them.
+     *
+     * <p>Not {@code @Transactional}: it makes an external call, and pinning a pooled connection
+     * behind a third-party's latency is exactly the mistake {@link #recognize} already avoids.
+     */
+    public ActReceiptRecognizeResponse readQr(UUID actId, UUID ownerId, String payload, boolean withItems) {
+        if (actService.get(actId, ownerId).status() == WorkActStatus.SIGNED) {
+            throw new WorkActSignedException();
+        }
+        return fiscalQr.read(payload)
+                .map(r -> new ActReceiptRecognizeResponse(true, r.label(), r.total(), r.issuedAt(),
+                        withItems ? ReceiptLines.toParsedItems(r.items()) : List.of()))
+                .orElseGet(ActReceiptRecognizeResponse::failed);
     }
 
     private static void requireValidFields(String label, BigDecimal amount) {

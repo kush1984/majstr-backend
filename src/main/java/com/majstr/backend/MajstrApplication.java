@@ -15,6 +15,7 @@ import com.majstr.backend.config.StorageProperties;
 import com.majstr.backend.config.VapidProperties;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
+import com.majstr.backend.config.FiscalQrProperties;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.scheduling.annotation.EnableAsync;
 import org.springframework.scheduling.annotation.EnableScheduling;
@@ -35,7 +36,8 @@ import org.springframework.scheduling.annotation.EnableScheduling;
         BillingProperties.class,
         AiFlowsProperties.class,
         AnthropicProperties.class,
-        OpenAiProperties.class
+        OpenAiProperties.class,
+        FiscalQrProperties.class
 })
 public class MajstrApplication {
 

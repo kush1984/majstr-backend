@@ -2,6 +2,7 @@ package com.majstr.backend.controller;
 
 import com.majstr.backend.dto.EstimateImportParseResponse;
 import com.majstr.backend.dto.EstimateResponse;
+import com.majstr.backend.dto.FiscalQrRequest;
 import com.majstr.backend.dto.ReceiptItemsCommitRequest;
 import com.majstr.backend.exception.CatalogImportException;
 import com.majstr.backend.security.UserPrincipal;
@@ -53,6 +54,16 @@ public class ReceiptImportController {
         } catch (IOException e) {
             throw new CatalogImportException("error.import.unreadable");
         }
+    }
+
+    @Operation(summary = "Read a receipt from its printed fiscal QR code — returns the same "
+            + "review proposal as /parse, from the tax service's own record instead of a model. "
+            + "Free (no feature gate); 400 when the code is not readable as a fiscal receipt")
+    @PostMapping("/qr")
+    public EstimateImportParseResponse parseQr(@PathVariable UUID id,
+                                               @Valid @RequestBody FiscalQrRequest req,
+                                               @AuthenticationPrincipal UserPrincipal principal) {
+        return receiptService.parseQr(principal.id(), id, req.payload());
     }
 
     @Operation(summary = "Commit the confirmed receipt lines — appends them to the estimate")
