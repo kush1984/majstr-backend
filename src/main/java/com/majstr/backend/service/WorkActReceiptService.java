@@ -132,6 +132,15 @@ public class WorkActReceiptService {
      * Persists NOTHING. A model that cannot read the photo is a SOFT outcome ({@code
      * recognized=false} → «введіть вручну»), not an error — the receipt is still addable by hand.
      *
+     * <p><b>The gate is per MODE, not per endpoint</b> (master decision, 2026-08-23). The meta pass
+     * (label / date / total off the footer, haiku) is FREE: it is what turns a photographed slip
+     * into a receipt row, and a FREE master can already file the photo. The {@code withItems} pass
+     * (the item table, sonnet, the estimate importer's own prompt) stays behind
+     * {@code Feature.RECEIPT_IMPORT} — reading a table is the expensive call and the one that
+     * writes lines into the document. So the FREE half is checked only for the mode that needs it,
+     * and {@link com.majstr.backend.service.ReceiptScanRateLimiter} caps the endpoint per account,
+     * because this is the FIRST model call a FREE plan can reach at all.</p>
+     *
      * <p>Deliberately NOT @Transactional: a vision call runs for seconds, and holding a pooled
      * connection open across it starves the pool. Ownership and the not-signed guard each run in
      * their own short transaction up front, so a foreign or frozen act never spends a model call —
@@ -142,9 +151,11 @@ public class WorkActReceiptService {
         if (actService.get(actId, ownerId).status() == WorkActStatus.SIGNED) {
             throw new WorkActSignedException();
         }
-        featureGuard.requireFeature(userRepository.findById(ownerId)
-                .orElseThrow(() -> new ResourceNotFoundException("User not found: " + ownerId)),
-                Feature.RECEIPT_IMPORT);
+        if (withItems) {
+            featureGuard.requireFeature(userRepository.findById(ownerId)
+                    .orElseThrow(() -> new ResourceNotFoundException("User not found: " + ownerId)),
+                    Feature.RECEIPT_IMPORT);
+        }
         if (file == null || file.isEmpty()) {
             throw new WorkActValidationException(
                     "error.work-act.receipt-photo-required", "WORK_ACT_RECEIPT_PHOTO_REQUIRED");

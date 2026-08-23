@@ -6,6 +6,7 @@ import com.majstr.backend.dto.EstimateTemplateDetail;
 import com.majstr.backend.dto.EstimateTemplateSummary;
 import com.majstr.backend.dto.SaveAsTemplateRequest;
 import com.majstr.backend.dto.TemplateItemRequest;
+import com.majstr.backend.dto.TemplateItemsOrderRequest;
 import com.majstr.backend.dto.TemplateTradeRequest;
 import com.majstr.backend.exception.ResourceNotFoundException;
 import com.majstr.backend.repository.UserRepository;
@@ -24,6 +25,7 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -58,7 +60,9 @@ public class EstimateTemplateController {
         return templateService.get(id, principal.id());
     }
 
-    @Operation(summary = "Rename my own template (system defaults are read-only)")
+    @Operation(summary = "Rename a template",
+            description = "Editing a SYSTEM DEFAULT forks it into my own editable copy and hides "
+                    + "the original for me alone — the response carries the copy's id, so follow it.")
     @PatchMapping("/api/estimate-templates/{id}")
     public EstimateTemplateSummary rename(@PathVariable UUID id,
                                           @Valid @RequestBody SaveAsTemplateRequest req,
@@ -75,7 +79,9 @@ public class EstimateTemplateController {
         return templateService.setTrade(id, req.trade(), req.customTradeId(), principal.id());
     }
 
-    @Operation(summary = "Delete my own template (system defaults are read-only)")
+    @Operation(summary = "Delete a template",
+            description = "My own template is deleted; a SYSTEM DEFAULT is shared by every master, "
+                    + "so it is hidden for me alone and can be brought back with restore-defaults.")
     @DeleteMapping("/api/estimate-templates/{id}")
     public ResponseEntity<Void> delete(@PathVariable UUID id,
                                        @AuthenticationPrincipal UserPrincipal principal) {
@@ -83,7 +89,16 @@ public class EstimateTemplateController {
         return ResponseEntity.noContent().build();
     }
 
-    @Operation(summary = "Add a position to my own template (system defaults are read-only)",
+    @Operation(summary = "Bring back every system default I hid (my own copies are left alone)")
+    @PostMapping("/api/estimate-templates/restore-defaults")
+    public List<EstimateTemplateSummary> restoreDefaults(@AuthenticationPrincipal UserPrincipal principal) {
+        templateService.restoreDefaults(principal.id());
+        var user = userRepository.findWithTradesById(principal.id())
+                .orElseThrow(() -> new ResourceNotFoundException("User not found: " + principal.id()));
+        return templateService.listForUser(user);
+    }
+
+    @Operation(summary = "Add a position to a template (a system default is forked on write)",
             description = "Offline-authored adds may send a client-generated UUID in the "
                     + "X-Entity-Uuid header — the add is then idempotent on replay.")
     @PostMapping("/api/estimate-templates/{id}/items")
@@ -95,12 +110,33 @@ public class EstimateTemplateController {
         return templateService.addItem(id, req, principal.id(), entityId);
     }
 
-    @Operation(summary = "Remove a position from my own template (system defaults are read-only)")
+    @Operation(summary = "Remove a position from a template (a system default is forked on write)")
     @DeleteMapping("/api/estimate-templates/{id}/items/{itemId}")
     public EstimateTemplateDetail removeItem(@PathVariable UUID id,
                                              @PathVariable UUID itemId,
                                              @AuthenticationPrincipal UserPrincipal principal) {
         return templateService.removeItem(id, itemId, principal.id());
+    }
+
+    @Operation(summary = "Edit a position in place — name / type / unit "
+            + "(a system default is forked on write)")
+    @PatchMapping("/api/estimate-templates/{id}/items/{itemId}")
+    public EstimateTemplateDetail updateItem(@PathVariable UUID id,
+                                             @PathVariable UUID itemId,
+                                             @Valid @RequestBody TemplateItemRequest req,
+                                             @AuthenticationPrincipal UserPrincipal principal) {
+        return templateService.updateItem(id, itemId, req, principal.id());
+    }
+
+    @Operation(summary = "Rearrange a template's positions",
+            description = "The full order, not a move — idempotent on an offline replay. A bundle "
+                    + "is a sequence (what is done after what), so this is real content, not "
+                    + "decoration. A system default is forked on write.")
+    @PutMapping("/api/estimate-templates/{id}/items/order")
+    public EstimateTemplateDetail reorderItems(@PathVariable UUID id,
+                                               @Valid @RequestBody TemplateItemsOrderRequest req,
+                                               @AuthenticationPrincipal UserPrincipal principal) {
+        return templateService.reorderItems(id, req, principal.id());
     }
 
     @Operation(summary = "Save the current estimate as my own reusable template "

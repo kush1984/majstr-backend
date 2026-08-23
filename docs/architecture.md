@@ -609,6 +609,97 @@ item write. `EstimatePdfService` renders the same grouping, so what the master a
 the client receives — if you change ordering on one side, change it on the other or the PDF
 silently disagrees with the app.
 
+### A default bundle is a SEQUENCE, not a set — the rule for composing templates
+
+The one rule to follow when writing or rebuilding a default `estimate_template`, established with
+the master on 2026-08-23 (V112, PAINTER) and meant to apply to every trade:
+
+1. **Order is the content.** `sort_order` must be the order the work is actually done in — what is
+   done after what, as a master walks the object. «ВНУТРІШНЄ ОЗДОБЛЕННЯ ПРИМІЩЕНЬ - це просто набір
+   якихось незрозумілих позицій, без будь-якої послідовності». A bundle whose lines are alphabetical,
+   import-ordered, or grouped only by category is a bag, and the master can see it immediately.
+2. **A bundle must be worth reaching for.** «Коли буде заходити майстер на об'єкт і йому треба буде
+   шаблон з 3-х позицій, то він і кошторису на таке не складає». Three or four positions is not a
+   template — it is faster to type. Prefer few large sequences over many small sets; V99 already said
+   «краще трохи більші шаблони ніж купа маленьких», and V112 is that rule taken to its conclusion
+   (21 PAINTER bundles → 3).
+3. **Repeated stages appear once.** A real cycle dusts and primes four times; the bundle carries
+   «Обезпилення поверхні» one time and the master enters the quantity. The bundle is the running
+   order, not a work diary.
+4. **Overlap between bundles is fine and expected** — the multi-template apply dedups by lowercased
+   name (see below), so a position shared by two sequences produces one line.
+5. **Every line must resolve against its trade's catalog.** Template items carry no price; it is
+   looked up at apply time from the applying master's own `catalog_items` on `lower(trim(name))`.
+   An unmatched name does not fail — it applies the line at **0 ₴**. So a bundle name is copied
+   character-for-character from `catalog_templates`, and `SeedCatalogInvariantsIntegrationTest`
+   (`everyDefaultBundlePositionCanBePriced`, `bundlesAndCatalogAgreeOnTheUnit`) is the guard.
+6. **Two positions may never share a name**, even with different units — the same lowercased key is
+   both the price join and the dedup key, so a pair collides and one half is silently dropped. If a
+   work genuinely bills per m² and per running metre, the second row needs a real SCOPE qualifier
+   («…до 60 см»), never a «(м.п.)» unit suffix (V99 PART 2 settled that: the unit has its own column).
+7. **Rebuilding bundles never touches the catalog.** «Ми чіпаємо тільки шаблони, з позицій нічого не
+   викидаємо» — a bundle nobody assembled on purpose can go; its positions stay, because some master
+   somewhere bills exactly that line.
+8. **Close every bundle with the always-billed organizational positions** for the trade (PAINTER:
+   прибирання / винесення сміття / гарантійний виїзд).
+
+### Editing a template — copy-on-write on a system default (V113)
+
+A master edits a bundle the way they edit anything else: rename it, add / edit / remove a position,
+drag the positions into the order they are actually done in, delete the whole thing. The catch is
+that the ready-made bundles are **shared rows** (`is_default = true`, `owner_id IS NULL`) — every
+master in the product reads the same ones — so a write cannot land on them.
+
+**The first write forks.** `EstimateTemplateService.resolveWritable(id, userId)` is the single door
+every write path goes through:
+
+- my own template → returned as is;
+- a system default → copied into an owned row (name, trade, every position with its `sort_order`),
+  and a `template_default_override(user_id, template_id, forked_template_id)` row is written so the
+  shared original leaves **my** list alone;
+- a default I already forked → the same copy again, so a second edit does not mint a second bundle.
+
+Two consequences that every caller has to respect:
+
+1. **Every write endpoint answers with the template it actually wrote**, whose `id` may differ from
+   the one in the URL. `rename` / `setTrade` return the summary; `addItem` / `updateItem` /
+   `removeItem` / `reorderItems` return the detail. The PWA's `adoptDetail` re-keys the query cache
+   onto the id the server named and drops the requested one — key it under the id we sent and the
+   next refetch hands back the pristine default, so the edits look like they vanished.
+2. **Addressing the default afterwards still works** — it resolves to the same copy — which is what
+   makes a sequential batch of adds safe without waiting for the re-render, and what makes an
+   offline replay safe: the queued ops all name the default, the first one forks, the rest land in
+   the fork.
+
+**Delete on a default is a hide.** `delete` on a shared row writes the override with
+`forked_template_id = NULL` instead of deleting anything; `listForUser` filters overridden rows out.
+`POST /api/estimate-templates/restore-defaults` clears my override rows (my own copies are left
+alone) — the escape hatch, and the reason the PWA offers it unconditionally: which defaults are
+hidden is not something the device can know, the list simply omits them.
+
+The FK is `ON DELETE SET NULL` on purpose. Delete the fork later and the override row survives with
+a null pointer, so the default stays hidden: a master who threw the bundle away twice should not
+find it back in the list.
+
+**Reorder is declarative, not a move.** `PUT /api/estimate-templates/{id}/items/order` takes
+`TemplateItemsOrderRequest { itemIds }` — the whole final order, mirroring
+`EstimateService.reorderItems`. Items the request does not mention keep their relative order after
+the named ones. Stating the whole arrangement is what makes an offline replay idempotent, and it is
+why the PWA queues a reorder with `coalesce` under its **own** `templateItemOrder` entity: the
+outbox coalesces on entity+entityId+type, so filing it as an `estimateTemplate` update would let a
+drag swallow a queued rename.
+
+**A position carries no price**, on the way in or out — `TemplateItemRequest` is name/type/unit, and
+that is true whether the master typed it or picked it out of the catalog (the catalog is only where
+the three values came from). The price is resolved at apply time; see the sequence rule above for
+why the name must match the catalog character-for-character, and why an edit must not mint a
+duplicate name.
+
+PWA: `TemplatesPage`'s `EditModal` holds an `activeId` that follows the fork, `Composition` is the
+dnd-kit sortable list (shared `DragGrip` with the estimate board — `touch-action: none` or a phone
+drag simply does not start), and `PositionSheet` is the per-position editor offering the same two
+ways a position is chosen everywhere else: pick from the catalog or type it by hand.
+
 ### One estimate from SEVERAL templates
 
 `POST /api/projects/{id}/estimates/from-templates?ids=a,b,c` (`applyToProject` with a `List<UUID>`;

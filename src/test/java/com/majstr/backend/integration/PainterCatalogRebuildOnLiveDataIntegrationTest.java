@@ -35,6 +35,12 @@ import static org.assertj.core.api.Assertions.assertThat;
  * position already exists (6 rows), add only what is genuinely missing (14 rows), and append those
  * to whichever bundles already cover that scope (13 lines).</p>
  *
+ * <p>V112 then rebuilds the BUNDLES the other way round from V99: the 21 defaults go and three
+ * ordered sequences replace them. V99 kept the old ones because they were real curated work; the
+ * master's own verdict a fortnight later was that most of them are 3-6 positions in no order at
+ * all, and a template is a sequence — what is done after what. Only the bundles move; the catalog
+ * keeps every position, including the facade ones whose bundle is gone.</p>
+ *
  * <p>Same discipline as the tiling test: a database migrated to V95, given real master state, then
  * migrated to head — and the 4 historical duplicate-pair positions this migration targets are left
  * for V27/V31/V50 to actually produce, not planted, so content-matching is tested against real
@@ -206,13 +212,14 @@ class PainterCatalogRebuildOnLiveDataIntegrationTest extends IntegrationTestBase
     // ---- V96: additive, not destructive ------------------------------------------------------------
 
     @Test
-    void theCatalogEndsUpNetPlus78() {
+    void theCatalogEndsUpNetPlus80() {
         // V96: +79 new, -4 duplicate leftovers. V99: -22 (†split LINEAR_METER halves collapsed
         // away), +11 (organizational services). V109: +14 (the third master's genuinely-new
         // positions; 6 more of their rows repriced in place, 5 dropped as already covered).
-        // Net +78 vs whatever V95 actually shipped.
+        // V112: +2 (the only two positions the three painter price lists still lacked).
+        // Net +80 vs whatever V95 actually shipped.
         assertThat(count("SELECT count(*) FROM catalog_templates WHERE trade = 'PAINTER'"))
-                .isEqualTo(painterCatalogBeforeV96 + 78);
+                .isEqualTo(painterCatalogBeforeV96 + 80);
     }
 
     @Test
@@ -321,7 +328,7 @@ class PainterCatalogRebuildOnLiveDataIntegrationTest extends IntegrationTestBase
     void thePainterGotEveryNewCatalogPosition() {
         assertThat(count("""
                 SELECT count(*) FROM catalog_templates ct
-                WHERE ct.trade = 'PAINTER' AND ct.added_in_version IN (10, 11) AND NOT EXISTS (
+                WHERE ct.trade = 'PAINTER' AND ct.added_in_version IN (10, 11, 12, 13) AND NOT EXISTS (
                     SELECT 1 FROM catalog_items ci
                     WHERE ci.owner_id = ?
                       AND lower(trim(ci.name)) = lower(trim(ct.name))
@@ -384,7 +391,7 @@ class PainterCatalogRebuildOnLiveDataIntegrationTest extends IntegrationTestBase
     }
 
     @Test
-    void thePainterHasTwoNoticesForTheTwoRounds() {
+    void thePainterHasOneNoticePerRound() {
         assertThat(count("""
                 SELECT count(*) FROM catalog_update_notices
                 WHERE user_id = ? AND kind = 'COUNT' AND positions_added = 79 AND positions_removed = 2
@@ -397,65 +404,113 @@ class PainterCatalogRebuildOnLiveDataIntegrationTest extends IntegrationTestBase
                 """, UUID.fromString(PAINTER)))
                 .as("V99's push: +11 organizational-service positions, -22 collapsed †split halves")
                 .isOne();
+        assertThat(count("""
+                SELECT count(*) FROM catalog_update_notices
+                WHERE user_id = ? AND kind = 'COUNT' AND positions_added = 16 AND positions_removed = 0
+                """, UUID.fromString(PAINTER)))
+                .as("V112's push: its own 2 positions plus the 14 V109 never pushed at all")
+                .isOne();
     }
 
     @Test
-    void thePainterSyncedVersionAdvancedToEleven() {
+    void thePainterSyncedVersionAdvancedToThirteen() {
         assertThat(db.queryForObject("SELECT last_synced_catalog_version FROM users WHERE id = ?",
                 Integer.class, UUID.fromString(PAINTER)))
-                .isEqualTo(11);
+                .isEqualTo(13);
     }
 
-    // ---- V99 part 3: 19 old bundles restored + 2 new, nothing orphaned -----------------------------
+    // ---- V112: 21 unordered bundles replaced by 3 ordered sequences --------------------------------
 
     @Test
-    void twentyOneDefaultBundlesExist() {
-        assertThat(count("SELECT count(*) FROM estimate_templates WHERE is_default AND trade = 'PAINTER'"))
-                .isEqualTo(21);
-        // The two bundles V98 wrongly deleted-and-replaced-everything-with are gone as standalone
-        // templates; their content lives inside the restored bundles instead (folded, not lost).
+    void exactlyThreeOrderedDefaultBundlesExist() {
+        // V99 restored the 19 old bundles because they were "real curated work"; V112 finishes the
+        // thought the other way. Most of them carried 3-6 positions in no particular order, and a
+        // template is a SEQUENCE — «коли буде заходити майстер на об'єкт і йому треба буде шаблон з
+        // 3-х позицій, то він і кошторису на таке не складає» (master, 2026-08-23).
+        assertThat(db.queryForList("""
+                SELECT name FROM estimate_templates
+                WHERE is_default AND trade = 'PAINTER' ORDER BY name
+                """, String.class))
+                .containsExactly("Малярні роботи", "Фарбування", "Шпаклювання");
+    }
+
+    @Test
+    void theOldUnorderedBundlesAreGone() {
+        // The named ones the master called out by hand: a bag of positions, and a facade bundle
+        // nobody assembled on purpose. Their POSITIONS stay in the catalog — only the bundles go.
         assertThat(count("""
                 SELECT count(*) FROM estimate_templates
                 WHERE is_default AND trade = 'PAINTER'
-                  AND name IN ('Стіни під фарбування — повний цикл', 'Фінішне фарбування',
-                               'Штукатурка та армування стін', 'Молдинги, багети, декор')
+                  AND name IN ('ВНУТРІШНЄ ОЗДОБЛЕННЯ ПРИМІЩЕНЬ', 'ФАСАДНІ РОБОТИ', 'ШТУКАТУРКА',
+                               'Укоси вікон', 'Приховані двері та тіньові шви')
                 """))
-                .as("V98's standalone phase bundles that got folded into old ones must not survive as their own templates")
                 .isZero();
-    }
-
-    @Test
-    void theTwoGenuinelyNewBundlesExist() {
         assertThat(count("""
-                SELECT count(*) FROM estimate_templates
-                WHERE is_default AND trade = 'PAINTER'
-                  AND name IN ('Захист і підготовка приміщення', 'Приховані двері та тіньові шви')
+                SELECT count(*) FROM catalog_templates
+                WHERE trade = 'PAINTER' AND category = 'Фасад'
                 """))
-                .isEqualTo(2);
+                .as("«з позицій нічого не викидаємо» — фасадні позиції лишаються в каталозі")
+                .isPositive();
     }
 
     @Test
-    void theBiggestOldBundleSurvivedIntact() {
-        // ВНУТРІШНЄ ОЗДОБЛЕННЯ ПРИМІЩЕНЬ — 61 original lines, this is the one V98 would have lost
-        // most visibly. +3 for the always-billed additions below = 64.
-        assertThat(count("""
-                SELECT ti_count FROM (
-                  SELECT count(*) AS ti_count FROM estimate_template_items ti
-                  JOIN estimate_templates t ON t.id = ti.template_id
-                  WHERE t.is_default AND t.trade = 'PAINTER' AND t.name = 'ВНУТРІШНЄ ОЗДОБЛЕННЯ ПРИМІЩЕНЬ'
-                ) x WHERE ti_count = 64
-                """))
-                .isEqualTo(64);
+    void eachBundleFollowsItsOwnRunningOrder() {
+        // The property that makes these three worth reaching for: sort_order is the order the work
+        // is actually done in. Spot-checked on the master's own numbered 1-19 cycle — sanding and
+        // dedusting precede priming, fibreglass precedes the finish coat, paint comes last.
+        assertOrdered("Малярні роботи", "Шліфування штукатурки", "Обезпилення поверхні",
+                "Грунтування", "Базове шпаклювання під скловолокно",
+                "Армування стін скловолокном (склохолст)", "Шпаклювання фінішне (2–4 рази)",
+                "Грунт-фарба (праймер під фарбу)", "Фарбування стін/стель (білий)");
+        assertOrdered("Шпаклювання", "Закидання штраб (ел/сант)", "Грунтування",
+                "Шпаклювання стін (старт, за потреби)", "Армування стін скловолокном (склохолст)",
+                "Шпаклювання фінішне (2–4 рази)", "Шліфування стін/стель (фінішне)");
+        assertOrdered("Фарбування", "Обклеювання приміщення (захист)", "Обезпилення поверхні",
+                "Грунт-фарба (праймер під фарбу)", "Фарбування стін/стель (білий)",
+                "Фарбування молдинга/багета до 6 см");
     }
 
     @Test
-    void theThreeExtendedBundlesGrewByTheNewPhases() {
-        // ШТУКАТУРКА: 13 old + 6 folded (phase 2) + 3 always-billed = 22, + 8 appended by V109 = 30.
-        // Стіни під фарбування: 9 old + 15 folded (phase 3 + distinct phase 4) + 3 = 27.
-        // Багети молдінги: 3 old + 5 folded (phase 5) + 3 = 11.
-        assertThat(itemCountOf("ШТУКАТУРКА")).isEqualTo(30);
-        assertThat(itemCountOf("Стіни під фарбування")).isEqualTo(27);
-        assertThat(itemCountOf("Багети молдінги")).isEqualTo(11);
+    void everyBundleIsBigEnoughToBeWorthApplying() {
+        // 3-4 positions was the shape the master rejected. Nothing here enforces a magic number in
+        // the app — this pins the intent so the next seed cannot quietly shrink them back.
+        for (String bundle : new String[] {"Малярні роботи", "Шпаклювання", "Фарбування"}) {
+            assertThat(itemCountOf(bundle)).as("«%s»", bundle).isGreaterThanOrEqualTo(25);
+        }
+    }
+
+    @Test
+    void theTwoNewCatalogPositionsShipAndAreUsed() {
+        assertPrice("LINEAR_METER", "Армування врізних трекових світильників/вентиляційних дифузорів", 360);
+        assertPrice("LINEAR_METER", "Шпаклювання стін (старт, за потреби) до 60 см", 260);
+        assertBundleCarries("Шпаклювання", "Армування врізних трекових світильників/вентиляційних дифузорів");
+        // The start putty as two positions, m² and running metre. They may NOT share a name: the
+        // price join and the multi-template dedup are both purely on lower(trim(name)), so a
+        // same-named pair silently loses one half — the scope qualifier is what keeps them apart.
+        assertBundleCarries("Шпаклювання", "Шпаклювання стін (старт, за потреби)");
+        assertBundleCarries("Шпаклювання", "Шпаклювання стін (старт, за потреби) до 60 см");
+    }
+
+    @Test
+    void theRegisteredPainterGotTheTwoNewPositions() {
+        // itemRows matches on lower(trim(name)) — the same key the price join uses.
+        assertThat(itemRows(PAINTER,
+                "Армування врізних трекових світильників/вентиляційних дифузорів".toLowerCase()))
+                .isOne();
+        assertThat(itemRows(PAINTER, "Шпаклювання стін (старт, за потреби) до 60 см".toLowerCase()))
+                .isOne();
+    }
+
+    /** Asserts the named positions appear in this bundle in exactly this relative order. */
+    private void assertOrdered(String bundle, String... positions) {
+        assertThat(db.queryForList("""
+                SELECT ti.name FROM estimate_template_items ti
+                JOIN estimate_templates t ON t.id = ti.template_id
+                WHERE t.is_default AND t.trade = 'PAINTER' AND t.name = ?
+                ORDER BY ti.sort_order
+                """, String.class, bundle))
+                .as("«%s» — послідовність, а не набір", bundle)
+                .containsSubsequence(positions);
     }
 
     private int itemCountOf(String templateName) {
@@ -553,17 +608,6 @@ class PainterCatalogRebuildOnLiveDataIntegrationTest extends IntegrationTestBase
                 WHERE trade = 'PAINTER' AND lower(trim(name)) LIKE '%відкос%'
                 """))
                 .isZero();
-    }
-
-    @Test
-    void theTwoSlopeAndHiddenDoorBundlesGrewByTheNewPositions() {
-        assertBundleCarries("Укоси вікон", "Грунтування укосів");
-        assertBundleCarries("Укоси вікон", "Обезпилення та грунтування укосів перед фарбуванням");
-        assertBundleCarries("Укоси вікон", "Фарбування укосів");
-        assertBundleCarries("Приховані двері та тіньові шви",
-                "Монтаж ГКЛ у кілька шарів на укоси дверей прихованого монтажу та примикання");
-        assertBundleCarries("Приховані двері та тіньові шви",
-                "Шпаклювання з армуванням навколо дверей прихованого монтажу");
     }
 
     private void assertPrice(String unit, String name, int expected) {

@@ -5,6 +5,7 @@ import com.majstr.backend.dto.EstimateResponse;
 import com.majstr.backend.dto.EstimateTemplateDetail;
 import com.majstr.backend.dto.EstimateTemplateSummary;
 import com.majstr.backend.dto.TemplateItemRequest;
+import com.majstr.backend.dto.TemplateItemsOrderRequest;
 import com.majstr.backend.entity.CatalogItem;
 import com.majstr.backend.entity.Estimate;
 import com.majstr.backend.entity.EstimateItem;
@@ -12,6 +13,7 @@ import com.majstr.backend.entity.EstimateTemplate;
 import com.majstr.backend.entity.EstimateTemplateItem;
 import com.majstr.backend.entity.ItemType;
 import com.majstr.backend.entity.Project;
+import com.majstr.backend.entity.TemplateDefaultOverride;
 import com.majstr.backend.entity.TemplateTradeOverride;
 import com.majstr.backend.entity.Trade;
 import com.majstr.backend.entity.Unit;
@@ -23,7 +25,9 @@ import com.majstr.backend.repository.EstimateTemplateItemRepository;
 import com.majstr.backend.repository.EstimateTemplateItemRepository.TemplateItemCount;
 import com.majstr.backend.repository.EstimateTemplateRepository;
 import com.majstr.backend.repository.ProjectRepository;
+import com.majstr.backend.repository.TemplateDefaultOverrideRepository;
 import com.majstr.backend.repository.TemplateTradeOverrideRepository;
+import com.majstr.backend.repository.UserRepository;
 import com.majstr.backend.repository.UserTradeRepository;
 import com.majstr.backend.feature.LimitService;
 import org.junit.jupiter.api.Test;
@@ -63,7 +67,9 @@ class EstimateTemplateServiceTest {
     @Mock LimitService limitService;
     @Mock EstimateService estimateService;
     @Mock TemplateTradeOverrideRepository tradeOverrideRepository;
+    @Mock TemplateDefaultOverrideRepository defaultOverrideRepository;
     @Mock UserTradeRepository userTradeRepository;
+    @Mock UserRepository userRepository;
     @InjectMocks EstimateTemplateService service;
 
     private final UUID ownerId = UUID.randomUUID();
@@ -390,13 +396,45 @@ class EstimateTemplateServiceTest {
     }
 
     @Test
-    void delete_rejectsASystemDefault() {
+    void delete_onASystemDefault_hidesItForThisMasterOnly() {
         UUID id = UUID.randomUUID();
         EstimateTemplate def = EstimateTemplate.builder().id(id).isDefault(true).build();
         given(templateRepository.findById(id)).willReturn(Optional.of(def));
+        given(defaultOverrideRepository.findByUserIdAndTemplateId(ownerId, id)).willReturn(Optional.empty());
 
-        assertThatThrownBy(() -> service.delete(id, ownerId)).isInstanceOf(AccessDeniedException.class);
+        service.delete(id, ownerId);
+
+        // The row is SHARED — really deleting it would empty every other master's picker too.
         verify(templateRepository, never()).delete(any());
+        ArgumentCaptor<TemplateDefaultOverride> captor =
+                ArgumentCaptor.forClass(TemplateDefaultOverride.class);
+        verify(defaultOverrideRepository).save(captor.capture());
+        assertThat(captor.getValue().getUserId()).isEqualTo(ownerId);
+        assertThat(captor.getValue().getTemplateId()).isEqualTo(id);
+        assertThat(captor.getValue().getForkedTemplateId()).as("hidden, not forked").isNull();
+    }
+
+    @Test
+    void listForUser_dropsADefaultIRetired() {
+        UUID hidden = UUID.randomUUID();
+        UUID kept = UUID.randomUUID();
+        User user = User.builder().id(ownerId).trades(new LinkedHashSet<>(Set.of(Trade.PAINTER))).build();
+        given(templateRepository.findDefaultsForTradesOrIds(any(), any())).willReturn(List.of(
+                EstimateTemplate.builder().id(hidden).name("Фасадні роботи").isDefault(true).build(),
+                EstimateTemplate.builder().id(kept).name("Малярні роботи").isDefault(true).build()));
+        given(templateRepository.findByOwnerIdOrderByCreatedAtDesc(ownerId)).willReturn(List.of());
+        given(defaultOverrideRepository.findByUserId(ownerId)).willReturn(List.of(
+                TemplateDefaultOverride.builder().userId(ownerId).templateId(hidden).build()));
+        given(templateItemRepository.countByTemplateIds(anyList())).willReturn(List.of());
+
+        assertThat(service.listForUser(user)).extracting(EstimateTemplateSummary::name)
+                .containsExactly("Малярні роботи");
+    }
+
+    @Test
+    void restoreDefaults_dropsEveryRetirementRowForTheMaster() {
+        service.restoreDefaults(ownerId);
+        verify(defaultOverrideRepository).deleteByUserId(ownerId);
     }
 
     // ---- edit own template items -------------------------------------------
@@ -428,15 +466,70 @@ class EstimateTemplateServiceTest {
     }
 
     @Test
-    void addItem_rejectsASystemDefault() {
-        UUID templateId = UUID.randomUUID();
-        given(templateRepository.findById(templateId)).willReturn(Optional.of(
-                EstimateTemplate.builder().id(templateId).isDefault(true).build()));
+    void addItem_onASystemDefault_forksItIntoMyOwnEditableCopy() {
+        UUID defId = UUID.randomUUID();
+        UUID forkId = UUID.randomUUID();
+        EstimateTemplate def = EstimateTemplate.builder()
+                .id(defId).name("Малярні роботи").trade(Trade.PAINTER).isDefault(true).build();
+        given(templateRepository.findById(defId)).willReturn(Optional.of(def));
+        given(defaultOverrideRepository.findByUserIdAndTemplateId(ownerId, defId)).willReturn(Optional.empty());
+        given(tradeOverrideRepository.findByUserIdAndTemplateId(ownerId, defId)).willReturn(Optional.empty());
+        given(userRepository.findById(ownerId)).willReturn(Optional.of(User.builder().id(ownerId).build()));
+        given(templateItemRepository.findByTemplateIdOrderBySortOrderAscIdAsc(defId))
+                .willReturn(List.of(templateItem(def, "Грунтування", Unit.M2, 0)));
+        given(templateItemRepository.findByTemplateIdOrderBySortOrderAscIdAsc(forkId))
+                .willReturn(new ArrayList<>());
+        given(templateRepository.save(any())).willAnswer(inv -> {
+            EstimateTemplate t = inv.getArgument(0);
+            t.setId(forkId);
+            return t;
+        });
+        given(templateItemRepository.save(any())).willAnswer(inv -> inv.getArgument(0));
 
-        assertThatThrownBy(() -> service.addItem(
-                templateId, new TemplateItemRequest("x", ItemType.WORK, Unit.M2), ownerId))
-                .isInstanceOf(AccessDeniedException.class);
-        verify(templateItemRepository, never()).save(any());
+        var detail = service.addItem(
+                defId, new TemplateItemRequest("Шліфування", ItemType.WORK, Unit.M2), ownerId);
+
+        ArgumentCaptor<EstimateTemplate> fork = ArgumentCaptor.forClass(EstimateTemplate.class);
+        verify(templateRepository).save(fork.capture());
+        assertThat(fork.getValue().isDefault()).isFalse();
+        assertThat(fork.getValue().getOwner().getId()).isEqualTo(ownerId);
+        assertThat(fork.getValue().getName()).isEqualTo("Малярні роботи");
+        assertThat(fork.getValue().getTrade()).isEqualTo(Trade.PAINTER);
+
+        // Every position comes across — a fork is the bundle, not an empty shell with one new line.
+        ArgumentCaptor<List<EstimateTemplateItem>> copied = ArgumentCaptor.captor();
+        verify(templateItemRepository).saveAll(copied.capture());
+        assertThat(copied.getValue()).extracting(EstimateTemplateItem::getName)
+                .containsExactly("Грунтування");
+
+        // And the shared default steps out of this master's list, pointing at the copy.
+        ArgumentCaptor<TemplateDefaultOverride> retired =
+                ArgumentCaptor.forClass(TemplateDefaultOverride.class);
+        verify(defaultOverrideRepository).save(retired.capture());
+        assertThat(retired.getValue().getForkedTemplateId()).isEqualTo(forkId);
+        assertThat(detail.id()).as("the client follows the id it gets back").isEqualTo(forkId);
+        assertThat(detail.isDefault()).isFalse();
+    }
+
+    @Test
+    void aSecondWriteOnTheSameDefaultLandsInTheSameFork_notASecondCopy() {
+        // Without the recorded fork an offline replay would leave two half-edited bundles.
+        UUID defId = UUID.randomUUID();
+        UUID forkId = UUID.randomUUID();
+        given(templateRepository.findById(defId)).willReturn(Optional.of(
+                EstimateTemplate.builder().id(defId).isDefault(true).build()));
+        given(templateRepository.findById(forkId)).willReturn(Optional.of(EstimateTemplate.builder()
+                .id(forkId).isDefault(false).owner(User.builder().id(ownerId).build()).build()));
+        given(defaultOverrideRepository.findByUserIdAndTemplateId(ownerId, defId)).willReturn(
+                Optional.of(TemplateDefaultOverride.builder()
+                        .userId(ownerId).templateId(defId).forkedTemplateId(forkId).build()));
+        given(templateItemRepository.findById(any())).willReturn(Optional.empty());
+        given(templateItemRepository.findByTemplateIdOrderBySortOrderAscIdAsc(forkId)).willReturn(List.of());
+
+        var detail = service.removeItem(defId, UUID.randomUUID(), ownerId);
+
+        assertThat(detail.id()).isEqualTo(forkId);
+        verify(templateRepository, never()).save(any());
     }
 
     @Test
@@ -458,14 +551,93 @@ class EstimateTemplateServiceTest {
     }
 
     @Test
-    void removeItem_rejectsASystemDefault() {
+    void updateItem_rewritesNameTypeAndUnitInPlace() {
         UUID templateId = UUID.randomUUID();
-        given(templateRepository.findById(templateId)).willReturn(Optional.of(
-                EstimateTemplate.builder().id(templateId).isDefault(true).build()));
+        UUID itemId = UUID.randomUUID();
+        User owner = User.builder().id(ownerId).build();
+        EstimateTemplate template = EstimateTemplate.builder()
+                .id(templateId).isDefault(false).owner(owner).build();
+        EstimateTemplateItem item = templateItem(template, "Грунтовка", Unit.M2, 0);
+        item.setId(itemId);
+        given(templateRepository.findById(templateId)).willReturn(Optional.of(template));
+        given(templateItemRepository.findById(itemId)).willReturn(Optional.of(item));
+        given(templateItemRepository.findByTemplateIdOrderBySortOrderAscIdAsc(templateId))
+                .willReturn(List.of(item));
 
-        assertThatThrownBy(() -> service.removeItem(templateId, UUID.randomUUID(), ownerId))
+        service.updateItem(templateId, itemId,
+                new TemplateItemRequest("  Ґрунтівка глибокого проникнення  ", ItemType.MATERIAL, Unit.PIECE),
+                ownerId);
+
+        assertThat(item.getName()).isEqualTo("Ґрунтівка глибокого проникнення"); // trimmed
+        assertThat(item.getType()).isEqualTo(ItemType.MATERIAL);
+        assertThat(item.getUnit()).isEqualTo(Unit.PIECE);
+    }
+
+    @Test
+    void updateItem_ofAnAlreadyGonePosition_isANoOp_notA404() {
+        UUID templateId = UUID.randomUUID();
+        UUID itemId = UUID.randomUUID();
+        given(templateRepository.findById(templateId)).willReturn(Optional.of(EstimateTemplate.builder()
+                .id(templateId).isDefault(false).owner(User.builder().id(ownerId).build()).build()));
+        given(templateItemRepository.findById(itemId)).willReturn(Optional.empty());
+        given(templateItemRepository.findByTemplateIdOrderBySortOrderAscIdAsc(templateId))
+                .willReturn(List.of());
+
+        var detail = service.updateItem(
+                templateId, itemId, new TemplateItemRequest("x", ItemType.WORK, Unit.M2), ownerId);
+
+        assertThat(detail.items()).isEmpty();
+    }
+
+    @Test
+    void reorderItems_renumbersFromTheListAndKeepsUnmentionedPositionsAfterThem() {
+        UUID templateId = UUID.randomUUID();
+        EstimateTemplate template = EstimateTemplate.builder()
+                .id(templateId).isDefault(false).owner(User.builder().id(ownerId).build()).build();
+        EstimateTemplateItem a = templateItem(template, "Демонтаж", Unit.M2, 0);
+        EstimateTemplateItem b = templateItem(template, "Грунтування", Unit.M2, 1);
+        EstimateTemplateItem c = templateItem(template, "Фарбування", Unit.M2, 2);
+        given(templateRepository.findById(templateId)).willReturn(Optional.of(template));
+        given(templateItemRepository.findByTemplateIdOrderBySortOrderAscIdAsc(templateId))
+                .willReturn(new ArrayList<>(List.of(a, b, c)));
+
+        // A duplicate and an unknown id — what a replayed offline drag can actually send.
+        service.reorderItems(templateId, new TemplateItemsOrderRequest(
+                List.of(c.getId(), a.getId(), c.getId(), UUID.randomUUID())), ownerId);
+
+        assertThat(c.getSortOrder()).isZero();
+        assertThat(a.getSortOrder()).isEqualTo(1);
+        assertThat(b.getSortOrder()).as("unmentioned — kept, after the named ones").isEqualTo(2);
+    }
+
+    @Test
+    void reorderItems_replayedTwice_landsInTheSamePlace() {
+        UUID templateId = UUID.randomUUID();
+        EstimateTemplate template = EstimateTemplate.builder()
+                .id(templateId).isDefault(false).owner(User.builder().id(ownerId).build()).build();
+        EstimateTemplateItem a = templateItem(template, "Демонтаж", Unit.M2, 0);
+        EstimateTemplateItem b = templateItem(template, "Фарбування", Unit.M2, 1);
+        given(templateRepository.findById(templateId)).willReturn(Optional.of(template));
+        given(templateItemRepository.findByTemplateIdOrderBySortOrderAscIdAsc(templateId))
+                .willReturn(new ArrayList<>(List.of(a, b)));
+        var req = new TemplateItemsOrderRequest(List.of(b.getId(), a.getId()));
+
+        service.reorderItems(templateId, req, ownerId);
+        service.reorderItems(templateId, req, ownerId);
+
+        assertThat(b.getSortOrder()).isZero();
+        assertThat(a.getSortOrder()).isEqualTo(1);
+    }
+
+    @Test
+    void reorderItems_rejectsAnotherMastersTemplate() {
+        UUID templateId = UUID.randomUUID();
+        given(templateRepository.findById(templateId)).willReturn(Optional.of(EstimateTemplate.builder()
+                .id(templateId).isDefault(false).owner(User.builder().id(UUID.randomUUID()).build()).build()));
+
+        assertThatThrownBy(() -> service.reorderItems(
+                templateId, new TemplateItemsOrderRequest(List.of(UUID.randomUUID())), ownerId))
                 .isInstanceOf(AccessDeniedException.class);
-        verify(templateItemRepository, never()).delete(any());
     }
 
     // ---- offline authoring: client-provided id (X-Entity-Uuid) --------------

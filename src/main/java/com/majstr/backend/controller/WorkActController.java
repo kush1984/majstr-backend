@@ -13,7 +13,9 @@ import com.majstr.backend.dto.WorkActStatusRequest;
 import com.majstr.backend.dto.WorkActUpdateRequest;
 import com.lowagie.text.DocumentException;
 import com.majstr.backend.security.UserPrincipal;
+import com.majstr.backend.exception.TooManyRequestsException;
 import com.majstr.backend.service.ProjectPortalService;
+import com.majstr.backend.service.ReceiptScanRateLimiter;
 import com.majstr.backend.service.ProjectPhotoService.PhotoFile;
 import com.majstr.backend.service.WorkActReceiptService;
 import com.majstr.backend.service.WorkActService;
@@ -57,6 +59,7 @@ public class WorkActController {
     private final WorkActService workActService;
     private final ProjectPortalService portalService;
     private final WorkActReceiptService receiptService;
+    private final ReceiptScanRateLimiter receiptScanRateLimiter;
 
     // ---- under a project --------------------------------------------------
 
@@ -178,14 +181,18 @@ public class WorkActController {
     }
 
     @Operation(summary = "Recognize a receipt photo for the dialog: date + total (+ optionally the "
-            + "purchased positions, review-shaped). Persists nothing; an unreadable photo is a soft "
-            + "recognized=false, not an error")
+            + "purchased positions, review-shaped — that mode is PRO). Persists nothing; an "
+            + "unreadable photo is a soft recognized=false, not an error. Rate-limited per account")
     @PostMapping(value = "/api/acts/{id}/receipts/recognize", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public ActReceiptRecognizeResponse recognizeReceipt(
             @PathVariable UUID id,
             @RequestParam("file") MultipartFile file,
             @RequestParam(value = "withItems", required = false, defaultValue = "false") boolean withItems,
             @AuthenticationPrincipal UserPrincipal principal) throws IOException {
+        ReceiptScanRateLimiter.ConsumeResult probe = receiptScanRateLimiter.tryConsume(principal.id());
+        if (!probe.allowed()) {
+            throw new TooManyRequestsException("error.rate.receipt-scan", probe.retryAfterSeconds());
+        }
         return receiptService.recognize(id, principal.id(), file, withItems);
     }
 

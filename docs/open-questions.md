@@ -100,6 +100,9 @@ one-line summary — keep the item in the file as a record.
      delete all). Per-item keep/delete would be nicer if a mix of over-limit + other rejections occurs.
   6. **Photos offline** (progress + receipt photos) — a **blob outbox** + deferred multipart upload;
      the heaviest piece (binary storage in IndexedDB, dedup, upload-on-reconnect). Explicitly last.
+     **A narrow first slice is carved out as its own item** (Features pipeline → *Offline act
+     receipts*): act receipts only, photo + amount + date typed by hand, no recognition offline and
+     none deferred. Decided by the master 2026-08-23.
   7. **Catalog + own templates offline.** ✅ **RESOLVED (2026-07-25, "O5").** Catalog create/update/
      delete and template rename / re-file / delete / add-position / remove-position all author offline
      through `offlineMutate` + `X-Entity-Uuid`; `CatalogService.create` checks the client id before its
@@ -1086,6 +1089,16 @@ one-line summary — keep the item in the file as a record.
   PVC-membrane roof, …). Master-owned templates are now editable position-by-
   position (add/remove), not just renamable. See
   [iteration-catalog-enrichment.md](iteration-catalog-enrichment.md).
+- **Update (template sequences + CRUD, V112/V113, 2026-08-22 — status unchanged):** the shape of a
+  default bundle got a rule, and templates became fully editable. The 21 PAINTER defaults collapsed
+  into **3 ordered sequences** — a bundle is a SEQUENCE (what follows what), not a set, and a
+  3-position bundle is not worth applying at all; see
+  [architecture.md](architecture.md) → *A default bundle is a SEQUENCE, not a set*. Editing now
+  covers a **system default** too: `EstimateTemplateService.resolveWritable` forks the shared row
+  into the master's own copy on the first write, delete-on-a-default is a per-master hide
+  (`template_default_override`, V113, undone by `POST /api/estimate-templates/restore-defaults`),
+  and positions are drag-reordered via a declarative whole-order request. See
+  [iteration-template-sequences-and-crud.md](iteration-template-sequences-and-crud.md).
 
 ### Typical (pre-filled) quantities in default estimate templates
 - **Status:** OPEN
@@ -1268,6 +1281,12 @@ one-line summary — keep the item in the file as a record.
   pattern fits a given trade — full V82-style replace, or V96-style extend — depends entirely on
   how much real data that trade's live catalog already carries; check before assuming either one.
   See [iteration-painter-catalog-rework.md](iteration-painter-catalog-rework.md).
+- **Update (V112, 2026-08-22 — status unchanged):** PAINTER's *bundles* were rebuilt a second time,
+  this time for shape rather than content: 21 sets → 3 ordered sequences, catalog untouched («ми
+  чіпаємо тільки шаблони, з позицій нічого не викидаємо»). When the next trade's catalog is
+  rebuilt, its bundles should be authored as sequences from the start. Also note V109 shipped **no
+  propagation push**, so V112 PART 5 carries `added_in_version IN (12, 13)` — check that the
+  previous rebuild actually pushed before stamping a new `last_synced_catalog_version`.
 
 ### PAINTER: three price variances shipped with a resolved default, not confirmed by the master
 - **Status:** OPEN
@@ -2000,7 +2019,7 @@ one-line summary — keep the item in the file as a record.
   it correctly on a second pass, just not automatically in one submission.
 
 ### Raw receipt-as-photo sharing — which plan tier gates it
-- **Status:** OPEN
+- **Status:** RESOLVED
 - **Since:** Payments-economy-portal iteration (2026-08-07)
 - **Context:** `RECEIPT_IMPORT` (parsing a receipt's line items into an estimate via LLM vision) is
   a PRO feature with its own photo budget (`MAX_RECEIPT_PHOTOS_PER_OBJECT`, 0 for FREE today). This
@@ -2022,6 +2041,19 @@ one-line summary — keep the item in the file as a record.
   parsed. The copy is fail-soft (`REQUIRES_NEW` + catch at the caller: a hit cap skips the copy,
   never fails the receipt). That sharpens the same undecided question rather than changing it —
   proof-of-spend photos and LLM parsing still share one ceiling.
+- **Resolution (2026-08-23): sharing a receipt PHOTO is FREE, reading it is what costs.** The
+  question was decided in two steps, and the shared-ceiling worry dissolved with it. (1) The photo
+  side went FREE when the photo-folders round found `MAX_RECEIPT_PHOTOS_PER_OBJECT = 0` for FREE —
+  a leftover from when only the PRO import could mint a `RECEIPT` photo — and raised it to **5**,
+  the same as progress photos, on the reasoning that FILING a receipt photo calls no LLM. So proof
+  of spend (portal + PDF appendix + the «Чеки» folder + an act receipt's gallery copy) is free
+  within that cap. (2) The recognition side split per MODE (master decision, same day): the meta
+  pass — label/date/total off the footer, haiku — is FREE, and only `withItems` (the item table,
+  sonnet) sits behind `Feature.RECEIPT_IMPORT`. The two capabilities therefore no longer share one
+  gate at all: the photo budget bounds photos, `Feature.RECEIPT_IMPORT` bounds the expensive read,
+  and the newly-FREE cheap read is bounded by `ReceiptScanRateLimiter` (30/hour per account),
+  because it persists nothing and no business counter would otherwise touch it. The separate
+  limit/gate this item asked for exists; nothing is left undecided.
 
 ### Client payment reminders (email / portal)
 - **Status:** OPEN
@@ -2147,6 +2179,92 @@ one-line summary — keep the item in the file as a record.
   the PDF appendix, and doesn't count against the receipt budget). The «Це чек» promotion is still
   unbuilt — but the affordance now sits right next to it, so a master mistaking the folder move for
   it is the signal to build the real thing.
+
+### Photo folders: the follow-ups round 4 deliberately left out
+- **Status:** OPEN
+- **Since:** photo-folders drill-in rework (2026-08-23, PWA 1.22.0)
+- **Context:** The «Фото» tab became a two-level Windows-style browser (folder list → one folder's
+  grid, no root to upload into, `POST …/photos` takes a `folder` param). The master asked to park the
+  remaining folder questions rather than grow the round. What is NOT built: **renaming** a folder
+  (photos reference folders **by name**, so a rename is an UPDATE across `project_photo` in the same
+  transaction, not a single-row edit — that is the whole reason it was deferred); **nested** folders
+  (`project_photo_folder` has no parent column and the UI has exactly two levels); **drag-and-drop /
+  multi-select move** (moving is one photo at a time through the sheet); **folder ordering** (the two
+  virtual defaults first, then whatever the repository returns); and a **per-folder cover/count on the
+  object card**. Also unresolved: the FREE caps are per SOURCE (`MAX_PHOTOS_PER_OBJECT` 5 /
+  `MAX_RECEIPT_PHOTOS_PER_OBJECT` 5, raised from 0 this round), not per folder, so a master reading
+  «5 фото» inside «Інше» is reading a source budget, not a folder budget.
+- **Notes / options:** Rename is the one with a real user pull; do it as a service method that
+  normalizes the new name, refuses a reserved/duplicate one, and rewrites both the folder row and
+  every photo carrying the old name under one transaction. Nested folders should wait for evidence —
+  two levels matched «як у віндовз» for the object-sized galleries we actually see.
+- **Decision recorded (2026-08-23):** «Чеки» now lists **every** RECEIPT photo including
+  estimate-linked ones (the tab used to hide those as "already shown under the estimate"). A folder
+  that silently withholds part of its contents was the master's complaint; the tile keeps its
+  «Чек: <estimate>» label. Not a question any more — the reversal stands unless he says otherwise.
+
+
+### Offline act receipts — photo + amount + date, and nothing else
+- **Status:** OPEN
+- **Since:** 2026-08-23 (master's decision, after the templates iteration)
+- **Context:** Today an act receipt cannot be authored offline at all. The photo is **mandatory**
+  (400 `WORK_ACT_RECEIPT_PHOTO_REQUIRED`, act-receipts round 2) and there is no blob outbox, so a
+  master standing on site without signal cannot record a paper receipt in any form — not even the
+  number. Recognition is not the blocker: the vision call runs server-side and only ever **prefills**
+  what the master confirms anyway.
+- **Decision (master, 2026-08-23):** offline the master **photographs the receipt and types the
+  amount and the date by hand — that is all**. The queued op carries photo + label + amount + date
+  and replays as-is on reconnect. **No recognition offline and no deferred recognition** — nothing is
+  re-checked or re-proposed after the fact; the numbers are the master's responsibility. This kills
+  the whole "suggestion vs autofill" UX branch and the burst of expensive vision calls on reconnect.
+  **The photo stays mandatory** — «фото має бути обовязково». A receipt row with no paper behind it
+  is a number anyone could type, and it reaches the client through the act PDF and the act portal.
+  An invariant a client can opt out of by asserting "I was offline" is not an invariant.
+- **Notes / options:** This is a narrow slice of offline follow-up #6 (blob outbox) — one entity, not
+  the general photo programme: store the File as a Blob in IndexedDB, replay the multipart POST.
+  The form needs no new UX: it is the existing receipt form with «Розпізнати» greyed out and an
+  honest «доступно онлайн» hint. Three things must be wired with it:
+  1. **`X-Entity-Uuid` on `POST /api/acts/{id}/receipts`** — it exists on act creation but NOT on the
+     receipt endpoints, so a replayed multipart would create a **duplicate receipt**, i.e. duplicate
+     money in the act and in the ADDENDUM rollup.
+  2. **The act may have been signed while the queue waited** — all three receipt writes sit behind
+     `requireNotSigned`, so the drain hits 409. Do not swallow it: tell the master «чек не додано —
+     акт уже підписано». It is his money.
+  3. The «Чеки» gallery copy (`saveToPhotos`) needs no second queued op — the backend makes it on the
+     same request.
+- **Rejected:** on-device OCR (Tesseract-WASM). Several MB in the SW cache for poor Ukrainian
+  reading of a creased ККМ slip, and the item table is an LLM job that OCR does not do at all.
+
+### ДПС QR receipt lookup — a free, exact alternative to reading the photo
+
+- **Status:** OPEN
+- **Since:** 2026-08-23 (investigated after the act-receipt recognition rounds)
+- **Context:** Every Ukrainian fiscal receipt prints a QR whose payload is exactly
+  `mac / date / time / id / sm / fn`. The tax service's Electronic Cabinet resolves it through an
+  **undocumented but public and currently unauthenticated** JSON endpoint, found by unpacking the
+  cabinet's Angular bundle (`chunk-UOT3HP74.js` → `app-check` → `loadDataNew()`, base
+  `D.rro_public = "../ws/api_public/rro"`):
+  `GET https://cabinet.tax.gov.ua/ws/api_public/rro/chkAllWeb?id=&date=yyyy-MM-dd HH:mm:ss&type=3&captcha=&fn=&sm=`
+  Verified live against the official example (ФН 3000898168, чек 45): it answers
+  `{check, checkXml, checkP7s, …}`, all base64. `check` is the printed receipt as UTF-8 text;
+  **`checkXml` is structured** (windows-1251) and carries one `<P>` per line —
+  `NM` name, `PRC` price ×100, `Q` quantity ×1000, `SM` sum ×100, `CZD` УКТЗЕД, `TX` tax group —
+  plus `<E>` with the total, ФН and timestamp. So a QR scan could fill an act receipt's label, date,
+  total **and its item table** with no LLM call at all — exact data instead of recognized data.
+- **Notes / options:** If this is ever built it must be a **fast path, never the only path**:
+  «спробував QR → не вийшло → звичайне розпізнавання». The existing haiku/sonnet passes stay.
+- **Risks that make this OPEN rather than planned:**
+  1. **Undocumented.** The official docs describe only the UI page `/cashregs/check` and specify no
+     response format; `ws/api_public/rro/*` is nowhere in them. No compatibility guarantee.
+  2. **CAPTCHA.** The page loads Google invisible reCAPTCHA and the front end passes a token in
+     `&captcha=`. The server accepted an **empty** value in every probe — that is today's behaviour,
+     not a contract. It can start being enforced without notice and the integration dies silently.
+  3. **All fields must match exactly** — a wrong `sm` answers 400 «не вірна сума», a missing date
+     400, an unknown number 400 «Не знайдено». So it only works from a real, readable QR.
+  4. **Coverage.** Fiscal РРО/ПРРО receipts only. A builders'-merchant invoice, a handwritten slip or
+     a faded ККМ tape with no scannable QR is still the recognition path's job.
+  5. `checkXml` is windows-1251 with integer-scaled money — needs its own decoder, and `checkP7s`
+     (the signed CMS) is empty on older classic РРО.
 
 ### AI_ASSISTANT
 - **Status:** OPEN

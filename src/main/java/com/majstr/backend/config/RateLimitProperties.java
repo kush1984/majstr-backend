@@ -14,7 +14,8 @@ public record RateLimitProperties(
         Verification verification,
         EstimateEmail estimateEmail,
         MessageLink messageLink,
-        Question question
+        Question question,
+        ReceiptScan receiptScan
 ) {
     public record Login(
             @Positive int maxAttempts,
@@ -68,5 +69,13 @@ public record RateLimitProperties(
     public record Question(
             @Positive int maxAttempts,
             @Positive int windowMinutes
+    ) {}
+
+    /**
+     * Cap on act-receipt recognition calls per account per hour. The only LLM flow a FREE plan can
+     * reach (its meta pass), and it persists nothing, so nothing else bounds how often it is spent.
+     */
+    public record ReceiptScan(
+            @Positive int maxPerHour
     ) {}
 }

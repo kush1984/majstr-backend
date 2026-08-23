@@ -144,6 +144,11 @@ app:
     question:
       max-attempts: ${QUESTION_MAX_ATTEMPTS:5}
       window-minutes: ${QUESTION_WINDOW_MINUTES:10}
+    # Per account. Act-receipt recognition is the one model call a FREE plan can reach (its meta
+    # pass), and it stores nothing, so no business counter bounds it — this does. A master
+    # photographing a whole day's receipts is nowhere near 30.
+    receipt-scan:
+      max-per-hour: ${RECEIPT_SCAN_MAX_PER_HOUR:30}
   storage:
     # local = filesystem (dev default); s3 = any S3-compatible store (Cloudflare R2).
     kind: ${STORAGE_KIND:local}

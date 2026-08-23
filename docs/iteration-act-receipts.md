@@ -163,7 +163,8 @@ amount used to reach the DB CHECK and surface as a 500.
 
 ## 8.2 Recognition — `POST /api/acts/{id}/receipts/recognize`
 
-Two depths, both behind `Feature.RECEIPT_IMPORT`:
+Two depths. **The gate is per MODE, not per endpoint** (master decision, 2026-08-23 — see
+Round 5 below): the meta pass is FREE, only `withItems` is behind `Feature.RECEIPT_IMPORT`.
 
 - **meta only** (the default, `AiFlow.ACT_RECEIPT`, haiku-4-5) — label, date, total off the footer.
   The cheapest vision job in the codebase; it exists to save typing, nothing more.
@@ -436,3 +437,74 @@ is the one that would have caught 10.1.
 
 The layout is mobile-first by construction (56 px folder rows, 44 px upload buttons, 36 px back
 target, truncating names) but was **not** opened in a browser at 375 × 812 — no visual check was run.
+
+---
+
+# Round 5 — the receipt gate splits per mode (2026-08-23)
+
+> «тільки шапка (назва / дата / сума з підвалу, haiku) - оцей режим у нас нехай тоже буде фрі,
+> а оце withItems=true — з таблицею позицій (sonnet, тим самим промтом, що й імпорт кошторису)
+> вже платне»
+
+## 5.1 What changed
+
+`WorkActReceiptService.recognize` no longer gates the whole endpoint. The order is now:
+
+1. not-signed check (both modes — a frozen act never spends a model call),
+2. `if (withItems)` → `featureGuard.requireFeature(owner, Feature.RECEIPT_IMPORT)`,
+3. the extractor call.
+
+So a FREE master photographs the paper and gets label + date + total prefilled; ticking «перенести
+позиції» is what asks for PRO. The reasoning is the product one: reading a footer is what turns a
+photographed slip into a receipt row at all — charging for it makes the mandatory-photo flow feel
+like a paywall on data entry. Reading the *item table* is the expensive, genuinely PRO-shaped job
+(sonnet, the estimate-import prompt, tens of seconds).
+
+**This is the one guard in the codebase that must NOT be hoisted to the top of its method.** Every
+other PRO gate here is a first-line `requireFeature`, which is exactly why a later tidy-up would
+undo this silently. `WorkActReceiptRecognitionTest` pins all three facts: the meta pass touches
+`featureGuard` **not at all** (`verifyNoInteractions`), the item pass throws before either extractor
+runs, and a SIGNED act spends nothing in either mode.
+
+## 5.2 `ReceiptScanRateLimiter` — because FREE can now reach a model
+
+The meta pass is the **first LLM call an unpaid account can make**, and recognition **persists
+nothing** — no receipt row, no photo, no counter. Every other AI flow is bounded by something
+business-shaped (an estimate limit, a receipt-photo cap); this one had nothing behind it but the
+account existing.
+
+New `ReceiptScanRateLimiter` — the same shape as `EstimateEmailRateLimiter`: Bucket4j,
+`ConcurrentMap<UUID, Bucket>` keyed on the account, `refillIntervally`, consumed in
+`WorkActController` before the service call, surfaced as 429
+`TooManyRequestsException("error.rate.receipt-scan", retryAfterSeconds)`. Config
+`app.rate-limit.receipt-scan.max-per-hour` = `${RECEIPT_SCAN_MAX_PER_HOUR:30}`; deliberately
+generous — a master photographing a whole day's receipts is nowhere near 30. In-memory, so
+single-node only, same documented limitation as every other limiter here.
+
+`RateLimitProperties` gained a 9th component (`ReceiptScan`) — which broke three positional
+`new RateLimitProperties(...)` calls in the limiter tests. Third time that record has bitten; the
+fan-out check stays worth running.
+
+## 5.3 PWA
+
+`ActReceiptsSection` now reads the plan (`useMe`) and passes `itemsAllowed` / `onItemsBlocked` into
+`ReceiptForm`. For FREE the «Розпізнати і перенести позиції з чека в акт» checkbox carries a PRO
+chip and, on tap, fires `upgradeApi.click('RECEIPT_IMPORT')` + opens `UpgradeIntentModal` instead of
+toggling — the same painted-door pattern as the estimate editor's «Додати з чеку». The box never
+appears ticked when blocked, so no request is ever sent with `withItems=true` from a FREE device.
+
+Everything else on the FREE path is unchanged: picking a photo still runs the footer read
+unprompted.
+
+## Round 5 tests
+
+Backend: new `WorkActReceiptRecognitionTest` (3 tests) + the three rate-limiter tests fixed for the
+record fan-out. PWA: `ActReceiptsSection.test.tsx` seeds `me` through `ME_QUERY_KEY` and gains a
+FREE test asserting the footer read still runs (`recognizeReceipt(…, false)`) while ticking the
+items box opens the upsell, leaves the box unticked, and never calls `onTransferItems`.
+
+## Round 5 not verified
+
+The PRO chip + upsell were **not opened in a browser** at 375 × 812. The chip is an inline
+`text-[10px]` span inside a `flex-wrap` label, so it wraps rather than pushing the row wide, but no
+visual check was run.
