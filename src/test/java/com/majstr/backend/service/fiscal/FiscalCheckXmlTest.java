@@ -1,6 +1,10 @@
 package com.majstr.backend.service.fiscal;
 
+import com.majstr.backend.service.importer.EstimateExtractor.Extracted.Line;
 import org.junit.jupiter.api.Test;
+
+import java.io.InputStream;
+import java.math.BigDecimal;
 
 import java.nio.charset.Charset;
 import java.time.LocalDate;
@@ -18,6 +22,51 @@ import static org.assertj.core.api.Assertions.assertThat;
 class FiscalCheckXmlTest {
 
     private static final Charset CP1251 = Charset.forName("windows-1251");
+
+    /**
+     * A REAL receipt from the tax service (Pull&Bear, 21.08.2026), whose layout has no body
+     * container: positions are bare {@code <P>} elements interleaved with printed text lines.
+     */
+    @Test
+    void readsARealPrroReceipt() throws Exception {
+        FiscalReceipt receipt = FiscalCheckXml.parse(fixture("real-prro-receipt.xml"));
+
+        assertThat(receipt).isNotNull();
+        assertThat(receipt.total()).isEqualByComparingTo("3008");
+        assertThat(receipt.items()).extracting(Line::name)
+                .containsExactly("ПЛЮШ", "ПЛЮШ", "Сумка M");
+        assertThat(receipt.items().getLast().quantity()).isEqualByComparingTo("1");
+        assertThat(receipt.items().getLast().unitPrice()).isEqualByComparingTo("10");
+        assertThat(FiscalQrService.trustedItems(receipt.items(), new BigDecimal("3008"))).hasSize(3);
+    }
+
+    /**
+     * A REAL receipt in the {@code CHECK} layout (RESERVED, 21.08.2026). It reuses {@code <ROW>} for
+     * payments and taxes, and those rows carry a {@code NAME} ("VISA", "ПДВ") with no quantity — so a
+     * document-wide sweep produced incomplete lines and {@code trustedItems} dropped the WHOLE set.
+     * A real receipt therefore yielded zero positions; this pins the body-scoped read that fixed it.
+     */
+    @Test
+    void realReceiptPaymentAndTaxRowsAreNotPositions() throws Exception {
+        FiscalReceipt receipt = FiscalCheckXml.parse(fixture("real-rro-receipt.xml"));
+
+        assertThat(receipt).isNotNull();
+        assertThat(receipt.label()).isEqualTo("ДП \"ЛПП УКРАЇНА\" АТ \"ЛПП\"");
+        assertThat(receipt.issuedAt()).isEqualTo(LocalDate.of(2026, 8, 21));
+        assertThat(receipt.total()).isEqualByComparingTo("1011.00");
+        assertThat(receipt.items()).extracting(Line::name)
+                .containsExactly("026KF-89X-XXL Жіноча футболка", "H6485-XXX-ONE ПАКЕТ ПАПЕРОВИЙ")
+                .doesNotContain("VISA", "ПДВ", "КАРТКА");
+        // The point of the fix: the set survives the cross-check instead of being dropped wholesale.
+        assertThat(FiscalQrService.trustedItems(receipt.items(), new BigDecimal("1011.00"))).hasSize(2);
+    }
+
+    private static byte[] fixture(String name) throws Exception {
+        try (InputStream in = FiscalCheckXmlTest.class.getResourceAsStream("/fiscal/" + name)) {
+            assertThat(in).as(name).isNotNull();
+            return in.readAllBytes();
+        }
+    }
 
     @Test
     void readsAttributeRows() {

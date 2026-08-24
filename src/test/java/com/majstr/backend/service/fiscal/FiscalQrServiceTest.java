@@ -1,13 +1,21 @@
 package com.majstr.backend.service.fiscal;
 
 import com.majstr.backend.config.FiscalQrProperties;
+import com.sun.net.httpserver.HttpServer;
 import com.majstr.backend.service.importer.EstimateExtractor.Extracted.Line;
 import org.junit.jupiter.api.Test;
 
 import java.math.BigDecimal;
+import java.net.InetAddress;
+import java.net.InetSocketAddress;
+import java.net.URLDecoder;
+import java.nio.charset.Charset;
+import java.nio.charset.StandardCharsets;
+import java.util.Base64;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -76,5 +84,62 @@ class FiscalQrServiceTest {
                 qty == null ? null : new BigDecimal(qty),
                 price == null ? null : new BigDecimal(price),
                 "MATERIAL", null);
+    }
+/**
+     * The lookup URI must reach the tax service EXACTLY as built.
+     *
+     * <p>It used to be handed to {@code RestClient.uri(String)}, which reads a String as a URI
+     * TEMPLATE and encodes it a second time: the space in {@code date} arrived as {@code %2520}, the
+     * tax service answered "request processing error", and the ladder degraded to meta-only. Every
+     * scan filled the total and the date and never once produced a position — a silent failure that
+     * looked exactly like "this receipt has no positions". This pins the wire format.
+     */
+    @Test
+    void theLookupUriIsNotEncodedTwice() throws Exception {
+        HttpServer server = HttpServer.create(new InetSocketAddress(InetAddress.getLoopbackAddress(), 0), 0);
+        AtomicReference<String> seenQuery = new AtomicReference<>();
+        String checkXml = Base64.getEncoder().encodeToString("""
+                <?xml version="1.0" encoding="windows-1251"?>
+                <CHECK>
+                  <CHECKBODY><ROW NAME="Сумка" AMOUNT="1000" PRICE="1000" COST="1000"/></CHECKBODY>
+                  <CHECKTOTAL><SUM>1000</SUM></CHECKTOTAL>
+                </CHECK>
+                """.getBytes(Charset.forName("windows-1251")));
+        server.createContext("/lookup", exchange -> {
+            seenQuery.set(exchange.getRequestURI().getRawQuery());
+            byte[] body = ("{\"checkXml\":\"" + checkXml + "\"}").getBytes(StandardCharsets.UTF_8);
+            exchange.getResponseHeaders().add("Content-Type", "application/json");
+            exchange.sendResponseHeaders(200, body.length);
+            exchange.getResponseBody().write(body);
+            exchange.close();
+        });
+        server.start();
+        try {
+            String base = "http://" + InetAddress.getLoopbackAddress().getHostAddress()
+                    + ":" + server.getAddress().getPort() + "/lookup";
+            Optional<FiscalReceipt> read = new FiscalQrService(new FiscalQrProperties(base))
+                    .read("fn=4000123456&id=17&date=20260821&time=1525&sm=10.00");
+
+            String date = param(seenQuery.get(), "date");
+            assertThat(date)
+                    .as("one decode must yield the value itself, not another encoded form")
+                    .isEqualTo("2026-08-21 15:25:00")
+                    .doesNotContain("%");
+            assertThat(read).isPresent();
+            assertThat(read.get().items()).extracting(Line::name).containsExactly("Сумка");
+        } finally {
+            server.stop(0);
+        }
+    }
+
+    /** The single-decoded value of one query parameter. */
+    private static String param(String rawQuery, String name) {
+        for (String pair : rawQuery.split("&")) {
+            int eq = pair.indexOf('=');
+            if (eq > 0 && pair.substring(0, eq).equals(name)) {
+                return URLDecoder.decode(pair.substring(eq + 1), StandardCharsets.UTF_8);
+            }
+        }
+        return null;
     }
 }

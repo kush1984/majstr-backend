@@ -9,6 +9,7 @@ import org.springframework.web.client.RestClient;
 import org.springframework.web.util.UriComponentsBuilder;
 
 import java.math.BigDecimal;
+import java.net.URI;
 import java.time.Duration;
 import java.util.Base64;
 import java.util.List;
@@ -89,7 +90,10 @@ public class FiscalQrService {
     /** The stored receipt, or null on any failure — an enrichment is never worth an error. */
     private FiscalReceipt lookup(FiscalQrPayload qr) {
         try {
-            String uri = UriComponentsBuilder.fromUriString(props.baseUrl())
+            // Built as a URI, never as a String: RestClient reads a String as a URI TEMPLATE and
+            // encodes it a second time, so the space in `date` reaches the tax service as %2520 and
+            // every lookup comes back "request processing error" - meta only, positions never.
+            URI uri = UriComponentsBuilder.fromUriString(props.baseUrl())
                     .queryParam("id", qr.id())
                     .queryParam("date", qr.lookupDate())
                     .queryParam("type", "3")
@@ -97,7 +101,8 @@ public class FiscalQrService {
                     .queryParam("fn", qr.fn())
                     .queryParam("sm", qr.lookupSum())
                     .encode()
-                    .toUriString();
+                    .build()
+                    .toUri();
 
             Map<?, ?> body = restClient.get().uri(uri).retrieve().body(Map.class);
             if (body == null) return null;

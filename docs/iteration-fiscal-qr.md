@@ -134,9 +134,11 @@ FREE — with QR positions free, that would have made them unaskable. So:
 
 ## 5. Tests
 
-Backend: `FiscalQrPayloadTest` (6), `FiscalCheckXmlTest` (6 — windows-1251 fixtures for both row
-layouts, plus a doctype refusal), `FiscalQrServiceTest` (5, constructed with a blank base URL so
-nothing dials out), plus the new cases in `ReceiptImportServiceTest` and
+Backend: `FiscalQrPayloadTest` (6), `FiscalCheckXmlTest` (8 — windows-1251 fixtures for both row
+layouts, a doctype refusal, and **two golden fixtures taken from real receipts the master
+photographed**, `src/test/resources/fiscal/real-{prro,rro}-receipt.xml`), `FiscalQrServiceTest` (6 —
+five constructed with a blank base URL so nothing dials out, plus `theLookupUriIsNotEncodedTwice`
+against a loopback `HttpServer`), plus the new cases in `ReceiptImportServiceTest` and
 `WorkActReceiptRecognitionTest`. `./gradlew build` green.
 
 PWA: `lib/qr.test.ts` (decoder preference, both fallbacks, `looksFiscal`), `QrScanSheet.test.tsx`
@@ -144,12 +146,40 @@ PWA: `lib/qr.test.ts` (decoder preference, both fallbacks, `looksFiscal`), `QrSc
 carrying positions on FREE, the tick still deciding for acts, the photo still mandatory, the upsell
 now on the photo routes. Full gate green in CI order.
 
-## 6. Not verified
+## 6. First live paper — two bugs the tests could not have caught
 
-The lookup has not been run against a receipt the master actually holds. Everything below the top
-rung of the ladder is exercised by tests, and the endpoint's three known risks (undocumented,
-captcha-optional-for-now, exact-match-only) can only be settled on live paper — which is why the
-open-questions item stays `IN_PROGRESS` rather than `RESOLVED`.
+The master scanned two real receipts (Pull&Bear 21.08.2026 3008,00 ПРРО; RESERVED 21.08.2026
+1011,00 hardware РРО). Both filled the total and the date and produced **zero positions** — which
+reads exactly like "this receipt has no positions", so nothing looked broken. Two independent
+faults, both in the rungs below the top one, and both invisible to a suite that never dials out:
+
+**(a) The lookup URI was encoded twice, so the lookup never once succeeded.** `lookup` built the
+URI with `UriComponentsBuilder…encode().toUriString()` and handed the **String** to
+`RestClient.uri(…)` — which reads a String as a URI *template* and encodes it again. The space in
+`date=2026-08-21 15:25:00` reached the tax service as `%2520`, it answered `Помилка обробки
+запиту`, and the ladder degraded to rung 2 on **every** scan. The same URI sent by `curl` returned
+the receipt, which is what made this so hard to see from the outside. Fix: `.encode().build()
+.toUri()` and pass the `URI`. Pinned by `theLookupUriIsNotEncodedTwice`, which runs a loopback
+`HttpServer` and asserts the raw query decodes **once** to the value itself.
+
+**(b) `FiscalCheckXml` read payment and tax rows as positions.** The `CHECK` layout reuses `<ROW>`
+inside `CHECKPAY`/`PAYSYS`/`CHECKTAX`, and those rows carry a `NAME` ("VISA", "ПДВ") with no
+quantity. The document-wide sweep therefore returned a set containing incomplete lines — and
+`trustedItems` correctly refuses a set it cannot check, so it dropped **all** of them, real
+positions included. The safety net was working; it was being fed rubbish. `rows()` is now scoped to
+`CHECKBODY` when the layout has one, falling back to bare `<P>` (the ПРРО layout, which has no
+container) and only then to a document-wide sweep.
+
+With both fixed, the two receipts read end to end: 3 positions / 3008,00 and 2 positions / 1011,00,
+sums matching the QR in both cases.
+
+**Still open from live paper:** the ПРРО (`RQ`) layout carries no `ORGNM`, so «Що це за чек» stays
+empty for those receipts — the seller name lives in the response's plain-text `check` field, not in
+`checkXml`. Left alone rather than guessed at. The endpoint's three known risks (undocumented,
+captcha-optional-for-now, exact-match-only) still stand, so the open-questions item stays
+`IN_PROGRESS`.
+
+## 7. Not verified
 
 The QR sheet was not opened in a real browser at 375×812; it is built mobile-first (full-width
 buttons, square viewfinder, nothing below the fold) but that is a design claim, not a verified one.

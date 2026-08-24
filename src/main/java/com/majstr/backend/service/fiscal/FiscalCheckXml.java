@@ -22,8 +22,9 @@ import java.util.Locale;
  * Decoder for the {@code checkXml} the receipt lookup returns.
  *
  * <p>The format is undocumented and printed by many РРО/ПРРО vendors, so this reads <b>tolerantly</b>
- * rather than to a schema: a line is any {@code ROW} or {@code P} element, and each field is looked
- * up under every spelling seen in the wild, as an attribute or as a child element. A field it cannot
+ * rather than to a schema: a position is a {@code ROW} inside the body container (or, in the layout
+ * that has none, a bare {@code P} element), and each field is looked up under every spelling seen in
+ * the wild, as an attribute or as a child element. A field it cannot
  * find is left null and the shared receipt normalization flags it, so the master is re-asked — the
  * one thing this must never do is invent a number that ends up on a document a client signs.
  *
@@ -83,14 +84,32 @@ final class FiscalCheckXml {
         return out;
     }
 
-    /** Every {@code ROW}/{@code P} element in the document, in document order. */
+    /**
+     * The POSITION rows only.
+     *
+     * <p>Scoped to the body container on purpose. The {@code CHECK} layout reuses {@code <ROW>} for
+     * payments and taxes too ({@code CHECKPAY}, {@code PAYSYS}, {@code CHECKTAX}), and those carry a
+     * {@code NAME} ("VISA", "PDV") with no quantity - so a document-wide sweep turned a perfectly good
+     * receipt into a set containing incomplete lines, which {@link FiscalQrService#trustedItems} then
+     * dropped WHOLESALE. A real receipt yielded zero positions. Take the body when there is one; fall
+     * back to a document-wide sweep only for a layout that has no body container at all.</p>
+     */
     private static List<Element> rows(Element root) {
         List<Element> out = new ArrayList<>();
-        for (String tag : new String[]{"ROW", "P"}) {
-            NodeList found = root.getElementsByTagName(tag);
-            for (int i = 0; i < found.getLength(); i++) {
-                out.add((Element) found.item(i));
-            }
+        for (Element body : tagged(root, "CHECKBODY")) {
+            out.addAll(tagged(body, "ROW"));
+        }
+        if (!out.isEmpty()) return out;
+        // The RQ layout has no container: positions are bare <P> elements among printed text lines.
+        List<Element> bare = tagged(root, "P");
+        return bare.isEmpty() ? tagged(root, "ROW") : bare;
+    }
+
+    private static List<Element> tagged(Element root, String tag) {
+        List<Element> out = new ArrayList<>();
+        NodeList found = root.getElementsByTagName(tag);
+        for (int i = 0; i < found.getLength(); i++) {
+            out.add((Element) found.item(i));
         }
         return out;
     }
