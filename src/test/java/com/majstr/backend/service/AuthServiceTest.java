@@ -10,6 +10,7 @@ import com.majstr.backend.repository.UserTradeRepository;
 import com.majstr.backend.security.JwtService;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.InOrder;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
@@ -47,7 +48,7 @@ class AuthServiceTest {
     @Test
     void register_seedsCatalogAndIssuesVerificationEmail() {
         RegisterRequest req = new RegisterRequest("New@User.com", "Sup3rPass!", "Іван",
-                Set.of(Trade.ELECTRICAL), null, "+380501112233", "FOP", true, null, null);
+                Set.of(Trade.ELECTRICAL), null, "+380501112233", "FOP", true, null, null, null, null, null);
         given(emailPolicyService.canonicalize("new@user.com")).willReturn("new@user.com");
         given(userRepository.existsByEmailIgnoreCase("new@user.com")).willReturn(false);
         given(userRepository.existsByEmailCanonical("new@user.com")).willReturn(false);
@@ -78,7 +79,7 @@ class AuthServiceTest {
         // A master can rely entirely on a self-invented trade — RegisterRequest.isTradeChosen()
         // accepts system OR custom, not specifically system.
         RegisterRequest req = new RegisterRequest("New@User.com", "Sup3rPass!", "Іван",
-                Set.of(), List.of("Натяжні стелі"), "+380501112233", "FOP", true, null, null);
+                Set.of(), List.of("Натяжні стелі"), "+380501112233", "FOP", true, null, null, null, null, null);
         stubHappyPathRegistration();
 
         AuthResponse resp = authService.register(req);
@@ -90,7 +91,7 @@ class AuthServiceTest {
     @Test
     void register_withBothASystemAndACustomTrade_createsTheCustomTradeToo() {
         RegisterRequest req = new RegisterRequest("New@User.com", "Sup3rPass!", "Іван",
-                Set.of(Trade.ELECTRICAL), List.of("Натяжні стелі"), "+380501112233", "FOP", true, null, null);
+                Set.of(Trade.ELECTRICAL), List.of("Натяжні стелі"), "+380501112233", "FOP", true, null, null, null, null, null);
         stubHappyPathRegistration();
 
         authService.register(req);
@@ -103,12 +104,44 @@ class AuthServiceTest {
         // Typing (or pasting) the same name twice must merge into one create call, not bubble
         // ProfileService's 409-on-repeat-name up as a 500 for an account that owns zero trades yet.
         RegisterRequest req = new RegisterRequest("New@User.com", "Sup3rPass!", "Іван",
-                Set.of(), List.of("Стеля", "стеля", " Стеля "), "+380501112233", "FOP", true, null, null);
+                Set.of(), List.of("Стеля", "стеля", " Стеля "), "+380501112233", "FOP", true, null, null, null, null, null);
         stubHappyPathRegistration();
 
         authService.register(req);
 
         verify(profileService, times(1)).createCustomTrade(any(User.class), eq("Стеля"));
+    }
+
+    @Test
+    void register_stampsTheFirstTouchUtmTags_andBlankMeansNoTagAtAll() {
+        // The CHANNEL dimension (V114), alongside the PARTNER one below it: a master can follow a
+        // partner link from TikTok, so both are stamped, neither derived from the other.
+        RegisterRequest req = new RegisterRequest("New@User.com", "Sup3rPass!", "Іван",
+                Set.of(Trade.ELECTRICAL), null, "+380501112233", "FOP", true, "liga", null,
+                " tiktok ", "  ", null);
+        given(emailPolicyService.canonicalize("new@user.com")).willReturn("new@user.com");
+        given(userRepository.existsByEmailIgnoreCase("new@user.com")).willReturn(false);
+        given(userRepository.existsByEmailCanonical("new@user.com")).willReturn(false);
+        given(passwordEncoder.encode("Sup3rPass!")).willReturn("hash");
+        given(referralService.resolve("liga", null))
+                .willReturn(new ReferralService.Attribution("LIGA", null));
+        given(referralService.generateUniqueCode()).willReturn("abc12345");
+        given(userRepository.save(any(User.class))).willAnswer(inv -> inv.getArgument(0));
+        given(jwtService.generateAccessToken(any(), any())).willReturn("access");
+        given(jwtService.accessTtlSeconds()).willReturn(900L);
+        given(refreshTokenService.issue(any(User.class))).willReturn("refresh");
+
+        authService.register(req);
+
+        ArgumentCaptor<User> saved = ArgumentCaptor.forClass(User.class);
+        verify(userRepository).save(saved.capture());
+        assertThat(saved.getValue().getUtmSource()).isEqualTo("tiktok");
+        // A blank tag is NOT a tag: it must land as NULL, the same value as "arrived with no
+        // marks". Stored as "" it would show up in the admin report as a nameless channel row.
+        assertThat(saved.getValue().getUtmMedium()).isNull();
+        assertThat(saved.getValue().getUtmCampaign()).isNull();
+        // The partner dimension is untouched by any of this.
+        assertThat(saved.getValue().getReferralSource()).isEqualTo("LIGA");
     }
 
     private void stubHappyPathRegistration() {
@@ -133,7 +166,7 @@ class AuthServiceTest {
         // got an account. The advisory lock serialises them — but ONLY if taken first, so
         // the ordering is the assertion, not merely that the call happened.
         RegisterRequest req = new RegisterRequest("J.o.hn+2@gmail.com", "Sup3rPass!", "Іван",
-                Set.of(Trade.ELECTRICAL), null, "+380501112233", "FOP", true, null, null);
+                Set.of(Trade.ELECTRICAL), null, "+380501112233", "FOP", true, null, null, null, null, null);
         given(emailPolicyService.canonicalize("j.o.hn+2@gmail.com")).willReturn("john@gmail.com");
         given(userRepository.existsByEmailCanonical("john@gmail.com")).willReturn(true); // lost the race
 

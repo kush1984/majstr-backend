@@ -612,25 +612,92 @@
         const f = await resp.json();
         const reg = f.registered || 0;
         const pct = n => reg === 0 ? 0 : Math.round(n / reg * 100);
-        const step = (label, n) => `<div class="stat"><div class="label">${label}</div><div class="value">${n}</div><div class="sub">${pct(n)}% від реєстрацій</div></div>`;
+        // Step-to-step is the number you actually decide on: «% від реєстрацій» falls monotonically
+        // and makes every late step look equally bad, so it never points at WHICH step is the worst.
+        const step = (label, n, prev) => {
+            const drop = prev === undefined || prev === 0 ? null : Math.round(n / prev * 100);
+            return `<div class="stat"><div class="label">${label}</div><div class="value">${n}</div>`
+                + `<div class="sub">${pct(n)}% від реєстрацій</div>`
+                + (drop === null ? '' : `<div class="sub">${drop}% з попереднього кроку</div>`)
+                + '</div>';
+        };
         document.getElementById('funnel').innerHTML =
             step('Зареєструвались', reg) +
-            step('Підтвердили email', f.verifiedEmail) +
-            step("Створили об'єкт", f.withProject) +
-            step('Створили кошторис', f.withEstimate) +
-            step('Поділились з клієнтом', f.shared) +
-            step('Мають підписаний', f.withSigned);
+            step('Підтвердили email', f.verifiedEmail, reg) +
+            step("Створили об'єкт", f.withProject, f.verifiedEmail) +
+            step('Створили кошторис', f.withEstimate, f.withProject) +
+            step('Поділились з клієнтом', f.shared, f.withEstimate) +
+            step('Мають підписаний', f.withSigned, f.shared);
+    }
+
+    // A percentage NEVER travels without its denominator here: «12% (3/25)». A bare 12% at this
+    // scale reads as a measurement when it is usually three people.
+    function ratio(n, total) {
+        if (!total) return '<span class="muted">—</span>';
+        return `${Math.round(n / total * 100)}% <span class="muted">(${n}/${total})</span>`;
     }
 
     async function loadBySource() {
         const resp = await api('/admin/metrics/by-source');
         if (!resp.ok) return;
-        const rows = (await resp.json()).sources || [];
-        if (rows.length === 0) { document.getElementById('bySource').innerHTML = '<p class="muted">Немає даних.</p>'; return; }
-        document.getElementById('bySource').innerHTML =
-            `<table><thead><tr><th>Джерело</th><th title="Зареєстровано">Реєстр.</th><th title="Створили об'єкт">Активні</th><th title="Натиснули «Апгрейд»">PRO-кліки</th><th title="Подали заявку на PRO">PRO-заявки</th></tr></thead><tbody>`
-            + rows.map(r => `<tr><td>${r.source && r.source !== 'DIRECT' ? '<b>' + escapeHtml(r.source) + '</b>' : escapeHtml(r.source)}</td><td>${r.registered}</td><td>${r.activated}</td><td>${r.proClicks}</td><td>${r.proInterested}</td></tr>`).join('')
-            + `</tbody></table><p class="muted" style="margin-top:8px">Лише кількості — грошовий рев-шер додамо, коли підключимо облік платних підписок.</p>`;
+        const data = await resp.json();
+        const rows = data.sources || [];
+        const threshold = data.significanceThreshold;
+        const box = document.getElementById('bySource');
+        if (rows.length === 0) { box.innerHTML = '<p class="muted">Немає даних.</p>'; return; }
+
+        // The server owns the order (comparable sources first, best «% до підпису» on top) and
+        // sends `enoughData` per row — do NOT re-sort here, or two orderings start arguing.
+        const name = s => s && s !== 'DIRECT' ? '<b>' + escapeHtml(s) + '</b>' : escapeHtml(s || 'DIRECT');
+        let separatorDrawn = false;
+        const line = r => {
+            let sep = '';
+            if (!r.enoughData && !separatorDrawn) {
+                separatorDrawn = true;
+                sep = `<tr><td colspan="8" class="muted" style="padding-top:12px">Замало даних — менше ${threshold} реєстрацій. Відсотки тут нічого не означають.</td></tr>`;
+            }
+            return sep + `<tr>
+                <td>${name(r.source)}</td>
+                <td>${r.registered}</td>
+                <td class="hide-mobile">${r.verifiedEmail}</td>
+                <td class="hide-mobile">${r.activated}</td>
+                <td class="hide-mobile">${r.withEstimate}</td>
+                <td class="hide-mobile">${r.shared}</td>
+                <td>${ratio(r.withSigned, r.registered)}</td>
+                <td class="hide-mobile">${r.proClicks} / ${r.proInterested}</td>
+            </tr>`;
+        };
+        box.innerHTML =
+            `<table><thead><tr>
+                <th>Джерело</th>
+                <th title="Зареєстровано">Реєстр.</th>
+                <th class="hide-mobile" title="Підтвердили email">Email</th>
+                <th class="hide-mobile" title="Створили об'єкт">Об'єкт</th>
+                <th class="hide-mobile" title="Створили кошторис">Кошторис</th>
+                <th class="hide-mobile" title="Поділились з клієнтом">Поділились</th>
+                <th title="Дійшли до підписаного кошторису — головна цифра каналу">% до підпису</th>
+                <th class="hide-mobile" title="PRO-кліки / PRO-заявки">PRO</th>
+            </tr></thead><tbody>`
+            + rows.map(line).join('')
+            + `</tbody></table>`
+            + utmTable(data.utm || [], threshold)
+            + `<p class="muted" style="margin-top:8px">Лише кількості — грошовий рев-шер додамо, коли підключимо облік платних підписок.
+               На малих числах порівнюй лише джерела з ${threshold}+ реєстраціями.</p>`;
+    }
+
+    // UTM — це КАНАЛ (TikTok, Telegram, стаття), окремо від ?ref=, який є ПАРТНЕРОМ. Порожня мітка
+    // (null, і при non_null-серіалізації поле просто відсутнє) — це реальний рядок «без UTM»,
+    // а не пропуск: більшість майстрів приходять без міток.
+    function utmTable(utm, threshold) {
+        if (utm.length === 0) return '';
+        return `<h2 style="text-transform:none; letter-spacing:0; margin-top:20px">UTM-мітки — канал заходу</h2>
+            <table><thead><tr><th>utm_source</th><th>Реєстр.</th><th>% до підпису</th></tr></thead><tbody>`
+            + utm.map(u => `<tr>
+                <td>${u.source == null ? '<span class="muted">без UTM</span>' : '<b>' + escapeHtml(u.source) + '</b>'}</td>
+                <td>${u.registered}</td>
+                <td>${u.enoughData ? ratio(u.withSigned, u.registered) : '<span class="muted">замало даних</span>'}</td>
+            </tr>`).join('')
+            + `</tbody></table>`;
     }
 
     async function loadUpgradeInterest() {

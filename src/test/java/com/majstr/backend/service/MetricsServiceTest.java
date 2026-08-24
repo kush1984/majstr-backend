@@ -2,14 +2,20 @@ package com.majstr.backend.service;
 
 import com.majstr.backend.dto.ActivationFunnelResponse;
 import com.majstr.backend.dto.MetricsOverviewResponse;
+import com.majstr.backend.dto.OwnerSource;
+import com.majstr.backend.dto.SourceBreakdownResponse;
+import com.majstr.backend.dto.SourceCount;
 import com.majstr.backend.entity.EstimateStatus;
 import com.majstr.backend.entity.Plan;
 import com.majstr.backend.entity.Role;
+import com.majstr.backend.entity.ShareLinkKind;
+import com.majstr.backend.entity.UpgradeEventType;
 import com.majstr.backend.entity.User;
 import com.majstr.backend.repository.EstimateRepository;
 import com.majstr.backend.repository.EstimateShareLinkRepository;
 import com.majstr.backend.repository.PaymentRepository;
 import com.majstr.backend.repository.ProjectRepository;
+import com.majstr.backend.repository.UpgradeEventRepository;
 import com.majstr.backend.repository.UserRepository;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -35,7 +41,9 @@ class MetricsServiceTest {
     @Mock ProjectRepository projectRepository;
     @Mock EstimateRepository estimateRepository;
     @Mock EstimateShareLinkRepository shareLinkRepository;
+    @Mock com.majstr.backend.repository.ProjectShareLinkRepository projectShareLinkRepository;
     @Mock com.majstr.backend.repository.ReferralRewardRepository referralRewardRepository;
+    @Mock UpgradeEventRepository upgradeEventRepository;
     @Mock PaymentRepository paymentRepository;
     @InjectMocks MetricsService metricsService;
 
@@ -184,11 +192,14 @@ class MetricsServiceTest {
 
     @Test
     void activationFunnel_countsEachStepAcrossMasters() {
+        UUID sharedBothWays = UUID.randomUUID();
         given(userRepository.countByRole(Role.USER)).willReturn(5L);
         given(userRepository.countByRoleAndEmailVerifiedTrue(Role.USER)).willReturn(4L);
         given(projectRepository.countDistinctOwners()).willReturn(3L);
-        given(estimateRepository.countDistinctProjectOwners()).willReturn(2L);
-        given(shareLinkRepository.countDistinctOwners()).willReturn(1L);
+        given(estimateRepository.countDistinctProjectOwners()).willReturn(3L);
+        given(shareLinkRepository.findSharedOwners()).willReturn(List.of(ownerSource(sharedBothWays, "DIRECT")));
+        given(projectShareLinkRepository.findSharedOwners(ShareLinkKind.SHARED_WITH_CLIENT))
+                .willReturn(List.of(ownerSource(sharedBothWays, "DIRECT"), owner("LIGA")));
         given(estimateRepository.countDistinctProjectOwnersByStatus(EstimateStatus.SIGNED)).willReturn(1L);
 
         ActivationFunnelResponse f = metricsService.activationFunnel();
@@ -196,11 +207,163 @@ class MetricsServiceTest {
         assertThat(f.registered()).isEqualTo(5L);
         assertThat(f.verifiedEmail()).isEqualTo(4L);
         assertThat(f.withProject()).isEqualTo(3L);
-        assertThat(f.withEstimate()).isEqualTo(2L);
-        assertThat(f.shared()).isEqualTo(1L);
+        assertThat(f.withEstimate()).isEqualTo(3L);
+        // Two masters, not three: the one holding both kinds of link is ONE master. A sum of the two
+        // counts would report 3 here and push the step above `withEstimate`, which is impossible.
+        assertThat(f.shared()).isEqualTo(2L);
         assertThat(f.withSigned()).isEqualTo(1L);
     }
 
+    @Test
+    void activationFunnel_countsAMasterWhoOnlyEverSharedFromTheObject() {
+        given(userRepository.countByRole(Role.USER)).willReturn(1L);
+        given(userRepository.countByRoleAndEmailVerifiedTrue(Role.USER)).willReturn(1L);
+        given(projectRepository.countDistinctOwners()).willReturn(1L);
+        given(estimateRepository.countDistinctProjectOwners()).willReturn(1L);
+        // The bug this iteration fixes: no per-estimate link at all, and the object portal is the
+        // main sharing flow — the step used to read 0 and draw a cliff that was not there.
+        given(shareLinkRepository.findSharedOwners()).willReturn(List.of());
+        given(projectShareLinkRepository.findSharedOwners(ShareLinkKind.SHARED_WITH_CLIENT))
+                .willReturn(List.of(owner("DIRECT")));
+        given(estimateRepository.countDistinctProjectOwnersByStatus(EstimateStatus.SIGNED)).willReturn(0L);
+
+        assertThat(metricsService.activationFunnel().shared()).isEqualTo(1L);
+    }
+
+
+    @Test
+    void bySource_reportsTheWholeFunnelPerSource_notJustRegistrations() {
+        // The report used to stop at "activated". A source that brings 25 sign-ups of whom nobody
+        // ever signs an estimate looked identical to one that brings 25 who all do.
+        given(userRepository.countUsersBySource()).willReturn(List.of(count("LIGA", 25L), count("DIRECT", 8L)));
+        given(userRepository.countVerifiedUsersBySource()).willReturn(List.of(count("LIGA", 20L), count("DIRECT", 6L)));
+        given(projectRepository.countActivatedOwnersBySource()).willReturn(List.of(count("LIGA", 15L), count("DIRECT", 5L)));
+        given(estimateRepository.countEstimateOwnersBySource()).willReturn(List.of(count("LIGA", 12L), count("DIRECT", 5L)));
+        given(estimateRepository.countOwnersByStatusAndSource(EstimateStatus.SIGNED))
+                .willReturn(List.of(count("LIGA", 3L), count("DIRECT", 4L)));
+        given(shareLinkRepository.findSharedOwners()).willReturn(List.of(owner("LIGA"), owner("DIRECT")));
+        given(projectShareLinkRepository.findSharedOwners(ShareLinkKind.SHARED_WITH_CLIENT))
+                .willReturn(List.of(owner("LIGA"), owner("LIGA")));
+        given(upgradeEventRepository.countDistinctUsersBySourceAndType(UpgradeEventType.CLICK))
+                .willReturn(List.of(count("LIGA", 7L)));
+        given(upgradeEventRepository.countDistinctUsersBySourceAndType(UpgradeEventType.INTEREST))
+                .willReturn(List.of(count("LIGA", 2L)));
+        noUtm();
+
+        SourceBreakdownResponse report = metricsService.bySource();
+
+        // DIRECT first: 4/8 = 50% beats LIGA's 3/25 = 12%, and both clear the threshold. The old
+        // ordering (registrations desc) would have put the worse-converting source on top.
+        assertThat(report.sources()).extracting(SourceBreakdownResponse.SourceStat::source)
+                .containsExactly("DIRECT", "LIGA");
+        SourceBreakdownResponse.SourceStat liga = report.sources().get(1);
+        assertThat(liga.registered()).isEqualTo(25L);
+        assertThat(liga.verifiedEmail()).isEqualTo(20L);
+        assertThat(liga.activated()).isEqualTo(15L);
+        assertThat(liga.withEstimate()).isEqualTo(12L);
+        assertThat(liga.withSigned()).isEqualTo(3L);
+        assertThat(liga.proClicks()).isEqualTo(7L);
+        assertThat(liga.proInterested()).isEqualTo(2L);
+        assertThat(liga.enoughData()).isTrue();
+        assertThat(report.significanceThreshold()).isEqualTo(5);
+    }
+
+    @Test
+    void bySource_sharedIsTheSAMEUnionTheFunnelUses_notASumOfTwoCounts() {
+        // Three rows, two masters: the LIGA master holds both kinds of link. Summing the two
+        // queries would report 2 for LIGA and push its `shared` above its `withEstimate`.
+        UUID both = UUID.randomUUID();
+        given(userRepository.countUsersBySource()).willReturn(List.of(count("LIGA", 1L), count("DIRECT", 1L)));
+        given(userRepository.countVerifiedUsersBySource()).willReturn(List.of());
+        given(projectRepository.countActivatedOwnersBySource()).willReturn(List.of());
+        given(estimateRepository.countEstimateOwnersBySource()).willReturn(List.of());
+        given(estimateRepository.countOwnersByStatusAndSource(EstimateStatus.SIGNED)).willReturn(List.of());
+        given(shareLinkRepository.findSharedOwners())
+                .willReturn(List.of(ownerSource(both, "LIGA"), owner("DIRECT")));
+        given(projectShareLinkRepository.findSharedOwners(ShareLinkKind.SHARED_WITH_CLIENT))
+                .willReturn(List.of(ownerSource(both, "LIGA")));
+        given(upgradeEventRepository.countDistinctUsersBySourceAndType(any(UpgradeEventType.class)))
+                .willReturn(List.of());
+        noUtm();
+
+        List<SourceBreakdownResponse.SourceStat> rows = metricsService.bySource().sources();
+
+        assertThat(rows).extracting(SourceBreakdownResponse.SourceStat::shared).containsOnly(1L);
+        assertThat(rows).hasSize(2);
+    }
+
+    @Test
+    void bySource_aSourceBelowTheThresholdIsFlaggedAndNeverSortsOnItsPercentage() {
+        // One registration that signed once is 100%. Ranked on that number it would sit above a
+        // source with 25 masters forever — which is exactly the wrong reading to hand an admin.
+        given(userRepository.countUsersBySource()).willReturn(List.of(count("TIKTOK", 1L), count("LIGA", 25L)));
+        given(userRepository.countVerifiedUsersBySource()).willReturn(List.of());
+        given(projectRepository.countActivatedOwnersBySource()).willReturn(List.of());
+        given(estimateRepository.countEstimateOwnersBySource()).willReturn(List.of());
+        given(estimateRepository.countOwnersByStatusAndSource(EstimateStatus.SIGNED))
+                .willReturn(List.of(count("TIKTOK", 1L), count("LIGA", 3L)));
+        given(shareLinkRepository.findSharedOwners()).willReturn(List.of());
+        given(projectShareLinkRepository.findSharedOwners(ShareLinkKind.SHARED_WITH_CLIENT)).willReturn(List.of());
+        given(upgradeEventRepository.countDistinctUsersBySourceAndType(any(UpgradeEventType.class)))
+                .willReturn(List.of());
+        noUtm();
+
+        List<SourceBreakdownResponse.SourceStat> rows = metricsService.bySource().sources();
+
+        assertThat(rows).extracting(SourceBreakdownResponse.SourceStat::source).containsExactly("LIGA", "TIKTOK");
+        assertThat(rows.get(0).enoughData()).isTrue();
+        assertThat(rows.get(1).enoughData()).isFalse();
+    }
+
+    @Test
+    void bySource_theNullUtmBucketSurvivesAsARowOfItsOwn() {
+        // "Arrived with no tags" is the largest bucket and a real answer. Dropped from the fold,
+        // the UTM table would quietly total less than the registration count.
+        given(userRepository.countUsersBySource()).willReturn(List.of());
+        given(userRepository.countVerifiedUsersBySource()).willReturn(List.of());
+        given(projectRepository.countActivatedOwnersBySource()).willReturn(List.of());
+        given(estimateRepository.countEstimateOwnersBySource()).willReturn(List.of());
+        given(estimateRepository.countOwnersByStatusAndSource(EstimateStatus.SIGNED)).willReturn(List.of());
+        given(shareLinkRepository.findSharedOwners()).willReturn(List.of());
+        given(projectShareLinkRepository.findSharedOwners(ShareLinkKind.SHARED_WITH_CLIENT)).willReturn(List.of());
+        given(upgradeEventRepository.countDistinctUsersBySourceAndType(any(UpgradeEventType.class)))
+                .willReturn(List.of());
+        given(userRepository.countUsersByUtmSource())
+                .willReturn(List.of(count(null, 30L), count("tiktok", 6L)));
+        given(estimateRepository.countOwnersByStatusAndUtmSource(EstimateStatus.SIGNED))
+                .willReturn(List.of(count("tiktok", 2L)));
+
+        List<SourceBreakdownResponse.UtmStat> utm = metricsService.bySource().utm();
+
+        assertThat(utm).extracting(SourceBreakdownResponse.UtmStat::source).containsExactly(null, "tiktok");
+        assertThat(utm.get(0).registered()).isEqualTo(30L);
+        assertThat(utm.get(0).withSigned()).isZero();
+        assertThat(utm.get(1).enoughData()).isTrue();
+    }
+
+    /** The UTM half of the report, empty — the source half is what the test is about. */
+    private void noUtm() {
+        given(userRepository.countUsersByUtmSource()).willReturn(List.of());
+        given(estimateRepository.countOwnersByStatusAndUtmSource(EstimateStatus.SIGNED)).willReturn(List.of());
+    }
+
+    private static SourceCount count(String source, long cnt) {
+        return new SourceCount() {
+            @Override public String getSource() { return source; }
+            @Override public long getCnt() { return cnt; }
+        };
+    }
+
+    private static OwnerSource owner(String source) {
+        return ownerSource(UUID.randomUUID(), source);
+    }
+
+    private static OwnerSource ownerSource(UUID id, String source) {
+        return new OwnerSource() {
+            @Override public UUID getOwnerId() { return id; }
+            @Override public String getSource() { return source; }
+        };
+    }
     private UserRepository.PlanCount planCount(Plan plan, long total) {
         return new UserRepository.PlanCount() {
             @Override public Plan getPlan() { return plan; }

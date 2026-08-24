@@ -202,6 +202,20 @@ public class User {
     @Builder.Default
     private String referralSource = "DIRECT";
 
+    /** First-touch UTM tags (V114) — the CHANNEL the master arrived through, kept apart from
+     *  {@link #referralSource}, which is the PARTNER. Both dimensions are real at once: a master
+     *  can follow a partner link from TikTok. Stamped once at registration, never overwritten.
+     *  <b>NULL is legitimate</b> ("arrived with no tags") — there is no DIRECT-style sentinel,
+     *  because that would merge "no tags" with "a tag that said direct". */
+    @Column(name = "utm_source", length = 60)
+    private String utmSource;
+
+    @Column(name = "utm_medium", length = 60)
+    private String utmMedium;
+
+    @Column(name = "utm_campaign", length = 100)
+    private String utmCampaign;
+
     /** This master's own personal referral code — the shareable link is
      *  {@code majstr.pro/?ref=m-<referralCode>}. Generated uniquely at registration
      *  (backfilled for existing users in V41). UNIQUE. */

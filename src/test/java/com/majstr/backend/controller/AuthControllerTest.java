@@ -102,7 +102,7 @@ class AuthControllerTest {
                 "Smith Electrical LLC",
                 true,
                 null,
-                null);
+                null, null, null, null);
 
         given(authService.register(any(RegisterRequest.class)))
                 .willReturn(sampleAuthResponse("john@example.com"));
@@ -174,7 +174,7 @@ class AuthControllerTest {
                 "Company",
                 true,
                 null,
-                null);
+                null, null, null, null);
 
         mockMvc.perform(post("/api/auth/register")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -196,7 +196,7 @@ class AuthControllerTest {
                 "Company",
                 true,
                 null,
-                null);
+                null, null, null, null);
 
         mockMvc.perform(post("/api/auth/register")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -217,7 +217,7 @@ class AuthControllerTest {
                 "Smith Electrical LLC",
                 true,
                 null,
-                null);
+                null, null, null, null);
 
         given(authService.register(any(RegisterRequest.class)))
                 .willReturn(sampleAuthResponse("john@example.com"));
@@ -241,7 +241,7 @@ class AuthControllerTest {
                 "Company",
                 false,
                 null,
-                null);
+                null, null, null, null);
 
         mockMvc.perform(post("/api/auth/register")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -286,7 +286,7 @@ class AuthControllerTest {
 
     private static RegisterRequest validRegisterRequest(String email) {
         return new RegisterRequest(email, "Sup3r-Secret!", "John Smith",
-                Set.of(Trade.ELECTRICAL), null, "+15551234567", "Smith Electrical LLC", true, null, null);
+                Set.of(Trade.ELECTRICAL), null, "+15551234567", "Smith Electrical LLC", true, null, null, null, null, null);
     }
 
     private AuthResponse sampleAuthResponse(String email) {

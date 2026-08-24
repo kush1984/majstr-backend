@@ -30,7 +30,14 @@ public record RegisterRequest(
         // storage) and/or a typed community promo code. Both resolve to a partner
         // source (ref wins); absent → DIRECT. Never breaks a plain registration.
         @Size(max = 40) String ref,
-        @Size(max = 40) String promoCode
+        @Size(max = 40) String promoCode,
+        // First-touch UTM tags (V114), captured by the PWA on the entry URL. A different
+        // dimension from the ref above: that one is the PARTNER, these are the CHANNEL, and a
+        // master can arrive on a partner link from TikTok. All optional — absent stays NULL,
+        // which is a real value ("arrived with no tags"), not a missing one.
+        @Size(max = 60) String utmSource,
+        @Size(max = 60) String utmMedium,
+        @Size(max = 100) String utmCampaign
 ) {
     @AssertTrue(message = "at least one trade (system or custom) is required")
     public boolean isTradeChosen() {

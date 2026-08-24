@@ -84,8 +84,17 @@ public interface ProjectRepository extends JpaRepository<Project, UUID> {
             + "WHERE p.owner.id IN :ownerIds GROUP BY p.owner.id")
     List<OwnerCount> countByOwnerIdIn(@Param("ownerIds") Collection<UUID> ownerIds);
 
-    /** How many distinct masters have created at least one project (funnel step). */
-    @Query("SELECT COUNT(DISTINCT p.owner.id) FROM Project p")
+    /**
+     * How many distinct masters have created at least one project (funnel step).
+     *
+     * <p>{@code role = USER} matches {@code countActivatedOwnersBySource} and
+     * {@code UserRepository.countUsersBySource}: the funnel is "across masters", and one demo object
+     * on an admin account would otherwise make the by-source rows stop summing to the funnel.</p>
+     */
+    @Query("""
+            SELECT COUNT(DISTINCT p.owner.id) FROM Project p
+            WHERE p.owner.role = com.majstr.backend.entity.Role.USER
+            """)
     long countDistinctOwners();
 
     /** Lifetime estimate counters — bumped on estimate create/delete. Bulk UPDATE

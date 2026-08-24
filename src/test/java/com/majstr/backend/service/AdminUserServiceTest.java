@@ -6,6 +6,7 @@ import com.majstr.backend.dto.UpgradeUserActivity;
 import com.majstr.backend.entity.EstimateStatus;
 import com.majstr.backend.entity.Plan;
 import com.majstr.backend.entity.Role;
+import com.majstr.backend.entity.ShareLinkKind;
 import com.majstr.backend.entity.Trade;
 import com.majstr.backend.entity.User;
 import com.majstr.backend.repository.CatalogItemRepository;
@@ -47,6 +48,7 @@ class AdminUserServiceTest {
     @Mock ProjectRepository projectRepository;
     @Mock EstimateRepository estimateRepository;
     @Mock EstimateShareLinkRepository shareLinkRepository;
+    @Mock com.majstr.backend.repository.ProjectShareLinkRepository projectShareLinkRepository;
     @Mock CatalogItemRepository catalogRepository;
     @Mock com.majstr.backend.repository.PaymentRepository paymentRepository;
     @Mock com.majstr.backend.repository.ReferralRewardRepository referralRewardRepository;
@@ -142,6 +144,23 @@ class AdminUserServiceTest {
         assertThat(d.catalogItemsCount()).isEqualTo(42);
         assertThat(d.hasLogo()).isTrue();
         assertThat(d.lastEstimateCreatedAt()).isNotNull();
+    }
+
+    // The card used to read only EstimateShareLink, exactly like the funnel step did. A master who
+    // shares from the object (the main flow since the portal iteration) showed «Поділився хоч раз:
+    // ні» while the fixed funnel counted him — two numbers on one admin page contradicting each other.
+    @Test
+    void detail_countsAMasterWhoOnlyEverSharedFromTheObject() {
+        UUID id = UUID.randomUUID();
+        given(userRepository.findWithTradesById(id)).willReturn(Optional.of(user(id, "a@x", Plan.FREE, true)));
+        given(estimateRepository.countByStatusForOwner(id)).willReturn(List.of());
+        given(shareLinkRepository.countByOwner(id)).willReturn(0L);
+        given(projectShareLinkRepository.existsByProjectOwnerIdAndKindIn(id, ShareLinkKind.SHARED_WITH_CLIENT))
+                .willReturn(true);
+        given(upgradeEventService.userActivity(id))
+                .willReturn(new UpgradeUserActivity(0, null, false, null, null));
+
+        assertThat(adminUserService.detail(id).hasShareLink()).isTrue();
     }
 
     private static User user(UUID id, String email, Plan plan, boolean verified) {

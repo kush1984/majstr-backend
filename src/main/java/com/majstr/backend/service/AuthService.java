@@ -66,6 +66,12 @@ public class AuthService {
                 .consentedToPrivacyAt(Instant.now())
                 .referralSource(attribution.source())
                 .referredByUserId(attribution.referredByUserId())
+                // First-touch UTM (V114) — the channel, stamped once here like the source above.
+                // Blank arrives as NULL: an empty tag is "no tag", and the reports bucket NULL
+                // explicitly as «без UTM».
+                .utmSource(trimToNull(req.utmSource()))
+                .utmMedium(trimToNull(req.utmMedium()))
+                .utmCampaign(trimToNull(req.utmCampaign()))
                 // This master's own shareable code (majstr.pro/?ref=m-<code>).
                 .referralCode(referralService.generateUniqueCode())
                 .build();
@@ -78,6 +84,15 @@ public class AuthService {
         // problem must not break registration; the user can resend later).
         emailVerificationService.issueAndSend(user);
         return issueTokens(user);
+    }
+
+    /** A blank UTM tag is no tag: NULL is the value that means "arrived without marks". */
+    private static String trimToNull(String raw) {
+        if (raw == null) {
+            return null;
+        }
+        String trimmed = raw.trim();
+        return trimmed.isEmpty() ? null : trimmed;
     }
 
     /**

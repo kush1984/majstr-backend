@@ -179,7 +179,53 @@ empty for those receipts — the seller name lives in the response's plain-text 
 captcha-optional-for-now, exact-match-only) still stand, so the open-questions item stays
 `IN_PROGRESS`.
 
-## 7. Not verified
+## 7. The scan itself was reading the wrong code
+
+With the backend right, the master reported the opposite failure: «кожен раз каже, що це не кюр
+код». Nothing in the backend can produce that message — it is `looksFiscal` in `QrScanSheet`, and
+the PWA had not changed. The photos said why.
+
+**A receipt prints SEVERAL QR codes, and the fiscal one is the hard one.** Beside it the paper
+carries the register vendor's code, a marketing link, a loyalty code — short payloads in sparse,
+high-contrast codes that decode instantly, while the fiscal code is ~40 modules wide, printed a
+couple of centimetres across on curling thermal paper. Measured on the two real photos:
+
+- receipt 2 (720×1280): a plain `jsqr` pass over the whole photo finds **only**
+  `https://shorturl.at/Qosce`. The fiscal code decodes only after an adaptive threshold.
+- receipt 1 (3072×4096): `jsqr` never reads its fiscal code at all, under any crop, radius, bias or
+  upscale tried — only the vendor code (`6700494601156513161866;804001;…`) comes out.
+
+`decodeQr` took the **first** code the native detector returned and discarded the rest, so the
+master was told his receipt was not a receipt about a code he never aimed at. Three changes:
+
+1. **Prefer a fiscal payload among all codes seen** (`preferFiscal`), instead of `found[0]`. This is
+   the fix that matters on Android, where the native `BarcodeDetector` does read the dense code.
+2. **A preprocessing ladder on a still photo** (`sweep`): plain → adaptive threshold at
+   `(r,1.05) (r,1) (2r,1.05) (2r,1)` → the same thresholds over overlapping halves and thirds,
+   stopping at the first fiscal payload. The threshold is a summed-area table, so the window radius
+   is free. Receipt 2 now reads its fiscal code in **2 `jsqr` calls / ~0.6 s**.
+   A **6 s budget** bounds it: the full ladder on receipt 1 is 141 calls / **29 s** on a desktop,
+   which on a phone is not a wait but a hang. The pass that pays is the first one.
+3. **The camera asks for resolution.** `getUserMedia` requested none, so a phone may hand back
+   640×480 — at which a 40-module code is under two pixels per module and cannot be read, while the
+   sparse code beside it reads fine. Now `width/height: {ideal: 1920/1080}` + `focusMode:
+   continuous`, all `ideal` so a laptop webcam still opens.
+
+The sheet also **names the code it did read** («Прочитано: https://shorturl.at/…»). A bare «це не
+чек» reads as the feature being broken; the payload tells the master he aimed at the wrong code.
+
+Receipt 1's fiscal code still does not decode through `jsqr` from that photo — that is an iOS-path
+limitation of the JS decoder, not something preprocessing fixed. On Android the native detector is
+the one that reads it, which is what change 1 unblocks.
+
+## 8. Not verified
 
 The QR sheet was not opened in a real browser at 375×812; it is built mobile-first (full-width
 buttons, square viewfinder, nothing below the fold) but that is a design claim, not a verified one.
+
+Nor was the fixed scanner: the decoding was verified against both real photos through a node
+harness running the shipped `sweep` verbatim (receipt 2 → its fiscal payload in 2 calls / 0.6 s;
+receipt 1 → the vendor code, bounded at 6.1 s), and the camera-resolution and fiscal-preference
+changes are reasoned from those measurements, not observed on the master's phone. The amber notice
+grew a second line — `break-all` keeps a 60-char payload from scrolling a 375px sheet sideways,
+which is a design claim too.

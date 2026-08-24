@@ -53,12 +53,56 @@ public interface EstimateRepository extends JpaRepository<Estimate, UUID> {
     @Query("SELECT MAX(e.createdAt) FROM Estimate e WHERE e.project.owner.id = :ownerId")
     Instant findLastEstimateCreatedAt(@Param("ownerId") UUID ownerId);
 
-    /** Distinct masters with at least one estimate / one signed estimate (funnel). */
-    @Query("SELECT COUNT(DISTINCT e.project.owner.id) FROM Estimate e")
+    /**
+     * Distinct masters with at least one estimate / one signed estimate (funnel).
+     *
+     * <p>{@code role = USER} for the same reason as {@code ProjectRepository.countDistinctOwners}:
+     * every funnel step counts masters, so an admin with a demo object must not appear in one step
+     * and be missing from another.</p>
+     */
+    @Query("""
+            SELECT COUNT(DISTINCT e.project.owner.id) FROM Estimate e
+            WHERE e.project.owner.role = com.majstr.backend.entity.Role.USER
+            """)
     long countDistinctProjectOwners();
 
-    @Query("SELECT COUNT(DISTINCT e.project.owner.id) FROM Estimate e WHERE e.status = :status")
+    @Query("""
+            SELECT COUNT(DISTINCT e.project.owner.id) FROM Estimate e
+            WHERE e.status = :status AND e.project.owner.role = com.majstr.backend.entity.Role.USER
+            """)
     long countDistinctProjectOwnersByStatus(@Param("status") EstimateStatus status);
+
+    /** The two estimate funnel steps, grouped by referral source — same rules as the aggregates
+     *  above (masters only, distinct owners), so the by-source rows sum to the funnel. */
+    @Query("""
+            SELECT e.project.owner.referralSource AS source, COUNT(DISTINCT e.project.owner.id) AS cnt
+            FROM Estimate e
+            WHERE e.project.owner.role = com.majstr.backend.entity.Role.USER
+            GROUP BY e.project.owner.referralSource
+            """)
+    List<com.majstr.backend.dto.SourceCount> countEstimateOwnersBySource();
+
+    @Query("""
+            SELECT e.project.owner.referralSource AS source, COUNT(DISTINCT e.project.owner.id) AS cnt
+            FROM Estimate e
+            WHERE e.status = :status AND e.project.owner.role = com.majstr.backend.entity.Role.USER
+            GROUP BY e.project.owner.referralSource
+            """)
+    List<com.majstr.backend.dto.SourceCount> countOwnersByStatusAndSource(@Param("status") EstimateStatus status);
+
+    /**
+     * Signed-estimate owners grouped by first-touch UTM source (V114).
+     *
+     * <p>{@code utm_source} is NULLABLE and NULL is a real bucket ("arrived with no tags"), so the
+     * caller must not use it as a map key unlabelled — it renders as «без UTM».</p>
+     */
+    @Query("""
+            SELECT e.project.owner.utmSource AS source, COUNT(DISTINCT e.project.owner.id) AS cnt
+            FROM Estimate e
+            WHERE e.status = :status AND e.project.owner.role = com.majstr.backend.entity.Role.USER
+            GROUP BY e.project.owner.utmSource
+            """)
+    List<com.majstr.backend.dto.SourceCount> countOwnersByStatusAndUtmSource(@Param("status") EstimateStatus status);
 
     /**
      * For each given project, the latest estimate (by createdAt) with its status

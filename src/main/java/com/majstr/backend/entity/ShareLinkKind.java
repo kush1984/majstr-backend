@@ -1,5 +1,9 @@
 package com.majstr.backend.entity;
 
+import java.util.Collections;
+import java.util.EnumSet;
+import java.util.Set;
+
 /**
  * What a share link opens.
  *
@@ -24,5 +28,17 @@ public enum ShareLinkKind {
     PORTAL,
     MESSAGE,
     ECONOMY,
-    ACT
+    ACT;
+
+    /**
+     * The kinds that mean "the master showed a client a document" — the funnel's {@code shared} step
+     * and the admin card's {@code hasShareLink}.
+     *
+     * <p>{@link #MESSAGE} is deliberately absent: it opens a contact form and nothing else, minted
+     * for a supplier or a colleague. Counting it would award the step to somebody who never sent the
+     * client anything. The set lives here rather than inline at the two call sites so the two can
+     * never drift apart — a new kind gets classified once, in the place that defines what a kind is.</p>
+     */
+    public static final Set<ShareLinkKind> SHARED_WITH_CLIENT =
+            Collections.unmodifiableSet(EnumSet.of(PORTAL, ECONOMY, ACT));
 }

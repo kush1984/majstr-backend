@@ -335,6 +335,30 @@ public interface UserRepository extends JpaRepository<User, UUID> {
             """)
     List<com.majstr.backend.dto.SourceCount> countUsersBySource();
 
+    /** Email-verified masters grouped by referral source — funnel step 2, by source. */
+    @Query("""
+            SELECT u.referralSource AS source, COUNT(u) AS cnt
+            FROM User u
+            WHERE u.role = com.majstr.backend.entity.Role.USER AND u.emailVerified = true
+            GROUP BY u.referralSource
+            """)
+    List<com.majstr.backend.dto.SourceCount> countVerifiedUsersBySource();
+
+    /**
+     * Registrations grouped by first-touch UTM source (V114) — the channel dimension, kept apart
+     * from the partner dimension above.
+     *
+     * <p>{@code utm_source} is NULLABLE, and NULL means "arrived with no tags" — a legitimate row,
+     * not a gap. The caller buckets it explicitly as «без UTM» instead of dropping it.</p>
+     */
+    @Query("""
+            SELECT u.utmSource AS source, COUNT(u) AS cnt
+            FROM User u
+            WHERE u.role = com.majstr.backend.entity.Role.USER
+            GROUP BY u.utmSource
+            """)
+    List<com.majstr.backend.dto.SourceCount> countUsersByUtmSource();
+
     /** Spring Data projection used by {@link #countGroupByPlan()}. */
     interface PlanCount {
         Plan getPlan();
