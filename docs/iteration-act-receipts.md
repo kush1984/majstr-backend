@@ -163,6 +163,11 @@ amount used to reach the DB CHECK and surface as a 500.
 
 ## 8.2 Recognition — `POST /api/acts/{id}/receipts/recognize`
 
+> **Superseded (2026-08-28).** Carrying a receipt's positions into an ACT was removed —
+> there is one read left on that path (label / date / total), it is free, and no endpoint takes
+> `withItems` any more. See `docs/iteration-receipts-batch.md` §15. The ESTIMATE-side receipt
+> import is unaffected: there the positions are the point.
+
 Two depths. **The gate is per MODE, not per endpoint** (master decision, 2026-08-23 — see
 Round 5 below): the meta pass is FREE, only `withItems` is behind `Feature.RECEIPT_IMPORT`.
 
@@ -441,6 +446,12 @@ target, truncating names) but was **not** opened in a browser at 375 × 812 — 
 ---
 
 # Round 5 — the receipt gate splits per mode (2026-08-23)
+
+> **Superseded (2026-08-28).** Carrying a receipt's positions into an ACT was removed —
+> there is one read left on that path (label / date / total), it is free, and no endpoint takes
+> `withItems` any more. See `docs/iteration-receipts-batch.md` §15. The ESTIMATE-side receipt
+> import is unaffected: there the positions are the point. The split described below is history: with the
+> paid mode gone, this path has no gate left.
 
 > «тільки шапка (назва / дата / сума з підвалу, haiku) - оцей режим у нас нехай тоже буде фрі,
 > а оце withItems=true — з таблицею позицій (sonnet, тим самим промтом, що й імпорт кошторису)

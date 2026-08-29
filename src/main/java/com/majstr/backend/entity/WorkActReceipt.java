@@ -54,6 +54,25 @@ public class WorkActReceipt {
     @Column(name = "amount", nullable = false, precision = 15, scale = 2)
     private BigDecimal amount;
 
+    /**
+     * How much of this receipt went back to the shop (V115). Leftover material the client does not
+     * need is returned in part, against no document of its own — so this is a number on the purchase
+     * receipt, never a second row.
+     *
+     * <p><b>Capped at {@link #amount} by a DB CHECK, and that cap is load-bearing:</b> every figure
+     * downstream bills {@link #billedAmount()}, so a receipt can shrink to zero but never turn into
+     * negative money in the ADDENDUM, the MATERIALS expense or «Прийнято актами».</p>
+     */
+    @Column(name = "returned_amount", nullable = false, precision = 15, scale = 2)
+    @Builder.Default
+    private BigDecimal returnedAmount = BigDecimal.ZERO;
+
+    /** What the client is actually billed for this receipt: paid less returned. */
+    public BigDecimal billedAmount() {
+        BigDecimal returned = returnedAmount == null ? BigDecimal.ZERO : returnedAmount;
+        return amount.subtract(returned);
+    }
+
     /** The date printed on the receipt, if the master bothered to type it. */
     @Column(name = "issued_at")
     private LocalDate issuedAt;

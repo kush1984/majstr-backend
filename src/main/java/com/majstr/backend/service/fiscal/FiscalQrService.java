@@ -57,10 +57,24 @@ public class FiscalQrService {
     }
 
     /**
-     * Read a scanned QR payload into a receipt, or empty when the payload is not a fiscal code we
-     * understand — the one case where the caller should fall back to reading the photo.
+     * Read a scanned QR payload into a receipt, positions included — the enriching lookup runs.
      */
     public Optional<FiscalReceipt> read(String payload) {
+        return read(payload, true);
+    }
+
+    /**
+     * Read a scanned QR payload into a receipt, or empty when the payload is not a fiscal code we
+     * understand — the one case where the caller should fall back to reading the photo.
+     *
+     * <p>{@code withPositions=false} skips the tax-service lookup entirely and answers from the code
+     * alone. That is not an optimisation detail: the lookup adds only the seller name and the
+     * purchased lines, and since the receipts-batch iteration a receipt is named «Чек №N» by
+     * default, so a caller that does not want positions has nothing to gain from it and everything
+     * to lose — it is an undocumented third party with a 10 s timeout, tried automatically on every
+     * photo of a batch. Without it this method makes no network call at all.</p>
+     */
+    public Optional<FiscalReceipt> read(String payload, boolean withPositions) {
         Optional<FiscalQrPayload> parsed = FiscalQrPayload.parse(payload);
         if (parsed.isEmpty()) {
             return Optional.empty();
@@ -70,7 +84,7 @@ public class FiscalQrService {
         FiscalReceipt fromCode =
                 new FiscalReceipt(null, qr.issuedAt().toLocalDate(), qr.sum(), List.of());
 
-        if (!props.enabled()) {
+        if (!withPositions || !props.enabled()) {
             return Optional.of(fromCode);
         }
         FiscalReceipt looked = lookup(qr);

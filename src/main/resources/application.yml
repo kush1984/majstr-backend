@@ -149,6 +149,11 @@ app:
     # photographing a whole day's receipts is nowhere near 30.
     receipt-scan:
       max-per-hour: ${RECEIPT_SCAN_MAX_PER_HOUR:30}
+    # Per account, and SEPARATE from receipt-scan on purpose: reading a fiscal QR spends no model
+    # call, and a BATCH of photographed receipts spends one per receipt. Sharing the recognition
+    # bucket would let one batch eat the budget for the pass that actually costs money.
+    qr-scan:
+      max-per-hour: ${QR_SCAN_MAX_PER_HOUR:120}
   fiscal-qr:
     # Lookup for the QR printed on every Ukrainian fiscal receipt (ДПС Electronic Cabinet). The QR
     # itself already gives the total and the date with no network call at all; this only adds the

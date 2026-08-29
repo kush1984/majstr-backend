@@ -15,7 +15,8 @@ public record RateLimitProperties(
         EstimateEmail estimateEmail,
         MessageLink messageLink,
         Question question,
-        ReceiptScan receiptScan
+        ReceiptScan receiptScan,
+        QrScan qrScan
 ) {
     public record Login(
             @Positive int maxAttempts,
@@ -76,6 +77,16 @@ public record RateLimitProperties(
      * reach (its meta pass), and it persists nothing, so nothing else bounds how often it is spent.
      */
     public record ReceiptScan(
+            @Positive int maxPerHour
+    ) {}
+
+    /**
+     * Cap on fiscal-QR reads per account per hour, counted SEPARATELY from {@link ReceiptScan}
+     * (master decision, 2026-08-24). A QR read spends no model call — it is the free first rung of
+     * «додати чек з фото», and a batch of photos spends one per receipt. Sharing the recognition
+     * bucket would let one photo batch eat the budget for the pass that actually costs money.
+     */
+    public record QrScan(
             @Positive int maxPerHour
     ) {}
 }

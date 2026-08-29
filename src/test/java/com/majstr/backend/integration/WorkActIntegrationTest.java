@@ -57,7 +57,9 @@ class WorkActIntegrationTest extends IntegrationTestBase {
     @Autowired EstimateItemRepository estimateItemRepository;
     @Autowired WorkActRepository workActRepository;
     @Autowired com.majstr.backend.service.WorkActReceiptService receiptService;
+    @Autowired com.majstr.backend.repository.WorkActReceiptRepository receiptRepository;
     @Autowired com.majstr.backend.repository.ProjectPhotoRepository photoRepository;
+    @Autowired com.majstr.backend.service.ProjectPortalService projectPortalService;
 
     @Test
     void numberingIsContinuousPerMaster_acrossObjects() {
@@ -244,10 +246,14 @@ class WorkActIntegrationTest extends IntegrationTestBase {
     }
 
     @Test
-    void itemizedReceipt_billsThroughItsPositions_neverTwice() throws Exception {
-        // Round 2: the recognized positions live as act lines; the receipt row stays as proof but
-        // its amount must not be billed again — not in receiptsTotal, not in the ADDENDUM, not in
-        // «Прийнято актами». The expense posting is the one place it still counts.
+    void legacyItemizedReceipt_stillBillsThroughItsPositions_neverTwice() throws Exception {
+        // Carrying a receipt's positions into an act was removed (2026-08-28), so nothing can flip
+        // this flag any more — but rows created that way exist, some frozen into a SIGNED act, and
+        // they must keep reading exactly as they were signed: the positions are act lines, the
+        // receipt row stays as proof, and its amount is never billed a second time — not in
+        // receiptsTotal, not in the ADDENDUM, not in «Прийнято актами». The expense posting is the
+        // one place it still counts. Hence the flag is set here the only way it can be now:
+        // straight on the row, standing in for the historical data.
         User owner = newOwner();
         Project p = newProject(owner);
         Estimate est = signedEstimateWithLine(p, "Робота", "100.000", "145.00"); // 14 500
@@ -260,8 +266,9 @@ class WorkActIntegrationTest extends IntegrationTestBase {
                         Unit.M2, new BigDecimal("145.00"), new BigDecimal("50.000")),
                 new WorkActItemsRequest.Line(null, null, ItemType.MATERIAL, "Клей Ceresit CM-11", null,
                         Unit.PIECE, new BigDecimal("241.75"), new BigDecimal("2.000")))), owner.getId());
-        receiptService.add(act.id(), owner.getId(), receiptPhoto(), "Епіцентр",
-                new BigDecimal("483.50"), null, true, false);
+        var receipt = receiptService.add(act.id(), owner.getId(), null, receiptPhoto(), "Епіцентр",
+                new BigDecimal("483.50"), null, false);
+        markItemized(receipt.id());
 
         WorkActResponse before = workActService.get(act.id(), owner.getId());
         assertThat(before.receiptsTotal()).isEqualByComparingTo("0.00"); // itemized = reference-only
@@ -285,8 +292,8 @@ class WorkActIntegrationTest extends IntegrationTestBase {
         Project p = newProject(owner);
         signedEstimateWithLine(p, "Робота", "100.000", "145.00");
         WorkActResponse act = createInterim(p.getId(), owner.getId());
-        receiptService.add(act.id(), owner.getId(), receiptPhoto(), "Епіцентр",
-                new BigDecimal("2400.00"), null, false, false);
+        receiptService.add(act.id(), owner.getId(), null, receiptPhoto(), "Епіцентр",
+                new BigDecimal("2400.00"), null, false);
 
         WorkActResponse signed = workActService.signOffline(
                 act.id(), new WorkActSignOfflineRequest("Клієнт"), owner.getId());
@@ -302,15 +309,105 @@ class WorkActIntegrationTest extends IntegrationTestBase {
         signedEstimateWithLine(p, "Робота", "100.000", "145.00");
         WorkActResponse act = createInterim(p.getId(), owner.getId());
 
-        assertThatThrownBy(() -> receiptService.add(act.id(), owner.getId(), null, "Епіцентр",
-                new BigDecimal("100.00"), null, false, false))
+        assertThatThrownBy(() -> receiptService.add(act.id(), owner.getId(), null, null, "Епіцентр",
+                new BigDecimal("100.00"), null, false))
                 .isInstanceOf(WorkActValidationException.class); // no photo
-        assertThatThrownBy(() -> receiptService.add(act.id(), owner.getId(), receiptPhoto(), "  ",
-                new BigDecimal("100.00"), null, false, false))
-                .isInstanceOf(WorkActValidationException.class); // blank label
-        assertThatThrownBy(() -> receiptService.add(act.id(), owner.getId(), receiptPhoto(), "Епіцентр",
-                new BigDecimal("-5.00"), null, false, false))
+        assertThatThrownBy(() -> receiptService.add(act.id(), owner.getId(), null, receiptPhoto(), "Епіцентр",
+                new BigDecimal("-5.00"), null, false))
                 .isInstanceOf(WorkActValidationException.class); // negative → 400, not a DB 500
+    }
+
+    @Test
+    void receiptAdd_blankLabelIsNamedByTheServer_andNumberedFromTheActsOwnCount() throws Exception {
+        // The client cannot know how many receipts the act already holds, so a batch upload would
+        // name every photo «Чек №1» if it defaulted locally (receipts-batch).
+        User owner = newOwner();
+        Project p = newProject(owner);
+        signedEstimateWithLine(p, "Робота", "100.000", "145.00");
+        WorkActResponse act = createInterim(p.getId(), owner.getId());
+
+        var first = receiptService.add(act.id(), owner.getId(), null, receiptPhoto(), "  ",
+                new BigDecimal("100.00"), LocalDate.of(2026, 8, 20), false);
+        var second = receiptService.add(act.id(), owner.getId(), null, receiptPhoto(), null,
+                new BigDecimal("200.00"), LocalDate.of(2026, 8, 21), false);
+
+        assertThat(first.label()).isEqualTo("Чек №1");
+        assertThat(second.label()).isEqualTo("Чек №2");
+    }
+
+    @Test
+    void receiptsAreListedNewestFirst_withUndatedOnTop() throws Exception {
+        // One ordering for the editor list, the PDF, the portal and the ADDENDUM rollup — an
+        // undated receipt is one the master still has to look at, so it lands where he does.
+        User owner = newOwner();
+        Project p = newProject(owner);
+        signedEstimateWithLine(p, "Робота", "100.000", "145.00");
+        WorkActResponse act = createInterim(p.getId(), owner.getId());
+        receiptService.add(act.id(), owner.getId(), null, receiptPhoto(), "Старий",
+                new BigDecimal("100.00"), LocalDate.of(2026, 8, 1), false);
+        receiptService.add(act.id(), owner.getId(), null, receiptPhoto(), "Новий",
+                new BigDecimal("200.00"), LocalDate.of(2026, 8, 20), false);
+        receiptService.add(act.id(), owner.getId(), null, receiptPhoto(), "Без дати",
+                new BigDecimal("300.00"), null, false);
+
+        assertThat(receiptService.list(act.id(), owner.getId()))
+                .extracting(r -> r.label())
+                .containsExactly("Без дати", "Новий", "Старий");
+    }
+
+    @Test
+    void receiptAdd_isIdempotentOnTheClientUuid() throws Exception {
+        // A batch over a weak connection retries for exactly the reason an offline queue replays,
+        // and a duplicated receipt is duplicated MONEY — in the act and in its ADDENDUM rollup.
+        User owner = newOwner();
+        Project p = newProject(owner);
+        signedEstimateWithLine(p, "Робота", "100.000", "145.00");
+        WorkActResponse act = createInterim(p.getId(), owner.getId());
+        UUID clientId = UUID.randomUUID();
+
+        var first = receiptService.add(act.id(), owner.getId(), clientId, receiptPhoto(), "Епіцентр",
+                new BigDecimal("483.50"), null, false);
+        var replay = receiptService.add(act.id(), owner.getId(), clientId, receiptPhoto(), "Епіцентр",
+                new BigDecimal("483.50"), null, false);
+
+        assertThat(first.id()).isEqualTo(clientId);
+        assertThat(replay.id()).isEqualTo(clientId);
+        assertThat(receiptService.list(act.id(), owner.getId())).hasSize(1);
+        assertThat(workActService.get(act.id(), owner.getId()).receiptsTotal())
+                .isEqualByComparingTo("483.50");
+    }
+
+    @Test
+    void anUnpricedReceipt_isSavedButBlocksSharingAndSigning() throws Exception {
+        // The photo is stored before anything reads it — that is the answer to «з недостатньою
+        // швидкістю інтернету довго думає і додавати чек не хоче». What must never happen is that
+        // a 0 ₴ receipt reaches a document: SENT is signable, and SIGNED is immutable, hashed, and
+        // rolls its receipts into a SIGNED ADDENDUM estimate.
+        User owner = newOwner();
+        owner.setEmailVerified(true); // the publish path is gated on it, and that is not what we test
+        userRepository.save(owner);
+        Project p = newProject(owner);
+        Estimate est = signedEstimateWithLine(p, "Робота", "100.000", "145.00");
+        UUID lineId = estimateItemRepository.findByEstimateIdOrderBySortOrderAscIdAsc(est.getId()).get(0).getId();
+        WorkActResponse act = createInterim(p.getId(), owner.getId());
+        setSingleLine(act.id(), owner.getId(), est.getId(), lineId, "10.000", "145.00");
+        var saved = receiptService.add(act.id(), owner.getId(), null, receiptPhoto(), null,
+                BigDecimal.ZERO, null, false);
+
+        assertThat(saved.amount()).isEqualByComparingTo("0.00");
+        assertThatThrownBy(() -> projectPortalService.updateAct(act.id(), owner.getId()))
+                .isInstanceOf(WorkActValidationException.class)
+                .satisfies(e -> assertThat(((WorkActValidationException) e).getCode())
+                        .isEqualTo("WORK_ACT_RECEIPT_UNPRICED"));
+        assertThatThrownBy(() -> workActService.signOffline(
+                act.id(), new WorkActSignOfflineRequest("Клієнт"), owner.getId()))
+                .isInstanceOf(WorkActValidationException.class);
+
+        // Priced, both doors open again.
+        receiptService.update(act.id(), saved.id(), owner.getId(),
+                new com.majstr.backend.dto.WorkActReceiptRequest("Епіцентр", new BigDecimal("483.50"), null, null));
+        assertThat(workActService.signOffline(act.id(), new WorkActSignOfflineRequest("Клієнт"),
+                owner.getId()).status()).isEqualTo(WorkActStatus.SIGNED);
     }
 
     @Test
@@ -344,8 +441,8 @@ class WorkActIntegrationTest extends IntegrationTestBase {
         signedEstimateWithLine(p, "Робота", "100.000", "145.00");
         WorkActResponse act = createInterim(p.getId(), owner.getId());
 
-        receiptService.add(act.id(), owner.getId(), receiptPhoto(), "Епіцентр",
-                new BigDecimal("483.50"), null, false, true);
+        receiptService.add(act.id(), owner.getId(), null, receiptPhoto(), "Епіцентр",
+                new BigDecimal("483.50"), null, true);
 
         var photos = photoRepository.findByProjectIdOrderByCreatedAtDesc(p.getId());
         assertThat(photos).singleElement().satisfies(photo -> {
@@ -658,10 +755,10 @@ class WorkActIntegrationTest extends IntegrationTestBase {
 
         WorkActResponse act = createInterim(p.getId(), owner.getId());
         setSingleLine(act.id(), owner.getId(), est.getId(), line, "50.000", "145.00"); // 7 250
-        receiptService.add(act.id(), owner.getId(), receiptPhoto(), "Епіцентр, клей",
-                new BigDecimal("2400.00"), LocalDate.now().minusDays(2), false, false);
-        receiptService.add(act.id(), owner.getId(), receiptPhoto(), "Нова Пошта",
-                new BigDecimal("600.00"), null, false, false);
+        receiptService.add(act.id(), owner.getId(), null, receiptPhoto(), "Епіцентр, клей",
+                new BigDecimal("2400.00"), LocalDate.now().minusDays(2), false);
+        receiptService.add(act.id(), owner.getId(), null, receiptPhoto(), "Нова Пошта",
+                new BigDecimal("600.00"), null, false);
 
         WorkActResponse withReceipts = workActService.get(act.id(), owner.getId());
         assertThat(withReceipts.receipts()).hasSize(2);
@@ -672,8 +769,8 @@ class WorkActIntegrationTest extends IntegrationTestBase {
         workActService.signOffline(act.id(), new WorkActSignOfflineRequest("Клієнт"), owner.getId());
 
         // Signed = immutable, receipts included — they are part of the hashed document.
-        assertThatThrownBy(() -> receiptService.add(act.id(), owner.getId(), receiptPhoto(), "Пізній чек",
-                new BigDecimal("100.00"), null, false, false)).isInstanceOf(WorkActSignedException.class);
+        assertThatThrownBy(() -> receiptService.add(act.id(), owner.getId(), null, receiptPhoto(), "Пізній чек",
+                new BigDecimal("100.00"), null, false)).isInstanceOf(WorkActSignedException.class);
         assertThatThrownBy(() -> receiptService.delete(act.id(),
                 withReceipts.receipts().getFirst().id(), owner.getId()))
                 .isInstanceOf(WorkActSignedException.class);
@@ -690,7 +787,7 @@ class WorkActIntegrationTest extends IntegrationTestBase {
 
         WorkActResponse act = createInterim(p.getId(), owner.getId());
         setSingleLine(act.id(), owner.getId(), est.getId(), line, "50.000", "145.00"); // 7 250
-        receiptService.add(act.id(), owner.getId(), receiptPhoto(), "Епіцентр", new BigDecimal("2400.00"), null, false, false);
+        receiptService.add(act.id(), owner.getId(), null, receiptPhoto(), "Епіцентр", new BigDecimal("2400.00"), null, false);
         workActService.signOffline(act.id(), new WorkActSignOfflineRequest("Клієнт"), owner.getId());
 
         ObjectEconomyResponse economy = objectExpenseService.economy(p.getId(), owner.getId());
@@ -712,7 +809,7 @@ class WorkActIntegrationTest extends IntegrationTestBase {
 
         WorkActResponse act = createInterim(p.getId(), owner.getId());
         setSingleLine(act.id(), owner.getId(), est.getId(), line, "50.000", "145.00");
-        receiptService.add(act.id(), owner.getId(), receiptPhoto(), "Епіцентр", new BigDecimal("2400.00"), null, false, false);
+        receiptService.add(act.id(), owner.getId(), null, receiptPhoto(), "Епіцентр", new BigDecimal("2400.00"), null, false);
         workActService.updateHeader(act.id(), new com.majstr.backend.dto.WorkActUpdateRequest(
                 WorkActKind.INTERIM, null, LocalDate.now(), LocalDate.now().minusDays(7), LocalDate.now(),
                 null, null, null, null, null, false, null, null), owner.getId());
@@ -721,6 +818,94 @@ class WorkActIntegrationTest extends IntegrationTestBase {
         ObjectEconomyResponse economy = objectExpenseService.economy(p.getId(), owner.getId());
         assertThat(economy.acts().acceptedByActs()).isEqualByComparingTo("9650.00");
         assertThat(economy.internals().expenses()).isEqualByComparingTo("0.00");
+    }
+
+    @Test
+    void partialReturn_isNettedOffEveryConsumerOfTheReceipt() throws Exception {
+        // «Купив цвяхів на 2000, залишилось на 500, відніс назад у магазин» (V115). One number on
+        // the purchase, and every consumer of that receipt must read the SAME netted figure: the
+        // client's bill, the ADDENDUM behind «За договором», «Прийнято актами» and the expense.
+        User owner = newOwner();
+        Project p = newProject(owner);
+        Estimate est = signedEstimateWithLine(p, "Робота", "100.000", "145.00"); // 14 500
+        UUID line = estimateItemRepository.findByEstimateIdOrderBySortOrderAscIdAsc(est.getId()).get(0).getId();
+
+        WorkActResponse act = createInterim(p.getId(), owner.getId());
+        setSingleLine(act.id(), owner.getId(), est.getId(), line, "50.000", "145.00"); // 7 250
+        var receipt = receiptService.add(act.id(), owner.getId(), null, receiptPhoto(), "Цвяхи",
+                new BigDecimal("2000.00"), null, false);
+        receiptService.update(act.id(), receipt.id(), owner.getId(), new com.majstr.backend.dto.WorkActReceiptRequest(
+                "Цвяхи", new BigDecimal("2000.00"), new BigDecimal("500.00"), null));
+
+        WorkActResponse withReturn = workActService.get(act.id(), owner.getId());
+        // The receipt still says what the paper says — the client can open the photo and check it.
+        assertThat(withReturn.receipts().getFirst().amount()).isEqualByComparingTo("2000.00");
+        assertThat(withReturn.receipts().getFirst().returnedAmount()).isEqualByComparingTo("500.00");
+        assertThat(withReturn.receiptsTotal()).isEqualByComparingTo("1500.00");
+        assertThat(withReturn.payable()).isEqualByComparingTo("8750.00"); // 7 250 + 1 500
+
+        workActService.signOffline(act.id(), new WorkActSignOfflineRequest("Клієнт"), owner.getId());
+
+        ObjectEconomyResponse economy = objectExpenseService.economy(p.getId(), owner.getId());
+        assertThat(economy.acts().contracted()).isEqualByComparingTo("16000.00");     // 14 500 + 1 500
+        assertThat(economy.acts().acceptedByActs()).isEqualByComparingTo("8750.00");  // 7 250 + 1 500
+        assertThat(economy.acts().acceptedByActs()).isLessThanOrEqualTo(economy.acts().contracted());
+        // The master is only out of pocket for what he kept, so the expense is netted too.
+        assertThat(economy.internals().expenses()).isEqualByComparingTo("1500.00");
+    }
+
+    @Test
+    void fullyReturnedReceipt_billsNothingAndCostsNothing_butKeepsItsPaper() throws Exception {
+        // Everything went back to the shop. The row and its photo stay (the master may want the
+        // history), but it must produce neither an ADDENDUM line nor an expense — and it is
+        // «priced», so it does not block signing the way an unpriced receipt does.
+        User owner = newOwner();
+        Project p = newProject(owner);
+        Estimate est = signedEstimateWithLine(p, "Робота", "100.000", "145.00");
+        UUID line = estimateItemRepository.findByEstimateIdOrderBySortOrderAscIdAsc(est.getId()).get(0).getId();
+
+        WorkActResponse act = createInterim(p.getId(), owner.getId());
+        setSingleLine(act.id(), owner.getId(), est.getId(), line, "50.000", "145.00"); // 7 250
+        var receipt = receiptService.add(act.id(), owner.getId(), null, receiptPhoto(), "Цвяхи",
+                new BigDecimal("800.00"), null, false);
+        receiptService.update(act.id(), receipt.id(), owner.getId(), new com.majstr.backend.dto.WorkActReceiptRequest(
+                "Цвяхи", new BigDecimal("800.00"), new BigDecimal("800.00"), null));
+
+        assertThat(workActService.get(act.id(), owner.getId()).receiptsTotal()).isEqualByComparingTo("0.00");
+        assertThat(workActService.signOffline(act.id(), new WorkActSignOfflineRequest("Клієнт"),
+                owner.getId()).status()).isEqualTo(WorkActStatus.SIGNED);
+
+        ObjectEconomyResponse economy = objectExpenseService.economy(p.getId(), owner.getId());
+        assertThat(economy.acts().contracted()).isEqualByComparingTo("14500.00");    // no ADDENDUM
+        assertThat(economy.acts().acceptedByActs()).isEqualByComparingTo("7250.00"); // works only
+        assertThat(economy.internals().expenses()).isEqualByComparingTo("0.00");
+        assertThat(receiptService.list(act.id(), owner.getId())).hasSize(1); // the paper is kept
+    }
+
+    @Test
+    void returnOverTheReceiptAmount_isRefusedWithItsOwnCode() throws Exception {
+        // The cap is what keeps every downstream figure non-negative, so it is enforced in the
+        // service and not left to the DB CHECK (which would surface as a 500). It is reachable by
+        // lowering the AMOUNT under an existing return too, hence a code of its own.
+        User owner = newOwner();
+        Project p = newProject(owner);
+        WorkActResponse act = createInterim(p.getId(), owner.getId());
+        var receipt = receiptService.add(act.id(), owner.getId(), null, receiptPhoto(), "Цвяхи",
+                new BigDecimal("2000.00"), null, false);
+
+        assertThatThrownBy(() -> receiptService.update(act.id(), receipt.id(), owner.getId(),
+                new com.majstr.backend.dto.WorkActReceiptRequest(
+                        "Цвяхи", new BigDecimal("2000.00"), new BigDecimal("2000.01"), null)))
+                .isInstanceOf(WorkActValidationException.class)
+                .satisfies(e -> assertThat(((WorkActValidationException) e).getCode())
+                        .isEqualTo("WORK_ACT_RECEIPT_RETURN_TOO_BIG"));
+
+        receiptService.update(act.id(), receipt.id(), owner.getId(), new com.majstr.backend.dto.WorkActReceiptRequest(
+                "Цвяхи", new BigDecimal("2000.00"), new BigDecimal("500.00"), null));
+        assertThatThrownBy(() -> receiptService.update(act.id(), receipt.id(), owner.getId(),
+                new com.majstr.backend.dto.WorkActReceiptRequest(
+                        "Цвяхи", new BigDecimal("400.00"), new BigDecimal("500.00"), null)))
+                .isInstanceOf(WorkActValidationException.class);
     }
 
     // ---- fixtures ---------------------------------------------------------------
@@ -765,6 +950,14 @@ class WorkActIntegrationTest extends IntegrationTestBase {
                 .lineTotal(new BigDecimal(qty).multiply(new BigDecimal(price)).setScale(2))
                 .sortOrder(0).build());
         return est;
+    }
+
+    /** Stands in for a receipt created before the item transfer was removed — nothing in the API
+     *  can set this flag any more, and the queries that honour it must still be exercised. */
+    private void markItemized(UUID receiptId) {
+        var receipt = receiptRepository.findById(receiptId).orElseThrow();
+        receipt.setItemized(true);
+        receiptRepository.saveAndFlush(receipt);
     }
 
     private WorkAct rawAct(User owner, Project project, String number, WorkActKind kind) {

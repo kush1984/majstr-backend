@@ -38,6 +38,12 @@ import java.util.List;
  *   <li>each receipt is optionally posted as a MATERIALS expense ({@code receipts_to_expenses}) so
  *       «Прибуток» is not inflated by pass-through money the client merely reimburses.</li>
  * </ul>
+ *
+ * <p>Throughout, «a receipt» means <b>paid less returned</b> ({@link WorkActReceipt#billedAmount()},
+ * V115). The same figure reaches the client's bill (the ADDENDUM line) and the master's expenses,
+ * and it is the one {@code sumSignedActReceipts} adds into «Прийнято актами» — material handed back
+ * to the shop was accepted by nobody and paid for by nobody. A receipt returned in full bills
+ * nothing at all and is skipped on both sides.</p>
  */
 @Component
 @RequiredArgsConstructor
@@ -57,16 +63,23 @@ class ActAddendumCreator {
         List<WorkActItem> additional = itemRepository.findByWorkActIdOrderBySortOrderAscIdAsc(act.getId())
                 .stream().filter(i -> i.getEstimateItemId() == null).toList();
         List<WorkActReceipt> allReceipts = receiptRepository
-                .findByWorkActIdOrderBySortOrderAscCreatedAtAsc(act.getId());
+                .findByWorkActIdNewestFirst(act.getId());
         // ITEMIZED receipts (round 2) are already inside the act as its own lines — rolling them up
         // here too would bill the same money twice. The EXPENSE posting below deliberately takes
         // them all: the master's own spend is real whichever way the client is billed.
-        List<WorkActReceipt> receipts = allReceipts.stream().filter(r -> !r.isItemized()).toList();
+        // A fully returned receipt (V115) bills nothing: no ADDENDUM line, and no expense either —
+        // the money left the master's pocket and came back to it.
+        List<WorkActReceipt> receipts = allReceipts.stream()
+                .filter(r -> !r.isItemized())
+                .filter(r -> r.billedAmount().signum() > 0)
+                .toList();
         if (additional.isEmpty() && allReceipts.isEmpty()) {
             return; // nothing on the act beyond the estimate positions it closes
         }
-        if (!allReceipts.isEmpty() && act.isReceiptsToExpenses()) {
-            postReceiptExpenses(act, allReceipts);
+        List<WorkActReceipt> spent = allReceipts.stream()
+                .filter(r -> r.billedAmount().signum() > 0).toList();
+        if (!spent.isEmpty() && act.isReceiptsToExpenses()) {
+            postReceiptExpenses(act, spent);
         }
         if (additional.isEmpty() && receipts.isEmpty()) {
             return; // only itemized receipts — expenses posted, nothing to roll up
@@ -97,6 +110,8 @@ class ActAddendumCreator {
         }
         // A receipt is re-billed as a whole — one MATERIAL line at quantity 1, never its parsed
         // contents (the master explicitly did not want the receipt's positions inside the act).
+        // «Whole» means paid less returned (V115): the client pays for the material that stayed on
+        // the object, and the ADDENDUM must agree with «Разом за чеками» to the kopeck.
         for (WorkActReceipt r : receipts) {
             lines.add(EstimateItem.builder()
                     .estimate(addendum)
@@ -105,7 +120,7 @@ class ActAddendumCreator {
                     .category("Матеріали за чеками")
                     .unit(Unit.PIECE)
                     .quantity(BigDecimal.ONE)
-                    .unitPrice(r.getAmount())
+                    .unitPrice(r.billedAmount())
                     .sortOrder(sort++)
                     .build());
         }
@@ -119,7 +134,7 @@ class ActAddendumCreator {
         for (WorkActReceipt r : receipts) {
             expenses.add(ObjectExpense.builder()
                     .objectId(act.getProject().getId())
-                    .amount(r.getAmount().setScale(MONEY_SCALE, RoundingMode.HALF_UP))
+                    .amount(r.billedAmount().setScale(MONEY_SCALE, RoundingMode.HALF_UP))
                     .category(ExpenseCategory.MATERIALS)
                     .source(ExpenseSource.RECEIPT)
                     .note("Чек до акта № " + act.getNumber() + ": " + r.getLabel())

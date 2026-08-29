@@ -21,7 +21,8 @@ class RegisterRateLimiterTest {
                 new RateLimitProperties.EstimateEmail(20),
                 new RateLimitProperties.MessageLink(5, 10),
                 new RateLimitProperties.Question(5, 10),
-                new RateLimitProperties.ReceiptScan(30));
+                new RateLimitProperties.ReceiptScan(30),
+                new RateLimitProperties.QrScan(120));
         limiter = new RegisterRateLimiter(props);
     }
 

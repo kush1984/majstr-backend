@@ -72,6 +72,7 @@ public class WorkActService {
     private final ActCumulativeCalculator cumulativeCalculator;
     private final ActAddendumCreator addendumCreator;
     private final ActSignedCopyService signedCopy;
+    private final ActReceiptCompleteness receiptCompleteness;
     private final ProjectService projectService;
     private final EstimateRepository estimateRepository;
     private final EstimateItemRepository estimateItemRepository;
@@ -265,6 +266,7 @@ public class WorkActService {
             throws IOException, DocumentException {
         WorkAct act = requireNotSigned(loadOwned(id, ownerId));
         requireItems(id); // a signed act is immutable and undeletable — never let an empty one in
+        receiptCompleteness.requireAllPriced(id); // …nor one whose receipts are not priced yet
         addendumCreator.createIfNeeded(act);
         act.setStatus(WorkActStatus.SIGNED);
         act.setSignerName(req.signerName().trim());
@@ -375,7 +377,7 @@ public class WorkActService {
     }
 
     List<WorkActPdfService.ReceiptRow> receiptRows(UUID actId) {
-        return receiptRepository.findByWorkActIdOrderBySortOrderAscCreatedAtAsc(actId).stream()
+        return receiptRepository.findByWorkActIdNewestFirst(actId).stream()
                 .map(WorkActPdfService.ReceiptRow::from)
                 .toList();
     }

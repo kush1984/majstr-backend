@@ -12,6 +12,9 @@ public record WorkActReceiptResponse(
         UUID id,
         String label,
         BigDecimal amount,
+        /** Part of the receipt returned to the shop (V115); {@code amount} stays what the paper says,
+         *  so the client can check the photo against it. What is billed is {@link #billedAmount()}. */
+        BigDecimal returnedAmount,
         LocalDate issuedAt,
         boolean hasPhoto,
         /** The positions were carried into the act (round 2) — the amount is shown as reference but
@@ -20,7 +23,12 @@ public record WorkActReceiptResponse(
         int sortOrder
 ) {
     public static WorkActReceiptResponse from(WorkActReceipt r) {
-        return new WorkActReceiptResponse(r.getId(), r.getLabel(), r.getAmount(), r.getIssuedAt(),
-                r.getStorageKey() != null, r.isItemized(), r.getSortOrder());
+        return new WorkActReceiptResponse(r.getId(), r.getLabel(), r.getAmount(), r.getReturnedAmount(),
+                r.getIssuedAt(), r.getStorageKey() != null, r.isItemized(), r.getSortOrder());
+    }
+
+    /** Paid less returned — the figure that reaches «Разом за чеками», the ADDENDUM and the expense. */
+    public BigDecimal billedAmount() {
+        return amount.subtract(returnedAmount == null ? BigDecimal.ZERO : returnedAmount);
     }
 }

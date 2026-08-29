@@ -65,6 +65,7 @@ public class PublicActPortalService {
     private final ActCumulativeCalculator cumulativeCalculator;
     private final ActAddendumCreator addendumCreator;
     private final ActSignedCopyService signedCopy;
+    private final ActReceiptCompleteness receiptCompleteness;
     private final WorkActReceiptService receiptService;
     private final PushService pushService;
     private final MessageSource messages;
@@ -98,6 +99,10 @@ public class PublicActPortalService {
         if (items.isEmpty() && !receiptRepository.existsByWorkActId(act.getId())) {
             throw new WorkActValidationException("error.work-act.empty", "WORK_ACT_EMPTY");
         }
+        // An unpriced receipt cannot be signed away either (receipts-batch). The publish guard
+        // already refused one, but a SENT act can still gain receipts — the not-signed rule, not the
+        // not-sent rule, is what governs receipt writes.
+        receiptCompleteness.requireAllPriced(act.getId());
         // Roll any additional (off-estimate) works into a SIGNED ADDENDUM estimate FIRST — so «За
         // договором» absorbs them and «Прийнято актами» can never exceed it (acts-fix; the portal
         // path used to skip this, unlike the offline path).
@@ -112,7 +117,7 @@ public class PublicActPortalService {
 
         // Tamper stamp + client copy — the SAME artifacts the offline path produces (review fix:
         // extracted into ActSignedCopyService so neither path can drift from the other).
-        List<WorkActReceipt> receipts = receiptRepository.findByWorkActIdOrderBySortOrderAscCreatedAtAsc(act.getId());
+        List<WorkActReceipt> receipts = receiptRepository.findByWorkActIdNewestFirst(act.getId());
         List<WorkActPdfService.ReceiptRow> receiptRows = receipts.stream()
                 .map(WorkActPdfService.ReceiptRow::from).toList();
         act.setDocHash(signedCopy.computeDocHash(act, items, receiptRows));
@@ -145,7 +150,7 @@ public class PublicActPortalService {
         WorkAct act = resolveShareableAct(token);
         List<WorkActItem> items = itemRepository.findByWorkActIdOrderBySortOrderAscIdAsc(act.getId());
         List<WorkActPdfService.ReceiptRow> receipts = receiptRepository
-                .findByWorkActIdOrderBySortOrderAscCreatedAtAsc(act.getId()).stream()
+                .findByWorkActIdNewestFirst(act.getId()).stream()
                 .map(WorkActPdfService.ReceiptRow::from).toList();
         return pdfService.render(model(act, items, receipts, act.getDocHash(),
                 cumulativeCalculator.forDownload(act, items, receiptRepository.sumByWorkActId(act.getId()))));
@@ -188,7 +193,7 @@ public class PublicActPortalService {
 
     private PublicActView toView(WorkAct act) {
         return toView(act, itemRepository.findByWorkActIdOrderBySortOrderAscIdAsc(act.getId()),
-                receiptRepository.findByWorkActIdOrderBySortOrderAscCreatedAtAsc(act.getId()));
+                receiptRepository.findByWorkActIdNewestFirst(act.getId()));
     }
 
     private PublicActView toView(WorkAct act, List<WorkActItem> items, List<WorkActReceipt> receipts) {
@@ -206,10 +211,11 @@ public class PublicActPortalService {
         List<PublicActView.Receipt> receiptViews = new ArrayList<>(receipts.size());
         for (WorkActReceipt r : receipts) {
             if (!r.isItemized()) {
-                receiptsTotal = receiptsTotal.add(r.getAmount()); // itemized = billed by act lines
+                // Paid less returned (V115); itemized = billed by act lines instead.
+                receiptsTotal = receiptsTotal.add(r.billedAmount());
             }
             receiptViews.add(new PublicActView.Receipt(r.getId(), r.getLabel(), r.getIssuedAt(),
-                    r.getAmount(), r.getStorageKey() != null, r.isItemized()));
+                    r.getAmount(), r.getReturnedAmount(), r.getStorageKey() != null, r.isItemized()));
         }
         BigDecimal advance = act.getAdvanceOffset() == null
                 ? BigDecimal.ZERO.setScale(MONEY_SCALE, ROUNDING) : act.getAdvanceOffset();

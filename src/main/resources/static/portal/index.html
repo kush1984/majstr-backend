@@ -1182,9 +1182,13 @@
             </tr>`).join('');
         const advanceRow = a.advanceOffset && Number(a.advanceOffset) > 0
             ? `<div style="display:flex;justify-content:space-between"><span>Зараховано авансу</span><span>− ${money(a.advanceOffset)}</span></div>` : '';
-        // Receipts & invoices the master re-bills as a whole — a row per receipt with the amount and,
-        // when there is a photo, a tap-through to it. Stacked (not a table) so it reads on a phone.
+        // Receipts & invoices the master re-bills — a row per receipt with the amount and, when
+        // there is a photo, a tap-through to it. Stacked (not a table) so it reads on a phone.
         const receipts = a.receipts || [];
+        // A partial return (V115) is named on its own line: the photo says 2000, the client is
+        // billed 1500, and without that sentence the difference reads as an error.
+        const returned = r => Number(r.returnedAmount || 0);
+        const billed = r => Number(r.amount || 0) - returned(r);
         const receiptsBlock = receipts.length ? `
             <div class="card">
                 <h3 style="margin:0 0 8px">Чеки та рахунки</h3>
@@ -1193,10 +1197,11 @@
                         <div style="min-width:0">
                             <div>${i + 1}. ${escapeHtml(r.label)}</div>
                             ${r.itemized ? '<div style="font-size:12px;color:var(--muted)">позиції цього чека включено в акт вище</div>' : ''}
+                            ${returned(r) > 0 ? `<div style="font-size:12px;color:var(--muted)">за чеком ${money(r.amount)} · повернуто ${money(r.returnedAmount)}</div>` : ''}
                             ${r.issuedAt ? `<div style="font-size:12px;color:var(--muted)">${actDate(r.issuedAt)}</div>` : ''}
                             ${r.hasPhoto ? `<a href="${apiBase}/receipts/${encodeURIComponent(r.id)}/file" target="_blank" rel="noopener" style="font-size:13px">Переглянути фото</a>` : ''}
                         </div>
-                        <div style="white-space:nowrap${r.itemized ? ';color:var(--muted)' : ''}">${money(r.amount)}</div>
+                        <div style="white-space:nowrap${r.itemized ? ';color:var(--muted)' : ''}">${money(r.itemized ? r.amount : billed(r))}</div>
                     </div>`).join('')}
                 <div style="display:flex;justify-content:space-between;font-weight:600;padding-top:8px">
                     <span>Разом за чеками</span><span>${money(a.receiptsTotal)}</span>

@@ -55,6 +55,9 @@ public record PublicActView(
             String label,
             LocalDate issuedAt,
             BigDecimal amount,
+            /** Part of the receipt taken back to the shop (V115). {@code amount} stays what the
+             *  photo says; what is billed is the difference, so the client can reconcile both. */
+            BigDecimal returnedAmount,
             boolean hasPhoto,
             /** The receipt's positions are inside the act's own lines (round 2) — shown as proof,
              *  excluded from «Разом за чеками»: the amount is already billed by those lines. */

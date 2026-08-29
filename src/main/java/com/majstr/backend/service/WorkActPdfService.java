@@ -285,9 +285,10 @@ public class WorkActPdfService {
     /**
      * The «ЧЕКИ ТА РАХУНКИ» section — materials the master paid for and re-bills on this act. The
      * receipt's own line items are deliberately not carried over (master feedback): a description,
-     * a date and one amount per receipt, plus a subtotal. Part of the CANONICAL (hashed) render —
-     * unlike the live «ДОВІДКОВО» block, a receipt is a frozen copy that can never change after
-     * signing.
+     * a date and one amount per receipt, plus a subtotal. The amount is what is BILLED — paid less
+     * returned (V115) — with the return spelled out under the label. Part of the CANONICAL
+     * (hashed) render — unlike the live «ДОВІДКОВО» block, a receipt is a frozen copy that can
+     * never change after signing.
      *
      * @return the receipts subtotal, or zero when the act has none.
      */
@@ -317,14 +318,29 @@ public class WorkActPdfService {
         int n = 0;
         for (ReceiptRow r : receipts) {
             n++;
-            sum = sum.add(r.amount());
+            sum = sum.add(r.billedAmount());
             table.addCell(textCell(String.valueOf(n), Element.ALIGN_CENTER));
-            table.addCell(textCell(r.label(), Element.ALIGN_LEFT));
+            table.addCell(receiptLabelCell(r));
             table.addCell(textCell(r.issuedAt() == null ? "—" : DATE.format(r.issuedAt()), Element.ALIGN_CENTER));
-            table.addCell(textCell(formatMoney(r.amount()), Element.ALIGN_RIGHT));
+            table.addCell(textCell(formatMoney(r.billedAmount()), Element.ALIGN_RIGHT));
         }
         doc.add(table);
         return sum.setScale(MONEY_SCALE, MONEY_ROUNDING);
+    }
+
+    /** Label cell of a receipt row. A partial return (V115) is spelled out under the label rather
+     *  than given a fifth column: the paper says 2000, the client is billed 1500, and the sentence
+     *  in between is what stops that reading as an error when he opens the photo in the appendix. */
+    private PdfPCell receiptLabelCell(ReceiptRow r) {
+        if (r.returnedOrZero().signum() == 0) {
+            return textCell(r.label(), Element.ALIGN_LEFT);
+        }
+        PdfPCell cell = new PdfPCell();
+        cell.setPadding(4);
+        cell.addElement(new Paragraph(r.label(), fonts.regular(10)));
+        cell.addElement(new Paragraph("за чеком " + formatMoney(r.amount()) + " ₴, повернуто "
+                + formatMoney(r.returnedOrZero()) + " ₴", fonts.regular(8)));
+        return cell;
     }
 
     private BigDecimal addTotals(Document doc, PdfModel model, BigDecimal total, BigDecimal receiptsTotal)
@@ -628,12 +644,24 @@ public class WorkActPdfService {
     }
 
     /** One «Чеки та рахунки» row. Frozen data straight off {@code work_act_receipt}, so unlike the
-     *  «ДОВІДКОВО» figures it is safe inside the canonical (hashed) render. */
-    public record ReceiptRow(String label, LocalDate issuedAt, BigDecimal amount, String storageKey,
-                             boolean itemized) {
+     *  «ДОВІДКОВО» figures it is safe inside the canonical (hashed) render.
+     *
+     *  <p>{@code amount} is what the paper says and {@code returnedAmount} what went back to the
+     *  shop (V115); the table bills {@link #billedAmount()}. Both are kept, because the photo of
+     *  the receipt is in the appendix and the client must be able to reconcile it.</p> */
+    public record ReceiptRow(String label, LocalDate issuedAt, BigDecimal amount,
+                             BigDecimal returnedAmount, String storageKey, boolean itemized) {
         public static ReceiptRow from(com.majstr.backend.entity.WorkActReceipt r) {
-            return new ReceiptRow(r.getLabel(), r.getIssuedAt(), r.getAmount(), r.getStorageKey(),
-                    r.isItemized());
+            return new ReceiptRow(r.getLabel(), r.getIssuedAt(), r.getAmount(), r.getReturnedAmount(),
+                    r.getStorageKey(), r.isItemized());
+        }
+
+        public BigDecimal returnedOrZero() {
+            return returnedAmount == null ? BigDecimal.ZERO : returnedAmount;
+        }
+
+        public BigDecimal billedAmount() {
+            return amount.subtract(returnedOrZero());
         }
     }
 

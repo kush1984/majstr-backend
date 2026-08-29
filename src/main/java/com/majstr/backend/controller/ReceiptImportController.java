@@ -5,7 +5,10 @@ import com.majstr.backend.dto.EstimateResponse;
 import com.majstr.backend.dto.FiscalQrRequest;
 import com.majstr.backend.dto.ReceiptItemsCommitRequest;
 import com.majstr.backend.exception.CatalogImportException;
+import com.majstr.backend.exception.TooManyRequestsException;
 import com.majstr.backend.security.UserPrincipal;
+import com.majstr.backend.service.QrScanRateLimiter;
+import com.majstr.backend.service.ReceiptScanRateLimiter;
 import com.majstr.backend.service.importer.ReceiptImportService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
@@ -39,6 +42,7 @@ import java.util.UUID;
 public class ReceiptImportController {
 
     private final ReceiptImportService receiptService;
+    private final QrScanRateLimiter qrScanRateLimiter;
 
     @Operation(summary = "Parse a receipt photo — returns a review proposal (no write)")
     @PostMapping(value = "/parse", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
@@ -63,6 +67,12 @@ public class ReceiptImportController {
     public EstimateImportParseResponse parseQr(@PathVariable UUID id,
                                                @Valid @RequestBody FiscalQrRequest req,
                                                @AuthenticationPrincipal UserPrincipal principal) {
+        // The same per-account QR counter the act path uses (receipts-batch): free of model cost,
+        // but reachable on FREE and fired once per photo of a batch.
+        ReceiptScanRateLimiter.ConsumeResult probe = qrScanRateLimiter.tryConsume(principal.id());
+        if (!probe.allowed()) {
+            throw new TooManyRequestsException("error.rate.qr-scan", probe.retryAfterSeconds());
+        }
         return receiptService.parseQr(principal.id(), id, req.payload());
     }
 

@@ -2053,7 +2053,10 @@ one-line summary — keep the item in the file as a record.
   gate at all: the photo budget bounds photos, `Feature.RECEIPT_IMPORT` bounds the expensive read,
   and the newly-FREE cheap read is bounded by `ReceiptScanRateLimiter` (30/hour per account),
   because it persists nothing and no business counter would otherwise touch it. The separate
-  limit/gate this item asked for exists; nothing is left undecided.
+  limit/gate this item asked for exists; nothing is left undecided. **(3) 2026-08-28: the item mode
+  was removed from the ACT path entirely** (`docs/iteration-receipts-batch.md` §15), so what is left
+  there is one free footer read bounded by the rate limiter alone; `Feature.RECEIPT_IMPORT` now
+  gates only the estimate-side receipt import, where the positions are the point.
 
 ### Client payment reminders (email / portal)
 - **Status:** OPEN
@@ -2198,6 +2201,12 @@ one-line summary — keep the item in the file as a record.
   normalizes the new name, refuses a reserved/duplicate one, and rewrites both the folder row and
   every photo carrying the old name under one transaction. Nested folders should wait for evidence —
   two levels matched «як у віндовз» for the object-sized galleries we actually see.
+- **Decision recorded (receipts-batch, 2026-08-24):** a BATCH of receipt photos can exhaust the
+  per-source cap mid-way (`MAX_RECEIPT_PHOTOS_PER_OBJECT` = 5 on FREE). Chosen behaviour: **check the
+  remaining budget before uploading and say so plainly** — «чеки додам усі, у галерею збережу перші
+  N» — rather than silently dropping the overflow. The cap governs only the SECOND copy in the
+  object's gallery; the act's own frozen receipt photo is never counted against it, so a FREE master
+  never loses receipt proof to this limit. See [iteration-receipts-batch.md](iteration-receipts-batch.md).
 - **Decision recorded (2026-08-23):** «Чеки» now lists **every** RECEIPT photo including
   estimate-linked ones (the tab used to hide those as "already shown under the estimate"). A folder
   that silently withholds part of its contents was the master's complaint; the tile keeps its
@@ -2224,9 +2233,12 @@ one-line summary — keep the item in the file as a record.
   the general photo programme: store the File as a Blob in IndexedDB, replay the multipart POST.
   The form needs no new UX: it is the existing receipt form with «Розпізнати» greyed out and an
   honest «доступно онлайн» hint. Three things must be wired with it:
-  1. **`X-Entity-Uuid` on `POST /api/acts/{id}/receipts`** — it exists on act creation but NOT on the
-     receipt endpoints, so a replayed multipart would create a **duplicate receipt**, i.e. duplicate
-     money in the act and in the ADDENDUM rollup.
+  1. **`X-Entity-Uuid` on `POST /api/acts/{id}/receipts`** — **DONE (receipts-batch, 2026-08-24)**,
+     ahead of the offline work: a BATCH of photos over a weak connection retries for exactly the
+     reason a queue replays, so the duplicate-receipt hole (duplicate money in the act and in the
+     ADDENDUM rollup) was already reachable online. Same shape as the other creates — the client
+     UUID becomes the row's PK, a replay returns the existing receipt. See
+     [iteration-receipts-batch.md](iteration-receipts-batch.md).
   2. **The act may have been signed while the queue waited** — all three receipt writes sit behind
      `requireNotSigned`, so the drain hits 409. Do not swallow it: tell the master «чек не додано —
      акт уже підписано». It is his money.
@@ -2237,9 +2249,13 @@ one-line summary — keep the item in the file as a record.
 
 ### ДПС QR receipt lookup — a free, exact alternative to reading the photo
 
-- **Status:** IN_PROGRESS — built in the fiscal-qr iteration (2026-08-23), see
-  [iteration-fiscal-qr.md](iteration-fiscal-qr.md). Stays IN_PROGRESS rather than RESOLVED until the
-  master has scanned real paper: the endpoint is undocumented, so only live receipts settle risks 1-3.
+- **Status:** RESOLVED (receipts-batch iteration, 2026-08-24) — the master scanned real paper, and
+  the bugs that surfaced are fixed and pinned (see [iteration-fiscal-qr.md](iteration-fiscal-qr.md)).
+  Closed as a FEATURE because it stopped being one: the QR is no longer a separate action but the
+  first rung inside «додати чек з фото» — the device looks for a fiscal code in the photo the master
+  already picked, and only what the code cannot answer goes to the model. The «fast path, never the
+  only path» note below is now structural rather than advisory. Risks 1-3 are unchanged and not
+  resolvable from our side; they are why every failure degrades instead of surfacing.
 - **Since:** 2026-08-23 (investigated after the act-receipt recognition rounds)
 - **Context:** Every Ukrainian fiscal receipt prints a QR whose payload is exactly
   `mac / date / time / id / sm / fn`. The tax service's Electronic Cabinet resolves it through an
@@ -2263,6 +2279,9 @@ one-line summary — keep the item in the file as a record.
   hands back is FREE, positions included (master decision) — the paid capability is reading a
   receipt PHOTO, so `ReceiptImportService.commit` lost its `RECEIPT_IMPORT` gate and the PWA's
   «перенести позиції» tick became free to tick, with the upsell moved onto the photo item-read.
+  (2026-08-28: that tick and the act-side item read are gone — `docs/iteration-receipts-batch.md`
+  §15 — so on the act path the QR fills three footer fields and never dials out at all. The estimate
+  import still asks for positions, and still gates its photo read.)
 - **Risks that make this OPEN rather than planned:**
   1. **Undocumented.** The official docs describe only the UI page `/cashregs/check` and specify no
      response format; `ws/api_public/rro/*` is nowhere in them. No compatibility guarantee.

@@ -1,30 +1,29 @@
 package com.majstr.backend.dto;
 
-import com.majstr.backend.dto.EstimateImportParseResponse.ParsedItem;
-
 import java.math.BigDecimal;
 import java.time.LocalDate;
-import java.util.List;
 
 /**
- * What the model read off a receipt photo for the act's «Чеки та рахунки» dialog (act-receipts
- * round 2). Nothing is persisted by the recognition — the values PREFILL the dialog and the master
- * corrects them before «Додати чек».
+ * What was read off a receipt for the act's «Чеки та рахунки» dialog — the three footer fields and
+ * nothing else. Nothing is persisted by the recognition: the values PREFILL the dialog and the
+ * master corrects them before saving.
  *
- * <p>{@code recognized=false} is a soft outcome, not an error: the model could not read the photo
- * (or the call failed), so the dialog stays manual — «введіть суму вручну». {@code amount} and
- * {@code issuedAt} may be null even when {@code recognized=true} (a torn footer). {@code items} is
- * non-empty only in {@code withItems} mode; each carries the same per-field {@code issues} the
- * estimate's receipt review uses, so an unreadable price is re-asked, never invented.</p>
+ * <p>{@code recognized=false} is a soft outcome, not an error: the reader could not make sense of
+ * the photo (or the call failed), so the dialog stays manual — «введіть суму вручну». {@code
+ * amount} and {@code issuedAt} may be null even when {@code recognized=true} (a torn footer).</p>
+ *
+ * <p>There is deliberately no item list here any more (master decision, 2026-08-28). Carrying a
+ * receipt's positions into the act billed one receipt two ways and put shop goods under «Додаткові
+ * роботи»; the act needs the sum and the photo. Positions off a receipt live in the ESTIMATE
+ * import, which is untouched.</p>
  */
 public record ActReceiptRecognizeResponse(
         boolean recognized,
         String label,
         BigDecimal amount,
-        LocalDate issuedAt,
-        List<ParsedItem> items
+        LocalDate issuedAt
 ) {
     public static ActReceiptRecognizeResponse failed() {
-        return new ActReceiptRecognizeResponse(false, null, null, null, List.of());
+        return new ActReceiptRecognizeResponse(false, null, null, null);
     }
 }

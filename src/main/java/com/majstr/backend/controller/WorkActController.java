@@ -16,6 +16,7 @@ import com.lowagie.text.DocumentException;
 import com.majstr.backend.security.UserPrincipal;
 import com.majstr.backend.exception.TooManyRequestsException;
 import com.majstr.backend.service.ProjectPortalService;
+import com.majstr.backend.service.QrScanRateLimiter;
 import com.majstr.backend.service.ReceiptScanRateLimiter;
 import com.majstr.backend.service.ProjectPhotoService.PhotoFile;
 import com.majstr.backend.service.WorkActReceiptService;
@@ -61,6 +62,7 @@ public class WorkActController {
     private final ProjectPortalService portalService;
     private final WorkActReceiptService receiptService;
     private final ReceiptScanRateLimiter receiptScanRateLimiter;
+    private final QrScanRateLimiter qrScanRateLimiter;
 
     // ---- under a project --------------------------------------------------
 
@@ -164,56 +166,77 @@ public class WorkActController {
         return receiptService.list(id, principal.id());
     }
 
-    @Operation(summary = "Attach a receipt: a label, an amount and an optional photo of the paper "
-            + "(409 WORK_ACT_SIGNED once signed — receipts are part of the doc_hash)")
+    @Operation(summary = "Attach a receipt: a MANDATORY photo of the paper, plus a label and an "
+            + "amount that may still be unknown — a batch of photos is saved first and priced "
+            + "afterwards. A blank label is named «Чек №N» by the server; amount 0 means «not read "
+            + "yet» and blocks sharing and signing until it is filled in. Send a client-generated "
+            + "UUID in X-Entity-Uuid to make the create idempotent (a retried upload over a weak "
+            + "connection must not bill the material twice). 409 WORK_ACT_SIGNED once signed — "
+            + "receipts are part of the doc_hash")
     @PostMapping(value = "/api/acts/{id}/receipts", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public ResponseEntity<WorkActReceiptResponse> addReceipt(
             @PathVariable UUID id,
+            @RequestHeader(value = "X-Entity-Uuid", required = false) UUID entityId,
             @RequestParam(value = "file", required = false) MultipartFile file,
-            @RequestParam("label") String label,
+            @RequestParam(value = "label", required = false) String label,
             @RequestParam("amount") BigDecimal amount,
             @RequestParam(value = "issuedAt", required = false)
             @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate issuedAt,
-            @RequestParam(value = "itemized", required = false, defaultValue = "false") boolean itemized,
             @RequestParam(value = "saveToPhotos", required = false, defaultValue = "false") boolean saveToPhotos,
             @AuthenticationPrincipal UserPrincipal principal) throws IOException {
         return ResponseEntity.status(HttpStatus.CREATED)
-                .body(receiptService.add(id, principal.id(), file, label, amount, issuedAt, itemized, saveToPhotos));
+                .body(receiptService.add(id, principal.id(), entityId, file, label, amount,
+                        issuedAt, saveToPhotos));
     }
 
-    @Operation(summary = "Recognize a receipt photo for the dialog: date + total (+ optionally the "
-            + "purchased positions, review-shaped — that mode is PRO). Persists nothing; an "
-            + "unreadable photo is a soft recognized=false, not an error. Rate-limited per account")
+    @Operation(summary = "Recognize a receipt photo for the dialog: label + date + total off the "
+            + "footer. Free — the receipt is re-billed as a whole, its positions are never carried "
+            + "into the act. Persists nothing; an unreadable photo is a soft recognized=false, not "
+            + "an error. Rate-limited per account")
     @PostMapping(value = "/api/acts/{id}/receipts/recognize", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public ActReceiptRecognizeResponse recognizeReceipt(
             @PathVariable UUID id,
             @RequestParam("file") MultipartFile file,
-            @RequestParam(value = "withItems", required = false, defaultValue = "false") boolean withItems,
             @AuthenticationPrincipal UserPrincipal principal) throws IOException {
         ReceiptScanRateLimiter.ConsumeResult probe = receiptScanRateLimiter.tryConsume(principal.id());
         if (!probe.allowed()) {
             throw new TooManyRequestsException("error.rate.receipt-scan", probe.retryAfterSeconds());
         }
-        return receiptService.recognize(id, principal.id(), file, withItems);
+        return receiptService.recognize(id, principal.id(), file);
     }
 
-    @Operation(summary = "Read a receipt from its printed fiscal QR code — date + total (+ the "
-            + "purchased positions when withItems, which is the master's «перенести позиції» tick, "
-            + "not a plan check: this path is free). A code we cannot read is a soft "
-            + "recognized=false, so the dialog can fall back to the photo. Rate-limited per account")
-    @PostMapping("/api/acts/{id}/receipts/qr")
-    public ActReceiptRecognizeResponse readReceiptQr(
+    @Operation(summary = "Recognize a receipt that is already stored — reads the photo uploaded "
+            + "with it, so the «✨ Розпізнати» button never re-uploads over a slow link and "
+            + "survives a page reload. Persists nothing; the client applies the prefill and PATCHes")
+    @PostMapping("/api/acts/{id}/receipts/{receiptId}/recognize")
+    public ActReceiptRecognizeResponse recognizeStoredReceipt(
             @PathVariable UUID id,
-            @Valid @RequestBody FiscalQrRequest req,
-            @RequestParam(value = "withItems", required = false, defaultValue = "false") boolean withItems,
-            @AuthenticationPrincipal UserPrincipal principal) {
-        // Same cap as the photo pass: no model call here, but there IS an outbound call to a public
-        // service, and this endpoint is reachable on FREE.
+            @PathVariable UUID receiptId,
+            @AuthenticationPrincipal UserPrincipal principal) throws IOException {
         ReceiptScanRateLimiter.ConsumeResult probe = receiptScanRateLimiter.tryConsume(principal.id());
         if (!probe.allowed()) {
             throw new TooManyRequestsException("error.rate.receipt-scan", probe.retryAfterSeconds());
         }
-        return receiptService.readQr(id, principal.id(), req.payload(), withItems);
+        return receiptService.recognizeStored(id, receiptId, principal.id());
+    }
+
+    @Operation(summary = "Read a receipt from its printed fiscal QR code — label + date + total, "
+            + "read locally with no model call and no tax-service lookup. A code we cannot read is "
+            + "a soft recognized=false, so the dialog falls back to the photo. Rate-limited per "
+            + "account")
+    @PostMapping("/api/acts/{id}/receipts/qr")
+    public ActReceiptRecognizeResponse readReceiptQr(
+            @PathVariable UUID id,
+            @Valid @RequestBody FiscalQrRequest req,
+            @AuthenticationPrincipal UserPrincipal principal) {
+        // Its OWN counter, not the recognition one (receipts-batch): a QR read spends no model
+        // call and is fired automatically on every photo of a batch, so sharing the bucket would
+        // let one batch eat the budget for the pass that actually costs money.
+        ReceiptScanRateLimiter.ConsumeResult probe = qrScanRateLimiter.tryConsume(principal.id());
+        if (!probe.allowed()) {
+            throw new TooManyRequestsException("error.rate.qr-scan", probe.retryAfterSeconds());
+        }
+        return receiptService.readQr(id, principal.id(), req.payload());
     }
 
     @Operation(summary = "Edit a receipt's label / amount / date (the photo is set once, at upload)")

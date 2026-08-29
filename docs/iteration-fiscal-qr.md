@@ -20,6 +20,8 @@ Two rules the master set, and everything below follows from them:
    path, never the only one.
 2. **For acts it works «так як було»** — «позиції додаємо тільки у випадку якщо галочка вибрана». The
    QR fills the data; the «перенести позиції» checkbox still decides what lands in the act.
+   *(Superseded 2026-08-28: an act carries no receipt positions at all any more, so the QR read there
+   fills the three footer fields and nothing else — `docs/iteration-receipts-batch.md` §15.)*
 
 And one decision taken during the work: **everything the QR hands back is FREE**, positions included
 («Безкоштовно все, що дав QR»). No model runs on this path, so there is nothing for a plan to gate.
@@ -69,13 +71,18 @@ so **no test can reach the tax service**.
 
 ## 2. The two entry points
 
+> **Superseded (2026-08-28).** Carrying a receipt's positions into an ACT was removed —
+> there is one read left on that path (label / date / total), it is free, and no endpoint takes
+> `withItems` any more. See `docs/iteration-receipts-batch.md` §15. The ESTIMATE-side receipt
+> import is unaffected: there the positions are the point.
+
 Lines are carried in `EstimateExtractor.Extracted.Line` and normalized through the shared
 `ReceiptLines.toParsedItems`, so a QR-read receipt is flagged exactly like a photo-read one — an
 unknown unit still becomes `issues: ["unit"]` and the master is still asked. Nothing is invented.
 
-- **Acts** — `POST /api/acts/{id}/receipts/qr?withItems=` → `WorkActReceiptService.readQr`, answering
-  the same `ActReceiptRecognizeResponse` as `recognize`. `withItems` is **the master's tick, not a
-  plan check**. Signed act → 409. Soft on failure (`recognized: false`): the total and the date alone
+- **Acts** — `POST /api/acts/{id}/receipts/qr` → `WorkActReceiptService.readQr`, answering the same
+  `ActReceiptRecognizeResponse` as `recognize`. It took a `withItems` flag («the master's tick, not
+  a plan check») until the transfer was removed; it now always reads the code alone. Signed act → 409. Soft on failure (`recognized: false`): the total and the date alone
   are worth having, and the dialog can fall back to the photo. Rate-limited by the existing
   `ReceiptScanRateLimiter`, like the recognition endpoint — the QR path persists nothing either, so
   no business counter bounds it.
@@ -100,7 +107,9 @@ FREE — with QR positions free, that would have made them unaskable. So:
 
 - the tick is free to toggle for everyone;
 - `runRecognition` gates the **photo** item-read (`upgradeApi.click('RECEIPT_IMPORT')` + the modal,
-  and the footer pass still runs so the row is still usable);
+  and the footer pass still runs so the row is still usable)
+  *(both superseded 2026-08-28 — the tick and the item-read it gated are gone from the act flow, and
+  with them the last gate on it; the estimate sheet’s own PRO chip below is unaffected)*;
 - the estimate sheet's 📷/🖼 buttons carry the PRO chip and open the upsell, while «🔳 Зчитати QR»
   above them does not;
 - the estimate editor's 🧾 FAB action **no longer gates at all** — the sheet it opens is now partly

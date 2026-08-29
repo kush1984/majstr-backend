@@ -58,14 +58,15 @@ class WorkActResponseFactory {
             itemDtos.add(WorkActItemResponse.from(it, exceeds));
         }
         List<WorkActReceiptResponse> receipts = receiptRepository
-                .findByWorkActIdOrderBySortOrderAscCreatedAtAsc(act.getId()).stream()
+                .findByWorkActIdNewestFirst(act.getId()).stream()
                 .map(WorkActReceiptResponse::from)
                 .toList();
         // Itemized receipts are reference-only (their positions already bill the money as act
-        // lines, round 2) — they show in the list but never in the billed subtotal.
+        // lines, round 2) — they show in the list but never in the billed subtotal. Every other
+        // receipt bills paid-less-returned (V115), so a partly returned one shrinks in place.
         BigDecimal receiptsTotal = receipts.stream()
                 .filter(r -> !r.itemized())
-                .map(WorkActReceiptResponse::amount)
+                .map(WorkActReceiptResponse::billedAmount)
                 .reduce(BigDecimal.ZERO, BigDecimal::add)
                 .setScale(MONEY_SCALE, ROUNDING);
         BigDecimal advance = act.getAdvanceOffset() == null

@@ -2,15 +2,9 @@ package com.majstr.backend.service;
 
 import com.majstr.backend.dto.ActReceiptRecognizeResponse;
 import com.majstr.backend.dto.WorkActResponse;
-import com.majstr.backend.entity.User;
 import com.majstr.backend.entity.WorkActKind;
 import com.majstr.backend.entity.WorkActStatus;
 import com.majstr.backend.exception.WorkActSignedException;
-import com.majstr.backend.feature.Feature;
-import com.majstr.backend.feature.FeatureGuard;
-import com.majstr.backend.feature.FeatureNotAvailableException;
-import com.majstr.backend.entity.Plan;
-import com.majstr.backend.repository.UserRepository;
 import com.majstr.backend.repository.WorkActReceiptRepository;
 import com.majstr.backend.service.importer.ActReceiptExtractor;
 import com.majstr.backend.storage.StorageService;
@@ -34,18 +28,15 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
-import static org.mockito.Mockito.doThrow;
-import static org.mockito.Mockito.never;
-import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 /**
- * The receipt-recognition gate is per MODE, not per endpoint (master decision, 2026-08-23): the
- * meta pass — label / date / total off the footer — is FREE, the {@code withItems} item-table pass
- * stays behind {@code Feature.RECEIPT_IMPORT}. These pin that split, because the cheap half being
- * free is exactly the kind of thing a later "tidy the guard to the top of the method" refactor
- * would silently undo.
+ * Reading a receipt for an ACT is free, and reads three footer fields — nothing else. There used to
+ * be a second, PRO-gated pass that read the item table and carried the positions into the act; it
+ * was removed on 2026-08-28 («для чого ми зробили щоб позиції переносились?»), so what these pin
+ * now is the opposite of the old split: NO gate on this path at all, one flow, and no lookup on the
+ * QR path. Reading a receipt INTO AN ESTIMATE is a different feature and keeps its own gate.
  */
 @ExtendWith(MockitoExtension.class)
 @MockitoSettings(strictness = Strictness.LENIENT)
@@ -58,52 +49,30 @@ class WorkActReceiptRecognitionTest {
     @Mock private WorkActService actService;
     @Mock private StorageService storage;
     @Mock private ActReceiptExtractor recognizer;
-    @Mock private FeatureGuard featureGuard;
-    @Mock private UserRepository userRepository;
     @Mock private ProjectPhotoService photoService;
     @Mock private com.majstr.backend.service.fiscal.FiscalQrService fiscalQr;
 
     @InjectMocks private WorkActReceiptService service;
 
     @Test
-    void metaPassIsFree() throws IOException {
+    void recognitionIsFree_andReadsTheFooterOnly() throws IOException {
         when(actService.get(ACT, OWNER)).thenReturn(act(WorkActStatus.DRAFT));
         when(recognizer.extractMeta(anyString(), any())).thenReturn(new ActReceiptExtractor.Recognized(
-                "Епіцентр", LocalDate.of(2026, 8, 18), new BigDecimal("483.50"), List.of()));
+                "Епіцентр", LocalDate.of(2026, 8, 18), new BigDecimal("483.50")));
 
-        ActReceiptRecognizeResponse read = service.recognize(ACT, OWNER, jpeg(), false);
+        ActReceiptRecognizeResponse read = service.recognize(ACT, OWNER, jpeg());
 
         assertThat(read.recognized()).isTrue();
         assertThat(read.label()).isEqualTo("Епіцентр");
         assertThat(read.amount()).isEqualByComparingTo("483.50");
-        // The FREE half must not even look the user up, let alone gate them.
-        verifyNoInteractions(featureGuard);
-        verify(recognizer, never()).extractWithItems(anyString(), any());
+        assertThat(read.issuedAt()).isEqualTo(LocalDate.of(2026, 8, 18));
     }
 
     @Test
-    void itemPassStaysPro() {
-        User owner = new User();
-        when(actService.get(ACT, OWNER)).thenReturn(act(WorkActStatus.DRAFT));
-        when(userRepository.findById(OWNER)).thenReturn(Optional.of(owner));
-        doThrow(new FeatureNotAvailableException(Feature.RECEIPT_IMPORT, Plan.FREE))
-                .when(featureGuard).requireFeature(owner, Feature.RECEIPT_IMPORT);
-
-        assertThatThrownBy(() -> service.recognize(ACT, OWNER, jpeg(), true))
-                .isInstanceOf(FeatureNotAvailableException.class);
-
-        // A blocked plan must never spend the (expensive) model call.
-        verify(recognizer, never()).extractWithItems(anyString(), any());
-        verify(recognizer, never()).extractMeta(anyString(), any());
-    }
-
-    @Test
-    void signedActSpendsNoModelCallInEitherMode() {
+    void signedActSpendsNoModelCall() {
         when(actService.get(ACT, OWNER)).thenReturn(act(WorkActStatus.SIGNED));
 
-        assertThatThrownBy(() -> service.recognize(ACT, OWNER, jpeg(), false))
-                .isInstanceOf(WorkActSignedException.class);
-        assertThatThrownBy(() -> service.recognize(ACT, OWNER, jpeg(), true))
+        assertThatThrownBy(() -> service.recognize(ACT, OWNER, jpeg()))
                 .isInstanceOf(WorkActSignedException.class);
 
         verifyNoInteractions(recognizer);
@@ -112,52 +81,75 @@ class WorkActReceiptRecognitionTest {
     // ---- the QR path (fiscal-qr iteration) --------------------------------
 
     @Test
-    void qrPathIsFreeInBothModes() {
-        // The positions cost no model call here, so nothing about them is a paid capability —
-        // «безкоштовно все, що дав QR» (master decision, 2026-08-23).
+    void qrPathIsFree_andPurelyLocal() {
+        // No model call, and no ДПС lookup either: the lookup only ever added the seller name and
+        // the positions, and the act carries no positions any more. The stub is on read(QR, false)
+        // EXACTLY — a call with true would find no stub and return null (receipts-batch: this fires
+        // automatically on every photo of a batch, so it must not wait on a third party).
         when(actService.get(ACT, OWNER)).thenReturn(act(WorkActStatus.DRAFT));
-        when(fiscalQr.read(QR)).thenReturn(Optional.of(fiscalReceipt()));
+        when(fiscalQr.read(QR, false)).thenReturn(Optional.of(fiscalReceipt()));
 
-        ActReceiptRecognizeResponse read = service.readQr(ACT, OWNER, QR, true);
+        ActReceiptRecognizeResponse read = service.readQr(ACT, OWNER, QR);
 
         assertThat(read.recognized()).isTrue();
         assertThat(read.label()).isEqualTo("Епіцентр");
         assertThat(read.amount()).isEqualByComparingTo("690.00");
         assertThat(read.issuedAt()).isEqualTo(LocalDate.of(2026, 8, 15));
-        assertThat(read.items()).singleElement()
-                .satisfies(item -> assertThat(item.name()).isEqualTo("Шпаклівка"));
-        verifyNoInteractions(featureGuard);
-    }
-
-    @Test
-    void qrWithoutTheTickCarriesNoPositions() {
-        // withItems is the master's «перенести позиції» tick, not a plan check — a receipt whose
-        // positions were not asked for must not quietly acquire them.
-        when(actService.get(ACT, OWNER)).thenReturn(act(WorkActStatus.DRAFT));
-        when(fiscalQr.read(QR)).thenReturn(Optional.of(fiscalReceipt()));
-
-        ActReceiptRecognizeResponse read = service.readQr(ACT, OWNER, QR, false);
-
-        assertThat(read.recognized()).isTrue();
-        assertThat(read.amount()).isEqualByComparingTo("690.00"); // the money still prefills
-        assertThat(read.items()).isEmpty();
     }
 
     @Test
     void anUnreadableCodeIsSoftSoTheDialogCanFallBackToThePhoto() {
         when(actService.get(ACT, OWNER)).thenReturn(act(WorkActStatus.DRAFT));
-        when(fiscalQr.read(QR)).thenReturn(Optional.empty());
+        when(fiscalQr.read(QR, false)).thenReturn(Optional.empty());
 
-        assertThat(service.readQr(ACT, OWNER, QR, true).recognized()).isFalse();
+        assertThat(service.readQr(ACT, OWNER, QR).recognized()).isFalse();
     }
 
     @Test
     void signedActRefusesTheQrPathToo() {
         when(actService.get(ACT, OWNER)).thenReturn(act(WorkActStatus.SIGNED));
 
-        assertThatThrownBy(() -> service.readQr(ACT, OWNER, QR, false))
+        assertThatThrownBy(() -> service.readQr(ACT, OWNER, QR))
                 .isInstanceOf(WorkActSignedException.class);
         verifyNoInteractions(fiscalQr);
+    }
+
+    // ---- recognition of the ALREADY-STORED photo (receipts-batch) ---------
+
+    @Test
+    void storedPhotoIsRecognizedWithoutASecondUpload() throws IOException {
+        // The «✨ Розпізнати» button on a receipt card reads the photo the batch already uploaded:
+        // re-sending the image is exactly what the master could not afford («з недостатньою
+        // швидкістю інтернету довго думає»), and reading it server-side also survives a reload.
+        when(actService.get(ACT, OWNER)).thenReturn(act(WorkActStatus.DRAFT));
+        when(receiptRepository.findByIdAndWorkActId(RECEIPT, ACT)).thenReturn(Optional.of(storedReceipt()));
+        when(storage.open("receipts/x.jpg")).thenReturn(Optional.of(new java.io.ByteArrayInputStream(jpeg().getBytes())));
+        when(storage.contentType("receipts/x.jpg")).thenReturn(Optional.of("image/jpeg"));
+        when(recognizer.extractMeta(anyString(), any())).thenReturn(new ActReceiptExtractor.Recognized(
+                "Епіцентр", LocalDate.of(2026, 8, 18), new BigDecimal("483.50")));
+
+        ActReceiptRecognizeResponse read = service.recognizeStored(ACT, RECEIPT, OWNER);
+
+        assertThat(read.recognized()).isTrue();
+        assertThat(read.amount()).isEqualByComparingTo("483.50");
+    }
+
+    @Test
+    void aSignedActRefusesTheStoredReadBeforeTouchingStorage() {
+        when(actService.get(ACT, OWNER)).thenReturn(act(WorkActStatus.SIGNED));
+
+        assertThatThrownBy(() -> service.recognizeStored(ACT, RECEIPT, OWNER))
+                .isInstanceOf(WorkActSignedException.class);
+
+        verifyNoInteractions(storage);
+        verifyNoInteractions(recognizer);
+    }
+
+    private static final UUID RECEIPT = UUID.randomUUID();
+
+    private static com.majstr.backend.entity.WorkActReceipt storedReceipt() {
+        return com.majstr.backend.entity.WorkActReceipt.builder()
+                .id(RECEIPT).label("Чек №1").amount(BigDecimal.ZERO).storageKey("receipts/x.jpg").build();
     }
 
     private static final String QR = "fn=4000123456&id=17&date=20260815&time=143005&sm=690.00";

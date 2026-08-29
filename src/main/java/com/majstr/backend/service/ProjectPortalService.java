@@ -67,6 +67,7 @@ public class ProjectPortalService {
     private final WorkActRepository workActRepository;
     private final WorkActItemRepository workActItemRepository;
     private final WorkActReceiptRepository workActReceiptRepository;
+    private final ActReceiptCompleteness receiptCompleteness;
     private final ProjectService projectService;
     private final FeatureGuard featureGuard;
     private final PortalProperties portalProperties;
@@ -198,6 +199,10 @@ public class ProjectPortalService {
                     && !workActReceiptRepository.existsByWorkActId(actId)) {
                 throw new WorkActValidationException("error.work-act.empty", "WORK_ACT_EMPTY");
             }
+            // A receipt still worth 0 ₴ must not reach the client: once SENT the act is signable,
+            // and signing freezes the receipts block into the doc_hash and the ADDENDUM estimate
+            // (receipts-batch — a photo is now saved before it is priced).
+            receiptCompleteness.requireAllPriced(actId);
             act.setStatus(WorkActStatus.SENT);
             act.setSentAt(Instant.now());
         }

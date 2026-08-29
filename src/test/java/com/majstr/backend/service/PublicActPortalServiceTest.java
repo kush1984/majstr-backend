@@ -58,6 +58,7 @@ class PublicActPortalServiceTest {
     @Mock WorkActReceiptService receiptService;
     @Mock PushService pushService;
     @Mock org.springframework.context.MessageSource messages;
+    @Mock ActReceiptCompleteness receiptCompleteness;
     @InjectMocks PublicActPortalService service;
 
     private static final String TOKEN = "tok-123";
@@ -123,7 +124,7 @@ class PublicActPortalServiceTest {
         WorkAct a = act(WorkActStatus.SENT);
         stubToken(a);
         given(itemRepository.findByWorkActIdOrderBySortOrderAscIdAsc(a.getId())).willReturn(List.of(item(a)));
-        given(receiptRepository.findByWorkActIdOrderBySortOrderAscCreatedAtAsc(a.getId()))
+        given(receiptRepository.findByWorkActIdNewestFirst(a.getId()))
                 .willReturn(List.of(receipt(a, "Епіцентр", "2400.00", true),
                         receipt(a, "Нова Пошта", "600.00", false)));
 
@@ -136,6 +137,27 @@ class PublicActPortalServiceTest {
         assertThat(view.receiptsTotal()).isEqualByComparingTo("3000.00");
         assertThat(view.total()).isEqualByComparingTo("1450.00");     // works only
         assertThat(view.payable()).isEqualByComparingTo("4450.00");   // works + receipts
+    }
+
+    @Test
+    void view_receiptWithAPartialReturn_billsTheNet_butStillShowsWhatThePaperSays() {
+        // The client can open the photo, so the portal must show 2 000 AND the 500 that went back —
+        // billing 1 500 with no explanation would read as the master shortchanging his own receipt.
+        WorkAct a = act(WorkActStatus.SENT);
+        stubToken(a);
+        given(itemRepository.findByWorkActIdOrderBySortOrderAscIdAsc(a.getId())).willReturn(List.of(item(a)));
+        var r = receipt(a, "Цвяхи", "2000.00", true);
+        r.setReturnedAmount(new BigDecimal("500.00"));
+        given(receiptRepository.findByWorkActIdNewestFirst(a.getId())).willReturn(List.of(r));
+
+        PublicActView view = service.view(TOKEN);
+
+        assertThat(view.receipts()).singleElement().satisfies(v -> {
+            assertThat(v.amount()).isEqualByComparingTo("2000.00");
+            assertThat(v.returnedAmount()).isEqualByComparingTo("500.00");
+        });
+        assertThat(view.receiptsTotal()).isEqualByComparingTo("1500.00");
+        assertThat(view.payable()).isEqualByComparingTo("2950.00"); // 1 450 works + 1 500 net
     }
 
     @Test
@@ -154,6 +176,10 @@ class PublicActPortalServiceTest {
         assertThat(a.getDocHash()).hasSize(64); // hex SHA-256
         assertThat(view.status()).isEqualTo("SIGNED");
         verify(pushService).sendToUser(any(), anyString(), anyString(), anyString());
+        // A receipt still worth 0 ₴ must not be frozen into the doc_hash and the ADDENDUM by the
+        // CLIENT either (receipts-batch — a SENT act can still gain receipts, since receipt writes
+        // are governed by not-signed, not not-sent).
+        verify(receiptCompleteness).requireAllPriced(a.getId());
     }
 
     @Test

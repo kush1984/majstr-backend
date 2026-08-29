@@ -13,30 +13,24 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
-import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
 /**
- * Reads a receipt photo for the act's «Чеки та рахунки» block (act-receipts round 2). Two depths:
+ * Reads a receipt photo for the act's «Чеки та рахунки» block: DATE + TOTAL + a short label, three
+ * fields off a printed footer. Runs on {@link AiFlow#ACT_RECEIPT} (a small model by default),
+ * because this happens on every receipt the master attaches.
  *
- * <ul>
- *   <li>{@link #extractMeta} — DATE + TOTAL + a short label, three fields off a printed footer.
- *       Runs on {@link AiFlow#ACT_RECEIPT} (a small model by default) because this happens on every
- *       receipt the master attaches.</li>
- *   <li>{@link #extractWithItems} — the same meta PLUS every purchased position, for «перенести
- *       позиції у акт». Runs on {@link AiFlow#RECEIPT} under
- *       {@link EstimateExtractor#RECEIPT_SYSTEM_PROMPT} — the estimate import's own receipt prompt,
- *       reused verbatim with a short tail for the footer fields.</li>
- * </ul>
- *
- * <p>That reuse is the point, not an implementation detail (round-2 fix, master report: the act read
- * no positions off a receipt the estimate import reads fine). This class used to carry a shorter
- * "and also list the items" prompt of its own; a Ukrainian fiscal receipt's table is not a job to
- * describe twice, and the estimate's version is the one tuned against real paper — the «#article»
- * line as the per-item anchor, the 3-line layout, the "never stop after the first few" rule, the
- * unit read from the parentheses. One prompt, one behaviour, wherever the master reads a receipt.</p>
+ * <p><b>Three fields is the whole job.</b> An earlier round also read the item TABLE off the paper,
+ * to carry the positions into the act as its own lines; that was removed (master decision,
+ * 2026-08-28: «для чого ми зробили щоб позиції переносились? може цього взагалі не потрібно?»). A
+ * receipt in an act answers one question — how much the master paid for material, and what paper
+ * proves it — and a sum plus the attached photo answers it in full. Billing the same receipt two
+ * ways needed a flag to stop it being billed twice, filed hardware-store goods under «Додаткові
+ * роботи» (a section about agreed WORK), and spent the one paid model call in this flow on a table
+ * the client can already read off the photo in the portal and the PDF. Reading a receipt INTO AN
+ * ESTIMATE is a different feature and is untouched — there the positions ARE the point.</p>
  *
  * <p>Failures are the caller's to soften: this component throws like every extractor, and
  * {@code WorkActReceiptService.recognize} turns that into a «не розпізнано — введіть вручну»
@@ -68,23 +62,13 @@ public class ActReceiptExtractor {
     private final AiExtractors extractors;
     private final ObjectMapper objectMapper;
 
-    /** Everything a recognition pass may return; {@code items} is empty in meta-only mode. */
-    public record Recognized(String label, LocalDate issuedAt, BigDecimal total,
-                             List<EstimateExtractor.Extracted.Line> items) {}
+    /** What one recognition pass returns — the receipt's own three footer fields, nothing else. */
+    public record Recognized(String label, LocalDate issuedAt, BigDecimal total) {}
 
     public Recognized extractMeta(String mediaType, byte[] bytes) {
         String json = extractors.forFlow(AiFlow.ACT_RECEIPT).requestJson(
                 AiInput.image(mediaType, bytes, "Read this receipt's total, date and issuer."),
                 META_PROMPT, metaSchema());
-        return parse(json);
-    }
-
-    public Recognized extractWithItems(String mediaType, byte[] bytes) {
-        String json = extractors.forFlow(AiFlow.RECEIPT).requestJson(
-                AiInput.image(mediaType, bytes,
-                        "Extract the purchased items from this receipt photo, plus its issuer, "
-                                + "date and total."),
-                EstimateExtractor.RECEIPT_SYSTEM_PROMPT + FOOTER_TAIL, fullSchema());
         return parse(json);
     }
 
@@ -94,27 +78,11 @@ public class ActReceiptExtractor {
     Recognized parse(String json) { // package-private for the unit test, like EstimateExtractor
         try {
             Map<String, Object> root = objectMapper.readValue(json, Map.class);
-            List<EstimateExtractor.Extracted.Line> lines = new ArrayList<>();
-            if (root.get("items") instanceof List<?> arr) {
-                for (Object element : arr) {
-                    if (!(element instanceof Map<?, ?> map)) {
-                        continue;
-                    }
-                    String name = str(map.get("name"));
-                    if (name == null) {
-                        continue;
-                    }
-                    lines.add(new EstimateExtractor.Extracted.Line(
-                            name, str(map.get("unit")), bd(map.get("quantity")),
-                            bd(map.get("unitPrice")), str(map.get("type")), str(map.get("category"))));
-                }
-            }
             BigDecimal total = bd(root.get("total"));
             if (total != null && total.signum() <= 0) {
                 total = null; // 0 = the prompt's "unreadable" sentinel
             }
-            return new Recognized(str(root.get("label")), date(str(root.get("issuedAt"))),
-                    total, lines);
+            return new Recognized(str(root.get("label")), date(str(root.get("issuedAt"))), total);
         } catch (Exception e) {
             log.warn("Act receipt recognition JSON unusable: {}", e.getMessage());
             throw new AiExtractionException("error.ai.unavailable", e);
@@ -161,11 +129,11 @@ public class ActReceiptExtractor {
         }
     }
 
-    // ---- prompts + schemas ------------------------------------------------
+    // ---- prompt + schema --------------------------------------------------
 
-    /** The three footer fields, worded once and appended to both prompts — the act needs them at
-     *  either depth, while the estimate import (which owns the table half) never asks for them. */
-    private static final String FOOTER_FIELDS = """
+    private static final String META_PROMPT = """
+            You read a photo of a Ukrainian retail receipt (фіскальний чек), a card-terminal slip,
+            an invoice (рахунок) or a hand-written note. Return:
               - label: WHO issued it — the store/company name from the header («Епіцентр»,
                 «Нова Пошта», ФОП name), short, as printed. An empty string "" if unreadable.
               - issuedAt: the receipt's own date as ISO "YYYY-MM-DD". Ukrainian receipts print it
@@ -176,21 +144,10 @@ public class ActReceiptExtractor {
                 the receipt is years old.
               - total: the FINAL amount paid, as a number with kopecks (e.g. 483.50). Look for
                 «СУМА», «ДО СПЛАТИ», «ВСЬОГО», the card-slip amount, or the largest bottom figure.
-                Never invent it: 0 if unreadable.""";
-
-    private static final String META_PROMPT = """
-            You read a photo of a Ukrainian retail receipt (фіскальний чек), a card-terminal slip,
-            an invoice (рахунок) or a hand-written note. Return:
-            """ + FOOTER_FIELDS + """
+                Never invent it: 0 if unreadable.
 
             Use the sentinels ("" / 0) for anything you cannot read confidently — a wrong figure is
             worse than an empty field the user fills by hand.""";
-
-    private static final String FOOTER_TAIL = """
-
-
-            ADDITIONALLY, alongside the items, return the receipt's own three header/footer fields:
-            """ + FOOTER_FIELDS;
 
     private static Map<String, Object> metaSchema() {
         Map<String, Object> properties = new LinkedHashMap<>();
@@ -201,22 +158,6 @@ public class ActReceiptExtractor {
                 "type", "object",
                 "additionalProperties", false,
                 "required", List.of("label", "issuedAt", "total"),
-                "properties", properties);
-    }
-
-    /** The estimate receipt schema (items + depositAmount, which its prompt still asks for) with the
-     *  three footer fields added — the prompt is that one, so the schema must match it. */
-    private static Map<String, Object> fullSchema() {
-        Map<String, Object> properties = new LinkedHashMap<>();
-        properties.put("items", Map.of("type", "array", "items", EstimateExtractor.lineSchema()));
-        properties.put("depositAmount", NUMBER);
-        properties.put("label", STRING);
-        properties.put("issuedAt", STRING);
-        properties.put("total", NUMBER);
-        return Map.of(
-                "type", "object",
-                "additionalProperties", false,
-                "required", List.of("items", "depositAmount", "label", "issuedAt", "total"),
                 "properties", properties);
     }
 }

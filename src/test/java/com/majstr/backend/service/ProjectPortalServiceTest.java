@@ -58,6 +58,7 @@ class ProjectPortalServiceTest {
     @Mock WorkActRepository workActRepository;
     @Mock WorkActItemRepository workActItemRepository;
     @Mock WorkActReceiptRepository workActReceiptRepository;
+    @Mock ActReceiptCompleteness receiptCompleteness;
     @InjectMocks ProjectPortalService portalService;
 
     private final UUID projectId = UUID.randomUUID();
