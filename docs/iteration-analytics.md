@@ -134,4 +134,5 @@ would find it.
   off the CSS rule, not seen rendered.
 - **The estimate half of `shared` is still inflated** (the PWA mints the `?t=` link when the share
   sheet OPENS) — a PWA change, deliberately out of scope here, same as in prompt 1.
-- **Prompt 3 (PostHog EU, session replay, consent-gated) not started.**
+- **Prompt 3 (PostHog EU, session replay, consent-gated) shipped separately, PWA-only** — no
+  backend change at all, not one line. Details: [iteration-posthog.md](iteration-posthog.md).

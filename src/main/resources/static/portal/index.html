@@ -323,7 +323,13 @@
             color: var(--success);
         }
         .paybar { height: 10px; border-radius: 6px; background: var(--paper-2); overflow: hidden; margin: 8px 0 4px; }
-        .paybar-fill { height: 100%; background: var(--amber); }
+        /* Twin of the app's ProgressStrip (majstr-pwa/src/components/ProgressStrip.tsx) — the same
+           bar, in plain CSS because this page never loads the PWA bundle. Colour is a POSITION:
+           the amber→green gradient spans the whole TRACK (that is what the inline background-size
+           stretches it to) and the fill is a window onto it, so a bar at 30 % shows only amber and
+           one at 90 % shows a green tail. Change the rule here and in ProgressStrip together. */
+        .paybar-fill { height: 100%; background-image: linear-gradient(to right, var(--amber), var(--success)); }
+        .paybar-fill.complete { background-image: none; background-color: var(--success); }
         .paybar-label { font-size: 0.85rem; color: var(--muted); display: flex; align-items: center; gap: 6px; }
         /* One curated (i)-explanation next to the payments header — mirrors the app's InfoPopover
            component (tap → panel, close on outside-tap/Esc/✕/scroll), reimplemented in plain JS
@@ -902,7 +908,9 @@
     function renderPaymentsBody(card) {
         const total = Number(card.contractedTotal || 0);
         const received = Number(card.received || 0);
-        const pct = total > 0 ? Math.min(100, Math.round((received / total) * 100)) : 0;
+        // Uncapped for the LABEL: an overpayment is real money and must not read as «100 %».
+        const pct = total > 0 ? Math.round((received / total) * 100) : 0;
+        const barWidth = Math.max(0, Math.min(100, pct));
         const groups = groupPayments(card);
         const count = groups.received.length + groups.upcoming.length;
 
@@ -940,7 +948,9 @@
                 Отримано ${amount(received)} з ${amount(total)} ₴ · ${pct}%
                 <button type="button" class="info-trigger" data-info="payments" aria-label="Пояснення">i</button>
             </p>
-            <div class="paybar"><div class="paybar-fill" style="width:${pct}%"></div></div>
+            <div class="paybar">
+                <div class="paybar-fill${pct >= 100 ? ' complete' : ''}" style="width:${barWidth}%${pct >= 100 || barWidth === 0 ? '' : `;background-size:${(100 / barWidth) * 100}% 100%`}"></div>
+            </div>
             ${body}
         `;
     }

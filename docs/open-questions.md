@@ -572,8 +572,23 @@ one-line summary — keep the item in the file as a record.
   (EU market). Ties into the broader "content documents still uk-only" item. Low
   priority until there's a non-uk user.
 
-### Referral source in the privacy policy
+### PostHog: EU project + key in the deploy env
 - **Status:** OPEN
+- **Since:** PostHog iteration (2026-08-30)
+- **Context:** The PWA integration shipped complete and inert. With an empty
+  `VITE_POSTHOG_KEY` the SDK is not even downloaded (the dynamic import is dead code), so
+  nothing is collected until a PostHog project exists in the **EU (Frankfurt)** region and its
+  key is set in the deploy environment. That is the intended shipping state — the privacy
+  policy naming PostHog has to be live first.
+- **Notes / options:** When the key is set, verify on a real recording that the masking
+  actually applies (the `.ph-mask` containers and every input) — the options are nested inside
+  `session_recording` and are silently ignored if they ever move, which no test outside our own
+  structural assertion can catch. Also confirm the replay sample rate: it is 1 (record
+  everything) and only worth lowering if the 5k/month free tier gets close.
+  Details: `docs/iteration-posthog.md`.
+
+### Referral source in the privacy policy
+- **Status:** RESOLVED
 - **Since:** Referral-attribution iteration (2026-07-02)
 - **Context:** `users.referral_source` now stores an anonymized first-touch attribution
   (DIRECT / a partner code). When the privacy policy is next revised/published, it should
@@ -583,6 +598,12 @@ one-line summary — keep the item in the file as a record.
 - **Notes / options:** One sentence in the `/privacy` page (data collected → "джерело
   реєстрації, знеособлено, для партнерського обліку"). Fold into the lawyer-review pass
   (see "Privacy policy: lawyer review").
+- **Resolution:** PostHog iteration (2026-08-30) — the "Технічні дані" list on `/privacy` now
+  names the registration source explicitly (partner link or ad channel, anonymized, for partner
+  accounting). It stopped being optional in that iteration: `referral_source`/`utm_source` are
+  now person properties on a third-party analytics service, so the same edit corrected the
+  neighbouring line that used to promise usage statistics were "не передається стороннім".
+  The lawyer-review pass is still its own OPEN item.
 
 ### Existing-user privacy consent (login modal)
 - **Status:** RESOLVED
