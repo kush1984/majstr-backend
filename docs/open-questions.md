@@ -572,20 +572,25 @@ one-line summary — keep the item in the file as a record.
   (EU market). Ties into the broader "content documents still uk-only" item. Low
   priority until there's a non-uk user.
 
-### PostHog: EU project + key in the deploy env
+### PostHog: verify masking on a real recording
 - **Status:** OPEN
-- **Since:** PostHog iteration (2026-08-30)
-- **Context:** The PWA integration shipped complete and inert. With an empty
-  `VITE_POSTHOG_KEY` the SDK is not even downloaded (the dynamic import is dead code), so
-  nothing is collected until a PostHog project exists in the **EU (Frankfurt)** region and its
-  key is set in the deploy environment. That is the intended shipping state — the privacy
-  policy naming PostHog has to be live first.
-- **Notes / options:** When the key is set, verify on a real recording that the masking
-  actually applies (the `.ph-mask` containers and every input) — the options are nested inside
-  `session_recording` and are silently ignored if they ever move, which no test outside our own
-  structural assertion can catch. Also confirm the replay sample rate: it is 1 (record
-  everything) and only worth lowering if the 5k/month free tier gets close.
-  Details: `docs/iteration-posthog.md`.
+- **Since:** PostHog iteration (2026-08-30); narrowed 2026-08-31 once the key went live
+- **Context:** The deployment half is DONE — an EU (Frankfurt) project exists and
+  `VITE_POSTHOG_KEY` is set on the **Cloudflare Pages** build of the PWA (not on the Railway
+  backend, which was the first attempt and reads no `VITE_*` at all). Confirmed the only way
+  that can be confirmed: the live bundle at `https://majstr.pro/assets/index-*.js` carries
+  `posthogKey:"phc_…"` and the lazy chunk holding `rrweb` is served. What is NOT yet confirmed
+  is the part no test can reach — that **masking actually applies in a real recording**.
+- **Notes / options:** Open one own recording and check the `.ph-mask` containers (client card,
+  profile requisites, the economy tab, payment rows, PDF previews) and every input. The options
+  are nested inside `session_recording`; moved to the top level they are silently ignored, and
+  nothing but a watched recording catches that — our test asserts the structure, not the effect.
+  Sample rate is 1 (record everything) and only worth lowering near the 5k/month free tier.
+  Two traps already paid for, both in `docs/iteration-posthog.md` §7: `VITE_*` is baked at BUILD
+  time (setting the variable changes nothing without a redeploy), and a set-but-EMPTY
+  `VITE_POSTHOG_REPLAY_SAMPLE_RATE` used to parse as `0` — replay silently off while events kept
+  flowing. Fixed in `config.ts` + `src/lib/config.test.ts` (PWA 1.29.2); do not re-create that
+  variable empty on any host.
 
 ### Referral source in the privacy policy
 - **Status:** RESOLVED

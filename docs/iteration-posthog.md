@@ -233,3 +233,35 @@ Full PWA gate green: `lint` · `tsc -b` · `typecheck:tests` · **741 vitest** (
 - **The estimate half of `shared` is still inflated on the backend** (the PWA mints the `?t=` link
   when the sheet OPENS). The PostHog event does not have this problem; the backend funnel still
   does. Fixing it is a PWA change to `SharePortalSheet`'s mint-on-open effect, still out of scope.
+
+---
+
+## 7. Going live found two things, and neither was in the code under test
+
+Recorded because both cost a round trip to diagnose and both look identical from the cabinet:
+an empty project, "no events yet".
+
+**(a) `VITE_*` is baked at BUILD time, so it belongs to the PWA host, not the API host.** The key
+was first added to the backend service on Railway, which never reads it — the PWA is a separate
+deploy on Cloudflare Pages (`majstr.pro` answers `Server: cloudflare`, `api.majstr.pro` answers
+`Server: railway-hikari`). The proof is in the shipped bundle: fetch
+`https://majstr.pro/assets/index-*.js` and grep it. `posthogKey:""` means the build had no key;
+`posthogKey:"phc_…"` means it did. Two consequences worth keeping: **setting the variable is not
+enough — the existing build must be redeployed**, since nothing reads it at runtime; and the
+bundle grep is the fastest honest answer to "is it on in prod?", ahead of any dashboard.
+
+**(b) `Number("") === 0`, and 0 is a legal sample rate.** `replaySampleRate` fell back to 1 for a
+missing or unparseable value but accepted a blank string as a deliberate "record nothing" — and a
+blank string is exactly what a hosting dashboard produces when someone creates the variable and
+leaves the value empty (which had already happened on the wrong service, one copy-paste away from
+travelling to the right one). The failure mode is the nasty kind: the SDK downloads, events flow,
+the config looks set, and session replay — the entire reason PostHog is here — is silently off.
+Fixed with a blank check *before* `Number` (`config.ts`), pinned by `src/lib/config.test.ts`,
+which keeps an explicit `"0"` working: turning replay off on purpose must stay possible.
+
+The general rule this leaves behind: **an env var that is set-but-empty must mean "unset", not
+"zero"** — anywhere `Number()` reads one. `apiBaseUrl` is the deliberate exception and says so in
+its own comment (an explicit empty base URL is a real, used configuration).
+
+PWA 1.29.1 → **1.29.2**. Full gate green: `lint` · `tsc -b` · `typecheck:tests` · **757 vitest**
+(107 files) · `vite build`.
