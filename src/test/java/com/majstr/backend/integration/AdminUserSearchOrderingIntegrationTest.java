@@ -79,6 +79,61 @@ class AdminUserSearchOrderingIntegrationTest extends IntegrationTestBase {
                 .containsExactly(onlineNow.getId(), june.getId(), july.getId(), august.getId());
     }
 
+    /**
+     * Pasting a user id into the admin search box finds that master and nobody else.
+     *
+     * <p>This is the PostHog side door: a session replay identifies its master by {@code
+     * distinct_id} — the user id — and by nothing else, because no name, email or phone is ever
+     * sent to PostHog. Without this the id is a dead end; with it, "who is this recording, and
+     * what is their phone number" is one paste.</p>
+     *
+     * <p>It has to be an integration test. The unit test can only prove the id is FORWARDED to the
+     * query; whether {@code OR u.id = :id} actually executes — and, more to the point, whether
+     * binding a NULL UUID into it leaves plain text search working — is a question only PostgreSQL
+     * answers. Admin search has already 500'd once on exactly this class of bug (a bind parameter
+     * whose type Postgres could not infer, see {@code UserRepositorySearchTest}), and that one was
+     * green in every mock.</p>
+     */
+    @Test
+    void aPastedUserId_findsThatMasterAlone_andTextSearchStillWorksBesideIt() {
+        String tag = "idtest" + UUID.randomUUID().toString().substring(0, 8);
+        User target = save(user(tag, "target", null));
+        User other = save(user(tag, "other", null));
+        entityManager.flush();
+        entityManager.clear();
+
+        Instant activeSince = Instant.now().minus(15, ChronoUnit.MINUTES);
+        Pageable pageable = PageRequest.of(0, 20);
+
+        List<UUID> byId = userRepository
+                .searchAdmin(null, null, target.getId().toString(), activeSince, pageable)
+                .getContent().stream().map(User::getId).toList();
+        assertThat(byId)
+                .as("the id matches exactly one row — the sibling shares every text field but this")
+                .containsExactly(target.getId());
+
+        // The id branch must not disturb the text branch: with a non-id term the id bind is NULL,
+        // and a NULL comparison inside the same OR has to stay simply false, not swallow the row.
+        List<UUID> byText = userRepository
+                .searchAdmin(null, null, tag, activeSince, pageable)
+                .getContent().stream().map(User::getId).toList();
+        assertThat(byText).containsExactlyInAnyOrder(target.getId(), other.getId());
+
+        // Same on the ascending («Реєстрація» toggled) query — it is a second, separately written
+        // copy of the same WHERE clause, so it can drift.
+        List<UUID> byIdAscending = userRepository
+                .searchAdmin(null, null, target.getId().toString(), activeSince, true, pageable)
+                .getContent().stream().map(User::getId).toList();
+        assertThat(byIdAscending).containsExactly(target.getId());
+
+        // A half-copied id is not an id. It must degrade to a text search that finds nothing,
+        // never to an error.
+        String truncated = target.getId().toString().substring(0, 26);
+        assertThat(userRepository.searchAdmin(null, null, truncated, activeSince, pageable))
+                .as("a truncated UUID falls through to LIKE, which matches no email/name/company")
+                .isEmpty();
+    }
+
     private void backdateCreatedAt(User user, Instant createdAt) {
         entityManager.createNativeQuery("UPDATE users SET created_at = ?1 WHERE id = ?2")
                 .setParameter(1, createdAt)

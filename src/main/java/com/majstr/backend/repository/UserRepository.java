@@ -133,7 +133,7 @@ public interface UserRepository extends JpaRepository<User, UUID> {
      */
     default Page<User> searchAdmin(Plan plan, String source, String search, Instant activeSince, Pageable pageable) {
         String src = (source == null || source.isBlank()) ? null : source.trim().toUpperCase(Locale.ROOT);
-        return searchAdminByPattern(plan, src, likePattern(search), activeSince, pageable);
+        return searchAdminByPattern(plan, src, likePattern(search), idOrNull(search), activeSince, pageable);
     }
 
     /**
@@ -148,7 +148,8 @@ public interface UserRepository extends JpaRepository<User, UUID> {
             return searchAdmin(plan, source, search, activeSince, pageable);
         }
         String src = (source == null || source.isBlank()) ? null : source.trim().toUpperCase(Locale.ROOT);
-        return searchAdminByPatternRegistrationAscending(plan, src, likePattern(search), activeSince, pageable);
+        return searchAdminByPatternRegistrationAscending(
+                plan, src, likePattern(search), idOrNull(search), activeSince, pageable);
     }
 
     /**
@@ -168,6 +169,39 @@ public interface UserRepository extends JpaRepository<User, UUID> {
             return null;
         }
         return "%" + search.trim().toLowerCase(Locale.ROOT) + "%";
+    }
+
+    /**
+     * The search term read as a user id, or {@code null} when it is not one.
+     *
+     * <p>This is the join between a PostHog session replay and a real person to phone. PostHog is
+     * deliberately told nothing but the UUID — no name, no email, no phone (see
+     * docs/iteration-posthog.md) — so the recording identifies its master by {@code distinct_id}
+     * alone, and that id is worth nothing unless the admin panel can be handed it directly.
+     * Pasting one used to match no row at all: the LIKE clause only ever looked at email, name and
+     * company.</p>
+     *
+     * <p>An id is matched by EQUALITY, never by LIKE — a UUID is not a substring people type, and
+     * turning it into {@code %…%} would be a sequential scan over a text cast of the primary key.
+     * A term that does not parse is simply not an id, and the text search answers alone.</p>
+     */
+    static UUID idOrNull(String search) {
+        if (search == null) {
+            return null;
+        }
+        String term = search.trim();
+        // The length check is NOT redundant. UUID.fromString only validates strictly at exactly 36
+        // characters; anything shorter falls into a lenient path that just splits on "-" and parses
+        // each group as hex, so a HALF-COPIED id ("866feca8-dc5b-403f-993e-c6") parses happily into a
+        // DIFFERENT uuid. Without this, a bad paste would silently search for somebody else.
+        if (term.length() != 36) {
+            return null;
+        }
+        try {
+            return UUID.fromString(term);
+        } catch (IllegalArgumentException notAnId) {
+            return null;
+        }
     }
 
     /**
@@ -194,6 +228,7 @@ public interface UserRepository extends JpaRepository<User, UUID> {
                 OR LOWER(u.email)       LIKE :pattern
                 OR LOWER(u.fullName)    LIKE :pattern
                 OR LOWER(u.companyName) LIKE :pattern
+                OR u.id = :id
               )
             ORDER BY
                 CASE WHEN u.lastActiveAt > :activeSince THEN 0 ELSE 1 END,
@@ -203,6 +238,7 @@ public interface UserRepository extends JpaRepository<User, UUID> {
     Page<User> searchAdminByPattern(@Param("plan") Plan plan,
                                     @Param("source") String source,
                                     @Param("pattern") String pattern,
+                                    @Param("id") UUID id,
                                     @Param("activeSince") Instant activeSince,
                                     Pageable pageable);
 
@@ -216,6 +252,7 @@ public interface UserRepository extends JpaRepository<User, UUID> {
                 OR LOWER(u.email)       LIKE :pattern
                 OR LOWER(u.fullName)    LIKE :pattern
                 OR LOWER(u.companyName) LIKE :pattern
+                OR u.id = :id
               )
             ORDER BY
                 CASE WHEN u.lastActiveAt > :activeSince THEN 0 ELSE 1 END,
@@ -225,6 +262,7 @@ public interface UserRepository extends JpaRepository<User, UUID> {
     Page<User> searchAdminByPatternRegistrationAscending(@Param("plan") Plan plan,
                                     @Param("source") String source,
                                     @Param("pattern") String pattern,
+                                    @Param("id") UUID id,
                                     @Param("activeSince") Instant activeSince,
                                     Pageable pageable);
 

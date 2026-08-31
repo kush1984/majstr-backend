@@ -43,8 +43,12 @@ public class AdminUserController {
     private final AdminUserService adminUserService;
 
     @Operation(summary = "Search users with pagination + per-user activity counts "
-            + "(email verified, clients, projects, estimates, signed). Always active-right-now "
-            + "first; `dir=asc` reverses registration order for everyone else (default: desc).")
+            + "(email verified, clients, projects, estimates, signed). `search` matches email, "
+            + "name and company as text, and the user id by equality when the term parses as a "
+            + "UUID - that is how a PostHog session replay (which knows the master by "
+            + "`distinct_id` and nothing else) is traced to a real person. Always "
+            + "active-right-now first; `dir=asc` reverses registration order for everyone else "
+            + "(default: desc).")
     @GetMapping
     public PageResponse<AdminUserSummary> list(
             @RequestParam(required = false) Plan plan,

@@ -265,3 +265,46 @@ its own comment (an explicit empty base URL is a real, used configuration).
 
 PWA 1.29.1 → **1.29.2**. Full gate green: `lint` · `tsc -b` · `typecheck:tests` · **757 vitest**
 (107 files) · `vite build`.
+
+## 8. The replay → real person join (backend, 2026-08-31, no migration)
+
+The master, after the first recordings landed: «як можу знати для якого конкретного користувача
+відео стосується, щоб можливо йому зателефонувати і проговорити ситуацію де він застряг?»
+
+That question is the whole privacy design working as intended, and then hitting a missing step.
+PostHog is deliberately told **nothing but the UUID** — no name, email or phone (§2) — so a
+recording identifies its master by `distinct_id` and that is `users.id`. The name and phone live
+where they belong, in our own admin: `AdminUserDetail` already carries `fullName`/`phone`/
+`companyName` under a comment that says «who this actually is, and how to reach them».
+
+**The missing step was that the admin panel could not be handed an id.** `searchAdminByPattern`
+matched `email`, `fullName` and `companyName` and nothing else, so pasting a UUID returned zero
+rows. `GET /api/admin/users/{id}` would have answered, but it is an API call with a bearer token,
+not something you do from the page you are already looking at.
+
+So the search term is now read **two ways at once**: `likePattern(search)` as before, plus
+`idOrNull(search)` — the term parsed as a UUID, or null — ORed into the same WHERE as `u.id = :id`
+in both ordering variants. Three deliberate details:
+
+- **An id is matched by EQUALITY, never LIKE.** A UUID is not a substring anyone types, and
+  `%…%` over a text cast of the primary key is a sequential scan for no benefit.
+- **`UUID.fromString` is lenient below 36 characters** — it stops validating and just splits on
+  `-`, parsing each group as hex. So `866feca8-dc5b-403f-993e-c6` (a half-copied id, and PostHog
+  shows exactly that shortened form in its list) parses into a valid but **different** uuid, and a
+  bad paste would have silently searched for somebody else. `idOrNull` therefore requires the
+  canonical 36-character form before it parses at all. This is the one thing here that could have
+  shipped looking correct; it was caught by the test asserting a truncated id is rejected.
+- **A non-id term still searches text, and an id term still travels as a pattern too.** The
+  branches are ORed, never exclusive.
+
+**What was deliberately NOT done: sending name or phone to PostHog as person properties.** It is
+the obvious one-line "fix" and it is exactly the boundary this iteration exists to hold — the
+privacy policy says what leaves the device is depersonalised. The UUID as a join key, resolved in
+our own admin, answers the same question without moving personal data to a third party.
+
+Tests: `UserRepositorySearchTest` (id parsing incl. the truncation trap, and the forwarding of both
+branches) plus a case in `AdminUserSearchOrderingIntegrationTest` — the latter against a real
+database on purpose, because whether `OR u.id = :id` executes, and whether binding a **null** UUID
+into it leaves plain text search working, is a question only PostgreSQL answers. Admin search has
+already 500'd once on exactly that class of bug (a bind parameter Postgres could not type), and it
+was green in every mock. Backend green: `./gradlew build`, **1128** tests.
