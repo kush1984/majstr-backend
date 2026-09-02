@@ -11,10 +11,15 @@ import java.util.UUID;
  *
  * <p>{@code customTradeId}/{@code customTradeName} are set only for a master's OWN template
  * filed under a master-invented trade — always {@code null} for a system default.</p>
+ *
+ * <p>{@code description} is the bundle's client-facing explanation (a finish level and its
+ * tolerances, say) — null for the vast majority of bundles, which are a plain list of works.
+ * Shown behind an (i) in the picker, never inline: it is a paragraph, not a subtitle.</p>
  */
 public record EstimateTemplateSummary(
         UUID id,
         String name,
+        String description,
         Trade trade,
         UUID customTradeId,
         String customTradeName,

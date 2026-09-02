@@ -16,6 +16,8 @@ import java.util.UUID;
 public record EstimateTemplateDetail(
         UUID id,
         String name,
+        /** The bundle's client-facing explanation; null when it has nothing to explain. */
+        String description,
         Trade trade,
         /** Set only for a master's OWN template filed under a master-invented trade — always
          *  {@code null} for a system default. */
@@ -35,6 +37,7 @@ public record EstimateTemplateDetail(
         return new EstimateTemplateDetail(
                 t.getId(),
                 t.getName(),
+                t.getDescription(),
                 t.getTrade(),
                 customTrade != null ? customTrade.getId() : null,
                 customTrade != null ? customTrade.getName() : null,

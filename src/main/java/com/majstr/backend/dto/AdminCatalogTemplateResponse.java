@@ -18,11 +18,13 @@ public record AdminCatalogTemplateResponse(
         ItemType type,
         Unit unit,
         BigDecimal suggestedPrice,
-        int addedInVersion
+        int addedInVersion,
+        String description
 ) {
     public static AdminCatalogTemplateResponse from(CatalogTemplate t) {
         return new AdminCatalogTemplateResponse(
                 t.getId(), t.getTrade(), t.getCategory(), t.getName(),
-                t.getType(), t.getUnit(), t.getSuggestedPrice(), t.getAddedInVersion());
+                t.getType(), t.getUnit(), t.getSuggestedPrice(), t.getAddedInVersion(),
+                t.getDescription());
     }
 }

@@ -58,6 +58,7 @@ import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.willThrow;
+import static org.mockito.Mockito.atLeastOnce;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 
@@ -541,6 +542,53 @@ class EstimateServiceTest {
         assertThat(saved.get(0).getQuantity()).isEqualByComparingTo("3");
         assertThat(saved.get(0).getCategory()).isEqualTo("Електрика");
         assertThat(saved.get(1).getUnit()).isEqualTo(Unit.M);
+    }
+
+    @Test
+    void addingFromTheCatalog_bringsTheExplanationOntoTheLine() {
+        // «оце що ми додали Q3, Q4 — якщо таке попаде в кошторис, звідки клієнт має знати що це
+        // таке?» The line is a SNAPSHOT of the position, so the explanation is copied like the
+        // name and the price rather than joined back to a catalog row that may since have moved.
+        Estimate estimate = ownedEstimate(ownerId);
+        UUID catalogId = UUID.randomUUID();
+        given(estimateRepository.findById(estimateId)).willReturn(Optional.of(estimate));
+        given(catalogService.loadOwned(catalogId, ownerId)).willReturn(catalogItem(
+                "Підготовка ГКЛ під фарбування · Q4 (еліт)", ItemType.WORK, Unit.M2, "260.00",
+                "Оздоблення під фарбування",
+                "Найвищий рівень: суцільне шпаклювання під глянець і бокове світло."));
+        given(itemRepository.findByEstimateIdOrderBySortOrderAscIdAsc(estimateId)).willReturn(List.of());
+        given(itemRepository.save(any(EstimateItem.class))).willAnswer(inv -> inv.getArgument(0));
+
+        var resp = estimateService.addItemFromCatalog(estimateId, catalogId,
+                new EstimateItemFromCatalogRequest(new BigDecimal("12"), 0), ownerId, null);
+
+        assertThat(resp.description())
+                .isEqualTo("Найвищий рівень: суцільне шпаклювання під глянець і бокове світло.");
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void addingABatchFromTheCatalog_bringsEachExplanationAlong() {
+        Estimate estimate = ownedEstimate(ownerId);
+        UUID c1 = UUID.randomUUID();
+        UUID c2 = UUID.randomUUID();
+        given(estimateRepository.findById(estimateId)).willReturn(Optional.of(estimate));
+        given(catalogService.loadOwned(c1, ownerId)).willReturn(catalogItem(
+                "Шпаклювання · Q3", ItemType.WORK, Unit.M2, "180.00", "Оздоблення",
+                "Під матову фарбу, без бокового світла."));
+        given(catalogService.loadOwned(c2, ownerId))
+                .willReturn(catalogItem("Кабель", ItemType.MATERIAL, Unit.M, "38.50", "Кабель"));
+        given(itemRepository.findByEstimateIdOrderBySortOrderAscIdAsc(estimateId)).willReturn(List.of());
+
+        estimateService.addItemsFromCatalogBatch(estimateId, List.of(
+                new AddCatalogItemsBatchRequest.Entry(c1, new BigDecimal("3"), 0),
+                new AddCatalogItemsBatchRequest.Entry(c2, new BigDecimal("10"), 1)), ownerId);
+
+        ArgumentCaptor<List<EstimateItem>> captor = ArgumentCaptor.forClass(List.class);
+        verify(itemRepository).saveAll(captor.capture());
+        assertThat(captor.getValue()).extracting(EstimateItem::getDescription)
+                .as("a position that needs no explaining carries none")
+                .containsExactly("Під матову фарбу, без бокового світла.", null);
     }
 
     @Test
@@ -1044,10 +1092,16 @@ class EstimateServiceTest {
     }
 
     private CatalogItem catalogItem(String name, ItemType type, Unit unit, String price, String category) {
+        return catalogItem(name, type, unit, price, category, null);
+    }
+
+    private CatalogItem catalogItem(String name, ItemType type, Unit unit, String price,
+                                    String category, String description) {
         return CatalogItem.builder()
                 .id(UUID.randomUUID())
                 .name(name)
                 .category(category)
+                .description(description)
                 .type(type)
                 .unit(unit)
                 .defaultPrice(new BigDecimal(price))
@@ -1403,6 +1457,27 @@ class EstimateServiceTest {
         assertThat(saved.getValue().get(0).getUnitPrice()).isEqualByComparingTo("120");
         assertThat(saved.getValue().get(1).getUnitPrice()).isEqualByComparingTo("100");
     }
+
+    @Test
+    void duplicate_carriesTheFinishLevelOntoTheCopy() {
+        // The duplicate is the SAME work at another price (V121) — the level promised to the
+        // client does not change with the margin, and the copy is what gets signed.
+        Estimate source = ownedEstimate(ownerId);
+        source.setQualityNote("Рівень Q3+ (преміум) — контроль ковзним світлом на 6 переходах.");
+        given(estimateRepository.findById(estimateId)).willReturn(Optional.of(source));
+        given(itemRepository.findByEstimateIdOrderBySortOrderAscIdAsc(estimateId))
+                .willReturn(new ArrayList<>());
+        ArgumentCaptor<Estimate> copy = ArgumentCaptor.forClass(Estimate.class);
+        given(estimateRepository.save(any(Estimate.class))).willAnswer(inv -> inv.getArgument(0));
+
+        estimateService.duplicate(estimateId,
+                new EstimateDuplicateRequest(null, new BigDecimal("10"), false, null), ownerId);
+
+        verify(estimateRepository, atLeastOnce()).save(copy.capture());
+        assertThat(copy.getAllValues()).extracting(Estimate::getQualityNote)
+                .contains("Рівень Q3+ (преміум) — контроль ковзним світлом на 6 переходах.");
+    }
+
 
     @Test
     void duplicate_stopsTheSOURCEfromCountingInTheEconomy() {

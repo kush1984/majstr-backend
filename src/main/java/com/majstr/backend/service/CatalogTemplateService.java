@@ -90,14 +90,14 @@ public class CatalogTemplateService {
 
     @Transactional
     public int seedForUser(User user) {
-        int added = copyMissing(user, templateRepository.findByTradeIn(user.getTrades()));
+        int added = copyMissing(user, templateRepository.findByTradeInOrderBySortOrderAsc(user.getTrades()));
         user.setLastSyncedCatalogVersion(templateRepository.currentVersion());
         return added;
     }
 
     @Transactional
     public int resetForUser(User user) {
-        int added = copyMissing(user, templateRepository.findByTradeIn(user.getTrades()));
+        int added = copyMissing(user, templateRepository.findByTradeInOrderBySortOrderAsc(user.getTrades()));
         user.setLastSyncedCatalogVersion(templateRepository.currentVersion());
         return added;
     }
@@ -145,13 +145,22 @@ public class CatalogTemplateService {
         if (trades.isEmpty()) {
             return 0;
         }
-        return copyMissing(user, templateRepository.findByTradeIn(trades));
+        return copyMissing(user, templateRepository.findByTradeInOrderBySortOrderAsc(trades));
     }
 
     private int copyMissing(User owner, List<CatalogTemplate> templates) {
         List<CatalogItem> toCreate = missingItems(owner, templates);
         if (toCreate.isEmpty()) {
             return 0;
+        }
+        // Numbered from the end of what the master already has, in the library's own order (V118).
+        // This used to be left unset, so every row ever copied here landed on the column DEFAULT 0
+        // — a whole registration's worth of catalog sharing one slot, which PostgreSQL is free to
+        // return in any order it likes. The categories holding those rows then floated to the top
+        // of his page, since a section sits where its first row does.
+        int position = catalogRepository.nextSortOrder(owner.getId());
+        for (CatalogItem item : toCreate) {
+            item.setSortOrder(position++);
         }
         catalogRepository.saveAll(toCreate);
         return toCreate.size();
@@ -184,6 +193,7 @@ public class CatalogTemplateService {
                         .type(t.getType())
                         .unit(t.getUnit())
                         .defaultPrice(t.getSuggestedPrice())
+                    .description(t.getDescription())
                         // Copied from the shared library, not invented here — the admin insight screens
                         // filter on this so a position we shipped and later deleted is never mistaken
                         // for something a master came up with.

@@ -196,6 +196,26 @@ class EstimatePdfServiceTest {
         assertThat(text).contains("Штукатурка стін");   // the lines themselves still render
     }
 
+    @Test
+    void render_printsNoExplanationsForTheClient_neitherPerLineNorTheFinishLevel() throws Exception {
+        // «по порталі і пдф — давай ми це все … приберемо для клієнта взагалі покищо, йому це не
+        // треба». Both explanation surfaces are still WRITTEN (V119/V121 keep their columns and the
+        // master reads them in the app) — they are simply not printed on the client's copy, so the
+        // guard has to set them and then assert the page stays clean.
+        given(featureGuard.isEnabled(org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.eq(Feature.BRANDED_PDF))).willReturn(false);
+        EstimatePdfService.PdfModel model = sampleModel();
+        model.items().get(0).setDescription("Рівень Q3: під матову фарбу, без бокового світла.");
+        model.estimate().setQualityNote("Рівень Q4 (еліт) — максимальна підготовка.");
+
+        String text = textOf(pdfService.render(model));
+
+        assertThat(text).contains("Штукатурка стін")   // the line itself still prints
+                .doesNotContain("Рівень Q3")
+                .doesNotContain("Стандарт робіт:")
+                .doesNotContain("Рівень Q4");
+    }
+
     // ---- receipts appendix ----------------------------------------------------------------------
 
     /** A 1×1 PNG — a valid image OpenPDF can embed, without needing a fixture file. */

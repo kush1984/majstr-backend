@@ -1307,6 +1307,17 @@ one-line summary — keep the item in the file as a record.
   pattern fits a given trade — full V82-style replace, or V96-style extend — depends entirely on
   how much real data that trade's live catalog already carries; check before assuming either one.
   See [iteration-painter-catalog-rework.md](iteration-painter-catalog-rework.md).
+- **Update (V116, 2026-08-31 - status unchanged, DRYWALL done):** DRYWALL was rebuilt with a THIRD
+  pattern, because its live catalog was neither thin (like tiling's) nor rich-and-clean (like
+  painter's) - it was **rich and self-contradictory**: two import waves (V27/V31 and the V50 tetris
+  batch) described the same eight jobs in different words at different prices, and the bundles were
+  split across both wordings, so two masters got 240 and 900 for the same radius partition
+  depending on which bundle they tapped. So the pattern here was **merge, not extend or replace**:
+  pick a canon wording per duplicate group, repoint every bundle at it, drop the loser. Worth
+  knowing before the next trade: **check for intra-trade semantic duplicates first** - the existing
+  `noPositionIsSoldTwiceUnderTwoWordings` invariant only normalises punctuation, so it saw none of
+  these eight. V116 adds a dictionary-normalising sibling that does.
+  See [iteration-drywall-catalog.md](iteration-drywall-catalog.md).
 - **Update (V112, 2026-08-22 — status unchanged):** PAINTER's *bundles* were rebuilt a second time,
   this time for shape rather than content: 21 sets → 3 ordered sequences, catalog untouched («ми
   чіпаємо тільки шаблони, з позицій нічого не викидаємо»). When the next trade's catalog is
@@ -1383,6 +1394,120 @@ one-line summary — keep the item in the file as a record.
 - **Notes / options:** Confirm real prices with the master for these 11, the same follow-up as the
   three ⚠-variance items above. A plain `UPDATE catalog_templates SET suggested_price = ...` once
   confirmed — no migration-shape question here.
+
+### DRYWALL: cross-trade price contradictions found while rebuilding the catalog (V116)
+- **Status:** OPEN (items 2 and 3; items 1 and 4 RESOLVED by V120, 2026-09-01)
+- **Since:** Drywall-catalog rebuild (V116, 2026-08-31)
+- **Context:** Auditing DRYWALL surfaced three pricing defects that live in OTHER trades, so V116
+  deliberately did not touch them - a drywall migration silently editing PAINTER/ELECTRICAL rows is
+  exactly the kind of blast radius the catalog migrations have been careful to avoid.
+  1. ~~**PAINTER «Каркасна звукоізоляція ГКЛ два слоя стелі/стін» = 80 / 60 ₴**~~ **RESOLVED** -
+     «беремо 850» (2026-09-01). V120 raises both PAINTER rows to DRYWALL's 850 / 650 ₴ and queues a
+     PRICE_DRIFT notice per master still holding the old number. The 10x gap was what it looked
+     like: the framed rows had inherited the price of the *безкаркасна* variant beside them.
+  2. **ELECTRICAL carries four near-duplicate «свердління по ГКЛ» pairs** (100 vs 90, 200 vs 90) -
+     same job, two wordings, two prices, the same shape V116 merged inside DRYWALL.
+  3. **PAINTER «Захист вхідних дверей картоном» ships at 0.00 ₴**, unlike its floor/window siblings
+     (30 ₴/м², 200 ₴/шт).
+  4. ~~**PAINTER «Армування стиків ГКЛ» = 75 ₴/м.п.**~~ **RESOLVED** - «беремо ... 100»
+     (2026-09-01). V120 raises it to DRYWALL's 100 ₴/м.п. His own catalog row already read 100: he
+     had re-priced it by hand before he said it, which is why that number was taken as the real one.
+     The two rows are still two wordings of arguably one job - see the merge item below.
+- **Notes / options:** (2) needs the V116 merge treatment (pick the canon wording, repoint the
+  bundles, refresh masters' catalogs) - small, but it is a migration, not an UPDATE. (3) is a plain
+  `UPDATE catalog_templates SET suggested_price = ...` once the master says what the number is.
+  Both want his word first; neither blocks anything today. Note the stem-based duplicate detector
+  groups **by trade**, so it structurally cannot see this class: cross-trade collisions are found by
+  reading, not by the invariant.
+
+### Three positions are now sold under two wordings at ONE price - merge or leave?
+- **Status:** OPEN
+- **Since:** V120 (2026-09-01)
+- **Context:** V120 settled the numbers but deliberately retired no wording, so each of these jobs
+  now sits in the library twice at the same price:
+  - PAINTER «Каркасна звукоізоляція ГКЛ два слоя стелі/стін» vs DRYWALL «Каркасна звукоізоляція
+    (ГКЛ в два слоя) стелі/стін» - and `CatalogNameKey.of` already yields the **same key** for them
+    («в» is a connector, word order is sorted away), so they split their own `price_insight_candidate`
+    signal in half and only `acceptUpdateNotice`'s `price == oldPrice` guard keeps a notice for one
+    from moving the other.
+  - BUILDER «Облаштування дверного пройому звуження розширення» vs «Облаштування дверної пройми» -
+    same trade, same unit, now both 1350 ₴. The stem detector does NOT catch this one: «пройом» and
+    «пройми» differ inside the first six letters.
+  - PAINTER «Армування стиків ГКЛ» vs DRYWALL «Заповнення та армування стиків ГКЛ» - one operation
+    (a joint cannot be armoured without being filled), now both 100 ₴/м.п.
+- **Notes / options:** With the prices equal the merge is finally cheap in money terms, but it is
+  not cheap in blast radius: retiring a wording deletes rows from masters' catalogs, needs the
+  V116 trade-aware delete guard, and repoints default bundles (DRYWALL's soundproofing bundle
+  references its own pair; PAINTER's copies are referenced by none). A V116-shaped migration, not an
+  UPDATE - and worth doing in one pass with item (2) above rather than three times.
+
+### BUILDER «Армування кладки»: two rows, two units, and his own third number
+- **Status:** OPEN
+- **Since:** V120 (2026-09-01)
+- **Context:** «Армування кладки (сіткою, арматурою)» is 90 ₴/м.п. and «Армування кладки сіткою
+  арматурою» is 50 ₴/м² - the same job, punctuation apart, sold by two different measures, which is
+  exactly the m²/м.п. pair V99 PART 2 says needs a SCOPE qualifier or nothing. The master's own copy
+  of the m² row reads 100 ₴. This is **not** the «Армування стиків ГКЛ» item V120 settled;
+  iteration-catalog-order-and-explanations.md §7 originally conflated the two by name.
+- **Notes / options:** Ask which measure he actually bills masonry reinforcement by, then either
+  drop the loser (a migration, with the V116 delete guard) or give both a scope qualifier. Nothing
+  depends on it today.
+
+### DRYWALL: what is an extra layer of ГКЛ worth on its own?
+- **Status:** OPEN
+- **Since:** V120 (2026-09-01)
+- **Context:** Kyiv price lists sell «Монтаж додаткового шару ГКЛ» as its own m² line and we do not.
+  We do ship both ends of it - «Монтаж конструкцій (перегородки 2 сторони) із гіпсокартону в 1 шар»
+  800 ₴ and «...в 2 шари» 900 ₴ - and the difference implies **~50 ₴/м² per extra face**, which is
+  low enough that shipping it as a derived number felt wrong: *a norm we invented, that the master
+  then billed a client for, is worse than no norm at all.*
+- **Notes / options:** One question to the master («скільки коштує додатковий шар ГКЛ окремо?») and
+  it is a one-row INSERT in the next catalog migration, in «Каркас і обшивка». Until then a master
+  prices it by picking the 2-шари row, which is what he does today.
+
+### Catalog position `description` is backend-only until the PWA renders it
+- **Status:** OPEN
+- **Since:** Drywall-catalog rebuild (V116, 2026-08-31)
+- **Context:** V116 added `description` to `catalog_templates` and `catalog_items` (copied by value
+  into a master's catalog like every other field) because the three Q-level positions are
+  *indistinguishable by name alone* - Q3 vs Q3+ vs Q4 differ by sliding-light control points, wet
+  dedusting and which paints may go on top, which is a sentence, not a name. The backend ships it on
+  the response DTOs; **`majstr-pwa` does not display or edit it yet**, so today the description is
+  written by migrations and read by nobody.
+- **Notes / options:** PWA work, separate repo, separate iteration: show it under the position name
+  in the catalog list (collapsed - it is a sentence, and the list is a phone screen), and expose it
+  in the position edit form so a master can write their own. Until then, do NOT add descriptions to
+  more positions on the assumption anyone can see them - the Q-levels are the deliberate exception
+  because their names would otherwise lie.
+- **Partially done (catalog-picker iteration, PWA 1.32.0, 2026-09-01):** the shared `CatalogPicker`
+  now renders it - one clamped line under the position name plus an `(i)` holding the full text - so
+  it is no longer "read by nobody" on the one screen where Q3 vs Q4 costs a wrong pick. Still OPEN
+  for the other half: the catalog LIST page does not show it, and nothing WRITES it (the PWA sends
+  `CatalogItemRequest`, which deliberately has no `description`, so a master cannot author one and a
+  PATCH must never null it). `api/types.ts` carries it as `description?: string | null`.
+- **Read half now DONE (V119 iteration, PWA 1.33.0, 2026-09-01):** the catalog LIST page renders it
+  too, and `estimate_items.description` carries a snapshot onto the estimate board, the `ItemForm`
+  panel, the client portal and the PDF - see
+  [iteration-catalog-order-and-explanations.md](iteration-catalog-order-and-explanations.md) §3.
+  What stays OPEN is only **authoring**: `CatalogItemRequest` still has no `description`, so a
+  master cannot write one, and the rule above still holds - do not add descriptions to positions
+  whose names do not lie without them.
+
+### BUILDER: «Гідроізоляція плівкова» / «Гідроізоляція плівкою» — the one allowlisted duplicate
+- **Status:** OPEN
+- **Since:** Drywall-catalog rebuild (V116, 2026-08-31)
+- **Context:** V116's new stem-based duplicate detector
+  (`SeedCatalogInvariantsIntegrationTest.noPositionIsSoldTwiceUnderWordingsThatDifferByWordsRatherThanPunctuation`)
+  finds exactly one group outside DRYWALL: BUILDER sells one job under two endings. It is the same
+  defect V116 spent its length undoing inside DRYWALL - two names split
+  `price_insight_candidate`'s per-name crowd median in half on both. It was NOT fixed here, because
+  retiring a BUILDER row means refreshing every builder's own `catalog_items` with the trade-aware
+  delete guard, a data migration of its own, and a drywall migration editing BUILDER rows is exactly
+  the blast radius these migrations avoid.
+- **Notes / options:** It is listed **by name** in `KNOWN_LEGACY_DUPLICATES` rather than being
+  normalised away, so it has to be **deleted from that list** - not merely noticed - when BUILDER's
+  catalog is rebuilt. If that list ever grows a second entry without a matching item here, the
+  allowlist has started hiding defects instead of scheduling them.
 
 ### How materials come back after V81
 - **Status:** OPEN
@@ -2163,6 +2288,182 @@ one-line summary — keep the item in the file as a record.
   component (`components/InfoPopover.tsx`) is already reusable, so a new spot is a 2-line addition
   (import + `<InfoPopover text=… label=… />`), not new plumbing.
 
+### Competitor scan — «ПРОраб» (АПК) and «Смета М2»: what to take, what not to
+- **Status:** OPEN
+- **Since:** Catalog-picker iteration (2026-09-01) — the master who gave us «не класифіковано, не
+  систематизовано, плоскі списки» named both apps in the same message, so this is his own reference
+  point, not a market survey we invented.
+- **Context:** Two Russian-market apps a master pointed at.
+  **«ПРОраб»** (`ru.gvpdroid.foreman`, Gvpdroid; Lite 4.4★/41, Pro 5.0★/19): a works estimate and a
+  materials estimate as **separate documents**, a large set of material calculators, an editable
+  price list of work types, a coefficient/percent on the whole estimate, a notepad, local
+  backup/restore, income/expense, save to file or e-mail.
+  **«Смета М2»** (`com.kvadrat_m2.kvadratm2` / App Store `id1564662649`, «Квадратный метр», Тюмень;
+  RuStore 4.2★/238, ~220k installs): projects → estimates per discipline, a rates section the master
+  fills with his own work types and prices, **voice input** of work types, **step-by-step** position
+  adding, room measurement incl. complex shapes with diagonals and a drawn scheme, object finances,
+  **contract** generation (legal-entity requisites, contract date synced to the estimate date) and
+  acceptance acts, export to PDF/Excel, crew mode with per-employee access.
+- **What their users complain about — and it validates our direction, so do not "fix" it twice:**
+  ПРОраб's reviewers ask for **search from the main section, «бо іноді не знаєш, у якому розділі
+  позиція»**, and for **manual sorting instead of alphabetical** — both are exactly what the
+  catalog-picker iteration shipped (search renders only the categories that hold a hit and the
+  heading names the section; rows keep the master's own `sortOrder`). «Смета М2»'s sharpest
+  complaint is that its work base is **«гола», without real prices** — every master types his own
+  price list from scratch; our seeded per-trade catalog plus community prices
+  (`price_insight_candidate`) is the answer to that, and it is a moat, not a nice-to-have.
+  Their second complaint is functionality moved behind a subscription **after** people relied on it
+  — a warning about how we ever re-gate a FREE capability.
+- **Notes / options:** Three candidates are split into their own items below (material calculators,
+  voice input, contract generation) so they can be promoted one at a time. Deliberately NOT taken:
+  **separate works/materials estimates** (we carry `type` on the line and print grouped — two
+  documents would double the signing and portal surface for the same money), and **crew mode /
+  per-employee access**, which is the existing «Team plan: actual multi-user workspaces» item and
+  must not be started from a competitor's screenshot. **Excel export** of an estimate is not
+  currently anywhere — the nearest item is «Export the catalog back to xlsx»; note that both apps
+  offer it and our answer today is a PDF plus the client portal, which is a *better* answer for the
+  client and a worse one for a master who wants to edit the numbers elsewhere.
+
+### Material calculators (quantity → how much material to buy)
+- **Status:** OPEN
+- **Since:** Catalog-picker iteration (2026-09-01), from the competitor scan above.
+- **Context:** This is ПРОраб's centre of gravity and the widest functional gap between us: mortar
+  and concrete, brick, drywall ceilings / walls / partitions, tile with adhesive, wallpaper, slat
+  ceiling, laminate **with a layout scheme**, linoleum, MDF/PVC panels, skirting, dry floors,
+  decorative plaster. «Смета М2» does the same from the other end — by the time the measurement is
+  finished it has issued a **«счёт на черновые материалы»**. We compute the quantity for a WORK line
+  (Заміри, and the per-line calculator) and nothing at all derives the MATERIAL quantity from it.
+- **Notes / options:** Related, do not duplicate: «Measurement → quantity calculator on estimate
+  lines» (IN_PROGRESS) and «Material metrics per object» (OPEN) — the first is the input side, this
+  is the output side. Likely first cut: the trades we already seed (DRYWALL sheets / profile /
+  screws / putty per m² of a partition, TILER adhesive + grout, PAINTER primer and paint per m² per
+  coat), frontend-only like the per-line calculator, no migration. **The risk is the norms, not the
+  code**: a consumption norm we invent and the master bills is worse than no norm at all, so a norm
+  must be visible («0.9 kg/m² × 2 шари»), editable per master, and never silently baked into a
+  price. Ask the master which materials he actually miscounts before building the long tail.
+- **Plan drafted (2026-09-01), status deliberately still OPEN — nothing is built:**
+  [iteration-material-calculator.md](iteration-material-calculator.md). Its load-bearing decisions:
+  a norm hangs off a catalog **position** (a tech card) rather than living in a standalone
+  calculator screen — viable only because V116 made a position's name state its variant («в 1 шар» /
+  «Q3» / «Q4»), so the parameters a separate screen would ask for are already answered; the
+  **prerequisite is seeding a brand-free, price-free MATERIAL catalog**, since V81 made the default
+  works-only and a norm needs something to point at; the value is in **waste %, package rounding and
+  visible arithmetic**, not in the multiplication; the backend computes so no **third** mirrored
+  formula is created, and the calculation **writes nothing** (the existing add-items path commits
+  it), so there is no new offline entity. Cut 0 is not code: get the master's own norms for 10–15
+  positions, the way the drywall PDF arrived.
+
+### Voice input of a position
+- **Status:** OPEN
+- **Since:** Catalog-picker iteration (2026-09-01), from the competitor scan above.
+- **Context:** «Смета М2» added voice input of work types (v526). The situation is real — a master
+  on an object, gloves on, phone in a dusty hand, typing a Ukrainian position name into a small
+  field.
+- **Notes / options:** **Clarify the want before building anything.** If it is "add a position
+  without typing", the picker and templates may already answer it and a microphone adds nothing. If
+  it is genuinely "dictate", the cheapest honest version is the **OS keyboard's own dictation**,
+  which every master already has on the field and which costs us zero code — check whether he knows
+  it is there. Building it ourselves: the Web Speech API is Chrome/Android and needs network (iOS
+  Safari has no `SpeechRecognition`), so it would be a half-platform feature; routing audio through
+  `service/ai/` instead would be the **first audio input in the product**, costs a model call per
+  use, and would need a plan gate and a rate limiter like every other LLM path here.
+
+### Contract («договір») generation, beside the act
+- **Status:** OPEN
+- **Since:** Catalog-picker iteration (2026-09-01), from the competitor scan above.
+- **Context:** «Смета М2» generates a contract with legal-entity requisites, its date synced to the
+  estimate's, next to its acceptance act. We hold the signed estimate, the signed act and the client
+  portal — i.e. everything **except** the document that opens the relationship.
+- **Notes / options:** Mechanically it is cheap, because the act already built every piece: a PDF
+  service, a `ShareLinkKind`, a public portal sign path, `doc_hash` tamper-evidence, an e-mailed
+  signed copy. **The hard half is not code** — a contract is a legal document, its wording is
+  jurisdiction-specific (Ukraine, ФОП vs a private person vs a legal entity), and shipping a bad
+  template is worse than shipping none: the same honesty rule as the act's «Підтвердити приймання
+  робіт», which deliberately never claims legal equivalence. So: first ask the master whether he
+  signs a paper contract today and what text he uses, and treat the template as the deliverable.
+  Do not start until he asks for it.
+
+### A work act still shows «Q4» undecoded
+- **Status:** OPEN
+- **Since:** catalog-order-and-explanations iteration (2026-09-01).
+- **Context:** V119 gave `estimate_items` a `description` snapshot, so a finishing level explains
+  itself in the estimate board, the client portal and the estimate PDF. `work_act_item` freezes
+  name/category/unit/price the same way and shows the same trade names in its own PDF and its own
+  `?a=` portal — so the client who signs the ACT still reads a bare «Підготовка ГКЛ під фарбування ·
+  Q4 (еліт)». That is the same question the master asked («звідки клієнт має знати що це таке?»),
+  one document later.
+- **Notes / options:** Mechanically it is V119 again: a `work_act_item.description` column copied
+  from the estimate line when the act is built (never a join — an act line is frozen, and its PDF is
+  hashed into `doc_hash`), plus two render surfaces. The reason it is not done here: the act PDF's
+  canonical render is the hashed one, so touching it deserves a deliberate iteration rather than a
+  rider on a catalog fix.
+- **Widened by V121 (drywall-quality-levels iteration, 2026-09-01):** the act does not carry
+  `estimates.quality_note` either. The client read the finish level and its tolerances under the
+  estimate table, then signed an ACT for the same work that said nothing about it. Same fix, same
+  reason for deferring — but note the act would want the ESTIMATE's snapshot, not a fresh join.
+- **Narrowed 2026-09-02 (template-position-picking iteration):** the master switched every
+  client-facing explanation off («приберемо для клієнта взагалі покищо, йому це не треба»), so the
+  act is no longer the ONE document that stays silent — the estimate portal and the estimate PDF are
+  silent too. The inconsistency that made this urgent is gone; the question itself is not, and it
+  comes back the moment the client half is re-enabled. Kept OPEN deliberately: whoever turns those
+  renderers back on has to answer for the act in the same pass, or re-create the exact gap.
+
+### An estimate can end up promising two different finish levels
+- **Status:** OPEN
+- **Since:** drywall-quality-levels iteration (2026-09-01).
+- **Context:** `estimates.quality_note` is the join of the applied bundles' descriptions (V121).
+  Applying the same level twice is deduped, but applying Q3 to the ceiling and Q4 to the walls joins
+  two paragraphs that contradict each other, and the client reads both under one table with nothing
+  saying which surface each belongs to. That is a real job — different rooms genuinely get different
+  levels — so it is not a misuse to block.
+- **Notes / options:** Two shapes, both bigger than this iteration. (a) Scope the note to a section
+  of the estimate, which means the note stops being one field. (b) Let the master EDIT the snapshot
+  on the estimate (it is read-only today: no request field, so a wrong pick is fixed by re-applying
+  the bundle onto a fresh estimate). (b) is the cheap one and is probably what he asks for first —
+  and note it also answers «I picked the wrong bundle», which is the more likely first complaint.
+  Wait for him to hit either.
+- **Update 2026-09-02:** the client no longer reads the note at all (it is a master-side panel now),
+  so two contradicting paragraphs currently confuse only the master, who knows which surface is
+  which. That lowers the urgency without changing the answer — and note the same round shipped
+  per-position picking, which gives him a third way out: apply Q4 and untick the lines the ceiling
+  does not get, instead of applying two levels.
+
+### The client's half of the explanations is switched off, not deleted
+- **Status:** OPEN
+- **Since:** template-position-picking iteration (2026-09-02).
+- **Context:** «по порталі і пдф — давай ми це все … приберемо для клієнта **взагалі покищо**, йому
+  це не треба». «Покищо» is the whole item: the render was removed, the DATA was not.
+  `estimate_items.description` and `estimates.quality_note` are still snapshotted on every copy path
+  (add-from-catalog, batch add, duplicate, consolidate, apply-template), so the columns keep filling
+  correctly while nobody reads them, and bringing the client's half back is a render change rather
+  than a migration plus a backfill that could never reconstruct what was signed.
+- **Notes / options:** Three things to decide when he asks for it back, and they are the reason this
+  is logged rather than closed. (1) **Where it goes** — inline under the line is what he rejected
+  («все пливе»), and the portal's row `(i)` was the answer that shipped; the PDF has no `(i)`, so
+  the paragraph has to live somewhere the table does not flow around. (2) **All or nothing** — a
+  per-estimate toggle («show explanations to the client») is the obvious ask and is a new field on
+  `Estimate`, not a setting, because the client signed a document. (3) The work-act gap above must
+  be answered in the same pass. Until then: do not "tidy up" the unread columns, and do not add a
+  `description` to `EstimateItemRequest` on the grounds that nothing reads it.
+
+### Should a master be able to edit a line's explanation?
+- **Status:** OPEN
+- **Since:** catalog-order-and-explanations iteration (2026-09-01).
+- **Context:** `description` is deliberately absent from `EstimateItemRequest`: the sentence explains
+  the CATALOG position the line was copied from, and the client-facing wording should not be
+  rewritten line by line. Two consequences the master has not seen yet. (1) He cannot correct or
+  delete the text on one line — only in his catalog, and only for lines added afterwards. (2)
+  `updateItem` does **not** clear it on a rename, so renaming «…стін» to «…стелі» leaves the old
+  explanation attached; the alternative (clear on any rename) would silently drop a client-facing
+  sentence on a typo fix, which looked worse.
+- **Notes / options:** Wait for him to hit it. If he does, the smallest honest shape is a per-line
+  OVERRIDE (edit it, or blank it) rather than a plain editable field — a blanked line must stay
+  blanked when it is duplicated or consolidated.
+- **Update 2026-09-02:** the text is no longer client-facing (portal and PDF stopped rendering it),
+  which removes the argument that carried half of this item — a wrong sentence now misleads nobody
+  but the master, who can fix it in his own catalog. If the client half returns, so does the full
+  question, including the rename case.
+
 ---
 
 ## Features in the catalog enum but not implemented
@@ -2346,10 +2647,32 @@ one-line summary — keep the item in the file as a record.
 - **Since:** Password-reset iteration (2026-07-17)
 - **Context:** `registerSW`'s `onNeedRefresh` was a no-op with autoUpdate — a new build would swap in
   on the next navigation, potentially dropping unsaved form input (a 30-line estimate in progress).
-- **Resolution:** `onNeedRefresh` now signals `lib/swUpdate.ts` (captures the returned `updateSW`); a
-  React `<UpdateBanner>` at the app root shows a non-intrusive "нова версія — Оновити" banner. The
-  reload happens only on the master's click (`updateSW(true)`) — never silently. `onOfflineReady` stays
-  quiet. Web push untouched. `UpdateBanner.test` covers show + apply.
+- **Resolution (2026-07-17, INCOMPLETE — see below):** `onNeedRefresh` signals `lib/swUpdate.ts`
+  (capturing the returned `updateSW`) and a React `<UpdateBanner>` at the app root shows a
+  "нова версія — Оновити" banner, applied only on the master's click (`updateSW(true)`).
+  `onOfflineReady` stays quiet, web push untouched, `UpdateBanner.test` covers show + apply.
+- **Why that resolution was wrong (2026-08-31):** it described the code that was ADDED, not behaviour
+  that was ever OBSERVED. The banner had never once appeared — the master said so («оцього банеру
+  оновлення я ніколи не бачив») a year after this item was closed. Two independent causes, both
+  present since the first service-worker commit: `registerType: 'autoUpdate'` makes vite-plugin-pwa's
+  generated registration **destructure `onNeedRefresh` and never call it** (it reloads the page itself
+  on `activated`, which is the exact silent reload this item exists to prevent), and `skipWaiting()` on
+  install means no worker ever reaches `waiting`, the only state `onNeedRefresh` fires for. Every test
+  stayed green throughout: they mocked the registration, so they proved the banner renders and applies,
+  never that anything reaches it.
+- **Actually shipped (PWA 1.29.3, 2026-08-31):** three changes, each necessary —
+  `registerType: 'prompt'`, a `SKIP_WAITING` message handler in `src/sw.ts` (this worker is
+  `injectManifest`, so workbox-window's `messageSkipWaiting()` post must be handled by hand), and
+  `clients.claim()` on activate (without it the open page keeps the OLD controller, `controlling`
+  never fires, and the tap does nothing). `src/lib/swUpdate.test.ts` asserts all three by READING
+  `vite.config.ts` and `src/sw.ts` as text — deliberate: this feature's failure mode is that nothing
+  appears, and jsdom cannot reach a build config or a SW lifecycle. Proven to bite (both regressions
+  reintroduced → 2 of 5 failed). Full PWA gate green plus `test:e2e:offline:shell` on a real build.
+  **Still unverified, and honestly so:** the banner on a live device across two real deploys — that
+  needs two consecutive production builds and cannot be observed locally.
+  Details: [iteration-sw-update-banner.md](iteration-sw-update-banner.md).
+- **Rule taken from this:** a resolution that names the code it added is not a resolution. A resolution
+  names what was OBSERVED.
 
 ### Multi-sheet project PDFs: which page(s) to send for recognition
 - **Status:** OPEN

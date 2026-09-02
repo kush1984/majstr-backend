@@ -71,6 +71,13 @@ public class EstimateTemplate {
     @JoinColumn(name = "custom_trade_id")
     private UserTrade customTrade;
 
+    /** What the bundle means, in words the CLIENT can read — a finish level and its tolerances,
+     *  say. Copied onto {@link Estimate#getQualityNote()} when the bundle is applied, and shown
+     *  under the estimate table in the portal and in the PDF. Nullable: most bundles are a plain
+     *  list of works and have nothing to explain. */
+    @Column(name = "description", length = 1000)
+    private String description;
+
     @Column(name = "is_default", nullable = false)
     private boolean isDefault;
 

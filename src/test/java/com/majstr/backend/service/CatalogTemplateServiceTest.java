@@ -185,7 +185,7 @@ class CatalogTemplateServiceTest {
                 .id(UUID.randomUUID())
                 .trades(new LinkedHashSet<>(Set.of(Trade.ELECTRICAL)))
                 .build();
-        given(templateRepository.findByTradeIn(electrician.getTrades())).willReturn(List.of(
+        given(templateRepository.findByTradeInOrderBySortOrderAsc(electrician.getTrades())).willReturn(List.of(
                 tpl("Розетки та вимикачі", "Розетка", ItemType.WORK, Unit.PIECE, "180.00"),
                 tpl("Кабельні роботи", "Кабель", ItemType.MATERIAL, Unit.M, "38.50")
         ));
@@ -221,7 +221,7 @@ class CatalogTemplateServiceTest {
                 .build();
         // The merged set contains "Демонтаж" twice (a position shared by two
         // of the user's trades). It must be created only once.
-        given(templateRepository.findByTradeIn(generalist.getTrades())).willReturn(List.of(
+        given(templateRepository.findByTradeInOrderBySortOrderAsc(generalist.getTrades())).willReturn(List.of(
                 tpl("Демонтаж", "Демонтаж стіни", ItemType.WORK, Unit.M2, "280.00"),
                 tpl("Розетки та вимикачі", "Розетка", ItemType.WORK, Unit.PIECE, "180.00"),
                 tpl("Демонтаж", "Демонтаж стіни", ItemType.WORK, Unit.M2, "280.00")
@@ -244,7 +244,7 @@ class CatalogTemplateServiceTest {
                 .id(UUID.randomUUID())
                 .trades(new LinkedHashSet<>(Set.of(Trade.TILING)))
                 .build();
-        given(templateRepository.findByTradeIn(user.getTrades())).willReturn(List.of(
+        given(templateRepository.findByTradeInOrderBySortOrderAsc(user.getTrades())).willReturn(List.of(
                 tpl("Укладка", "Клей для плитки", ItemType.MATERIAL, Unit.PIECE, "280.00"),
                 tpl("Укладка", "Хрестики 2мм", ItemType.MATERIAL, Unit.SET, "25.00")
         ));
@@ -274,7 +274,7 @@ class CatalogTemplateServiceTest {
                 .id(UUID.randomUUID())
                 .trades(new LinkedHashSet<>(Set.of(Trade.OTHER)))
                 .build();
-        given(templateRepository.findByTradeIn(user.getTrades())).willReturn(List.of());
+        given(templateRepository.findByTradeInOrderBySortOrderAsc(user.getTrades())).willReturn(List.of());
 
         int added = catalogTemplateService.seedForUser(user);
 
@@ -291,7 +291,7 @@ class CatalogTemplateServiceTest {
                 .id(UUID.randomUUID())
                 .trades(new LinkedHashSet<>(Set.of(Trade.ELECTRICAL)))
                 .build();
-        given(templateRepository.findByTradeIn(owner.getTrades())).willReturn(List.of(
+        given(templateRepository.findByTradeInOrderBySortOrderAsc(owner.getTrades())).willReturn(List.of(
                 tpl("Розетки та вимикачі", "Розетка", ItemType.WORK, Unit.PIECE, "180.00"),
                 tpl("Кабельні роботи", "Кабель", ItemType.MATERIAL, Unit.M, "38.50")
         ));
@@ -313,7 +313,7 @@ class CatalogTemplateServiceTest {
                 .id(UUID.randomUUID())
                 .trades(new LinkedHashSet<>(Set.of(Trade.ELECTRICAL, Trade.BUILDER)))
                 .build();
-        given(templateRepository.findByTradeIn(Set.of(Trade.BUILDER))).willReturn(List.of(
+        given(templateRepository.findByTradeInOrderBySortOrderAsc(Set.of(Trade.BUILDER))).willReturn(List.of(
                 tpl("Бетонні роботи", "Заливка фундаменту", ItemType.WORK, Unit.M3, "900.00"),
                 tpl("Бетонні роботи", "Бетон товарний", ItemType.MATERIAL, Unit.M3, "3200.00")
         ));
@@ -357,7 +357,7 @@ class CatalogTemplateServiceTest {
                 .id(UUID.randomUUID())
                 .trades(new LinkedHashSet<>(Set.of(Trade.ELECTRICAL)))
                 .build();
-        given(templateRepository.findByTradeIn(user.getTrades())).willReturn(List.of(
+        given(templateRepository.findByTradeInOrderBySortOrderAsc(user.getTrades())).willReturn(List.of(
                 tpl("Розетки та вимикачі", "Розетка", ItemType.WORK, Unit.PIECE, "180.00")
         ));
         given(catalogRepository.findByOwnerIdOrderByNameAsc(user.getId())).willReturn(List.of());
@@ -374,7 +374,7 @@ class CatalogTemplateServiceTest {
                 .id(UUID.randomUUID())
                 .trades(new LinkedHashSet<>(Set.of(Trade.TILING)))
                 .build();
-        given(templateRepository.findByTradeIn(user.getTrades())).willReturn(List.of());
+        given(templateRepository.findByTradeInOrderBySortOrderAsc(user.getTrades())).willReturn(List.of());
         given(templateRepository.currentVersion()).willReturn(2);
 
         catalogTemplateService.resetForUser(user);
@@ -503,7 +503,7 @@ class CatalogTemplateServiceTest {
                 .suggestedPrice(new BigDecimal("0.00"))
                 .trade(Trade.TILING)
                 .build();
-        given(templateRepository.findByTradeIn(user.getTrades())).willReturn(List.of(template));
+        given(templateRepository.findByTradeInOrderBySortOrderAsc(user.getTrades())).willReturn(List.of(template));
         given(catalogRepository.findByOwnerIdOrderByNameAsc(user.getId())).willReturn(List.of());
 
         catalogTemplateService.seedForUser(user);

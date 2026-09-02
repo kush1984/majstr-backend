@@ -49,6 +49,17 @@ public class EstimateItem {
     @Column(name = "category", length = 100)
     private String category;
 
+    /**
+     * What the position means in plain words, snapshotted from the catalog when the line was added
+     * (V119) — «Q4 (еліт)» is a word only a plasterer knows, and the client reads this name in the
+     * portal and in the PDF. Null for a line the master typed himself; most need no explaining.
+     *
+     * <p>A copy rather than a join, like every other field on this row: the client signed THIS
+     * wording, so re-pricing or renaming the catalog position must not change it.</p>
+     */
+    @Column(name = "description", length = 500)
+    private String description;
+
     @Enumerated(EnumType.STRING)
     @Column(name = "unit", nullable = false, length = 20)
     private Unit unit;

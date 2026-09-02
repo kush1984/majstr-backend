@@ -1,5 +1,6 @@
 package com.majstr.backend.service;
 
+import com.majstr.backend.dto.ApplyTemplatesRequest;
 import com.majstr.backend.dto.EstimateCreateRequest;
 import com.majstr.backend.dto.EstimateResponse;
 import com.majstr.backend.dto.EstimateTemplateDetail;
@@ -43,6 +44,7 @@ import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
@@ -58,6 +60,9 @@ import java.util.stream.Collectors;
 @Service
 @RequiredArgsConstructor
 public class EstimateTemplateService {
+
+    /** Column cap on {@code estimates.quality_note} (V121). */
+    private static final int QUALITY_NOTE_MAX = 1000;
 
     private final EstimateTemplateRepository templateRepository;
     private final EstimateTemplateItemRepository templateItemRepository;
@@ -102,7 +107,7 @@ public class EstimateTemplateService {
                 .map(t -> {
                     UserTrade customTrade = t.getCustomTrade();
                     return new EstimateTemplateSummary(
-                            t.getId(), t.getName(), effectiveTrade(t, overrides),
+                            t.getId(), t.getName(), t.getDescription(), effectiveTrade(t, overrides),
                             customTrade != null ? customTrade.getId() : null,
                             customTrade != null ? customTrade.getName() : null,
                             t.isDefault(),
@@ -162,7 +167,7 @@ public class EstimateTemplateService {
         }
         int count = templateItemRepository.findByTemplateIdOrderBySortOrderAscIdAsc(templateId).size();
         return new EstimateTemplateSummary(
-                template.getId(), template.getName(), effectiveTrade,
+                template.getId(), template.getName(), template.getDescription(), effectiveTrade,
                 customTrade != null ? customTrade.getId() : null,
                 customTrade != null ? customTrade.getName() : null,
                 template.isDefault(), count);
@@ -185,8 +190,8 @@ public class EstimateTemplateService {
      * {@code customTradeId} (a master-invented trade) wins over it, same as a catalog item.
      */
     @Transactional
-    public EstimateTemplateSummary saveFromEstimate(UUID estimateId, String name, Trade trade,
-                                                     UUID customTradeId, UUID ownerId) {
+    public EstimateTemplateSummary saveFromEstimate(UUID estimateId, String name, String description,
+                                                    Trade trade, UUID customTradeId, UUID ownerId) {
         Estimate estimate = estimateService.loadOwned(estimateId, ownerId);
         User owner = estimate.getProject().getOwner();
         UserTrade customTrade = resolveCustomTrade(customTradeId, ownerId);
@@ -195,6 +200,7 @@ public class EstimateTemplateService {
         EstimateTemplate template = templateRepository.save(EstimateTemplate.builder()
                 .owner(owner)
                 .name(name.trim())
+                .description(normalize(description))
                 .trade(effectiveTrade)
                 .customTrade(customTrade)
                 .isDefault(false)
@@ -211,22 +217,34 @@ public class EstimateTemplateService {
         }
         templateItemRepository.saveAll(toSave);
         return new EstimateTemplateSummary(
-                template.getId(), template.getName(), effectiveTrade,
+                template.getId(), template.getName(), template.getDescription(), effectiveTrade,
                 customTrade != null ? customTrade.getId() : null,
                 customTrade != null ? customTrade.getName() : null,
                 false, toSave.size());
     }
 
-    /** Rename. On a system default this forks it first — the summary carries the copy's id. */
+    /**
+     * Update a template's metadata — its name and its client-facing description. On a system
+     * default this forks it first, so the summary carries the copy's id.
+     *
+     * <p>{@code description} is <b>null = leave it as it is</b>, blank = clear it. The request is
+     * otherwise a full replace, and a plain rename (from the estimate editor, or replayed from the
+     * offline outbox) carries no description — reading null as «clear» would silently drop the
+     * paragraph the client reads under the table.</p>
+     */
     @Transactional
-    public EstimateTemplateSummary rename(UUID templateId, String name, UUID ownerId) {
+    public EstimateTemplateSummary updateMeta(UUID templateId, String name, String description,
+                                              UUID ownerId) {
         EstimateTemplate template = loadWritable(templateId, ownerId);
         template.setName(name.trim());
+        if (description != null) {
+            template.setDescription(normalize(description));
+        }
         long count = templateItemRepository
                 .findByTemplateIdOrderBySortOrderAscIdAsc(template.getId()).size();
         UserTrade customTrade = template.getCustomTrade();
         return new EstimateTemplateSummary(
-                template.getId(), template.getName(), template.getTrade(),
+                template.getId(), template.getName(), template.getDescription(), template.getTrade(),
                 customTrade != null ? customTrade.getId() : null,
                 customTrade != null ? customTrade.getName() : null,
                 false, (int) count);
@@ -391,7 +409,7 @@ public class EstimateTemplateService {
                                            UUID templateId,
                                            EstimateCreateRequest req,
                                            UUID ownerId) {
-        return applyToProject(projectId, List.of(templateId), req, ownerId);
+        return applyToProject(projectId, ApplyTemplatesRequest.wholeBundles(List.of(templateId), req), ownerId);
     }
 
     /**
@@ -408,16 +426,25 @@ public class EstimateTemplateService {
      *
      * <p>Every template is ownership-checked individually, and the estimate limit is checked once
      * — this creates ONE estimate however many bundles feed it.</p>
+     *
+     * <p><b>Only the ticked positions come across.</b> A big bundle is usually applied for five or
+     * six of its lines and the rest were thrown out by hand afterwards, one at a time — so the
+     * request may name a subset per bundle ({@link ApplyTemplatesRequest#pickedItemIds()}); a
+     * bundle that names none contributes all of them. The subset is applied BEFORE the de-dup
+     * above, so an untick in the first bundle lets the second one's wording of the same position
+     * through instead of dropping the line entirely.</p>
      */
     @Transactional
     public EstimateResponse applyToProject(UUID projectId,
-                                           List<UUID> templateIds,
-                                           EstimateCreateRequest req,
+                                           ApplyTemplatesRequest request,
                                            UUID ownerId) {
-        if (templateIds == null || templateIds.isEmpty()) {
+        List<UUID> templateIds = request.templates() == null ? List.of() : request.templateIds();
+        if (templateIds.isEmpty()) {
             throw new ResourceNotFoundException("No estimate template given");
         }
-        List<EstimateTemplate> templates = templateIds.stream().distinct()
+        EstimateCreateRequest req = request.estimateOrEmpty();
+        Map<UUID, Set<UUID>> pickedItems = request.pickedItemIds();
+        List<EstimateTemplate> templates = templateIds.stream()
                 .map(id -> loadAccessible(id, ownerId))
                 .toList();
         Project project = projectService.loadOwned(projectId, ownerId);
@@ -438,13 +465,18 @@ public class EstimateTemplateService {
                 .name(normalize(req.name()))
                 .validUntil(req.validUntil())
                 .notes(normalize(req.notes()))
+                .qualityNote(qualityNote(templates))
                 .build());
 
         Set<String> seen = new HashSet<>();
         List<EstimateItem> toSave = new ArrayList<>();
         for (EstimateTemplate template : templates) {
+            Set<UUID> picked = pickedItems.get(template.getId());
             for (EstimateTemplateItem ti : templateItemRepository
                     .findByTemplateIdOrderBySortOrderAscIdAsc(template.getId())) {
+                if (picked != null && !picked.contains(ti.getId())) {
+                    continue; // the master unticked it in the picker
+                }
                 if (!seen.add(nameKey(ti.getName()))) {
                     continue; // already contributed by an earlier template
                 }
@@ -458,6 +490,9 @@ public class EstimateTemplateService {
                         .type(match != null ? match.getType() : ti.getType())
                         .name(ti.getName())
                         .category(match != null ? match.getCategory() : null)
+                        // The explanation rides along with the price it was joined to (V119) — a
+                        // bundle carries no description of its own, the catalog position does.
+                        .description(match != null ? match.getDescription() : null)
                         .unit(unit)
                         // Ordinary line: empty, the master fills it per object. PERCENT line: the
                         // percent comes from the catalog, because a template carries NO price at
@@ -474,6 +509,27 @@ public class EstimateTemplateService {
         estimateItemRepository.saveAll(toSave);
         projectRepository.incrementEstimatesCreated(projectId); // lifetime churn counter
         return estimateService.get(estimate.getId(), ownerId);
+    }
+
+    /**
+     * The client-facing paragraph the applied bundles promised — a SNAPSHOT, never a join (same
+     * rule as the line description, V119): the client signed THIS wording, so re-wording the
+     * bundle afterwards must not change a signed estimate.
+     *
+     * <p>Several bundles can feed one estimate, so the described ones are joined in the order they
+     * were picked, blank line between. Capped at the column's 1000 characters — the note explains
+     * a finish level, it is not a second «Умови».</p>
+     */
+    private static String qualityNote(List<EstimateTemplate> templates) {
+        String joined = templates.stream()
+                .map(t -> normalize(t.getDescription()))
+                .filter(Objects::nonNull)
+                .distinct()
+                .collect(Collectors.joining("\n\n"));
+        if (joined.isBlank()) {
+            return null;
+        }
+        return joined.length() <= QUALITY_NOTE_MAX ? joined : joined.substring(0, QUALITY_NOTE_MAX);
     }
 
     // ---- helpers -----------------------------------------------------------

@@ -69,6 +69,15 @@ public class Estimate {
     @Column(name = "notes", columnDefinition = "TEXT")
     private String notes;
 
+    /** What the applied bundle promised, in the client's words — the finish level and its
+     *  tolerances. A SNAPSHOT of {@link EstimateTemplate#getDescription()} taken when the bundle
+     *  was applied, never a join (same rule as {@code EstimateItem#description}, V119): the client
+     *  signed THIS wording, so re-wording the bundle must not change a signed estimate. Rendered
+     *  under the table in the portal and in the PDF, beside «Умови» — which stays the master's own
+     *  free text and is a different thing. */
+    @Column(name = "quality_note", length = 1000)
+    private String qualityNote;
+
     /** Deposit the client pays up front (завдаток); null = none. The balance
      *  (залишок = total − deposit) is computed, never stored. Client-facing. */
     @Column(name = "deposit_amount", precision = 15, scale = 2)

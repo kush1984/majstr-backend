@@ -1,5 +1,6 @@
 package com.majstr.backend.service;
 
+import com.majstr.backend.dto.ApplyTemplatesRequest;
 import com.majstr.backend.dto.EstimateCreateRequest;
 import com.majstr.backend.dto.EstimateResponse;
 import com.majstr.backend.dto.EstimateTemplateDetail;
@@ -157,8 +158,8 @@ class EstimateTemplateServiceTest {
                 templateItem(floor, "Стяжка маякова цементна", Unit.M2, 1)));
         given(estimateService.get(estimateId, ownerId)).willReturn(stubResponse(estimateId, projectId));
 
-        service.applyToProject(projectId, List.of(first, second),
-                new EstimateCreateRequest(null, null, "Санвузол"), ownerId);
+        service.applyToProject(projectId, ApplyTemplatesRequest.wholeBundles(List.of(first, second),
+                new EstimateCreateRequest(null, null, "Санвузол")), ownerId);
 
         ArgumentCaptor<List<EstimateItem>> captor = ArgumentCaptor.forClass(List.class);
         verify(estimateItemRepository).saveAll(captor.capture());
@@ -176,6 +177,89 @@ class EstimateTemplateServiceTest {
     }
 
     @Test
+    void applyToProject_takesOnlyTheTickedPositions_andAnEmptyPickStillMeansTheWholeBundle() {
+        // «деколи із великого шаблону треба 5-6 позицій і це довго потім викидати» — the subset is
+        // applied at the source, so the master never deletes a line he did not want.
+        UUID big = UUID.randomUUID();
+        UUID whole = UUID.randomUUID();
+        UUID projectId = UUID.randomUUID();
+        UUID estimateId = UUID.randomUUID();
+
+        EstimateTemplate bigBundle = EstimateTemplate.builder().id(big).isDefault(true).build();
+        EstimateTemplate wholeBundle = EstimateTemplate.builder().id(whole).isDefault(true).build();
+        given(templateRepository.findById(big)).willReturn(Optional.of(bigBundle));
+        given(templateRepository.findById(whole)).willReturn(Optional.of(wholeBundle));
+        Project project = Project.builder().id(projectId).build();
+        given(projectService.loadOwned(projectId, ownerId)).willReturn(project);
+        given(catalogRepository.findByOwnerIdOrderByNameAsc(ownerId)).willReturn(List.of());
+        given(estimateRepository.save(any()))
+                .willReturn(Estimate.builder().id(estimateId).project(project).build());
+
+        EstimateTemplateItem wanted = templateItem(bigBundle, "Монтаж перегородки", Unit.M2, 0);
+        EstimateTemplateItem skipped = templateItem(bigBundle, "Шпаклювання стін", Unit.M2, 1);
+        EstimateTemplateItem alsoSkipped = templateItem(bigBundle, "Ґрунтування стін", Unit.M2, 2);
+        given(templateItemRepository.findByTemplateIdOrderBySortOrderAscIdAsc(big))
+                .willReturn(List.of(wanted, skipped, alsoSkipped));
+        given(templateItemRepository.findByTemplateIdOrderBySortOrderAscIdAsc(whole))
+                .willReturn(List.of(templateItem(wholeBundle, "Вивіз сміття", Unit.PIECE, 0)));
+        given(estimateService.get(estimateId, ownerId)).willReturn(stubResponse(estimateId, projectId));
+
+        service.applyToProject(projectId, new ApplyTemplatesRequest(List.of(
+                new ApplyTemplatesRequest.TemplatePick(big, List.of(wanted.getId())),
+                new ApplyTemplatesRequest.TemplatePick(whole, null)),
+                new EstimateCreateRequest(null, null, "Квартира")), ownerId);
+
+        ArgumentCaptor<List<EstimateItem>> captor = ArgumentCaptor.forClass(List.class);
+        verify(estimateItemRepository).saveAll(captor.capture());
+        assertThat(captor.getValue()).extracting(EstimateItem::getName)
+                .as("шаблон без переліку позицій іде цілим — інакше старий клієнт створив би порожній кошторис")
+                .containsExactly("Монтаж перегородки", "Вивіз сміття");
+        assertThat(captor.getValue()).extracting(EstimateItem::getSortOrder)
+                .as("нумерація наскрізна вже після відкидання невибраних")
+                .containsExactly(0, 1);
+    }
+
+    @Test
+    void applyToProject_whenTheFirstBundlesCopyIsUnticked_theSecondOnesGetsThrough() {
+        // The subset runs BEFORE the de-dup, so unticking a shared position in one bundle is an
+        // untick of THAT copy — not of the work. Filtering after the de-dup would drop the line
+        // altogether, and the master would have to notice a position vanished from a bundle he
+        // never touched.
+        UUID first = UUID.randomUUID();
+        UUID second = UUID.randomUUID();
+        UUID projectId = UUID.randomUUID();
+        UUID estimateId = UUID.randomUUID();
+
+        EstimateTemplate bathroom = EstimateTemplate.builder().id(first).isDefault(true).build();
+        EstimateTemplate floor = EstimateTemplate.builder().id(second).isDefault(true).build();
+        given(templateRepository.findById(first)).willReturn(Optional.of(bathroom));
+        given(templateRepository.findById(second)).willReturn(Optional.of(floor));
+        Project project = Project.builder().id(projectId).build();
+        given(projectService.loadOwned(projectId, ownerId)).willReturn(project);
+        given(catalogRepository.findByOwnerIdOrderByNameAsc(ownerId)).willReturn(List.of());
+        given(estimateRepository.save(any()))
+                .willReturn(Estimate.builder().id(estimateId).project(project).build());
+
+        EstimateTemplateItem tiles = templateItem(bathroom, "Укладання плитки", Unit.M2, 0);
+        EstimateTemplateItem primerUnticked = templateItem(bathroom, "Ґрунтівка поверхні", Unit.M2, 1);
+        given(templateItemRepository.findByTemplateIdOrderBySortOrderAscIdAsc(first))
+                .willReturn(List.of(tiles, primerUnticked));
+        given(templateItemRepository.findByTemplateIdOrderBySortOrderAscIdAsc(second))
+                .willReturn(List.of(templateItem(floor, "ҐРУНТІВКА ПОВЕРХНІ", Unit.M2, 0)));
+        given(estimateService.get(estimateId, ownerId)).willReturn(stubResponse(estimateId, projectId));
+
+        service.applyToProject(projectId, new ApplyTemplatesRequest(List.of(
+                new ApplyTemplatesRequest.TemplatePick(first, List.of(tiles.getId())),
+                new ApplyTemplatesRequest.TemplatePick(second, null)),
+                new EstimateCreateRequest(null, null, "Санвузол")), ownerId);
+
+        ArgumentCaptor<List<EstimateItem>> captor = ArgumentCaptor.forClass(List.class);
+        verify(estimateItemRepository).saveAll(captor.capture());
+        assertThat(captor.getValue()).extracting(EstimateItem::getName)
+                .containsExactly("Укладання плитки", "ҐРУНТІВКА ПОВЕРХНІ");
+    }
+
+    @Test
     void applyToProject_fromSeveralTemplates_rejectsIfAnyOfThemIsNotMine() {
         UUID mine = UUID.randomUUID();
         UUID foreignId = UUID.randomUUID();
@@ -185,8 +269,9 @@ class EstimateTemplateServiceTest {
                 .id(foreignId).isDefault(false)
                 .owner(User.builder().id(UUID.randomUUID()).build()).build()));
 
-        assertThatThrownBy(() -> service.applyToProject(UUID.randomUUID(), List.of(mine, foreignId),
-                new EstimateCreateRequest(null, null, null), ownerId))
+        assertThatThrownBy(() -> service.applyToProject(UUID.randomUUID(),
+                ApplyTemplatesRequest.wholeBundles(List.of(mine, foreignId),
+                        new EstimateCreateRequest(null, null, null)), ownerId))
                 .as("одного чужого шаблону досить, щоб відхилити весь запит")
                 .isInstanceOf(AccessDeniedException.class);
         verify(estimateRepository, never()).save(any());
@@ -226,7 +311,7 @@ class EstimateTemplateServiceTest {
         });
 
         EstimateTemplateSummary summary =
-                service.saveFromEstimate(estimateId, "  Санвузол Іванова  ", null, null, ownerId);
+                service.saveFromEstimate(estimateId, "  Санвузол Іванова  ", null, null, null, ownerId);
 
         ArgumentCaptor<EstimateTemplate> tplCaptor = ArgumentCaptor.forClass(EstimateTemplate.class);
         verify(templateRepository).save(tplCaptor.capture());
@@ -263,7 +348,7 @@ class EstimateTemplateServiceTest {
         given(templateRepository.save(any())).willAnswer(inv -> inv.getArgument(0));
 
         EstimateTemplateSummary summary = service.saveFromEstimate(
-                estimateId, "Стелі у вітальні", Trade.TILING, custom.getId(), ownerId);
+                estimateId, "Стелі у вітальні", null, Trade.TILING, custom.getId(), ownerId);
 
         // A custom trade always wins over any system trade sent alongside it.
         assertThat(summary.trade()).isEqualTo(Trade.OTHER);
@@ -729,6 +814,125 @@ class EstimateTemplateServiceTest {
         verify(templateRepository, never()).delete(any());
     }
 
+
+    // ---- the finish level the bundle promised (V121) ------------------------
+
+    @Test
+    void applyToProject_snapshotsTheBundlesExplanationOntoTheEstimate() {
+        UUID templateId = UUID.randomUUID();
+        UUID projectId = UUID.randomUUID();
+        UUID estimateId = UUID.randomUUID();
+        String level = "Рівень Q4 (еліт) — максимальна підготовка. Сумісні фарби: будь-які.";
+
+        EstimateTemplate template = EstimateTemplate.builder()
+                .id(templateId).isDefault(true).description(level).build();
+        given(templateRepository.findById(templateId)).willReturn(Optional.of(template));
+        Project project = Project.builder().id(projectId).build();
+        given(projectService.loadOwned(projectId, ownerId)).willReturn(project);
+        given(catalogRepository.findByOwnerIdOrderByNameAsc(ownerId)).willReturn(List.of());
+        given(estimateRepository.save(any()))
+                .willReturn(Estimate.builder().id(estimateId).project(project).build());
+        given(templateItemRepository.findByTemplateIdOrderBySortOrderAscIdAsc(templateId))
+                .willReturn(List.of(templateItem(template, "Шліфування стиків ГКЛ", Unit.M2, 0)));
+        given(estimateService.get(estimateId, ownerId)).willReturn(stubResponse(estimateId, projectId));
+
+        service.applyToProject(projectId, templateId,
+                new EstimateCreateRequest(null, null, "Спальня"), ownerId);
+
+        ArgumentCaptor<Estimate> captor = ArgumentCaptor.forClass(Estimate.class);
+        verify(estimateRepository).save(captor.capture());
+        assertThat(captor.getValue().getQualityNote())
+                .as("клієнт має прочитати під таблицею, що саме йому пообіцяли")
+                .isEqualTo(level);
+    }
+
+    @Test
+    void applyToProject_fromSeveralDescribedBundles_joinsTheirParagraphs_eachOnce() {
+        UUID first = UUID.randomUUID();
+        UUID second = UUID.randomUUID();
+        UUID third = UUID.randomUUID();
+        UUID projectId = UUID.randomUUID();
+        UUID estimateId = UUID.randomUUID();
+
+        EstimateTemplate level = EstimateTemplate.builder()
+                .id(first).isDefault(true).description("Рівень Q3 — під матову фарбу.").build();
+        // A plain list of works: the vast majority of bundles explain nothing.
+        EstimateTemplate plain = EstimateTemplate.builder().id(second).isDefault(true).build();
+        // The master picked the same level twice through two bundles — the client reads it once.
+        EstimateTemplate again = EstimateTemplate.builder()
+                .id(third).isDefault(true).description("Рівень Q3 — під матову фарбу.").build();
+        given(templateRepository.findById(first)).willReturn(Optional.of(level));
+        given(templateRepository.findById(second)).willReturn(Optional.of(plain));
+        given(templateRepository.findById(third)).willReturn(Optional.of(again));
+        Project project = Project.builder().id(projectId).build();
+        given(projectService.loadOwned(projectId, ownerId)).willReturn(project);
+        given(catalogRepository.findByOwnerIdOrderByNameAsc(ownerId)).willReturn(List.of());
+        given(estimateRepository.save(any()))
+                .willReturn(Estimate.builder().id(estimateId).project(project).build());
+        given(templateItemRepository.findByTemplateIdOrderBySortOrderAscIdAsc(any(UUID.class)))
+                .willReturn(List.of());
+        given(estimateService.get(estimateId, ownerId)).willReturn(stubResponse(estimateId, projectId));
+
+        service.applyToProject(projectId, ApplyTemplatesRequest.wholeBundles(List.of(first, second, third),
+                        new EstimateCreateRequest(null, null, "Квартира")), ownerId);
+
+        ArgumentCaptor<Estimate> captor = ArgumentCaptor.forClass(Estimate.class);
+        verify(estimateRepository).save(captor.capture());
+        assertThat(captor.getValue().getQualityNote()).isEqualTo("Рівень Q3 — під матову фарбу.");
+    }
+
+    @Test
+    void applyToProject_fromBundlesThatExplainNothing_leavesTheNoteEmpty() {
+        UUID templateId = UUID.randomUUID();
+        UUID projectId = UUID.randomUUID();
+        UUID estimateId = UUID.randomUUID();
+
+        EstimateTemplate template = EstimateTemplate.builder().id(templateId).isDefault(true).build();
+        given(templateRepository.findById(templateId)).willReturn(Optional.of(template));
+        Project project = Project.builder().id(projectId).build();
+        given(projectService.loadOwned(projectId, ownerId)).willReturn(project);
+        given(catalogRepository.findByOwnerIdOrderByNameAsc(ownerId)).willReturn(List.of());
+        given(estimateRepository.save(any()))
+                .willReturn(Estimate.builder().id(estimateId).project(project).build());
+        given(templateItemRepository.findByTemplateIdOrderBySortOrderAscIdAsc(templateId))
+                .willReturn(List.of());
+        given(estimateService.get(estimateId, ownerId)).willReturn(stubResponse(estimateId, projectId));
+
+        service.applyToProject(projectId, templateId,
+                new EstimateCreateRequest(null, null, "Кухня"), ownerId);
+
+        ArgumentCaptor<Estimate> captor = ArgumentCaptor.forClass(Estimate.class);
+        verify(estimateRepository).save(captor.capture());
+        assertThat(captor.getValue().getQualityNote())
+                .as("порожній блок «Стандарт робіт» гірший, ніж жодного")
+                .isNull();
+    }
+
+    @Test
+    void updateMeta_writesTheDescription_andAPlainRenameLeavesItAlone() {
+        UUID templateId = UUID.randomUUID();
+        User owner = User.builder().id(ownerId).build();
+        EstimateTemplate mine = EstimateTemplate.builder()
+                .id(templateId).isDefault(false).owner(owner).name("Q4").build();
+        given(templateRepository.findById(templateId)).willReturn(Optional.of(mine));
+        given(templateItemRepository.findByTemplateIdOrderBySortOrderAscIdAsc(templateId))
+                .willReturn(List.of());
+
+        service.updateMeta(templateId, "Підготовка Q4", "Допуски: без світлотіней.", ownerId);
+        assertThat(mine.getDescription()).isEqualTo("Допуски: без світлотіней.");
+
+        // A rename from the estimate editor (or replayed from the outbox) carries no description.
+        EstimateTemplateSummary renamed = service.updateMeta(templateId, "Підготовка Q4 (еліт)", null, ownerId);
+
+        assertThat(mine.getName()).isEqualTo("Підготовка Q4 (еліт)");
+        assertThat(renamed.description())
+                .as("null = «не чіпай», інакше перейменування мовчки стерло б текст для клієнта")
+                .isEqualTo("Допуски: без світлотіней.");
+
+        // Blank IS an instruction — «прибрати пояснення».
+        assertThat(service.updateMeta(templateId, "Підготовка Q4 (еліт)", "  ", ownerId).description())
+                .isNull();
+    }
     // ---- helpers -----------------------------------------------------------
 
     private EstimateTemplateItem templateItem(EstimateTemplate t, String name, Unit unit, int sort) {
@@ -752,7 +956,7 @@ class EstimateTemplateServiceTest {
 
     private static EstimateResponse stubResponse(UUID estimateId, UUID projectId) {
         return new EstimateResponse(estimateId, projectId, "Кухня",
-                com.majstr.backend.entity.EstimateStatus.DRAFT, null, null, null, null,
+                com.majstr.backend.entity.EstimateStatus.DRAFT, null, null, null, null, null,
                 List.of(), BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, null, BigDecimal.ZERO, List.of());
     }
 }

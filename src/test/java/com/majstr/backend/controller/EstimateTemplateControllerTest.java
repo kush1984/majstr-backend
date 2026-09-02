@@ -1,5 +1,6 @@
 package com.majstr.backend.controller;
 
+import com.majstr.backend.dto.ApplyTemplatesRequest;
 import com.majstr.backend.dto.EstimateResponse;
 import com.majstr.backend.dto.EstimateTemplateDetail;
 import com.majstr.backend.dto.EstimateTemplateSummary;
@@ -100,7 +101,7 @@ class EstimateTemplateControllerTest {
                 .build();
         given(userRepository.findWithTradesById(userId)).willReturn(Optional.of(user));
         given(templateService.listForUser(user)).willReturn(List.of(
-                new EstimateTemplateSummary(UUID.randomUUID(), "Санвузол повний", Trade.TILING, null, null, true, 8)));
+                new EstimateTemplateSummary(UUID.randomUUID(), "Санвузол повний", null, Trade.TILING, null, null, true, 8)));
 
         mockMvc.perform(get("/api/estimate-templates"))
                 .andExpect(status().isOk())
@@ -115,12 +116,12 @@ class EstimateTemplateControllerTest {
     @Test
     void saveAsTemplate_returns201WithSummary() throws Exception {
         UUID estimateId = UUID.randomUUID();
-        given(templateService.saveFromEstimate(estimateId, "Санвузол Іванова", null, null, userId))
-                .willReturn(new EstimateTemplateSummary(UUID.randomUUID(), "Санвузол Іванова", null, null, null, false, 5));
+        given(templateService.saveFromEstimate(estimateId, "Санвузол Іванова", null, null, null, userId))
+                .willReturn(new EstimateTemplateSummary(UUID.randomUUID(), "Санвузол Іванова", null, null, null, null, false, 5));
 
         mockMvc.perform(post("/api/estimates/{id}/save-as-template", estimateId)
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(json.writeValueAsString(new SaveAsTemplateRequest("Санвузол Іванова", null, null))))
+                        .content(json.writeValueAsString(new SaveAsTemplateRequest("Санвузол Іванова", null, null, null))))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.itemCount", is(5)))
                 .andExpect(jsonPath("$.isDefault", is(false)));
@@ -131,7 +132,7 @@ class EstimateTemplateControllerTest {
         mockMvc.perform(post("/api/estimates/{id}/save-as-template", UUID.randomUUID())
                         .header("Accept-Language", "en")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(json.writeValueAsString(new SaveAsTemplateRequest("  ", null, null))))
+                        .content(json.writeValueAsString(new SaveAsTemplateRequest("  ", null, null, null))))
                 .andExpect(status().isBadRequest());
     }
 
@@ -142,7 +143,7 @@ class EstimateTemplateControllerTest {
         UUID estimateId = UUID.randomUUID();
         given(templateService.applyToProject(eq(projectId), eq(templateId), any(), eq(userId)))
                 .willReturn(new EstimateResponse(estimateId, projectId, "Кухня",
-                        EstimateStatus.DRAFT, null, null, null, null, List.of(),
+                        EstimateStatus.DRAFT, null, null, null, null, null, List.of(),
                         BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, null, BigDecimal.ZERO, List.of()));
 
         mockMvc.perform(post("/api/projects/{p}/estimates/from-template/{t}", projectId, templateId)
@@ -154,22 +155,46 @@ class EstimateTemplateControllerTest {
     }
 
     @Test
-    void createFromTemplates_passesEveryPickedTemplateInOrder() throws Exception {
+    void createFromTemplates_passesEveryPickedTemplateInOrder_withThePositionsTickedInEachOne()
+            throws Exception {
         UUID projectId = UUID.randomUUID();
         UUID first = UUID.randomUUID();
         UUID second = UUID.randomUUID();
+        UUID pickedLine = UUID.randomUUID();
         UUID estimateId = UUID.randomUUID();
-        given(templateService.applyToProject(eq(projectId), eq(List.of(first, second)), any(), eq(userId)))
+        ArgumentCaptor<ApplyTemplatesRequest> captor = ArgumentCaptor.forClass(ApplyTemplatesRequest.class);
+        given(templateService.applyToProject(eq(projectId), any(ApplyTemplatesRequest.class), eq(userId)))
                 .willReturn(new EstimateResponse(estimateId, projectId, "Санвузол",
-                        EstimateStatus.DRAFT, null, null, null, null, List.of(),
+                        EstimateStatus.DRAFT, null, null, null, null, null, List.of(),
                         BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, null, BigDecimal.ZERO, List.of()));
 
         mockMvc.perform(post("/api/projects/{p}/estimates/from-templates", projectId)
-                        .param("ids", first.toString(), second.toString())
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{}"))
+                        .content(("{\"templates\":[{\"templateId\":\"%s\",\"itemIds\":[\"%s\"]},"
+                                + "{\"templateId\":\"%s\"}],\"estimate\":{\"name\":\"Санвузол\"}}")
+                                .formatted(first, pickedLine, second)))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.id", is(estimateId.toString())));
+
+        verify(templateService).applyToProject(eq(projectId), captor.capture(), eq(userId));
+        ApplyTemplatesRequest sent = captor.getValue();
+        assertThat(sent.templateIds()).containsExactly(first, second);
+        // A bundle taken whole names no position at all — the subset map has no key for it, and
+        // «no key» is what the service reads as «everything». An empty list here would be a
+        // bundle contributing nothing, which is not a thing the picker can express.
+        assertThat(sent.pickedItemIds()).containsOnlyKeys(first);
+        assertThat(sent.pickedItemIds().get(first)).containsExactly(pickedLine);
+        assertThat(sent.estimateOrEmpty().name()).isEqualTo("Санвузол");
+    }
+
+    @Test
+    void createFromTemplates_withoutASingleTemplate_is400() throws Exception {
+        mockMvc.perform(post("/api/projects/{p}/estimates/from-templates", UUID.randomUUID())
+                        .header("Accept-Language", "en")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"templates\":[],\"estimate\":{}}"))
+                .andExpect(status().isBadRequest());
+        verify(templateService, never()).applyToProject(any(), any(ApplyTemplatesRequest.class), any());
     }
 
     @Test
@@ -227,7 +252,7 @@ class EstimateTemplateControllerTest {
         User user = User.builder().id(userId).trades(new LinkedHashSet<>(Set.of(Trade.PAINTER))).build();
         given(userRepository.findWithTradesById(userId)).willReturn(Optional.of(user));
         given(templateService.listForUser(user)).willReturn(List.of(new EstimateTemplateSummary(
-                UUID.randomUUID(), "Малярні роботи", Trade.PAINTER, null, null, true, 30)));
+                UUID.randomUUID(), "Малярні роботи", null, Trade.PAINTER, null, null, true, 30)));
 
         mockMvc.perform(post("/api/estimate-templates/restore-defaults"))
                 .andExpect(status().isOk())
@@ -237,6 +262,6 @@ class EstimateTemplateControllerTest {
     }
 
     private static EstimateTemplateDetail detail(UUID id, String name) {
-        return new EstimateTemplateDetail(id, name, Trade.PAINTER, null, null, false, List.of());
+        return new EstimateTemplateDetail(id, name, null, Trade.PAINTER, null, null, false, List.of());
     }
 }

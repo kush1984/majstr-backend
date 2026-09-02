@@ -51,6 +51,59 @@ class SeedCatalogInvariantsIntegrationTest extends IntegrationTestBase {
                 .isEmpty();
     }
 
+    /**
+     * The one group the check below still finds, and it is a real defect — «Гідроізоляція плівкова»
+     * and «Гідроізоляція плівкою» are one job under two endings. It belongs to BUILDER, whose
+     * catalog has not been rebuilt yet; retiring a row there means refreshing every builder's own
+     * catalog, which is a migration of its own. Listed by name rather than weakened away, so it
+     * has to be deleted from here — not merely noticed — when BUILDER's turn comes.
+     */
+    private static final List<String> KNOWN_LEGACY_DUPLICATES =
+            List.of("BUILDER | Гідроізоляція плівкова  ||  Гідроізоляція плівкою");
+
+    @Test
+    void noPositionIsSoldTwiceUnderWordingsThatDifferByWordsRatherThanPunctuation() {
+        // The check above compares punctuation-insensitively, which is exactly what V50 claimed to
+        // do and why it saw nothing: DRYWALL's eight duplicate pairs differed by WORDS and endings.
+        // «Монтаж перегородки ГКЛ 2 сторони в 1 шар» (800 ₴) and «Монтаж конструкцій (перегородки
+        // 2 сторони) із гіпсокартону в 1 шар» (650 ₴) are one job at two prices, and no amount of
+        // stripping commas brings them together.
+        //
+        // So: drop the words that carry no meaning here (ГКЛ == гіпсокартон == nothing, «із», «на»,
+        // «конструкцій», the trailing «надбавка»), cut every remaining word to six letters so a
+        // declension cannot hide a repeat («радіусної»/«радіусних»), and compare the resulting bag
+        // of stems. Six, not five: at five «гідрокомпенсатора» and «гідрострілки» collide, which is
+        // a false accusation about two different devices. A token containing a digit is never cut —
+        // «1200х2400» and «1200х3200» are different tiles, and truncating made them one.
+        List<String> duplicates = jdbc.queryForList("""
+                WITH toks AS (
+                    SELECT trade, name, type, unit,
+                           unnest(string_to_array(
+                               regexp_replace(lower(name), '[^0-9a-zа-яіїєґ''-]+', ' ', 'g'), ' ')) AS w
+                    FROM catalog_templates
+                ), kept AS (
+                    SELECT trade, name, type, unit,
+                           CASE WHEN w ~ '[0-9]' THEN w ELSE left(w, 6) END AS stem
+                    FROM toks
+                    WHERE w <> ''
+                      AND w NOT IN ('гкл', 'гіпсокартон', 'гіпсокартону', 'гіпсокартоні',
+                                    'гіпсокартонна', 'гіпсокартонної', 'із', 'з', 'і', 'та',
+                                    'конструкція', 'конструкції', 'конструкцій', 'надбавка',
+                                    'по', 'на')
+                ), sig AS (
+                    SELECT trade, name, type, unit,
+                           array_to_string(array_agg(DISTINCT stem ORDER BY stem), '|') AS s
+                    FROM kept GROUP BY trade, name, type, unit
+                )
+                SELECT trade || ' | ' || string_agg(name, '  ||  ' ORDER BY name)
+                FROM sig GROUP BY trade, type, unit, s HAVING count(*) > 1
+                """, String.class);
+
+        assertThat(duplicates)
+                .as("та сама робота під двома формулюваннями — V50 не побачив жодного з восьми")
+                .containsExactlyInAnyOrderElementsOf(KNOWN_LEGACY_DUPLICATES);
+    }
+
     @Test
     void everyDefaultBundlePositionCanBePriced() {
         // A master's catalog is seeded from catalog_templates for THEIR trades only

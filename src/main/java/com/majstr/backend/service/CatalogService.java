@@ -2,6 +2,7 @@ package com.majstr.backend.service;
 
 import com.majstr.backend.dto.CatalogItemRequest;
 import com.majstr.backend.dto.CatalogItemResponse;
+import com.majstr.backend.dto.CatalogItemResponse.SharedTrade;
 import com.majstr.backend.dto.CatalogItemsOrderRequest;
 import com.majstr.backend.entity.CatalogItem;
 import com.majstr.backend.entity.CatalogItemSource;
@@ -20,7 +21,7 @@ import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.util.Arrays;
+import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.LinkedHashSet;
@@ -125,36 +126,55 @@ public class CatalogService {
         List<CatalogItem> items = type == null
                 ? catalogRepository.findByOwnerIdOrderByNameAsc(ownerId)
                 : catalogRepository.findByOwnerIdAndTypeOrderByNameAsc(ownerId, type);
-        Map<String, List<Trade>> sharedByKey = sharedTradesByNameKey();
+        Map<String, Integer> categoryRanks = categoryRanks();
+        Map<String, List<SharedTrade>> sharedByKey = sharedTradesByNameKey(categoryRanks);
         return items.stream()
                 .sorted(BY_MASTERS_ORDER)
-                .map(item -> CatalogItemResponse.from(item, sharedTradesFor(item, sharedByKey)))
+                .map(item -> CatalogItemResponse.from(item, sharedTradesFor(item, sharedByKey),
+                        categoryRanks.get(categoryKey(item.getTrade(), item.getCategory()))))
                 .toList();
     }
 
-    /** {@code "name_key|TYPE|UNIT" -> every trade catalog_templates ships it under}, only for
-     *  keys more than one trade recognizes — see
-     *  {@link CatalogTemplateRepository#findNameKeysSharedAcrossTrades}. */
-    private Map<String, List<Trade>> sharedTradesByNameKey() {
-        Map<String, List<Trade>> map = new HashMap<>();
-        for (Object[] row : catalogTemplateRepository.findNameKeysSharedAcrossTrades()) {
-            String key = row[0] + "|" + row[1] + "|" + row[2];
-            List<Trade> trades = Arrays.stream(((String) row[3]).split(","))
-                    .map(Trade::valueOf)
-                    .toList();
-            map.put(key, trades);
+    /** {@code "TRADE|category" -> where that category sits in that trade's sequence} — see
+     *  {@link CatalogTemplateRepository#findCategoryRanks()}. A category the library ships nothing
+     *  for is simply absent, and the client sorts those folders last. */
+    private Map<String, Integer> categoryRanks() {
+        Map<String, Integer> map = new HashMap<>();
+        for (Object[] row : catalogTemplateRepository.findCategoryRanks()) {
+            map.put(row[0] + "|" + row[1], ((Number) row[2]).intValue());
         }
         return map;
     }
 
-    private static List<Trade> sharedTradesFor(CatalogItem item, Map<String, List<Trade>> sharedByKey) {
+    private static String categoryKey(Trade trade, String category) {
+        return trade == null || category == null ? "" : trade + "|" + category;
+    }
+
+    /** {@code "name_key|TYPE|UNIT" -> every trade catalog_templates ships it under, with that
+     *  trade's category}, only for keys more than one trade recognizes — see
+     *  {@link CatalogTemplateRepository#findNameKeysSharedAcrossTrades}. */
+    private Map<String, List<SharedTrade>> sharedTradesByNameKey(Map<String, Integer> categoryRanks) {
+        Map<String, List<SharedTrade>> map = new HashMap<>();
+        for (Object[] row : catalogTemplateRepository.findNameKeysSharedAcrossTrades()) {
+            String key = row[0] + "|" + row[1] + "|" + row[2];
+            Trade trade = Trade.valueOf((String) row[3]);
+            String category = (String) row[4];
+            map.computeIfAbsent(key, k -> new ArrayList<>())
+                    .add(new SharedTrade(trade, category,
+                            categoryRanks.get(categoryKey(trade, category))));
+        }
+        return map;
+    }
+
+    private static List<SharedTrade> sharedTradesFor(CatalogItem item,
+                                                     Map<String, List<SharedTrade>> sharedByKey) {
         String key = item.getName().trim().toLowerCase(Locale.ROOT)
                 + "|" + item.getType() + "|" + item.getUnit();
-        List<Trade> all = sharedByKey.get(key);
+        List<SharedTrade> all = sharedByKey.get(key);
         if (all == null) {
             return List.of();
         }
-        return all.stream().filter(t -> t != item.getTrade()).toList();
+        return all.stream().filter(s -> s.trade() != item.getTrade()).toList();
     }
 
     /** Distinct categories the contractor has used — for the picker/autocomplete. */

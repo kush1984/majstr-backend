@@ -247,14 +247,75 @@ class CatalogServiceTest {
         shared.setUnit(Unit.KM);
         given(catalogRepository.findByOwnerIdOrderByNameAsc(ownerId)).willReturn(List.of(shared));
         given(catalogTemplateRepository.findNameKeysSharedAcrossTrades()).willReturn(List.<Object[]>of(
-                new Object[] {"транспортні витрати за містом", "WORK", "KM", "PAINTER,TILING"}
+                new Object[] {"транспортні витрати за містом", "WORK", "KM", "PAINTER",
+                        "Організаційні послуги"},
+                new Object[] {"транспортні витрати за містом", "WORK", "KM", "TILING",
+                        "Організаційні послуги"}
         ));
 
         List<CatalogItemResponse> list = catalogService.listForOwner(ownerId, null);
 
         assertThat(list).hasSize(1);
         assertThat(list.get(0).trade()).isEqualTo(Trade.PAINTER);
-        assertThat(list.get(0).sharedTrades()).containsExactly(Trade.TILING);
+        assertThat(list.get(0).sharedTrades()).containsExactly(
+                new CatalogItemResponse.SharedTrade(Trade.TILING, "Організаційні послуги", null));
+    }
+
+    @Test
+    void listForOwner_carriesTheCategoryEachSharingTradeFilesThePositionUnder() {
+        // V116 copied ten PAINTER positions verbatim into DRYWALL phases, so one row is
+        // «Шпалери» to a painter and «Оздоблення під фарбування» to a drywaller at the same time.
+        // Sending only the trade is what put a Шпалери folder on the drywall screen.
+        CatalogItem shared = item("Шпалери", "Поклейка склополотна");
+        shared.setTrade(Trade.PAINTER);
+        shared.setType(ItemType.WORK);
+        shared.setUnit(Unit.M2);
+        given(catalogRepository.findByOwnerIdOrderByNameAsc(ownerId)).willReturn(List.of(shared));
+        given(catalogTemplateRepository.findNameKeysSharedAcrossTrades()).willReturn(List.<Object[]>of(
+                new Object[] {"поклейка склополотна", "WORK", "M2", "DRYWALL",
+                        "Оздоблення під фарбування"},
+                new Object[] {"поклейка склополотна", "WORK", "M2", "PAINTER", "Шпалери"}
+        ));
+        given(catalogTemplateRepository.findCategoryRanks()).willReturn(List.<Object[]>of(
+                new Object[] {"PAINTER", "Шпалери", 500},
+                new Object[] {"DRYWALL", "Оздоблення під фарбування", 943}
+        ));
+
+        List<CatalogItemResponse> list = catalogService.listForOwner(ownerId, null);
+
+        assertThat(list.get(0).category()).isEqualTo("Шпалери");
+        assertThat(list.get(0).sharedTrades()).containsExactly(
+                new CatalogItemResponse.SharedTrade(Trade.DRYWALL, "Оздоблення під фарбування", 943));
+    }
+
+    @Test
+    void listForOwner_carriesWhereEachCategorySitsInItsTradesOwnSequence() {
+        // «ми ж казали це сортувати по порядку виконання робіт». sortOrder is ONE global rank taken
+        // from the trade the row is STORED under, so it cannot order the folders of a chip the row
+        // was re-filed onto: one plumbing row copied into DRYWALL's «Каркас і обшивка» outranked
+        // every drywall row and opened the board on the framing phase. The library's own rank per
+        // (trade, category) is what the client sorts the SECTIONS by.
+        CatalogItem prep = item("Підготовка та захист", "Захист підлоги плівкою");
+        prep.setTrade(Trade.DRYWALL);
+        prep.setSortOrder(9);
+        CatalogItem frame = item("Каркас і обшивка", "Монтаж перегородки");
+        frame.setTrade(Trade.DRYWALL);
+        frame.setSortOrder(1);
+        given(catalogRepository.findByOwnerIdOrderByNameAsc(ownerId)).willReturn(List.of(frame, prep));
+        given(catalogTemplateRepository.findNameKeysSharedAcrossTrades()).willReturn(List.of());
+        given(catalogTemplateRepository.findCategoryRanks()).willReturn(List.<Object[]>of(
+                new Object[] {"DRYWALL", "Підготовка та захист", 903},
+                new Object[] {"DRYWALL", "Каркас і обшивка", 907}
+        ));
+
+        List<CatalogItemResponse> list = catalogService.listForOwner(ownerId, null);
+
+        // The ROWS still come back in the master's own arrangement — the rank travels beside them,
+        // so the client can open the folders in sequence without re-sorting what he dragged.
+        assertThat(list).extracting(CatalogItemResponse::name)
+                .containsExactly("Монтаж перегородки", "Захист підлоги плівкою");
+        assertThat(list).extracting(CatalogItemResponse::categoryOrder)
+                .containsExactly(907, 903);
     }
 
     private CatalogItem ordered(String name, String category, int sortOrder) {

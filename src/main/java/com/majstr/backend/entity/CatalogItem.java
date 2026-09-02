@@ -46,6 +46,16 @@ public class CatalogItem {
     @Column(name = "category", length = 100)
     private String category;
 
+    /**
+     * Optional sentence carried over from {@link CatalogTemplate} on the library copy (V116).
+     *
+     * <p>Read path only for now: {@code CatalogItemRequest} deliberately has no field for it,
+     * because the PWA does not send one and a PATCH that omits a column it cannot see would null
+     * the text on the master's first edit. See docs/open-questions.md.
+     */
+    @Column(name = "description", length = 500)
+    private String description;
+
     /** Trade this position belongs to — copied from the template on every seed/
      *  reset/merge path, optionally set on manual create. Never null: a position
      *  with no specific trade is OTHER ("Інше"), the single catch-all (V33). Drives

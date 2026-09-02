@@ -114,19 +114,19 @@
             border-bottom: 1px solid var(--line);
         }
         tr.section-total td:first-child { text-align: right; }
-        /* Stable column widths so headers and numbers line up regardless
-           of the longest line. First column (Назва) takes the remainder and
-           ellipsizes; the numeric columns get the room because prices/sums are
-           the widest cells. Currency ("грн") is shown once in the header, not
-           per row, so the monospace figures fit even on narrow phones. */
-        th:nth-child(2), td:nth-child(2) { width: 11%; }
-        th:nth-child(3), td:nth-child(3) { width: 15%; }
-        th:nth-child(4), td:nth-child(4) { width: 20%; }
-        th:nth-child(5), td:nth-child(5) { width: 22%; }
+        /* Stable column widths so headers and numbers line up regardless of the longest line.
+           The numeric columns are fixed and the first (Назва) takes the remainder — where the NAME
+           WRAPS onto as many lines as it needs. It used to ellipsize to one line, which on a phone
+           cut «Підготовка ГКЛ під фарбування…» off exactly where the meaning is. Currency ("грн")
+           is shown once in the header, not per row, so the monospace figures fit even on narrow
+           phones. */
+        th:nth-child(2), td:nth-child(2) { width: 10%; }
+        th:nth-child(3), td:nth-child(3) { width: 13%; }
+        th:nth-child(4), td:nth-child(4) { width: 18%; }
+        th:nth-child(5), td:nth-child(5) { width: 20%; }
         td:first-child {
-            overflow: hidden;
-            text-overflow: ellipsis;
-            white-space: nowrap;
+            white-space: normal;
+            overflow-wrap: anywhere;
         }
         thead th {
             text-align: left;
@@ -348,7 +348,7 @@
         .info-panel {
             position: fixed; z-index: 61; max-width: min(20rem, calc(100vw - 2rem));
             background: var(--white); border-radius: 14px; padding: 12px 30px 12px 14px;
-            box-shadow: 0 10px 30px rgba(0,0,0,0.18); font-size: 0.85rem; line-height: 1.4; color: var(--ink);
+            box-shadow: 0 10px 30px rgba(0,0,0,0.18); font-size: 0.85rem; line-height: 1.4; color: var(--ink); white-space: pre-line;
         }
         .info-panel-close {
             position: absolute; top: 6px; right: 6px; width: 22px; height: 22px; border-radius: 50%;

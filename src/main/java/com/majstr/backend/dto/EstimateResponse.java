@@ -15,6 +15,10 @@ public record EstimateResponse(
         EstimateStatus status,
         LocalDate validUntil,
         String notes,
+        /** What the applied bundle promised the client — the finish level and its tolerances.
+         *  A snapshot taken when the bundle was applied (V121), null for an estimate built by
+         *  hand. Read-only: there is no request field for it. */
+        String qualityNote,
         Instant createdAt,
         Instant updatedAt,
         List<EstimateItemResponse> items,

@@ -200,6 +200,6 @@ class ReceiptImportServiceTest {
     private EstimateResponse estimate(EstimateStatus status) {
         BigDecimal zero = BigDecimal.ZERO;
         return new EstimateResponse(estimateId, projectId, "Кошторис", status,
-                null, null, Instant.now(), Instant.now(), List.of(), zero, zero, zero, null, zero, List.of());
+                null, null, null, Instant.now(), Instant.now(), List.of(), zero, zero, zero, null, zero, List.of());
     }
 }

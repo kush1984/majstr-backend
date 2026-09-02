@@ -230,6 +230,8 @@ public class EstimateService {
                 .name(duplicateName(req.name(), source.getName(), signedPercent))
                 .validUntil(source.getValidUntil())
                 .notes(source.getNotes())
+                // Same work at a different price — the level promised to the client is unchanged.
+                .qualityNote(source.getQualityNote())
                 .duplicatedFromId(source.getId())
                 .markupPercent(signedPercent)
                 .build());
@@ -251,6 +253,7 @@ public class EstimateService {
                     .type(item.getType())
                     .name(item.getName())
                     .category(item.getCategory())
+                    .description(item.getDescription())
                     .unit(item.getUnit())
                     .quantity(percent && marked
                             ? markedUpPercent(item, sourceById, toMarkUp, factor)
@@ -378,6 +381,7 @@ public class EstimateService {
                 .type(item.getType())
                 .name(item.getName())
                 .category(item.getCategory())
+                .description(item.getDescription())
                 .unit(item.getUnit())
                 .quantity(item.getQuantity())
                 .unitPrice(item.getUnitPrice())
@@ -790,6 +794,7 @@ public class EstimateService {
                 .type(source.getType())
                 .name(source.getName())
                 .category(source.getCategory())
+                .description(source.getDescription())
                 .unit(source.getUnit())
                 .quantity(percent ? source.getDefaultPrice() : req.quantity())
                 .unitPrice(percent ? BigDecimal.ZERO : source.getDefaultPrice())
@@ -839,6 +844,7 @@ public class EstimateService {
                     .type(source.getType())
                     .name(source.getName())
                     .category(source.getCategory())
+                    .description(source.getDescription())
                     .unit(source.getUnit())
                     .quantity(e.quantity())
                     .unitPrice(source.getDefaultPrice())
@@ -1249,6 +1255,7 @@ public class EstimateService {
                 estimate.getStatus(),
                 estimate.getValidUntil(),
                 estimate.getNotes(),
+                estimate.getQualityNote(),
                 estimate.getCreatedAt(),
                 estimate.getUpdatedAt(),
                 itemDtos,

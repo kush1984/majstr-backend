@@ -16,6 +16,13 @@ public record EstimateItemResponse(
         ItemType type,
         String name,
         String category,
+        /**
+         * Plain-words explanation of the position, frozen onto the line when it was added from the
+         * catalog (V119). The client reads the estimate in the portal and in the PDF, and a name
+         * like «Підготовка ГКЛ під фарбування · Q4 (еліт)» says nothing to him on its own. Null
+         * for a line the master wrote himself.
+         */
+        String description,
         Unit unit,
         BigDecimal quantity,
         BigDecimal unitPrice,
@@ -70,6 +77,7 @@ public record EstimateItemResponse(
                 item.getType(),
                 item.getName(),
                 item.getCategory(),
+                item.getDescription(),
                 item.getUnit(),
                 item.getQuantity(),
                 item.getUnitPrice(),

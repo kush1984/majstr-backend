@@ -59,10 +59,32 @@ public class CatalogTemplate {
     @Column(name = "suggested_price", nullable = false, precision = 15, scale = 2)
     private BigDecimal suggestedPrice;
 
+    /**
+     * Optional sentence explaining what the position guarantees, for the positions whose name
+     * cannot carry it (V116, the Q3 / Q3+ / Q4 drywall finishing levels: same name shape, the
+     * difference is which paints may go on top and how many control points). Copied by value
+     * into {@link CatalogItem} like every other field — the master is the one who has to explain
+     * it to the client.
+     */
+    @Column(name = "description", length = 500)
+    private String description;
+
     /** Catalog version this template first appeared in. Lets a master pull only
      *  defaults newer than they last synced — see {@code CatalogTemplateService}. */
     @Column(name = "added_in_version", nullable = false)
     private int addedInVersion;
+
+    /**
+     * The order the library itself wants these positions read in (V118) — trade, then the phase of
+     * the job, then the name. Global across trades, so a copy made for a master running six of them
+     * clusters by trade instead of interleaving.
+     *
+     * <p>This is what a master's own {@code catalog_items.sort_order} is seeded from. Before V118
+     * there was no order here at all, so every row copied after V87's one-off alphabetical backfill
+     * landed on the DEFAULT 0 and the categories holding them floated to the top of his page.</p>
+     */
+    @Column(name = "sort_order", nullable = false)
+    private int sortOrder;
 
     @PrePersist
     void onCreate() {

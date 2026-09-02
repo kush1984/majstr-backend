@@ -1,5 +1,6 @@
 package com.majstr.backend.controller;
 
+import com.majstr.backend.dto.ApplyTemplatesRequest;
 import com.majstr.backend.dto.EstimateCreateRequest;
 import com.majstr.backend.dto.EstimateResponse;
 import com.majstr.backend.dto.EstimateTemplateDetail;
@@ -28,7 +29,6 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
-import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
@@ -60,14 +60,15 @@ public class EstimateTemplateController {
         return templateService.get(id, principal.id());
     }
 
-    @Operation(summary = "Rename a template",
+    @Operation(summary = "Rename a template or edit its client-facing description",
             description = "Editing a SYSTEM DEFAULT forks it into my own editable copy and hides "
-                    + "the original for me alone — the response carries the copy's id, so follow it.")
+                    + "the original for me alone — the response carries the copy's id, so follow it. "
+                    + "An OMITTED description is left as it is; a blank one clears it.")
     @PatchMapping("/api/estimate-templates/{id}")
-    public EstimateTemplateSummary rename(@PathVariable UUID id,
-                                          @Valid @RequestBody SaveAsTemplateRequest req,
-                                          @AuthenticationPrincipal UserPrincipal principal) {
-        return templateService.rename(id, req.name(), principal.id());
+    public EstimateTemplateSummary updateMeta(@PathVariable UUID id,
+                                              @Valid @RequestBody SaveAsTemplateRequest req,
+                                              @AuthenticationPrincipal UserPrincipal principal) {
+        return templateService.updateMeta(id, req.name(), req.description(), principal.id());
     }
 
     @Operation(summary = "File a template under a trade — my own filing; on a system default "
@@ -147,7 +148,8 @@ public class EstimateTemplateController {
             @Valid @RequestBody SaveAsTemplateRequest req,
             @AuthenticationPrincipal UserPrincipal principal) {
         EstimateTemplateSummary saved =
-                templateService.saveFromEstimate(id, req.name(), req.trade(), req.customTradeId(), principal.id());
+                templateService.saveFromEstimate(id, req.name(), req.description(), req.trade(),
+                        req.customTradeId(), principal.id());
         return ResponseEntity.status(HttpStatus.CREATED).body(saved);
     }
 
@@ -164,16 +166,16 @@ public class EstimateTemplateController {
     }
 
     @Operation(summary = "Create ONE new estimate in the project from SEVERAL templates",
-            description = "Positions are concatenated in the given order and de-duplicated by "
-                    + "name, so overlapping bundles never bill the same work twice. Counts as a "
+            description = "Positions are concatenated in the picked order and de-duplicated by "
+                    + "name, so overlapping bundles never bill the same work twice. Each bundle may "
+                    + "name the subset of its positions to take (omit for all of them). Counts as a "
                     + "single estimate against the plan limit.")
     @PostMapping("/api/projects/{projectId}/estimates/from-templates")
     public ResponseEntity<EstimateResponse> createFromTemplates(
             @PathVariable UUID projectId,
-            @RequestParam("ids") List<UUID> templateIds,
-            @Valid @RequestBody EstimateCreateRequest req,
+            @Valid @RequestBody ApplyTemplatesRequest req,
             @AuthenticationPrincipal UserPrincipal principal) {
-        EstimateResponse created = templateService.applyToProject(projectId, templateIds, req, principal.id());
+        EstimateResponse created = templateService.applyToProject(projectId, req, principal.id());
         return ResponseEntity.status(HttpStatus.CREATED).body(created);
     }
 }

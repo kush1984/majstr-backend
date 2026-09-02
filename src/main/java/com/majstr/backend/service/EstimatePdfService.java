@@ -56,7 +56,6 @@ public class EstimatePdfService {
     private static final Color SECTION_BG = new Color(245, 245, 245);
     /** Matches the label the editor shows for unfiled lines. */
     private static final String NO_CATEGORY = "Без категорії";
-
     private final PdfFontProvider fonts;
     private final FeatureGuard featureGuard;
     private final StorageService storage;

@@ -212,14 +212,17 @@ class PainterCatalogRebuildOnLiveDataIntegrationTest extends IntegrationTestBase
     // ---- V96: additive, not destructive ------------------------------------------------------------
 
     @Test
-    void theCatalogEndsUpNetPlus80() {
+    void theCatalogEndsUpNetPlus81() {
         // V96: +79 new, -4 duplicate leftovers. V99: -22 (†split LINEAR_METER halves collapsed
         // away), +11 (organizational services). V109: +14 (the third master's genuinely-new
         // positions; 6 more of their rows repriced in place, 5 dropped as already covered).
         // V112: +2 (the only two positions the three painter price lists still lacked).
-        // Net +80 vs whatever V95 actually shipped.
+        // V116: +1 — a DRYWALL migration, but stage 6 of the finishing matrix it implements is
+        // airless painting, which PAINTER carried under no wording. It belongs here, not under
+        // drywall, because the Q levels deliberately stop before the paint.
+        // Net +81 vs whatever V95 actually shipped.
         assertThat(count("SELECT count(*) FROM catalog_templates WHERE trade = 'PAINTER'"))
-                .isEqualTo(painterCatalogBeforeV96 + 80);
+                .isEqualTo(painterCatalogBeforeV96 + 81);
     }
 
     @Test
@@ -558,7 +561,10 @@ class PainterCatalogRebuildOnLiveDataIntegrationTest extends IntegrationTestBase
 
     @Test
     void theSixOverlappingPositionsAreRepricedToTheMedian() {
-        assertPrice("LINEAR_METER", "Армування стиків ГКЛ", 75);
+        // 75 was V109's median of the two source lists. V120 raised it to 100 on the master's own
+        // word — DRYWALL sells the identical job («Заповнення та армування стиків ГКЛ») at 100, and
+        // his own catalog row already read 100 before he said it.
+        assertPrice("LINEAR_METER", "Армування стиків ГКЛ", 100);
         assertPrice("LINEAR_METER", "Монтаж шпаклювальних кутиків", 110);
         assertPrice("M2", "Грунтовка поверхонь перед штукатуркою армуванням", 35);
         assertPrice("LINEAR_METER", "Поклейка стрічки «американка»", 110);
