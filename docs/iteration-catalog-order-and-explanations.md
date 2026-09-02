@@ -231,3 +231,148 @@ what «покищо» buys: the data has been accumulating correctly the whole t
 The portal's own layout fix from the same round stays: the name column **wraps** instead of
 ellipsizing to one line, which on a phone cut «Підготовка ГКЛ під фарбування…» off exactly where the
 meaning is.
+
+## 10. Round 3 — the picker becomes a TREE, and the trade chips go (PWA only, v1.35.1)
+
+> «якщо вибрати декілька трейдів, то не зрозуміло яка категорія до чого відноситься і це рівно то що
+> писав майстер, що списки зовсім не зрозумілі, тому пропоную прибрати чіпси і зробити дерево,
+> трейд->категорії->позиції і сортування категорій має бути таке як в каталозі»
+
+**No backend change, no migration.** Everything the tree needs already rides the read: V118's
+`categoryOrder` (per trade — see §8) and `sharedTrades`.
+
+### The defect
+
+`CatalogPicker` grouped into categories and left trade as a chip row, on an argument written into its
+own doc comment: a master works one trade, so a trade level would be a tap that answers nothing. That
+was true of him then. With two trades ticked the list is a run of folders — «Каркас і обшивка»,
+«Підготовка», «Шпалери» — that are already **contiguous per trade** (V118 ranks trade first), and
+nothing on screen says where one trade ends. So the folders answered "what kind of work is this" and
+re-created the original complaint one level up: «списки зовсім не зрозумілі».
+
+**The ordering was not the defect and nothing was re-sorted.** Reported as invited by «якщо бачиш
+щось не то в сортуванні, то пиши або поправляй»: the flat list's sequence was already right, the
+trade LABEL was missing. The tree is a pure regrouping — same rows, same order, one level added.
+
+### What shipped
+
+- **`features/catalog/catalogTree.ts`** — `toTradeTree(items): TradeBranch[]`, branch = trade +
+  `Section[]` (`toSections(list, catalogSectionRank)`, the same grouping the catalog board uses) +
+  its own count. Folders inside a branch keep the library's execution order; branches come out in the
+  order their FIRST folder already had, so a tree over a flat list shows the same sequence.
+- **`CatalogPicker`** loses `TradeFilterChips`, `tradeFilter` and `asSelectedTradeSees`; the type
+  chips and the search stay. One branch renders **no trade level at all** — the rule the chips
+  already had (they hid themselves under two chips), so a one-trade master's screen is unchanged.
+- Open state is keyed **per level and per branch** (`t:<tradeKey>` / `c:<tradeKey>|<category>`):
+  «Підготовка» is a phase in several trades, and a shared key would open both folders together.
+- Mobile: three levels are separated by COLOUR, not indentation — trade `bg-brand-soft` + emoji,
+  category `bg-surface-sunken`, row a white card — with a 2px rail (`border-l-2` + `pl-2`) under an
+  open trade. At 375 px every level of padding is width the position name loses.
+
+### The one genuinely new behaviour
+
+**A position shared by two of the master's trades now appears under BOTH**, each in that trade's own
+category. `asSelectedTradeSees` could only ever re-file for a single selected chip (§8); a tree has
+no such ambiguity, because each branch IS one trade. Two bounds keep it honest:
+
+- **Only trades the catalog actually uses get a branch.** `sharedTrades` names every trade the
+  LIBRARY ships the name under, not the master's — a drywaller owns «Установка люка-ревізії» because
+  V120 copied it into a drywall phase, and a whole «Сантехніка» branch holding that one row would be
+  a trade he does not do.
+- **A custom trade never lends rows to a system branch.** Its `trade` column reads OTHER for storage
+  reasons only (V91) and `sharedTrades` is computed off the NAME, so the system trade shipping the
+  same wording would otherwise swallow a position he filed himself.
+
+The two copies are the same row with the same id, so ticking either ticks the position once; the
+basket adds from the flat deduped list, never from the tree.
+
+### Deliberately NOT done
+
+**`CatalogPage` keeps its chips.** There the filter is load-bearing beyond browsing: it prefills
+`defaultTradeKey` for a new position and it defines what «Видалити все» deletes. Turning that screen
+into a tree is a bigger question (what does a destructive bulk action mean on a branch?) and belongs
+to its own round — logged in `open-questions.md`.
+
+### Tests
+
+`catalogTree.test.ts` (7) — branch per trade, library order inside a branch, an unranked folder last,
+a shared position under both trades, no phantom branch for a trade he lacks, a custom trade as its own
+branch that lends nothing, an untagged row landing in OTHER. `CatalogPicker.test.tsx` (+4) — the trade
+level is named and counted, a big multi-trade catalog opens on the trades and one tap opens one, a
+one-trade catalog draws no trade level, a shared position shows twice and is added once. Full gate
+green: lint · `tsc -b` · `typecheck:tests` · vitest (811) · `vite build`.
+
+## 11. Round 4 — the TEMPLATE picker gets the same tree, and a missing translation gets a guard (PWA only, v1.35.2)
+
+> «давай отут так само приберемо чіпси і зробимо дерево і з можливістю вибирати шаблони з різних
+> трейдів для одного кошторису»
+>
+> «немає перекладу, глянеш потім до цього»
+
+**No backend change, no migration.** Two unrelated things in one round, both PWA-side.
+
+### 11a. The defect was VISIBILITY, not capability
+
+Picking bundles from several trades into one estimate **already worked** — `ApplyTemplatesRequest`
+takes a list, `picked` is keyed by template id, and the chip only ever filtered `defaultsByTrade`
+(own templates were never filtered at all). What the chip did was hide the other trades *and the
+ticks already made in them*: with «🧱 Будівельник» active, a bundle ticked under «Плитка» was still
+in the basket but nowhere on screen. So cross-trade picking read as impossible, and the answer is
+not new data — it is showing the trades at once and letting the selection accumulate in sight.
+
+- **`features/estimate/templateTree.ts`** — `toTemplateTree(templates): TemplateBranch[]`, branch =
+  trade key + the master's own name for a `custom:` trade + its bundles. Unlike the catalog there is
+  **nothing to resolve**: a template belongs to exactly one trade, so the flat list and the tree hold
+  the same rows. Bundles keep the order the server sent (a template has no `sort_order`, and a trade
+  holds few); branches come out in **`TRADE_VALUES` order** — the library's own trade sequence, the
+  one V118 ranks the catalog by — so the two pickers name the trades in the same order. Custom trades
+  sort after every system one, by name.
+- **`templateTradeKey`** — the custom id wins over the `trade` column (which reads OTHER for storage
+  reasons, V91), and a template with no trade is **`GENERAL`**, not OTHER. That difference is exactly
+  why `TemplatesPage` never shared `TradeFilterChips`.
+- **`TemplatePickerSheet`** loses `TradeChip` and the `trade` state; the search stays. Both sections
+  («МОЇ ШАБЛОНИ» and «ГОТОВІ ШАБЛОНИ») render through one branch renderer, and the same rule as the
+  catalog applies to each independently: **one branch draws no trade level**, so a one-trade master's
+  screen is unchanged. Open state is keyed `` `${scope}:${branch.key}` `` — one trade can hold both
+  own bundles and defaults, and a shared key would open both sections' branches together.
+- **A shut branch still says how many of its bundles are picked.** That badge is the point of the
+  whole round: without it a selection spanning two trades looks lost the moment the master browses on.
+- `AUTO_EXPAND_MAX_TEMPLATES = 6`, lower than the catalog's 10 — a template row is two lines tall
+  (name + «N позицій»), so six of them already fill a 375 px screen. A search opens every branch it
+  draws, same as the catalog.
+- `templates.filterAll` is deleted from both bundles — the only string the chips owned.
+
+`picked` (tap order, which decides whose wording survives the name de-dup), the per-bundle `subsets`,
+the drill-in preview checklist and the sticky «Створити кошторис (N)» footer are untouched.
+
+### 11b. «немає перекладу» — two missing keys, and why nothing caught them
+
+The act editor's catalog modal was titled with the raw key `acts.addAdditionalFromCatalog`. Two keys
+had never been added (that one and `acts.additionalQtyHint`), and the title now has its own key
+(`acts.additionalFromCatalogTitle`) rather than reusing the button's «+ З каталогу».
+
+**This class of bug is invisible to the whole gate.** A missing key is a plain string: it type-checks,
+it lints, i18next renders it verbatim at runtime, and a component test asserting on `t('…')` output
+would have to name the very key that is missing. It took a screenshot from the master.
+
+So `src/lib/i18nKeys.test.ts` reads the SOURCE: every static `t('some.key')` — a call whose whole
+argument is one quoted literal — must exist in **both** uk and en. Three assertions, because two of
+them can pass vacuously: first that the scan found > 300 keys at all (a regex matching nothing would
+pass everything), then uk, then en; each failure lists `key (file)`. A counted key is stored under
+its plural forms and never bare, so the lookup accepts any `_one`/`_few`/`_many`/`_other` variant —
+without that, `notifications.newQuestions` and `economy.paymentsReceivedCount` are false positives.
+A key composed at runtime (`t('trades.' + code)`) is deliberately skipped rather than guessed at:
+**this test is a floor, not a proof.** It was verified against the real bug — renaming the key in
+`uk.json` fails the test naming `ActEditorPage.tsx`.
+
+### Tests
+
+`TemplatePickerSheet.test.tsx` (+4, 15 total) — the trades are named in library order and the sheet
+opens on them (TILING before BUILDER, one tap opens one); **a bundle ticked in one trade stays counted
+on its shut branch while another trade is browsed, and both arrive in the apply call**; a one-trade
+list draws no trade level; a search opens every branch it still draws. `i18nKeys.test.ts` (3).
+Full gate green: lint · `tsc -b` · `typecheck:tests` · vitest (**818**) · `vite build`.
+
+**Not verified:** the 375 px layout could not be checked visually this round — the browser tooling
+failed repeatedly (`Script injection timed out` / `Page still loading`). The markup is the catalog
+tree's, shape for shape (`min-h-11` rows, `break-words`, a `border-l-2` rail instead of indentation).

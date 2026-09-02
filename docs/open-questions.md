@@ -307,7 +307,7 @@ one-line summary — keep the item in the file as a record.
 - **Notes / options:** Pick a single app timezone (e.g. `Europe/Kyiv`) for all reporting boundaries, or make it per-user once users span timezones. Low impact while single-region; revisit before launch.
 
 ### Production email delivery (Resend key + verified domain)
-- **Status:** OPEN
+- **Status:** RESOLVED (2026-09-02) — mail to third-party addresses arrives in production, so `EMAIL_FROM` is a verified domain and not the Resend sandbox. Confirmed by the master on live traffic; the transport has been live since 2026-08-20.
 - **Since:** Fix D (2026-06-02)
 - **Context:** Email verification ships, but real sending needs `RESEND_API_KEY` (env) and — to email anyone other than the Resend account owner — a Resend-verified sending domain in `EMAIL_FROM`. In dev the key is blank, so emails are logged & skipped: the feature works end-to-end but no mail actually goes out.
 - **Notes / options:** Sign up at Resend, add `RESEND_API_KEY`; for arbitrary recipients verify a domain (DNS records) and set `EMAIL_FROM=Majstr <noreply@domain>`. Until then only the account owner's own address receives mail (Resend sandbox via `onboarding@resend.dev`). Revisit before public launch and when wiring password reset + portal notifications (same transport). **Fix E sends estimate links to client emails (arbitrary third parties) — so a verified domain is a hard requirement for that feature to work at all in production.**
@@ -2352,6 +2352,14 @@ one-line summary — keep the item in the file as a record.
   formula is created, and the calculation **writes nothing** (the existing add-items path commits
   it), so there is no new offline entity. Cut 0 is not code: get the master's own norms for 10–15
   positions, the way the drywall PDF arrived.
+- **Sourcing direction (master, 2026-09-02):** «в інтернеті є багато сервісів які дають ці
+  калькулятори, будемо щось шукати» — so Cut 0 has a second half beside his own numbers: survey what
+  the existing online calculators actually use. Read them as EVIDENCE, not as a source to copy: a
+  published norm with no stated basis is exactly the invented number this item warns about, and most
+  of those services are selling one manufacturer's material. What a survey is good for is the SHAPE
+  (which parameters a trade's calculator asks for, what waste % is conventional, how packages round)
+  and for spotting where several independent services agree — a norm three unrelated calculators and
+  the master all put in the same range is one we can ship. Where they disagree, his number wins.
 
 ### Voice input of a position
 - **Status:** OPEN
@@ -2464,6 +2472,28 @@ one-line summary — keep the item in the file as a record.
   but the master, who can fix it in his own catalog. If the client half returns, so does the full
   question, including the rename case.
 
+### The catalog PAGE still browses by chips, while the picker is a tree
+- **Status:** OPEN
+- **Since:** catalog-order-and-explanations round 3 (2026-09-02).
+- **Context:** «прибрати чіпси і зробити дерево, трейд->категорії->позиції» was asked about, and
+  shipped for, the ADD-position picker. `CatalogPage` deliberately kept `TradeFilterChips`, so the
+  two screens now browse the same data two different ways. The reason is that there the filter is
+  not only navigation: it prefills `defaultTradeKey` for a new position, and it defines what
+  «Видалити все» deletes. Both would need an answer before the page can become a tree.
+- **Notes / options:** The questions to settle, in order. (1) What does a destructive bulk action
+  mean on a branch — «delete this trade's positions» is a much sharper gesture than «delete what the
+  filter shows», and a position shared by two trades would be shown under both. (2) Where a new
+  position's default trade comes from with no filter — most likely the branch its «+» was tapped in.
+  (3) Whether the page keeps a filter AS WELL (the tree answers "whose folder is this", a filter
+  answers "show me only this trade"; they are not the same job). Until then the inconsistency is
+  deliberate, not an oversight — do not "finish" it by dropping the page's chips.
+- **Update (round 4, 2026-09-02):** the TEMPLATE picker became a tree too, and `TemplatesPage`
+  keeps its own trade chips for the same kind of reason — there the filter also prefills the trade
+  of a NEW template. So the pattern now holds on both sides: **a PICKER is a tree, a management PAGE
+  is chips**, because a page's filter is load-bearing beyond navigation. Note the templates page
+  cannot reuse the catalog's chips even if this is ever unified — a template with no trade is
+  `GENERAL`, a catalog row is `OTHER`.
+
 ---
 
 ## Features in the catalog enum but not implemented
@@ -2541,7 +2571,12 @@ one-line summary — keep the item in the file as a record.
 
 
 ### Offline act receipts — photo + amount + date, and nothing else
-- **Status:** OPEN
+- **Status:** RESOLVED (2026-09-02, PWA v1.36.0) — shipped exactly as the master specified: photo +
+  amount + date, no recognition offline and none deferred, the photo still mandatory. A queued
+  receipt is real immediately (it counts into «Разом за чеками» and «До сплати»), is editable and
+  deletable in the queue itself, and says it has not been sent. PWA-only, no migration, no backend
+  change. Doc: [iteration-offline-act-receipts.md](iteration-offline-act-receipts.md). Follow-up #6
+  (blob outbox) stays OPEN for progress photos and the estimate-side receipt import.
 - **Since:** 2026-08-23 (master's decision, after the templates iteration)
 - **Context:** Today an act receipt cannot be authored offline at all. The photo is **mandatory**
   (400 `WORK_ACT_RECEIPT_PHOTO_REQUIRED`, act-receipts round 2) and there is no blob outbox, so a
