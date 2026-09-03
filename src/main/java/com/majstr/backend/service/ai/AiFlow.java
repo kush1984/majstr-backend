@@ -30,6 +30,14 @@ public enum AiFlow {
     /** Designer's documentation sheets → rooms, geometry, openings. The heaviest of them. */
     PROJECT_DOCS,
     /**
+     * Free text a master typed or dictated with the phone keyboard's own microphone → estimate
+     * positions. The only job here that reads no picture at all — no vision, no file, a few spoken
+     * sentences. Prices and units mostly come from the master's own catalog afterwards, so the
+     * model only has to split «поклеїти шпалери двадцять квадратів» into a name, a number and a
+     * unit, and to say plainly when a value was not spoken.
+     */
+    DICTATION,
+    /**
      * Sorting a whole set's sheets by their titles, from text alone — the cheapest job here and the
      * one most worth putting on a small model: it reads no drawing, it only answers "what is this".
      */

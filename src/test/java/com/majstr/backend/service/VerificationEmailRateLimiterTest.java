@@ -20,7 +20,8 @@ class VerificationEmailRateLimiterTest {
                 new RateLimitProperties.MessageLink(5, 10),
                 new RateLimitProperties.Question(5, 10),
                 new RateLimitProperties.ReceiptScan(30),
-                new RateLimitProperties.QrScan(120));
+                new RateLimitProperties.QrScan(120),
+                new RateLimitProperties.Dictation(60));
         return new VerificationEmailRateLimiter(props);
     }
 

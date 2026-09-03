@@ -2362,7 +2362,7 @@ one-line summary — keep the item in the file as a record.
   the master all put in the same range is one we can ship. Where they disagree, his number wins.
 
 ### Voice input of a position
-- **Status:** OPEN
+- **Status:** IN_PROGRESS — **cut 0 shipped** (dictation iteration, 2026-09-02); the rest still open.
 - **Since:** Catalog-picker iteration (2026-09-01), from the competitor scan above.
 - **Context:** «Смета М2» added voice input of work types (v526). The situation is real — a master
   on an object, gloves on, phone in a dusty hand, typing a Ukrainian position name into a small
@@ -2375,6 +2375,21 @@ one-line summary — keep the item in the file as a record.
   Safari has no `SpeechRecognition`), so it would be a half-platform feature; routing audio through
   `service/ai/` instead would be the **first audio input in the product**, costs a model call per
   use, and would need a plan gate and a rate limiter like every other LLM path here.
+- **Cut 0 (2026-09-02):** exactly the cheapest honest version this item proposed — **the OS
+  keyboard's own dictation** into a plain text field. No audio, no recording, no transcription of
+  ours. (**Windows voice typing has no Ukrainian** — verified 2026-09-03 on the master's machine —
+  so the desktop is a typing test only, and the premise stays unproven until a phone tries it.) What we added is the half the OS cannot
+  do: `AiFlow.DICTATION` splits the sentence, and a deterministic `CatalogMatcher` pins each
+  position to the master's own `catalog_items` — **a miss comes back flagged, never priced at
+  0 UAH**. Ungated (a per-account hourly bucket bounds it), online-only, nothing stored.
+  [docs/iteration-dictation.md](iteration-dictation.md).
+- **Still open after cut 0:** (a) whether the want was «dictate» at all — shipping this is how we
+  find out, and if the picker already answered it the honest move is to remove the FAB item, not
+  build on it; (b) recording audio ourselves; (c) offline (the parse is a model call, so a queued
+  dictation would replay a *read*, which no outbox entity does today); (d) a PRO gate, deliberately
+  undecided until there is usage to look at; (e) learning his synonyms («шпалери» → «Поклейка
+  шпалер») so the second dictation matches better than the first — the follow-up that would help
+  most, and the only one that needs storage.
 
 ### Contract («договір») generation, beside the act
 - **Status:** OPEN

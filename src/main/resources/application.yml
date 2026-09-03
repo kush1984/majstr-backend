@@ -154,6 +154,12 @@ app:
     # bucket would let one batch eat the budget for the pass that actually costs money.
     qr-scan:
       max-per-hour: ${QR_SCAN_MAX_PER_HOUR:120}
+    # Per account. Dictated positions cost a model call each time and — like receipt-scan — persist
+    # nothing, so no business counter bounds them. Counted apart from the two receipt buckets on
+    # purpose: they answer different questions, and one busy day of receipts must not be why
+    # dictation stops working. A master dictating a whole flat's estimate is nowhere near 60.
+    dictation:
+      max-per-hour: ${DICTATION_MAX_PER_HOUR:60}
   fiscal-qr:
     # Lookup for the QR printed on every Ukrainian fiscal receipt (ДПС Electronic Cabinet). The QR
     # itself already gives the total and the date with no network call at all; this only adds the
@@ -216,6 +222,12 @@ app:
       project-docs: ${AI_FLOW_PROJECT_DOCS:}
       # Reads titles from text, never a drawing — the first flow worth pointing at a cheap model.
       triage: ${AI_FLOW_TRIAGE:anthropic:claude-haiku-4-5-20251001}
+      # Free text → positions. Text-only and short, so a cheap model is tempting; it stays on the
+      # default for now because a mis-split Ukrainian sentence answers the wrong question about
+      # whether dictation is worth having at all. Opus would be paying drawing money to split a
+      # sentence. PINNED rather than left blank: blank follows `model`/ANTHROPIC_MODEL, so raising
+      # the default for the drawing flows would silently raise this one too.
+      dictation: ${AI_FLOW_DICTATION:anthropic:claude-sonnet-5}
   openai:
     # Inert unless `provider` above selects it. Key is env only, same rule as the Anthropic one.
     api-key: ${OPENAI_API_KEY:}

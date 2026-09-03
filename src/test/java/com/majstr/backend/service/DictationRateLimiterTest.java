@@ -8,14 +8,14 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * The QR reads have their OWN bucket (receipts-batch, master decision «рахуємо кюар шлях окремо і
- * не міняємо ліміти»): one gallery batch fires a QR read per photo, and sharing the recognition
- * bucket would let a batch of receipts eat the budget for the pass that actually spends a model
- * call. So a QR read must never touch {@link ReceiptScanRateLimiter}'s counter, and vice versa.
+ * Dictation gets its OWN bucket, for the same reason the QR reads got theirs: the three passes
+ * answer different questions, and a day spent photographing receipts must never be why a master
+ * cannot dictate a position. Nothing else bounds this endpoint — it is ungated in cut 0 and
+ * persists nothing, so there is no business counter behind it.
  */
-class QrScanRateLimiterTest {
+class DictationRateLimiterTest {
 
-    private RateLimitProperties props(int qrPerHour, int scanPerHour) {
+    private RateLimitProperties props(int dictationPerHour, int scanPerHour) {
         return new RateLimitProperties(
                 new RateLimitProperties.Login(5, 15),
                 new RateLimitProperties.Register(5, 60),
@@ -26,13 +26,13 @@ class QrScanRateLimiterTest {
                 new RateLimitProperties.MessageLink(5, 10),
                 new RateLimitProperties.Question(5, 10),
                 new RateLimitProperties.ReceiptScan(scanPerHour),
-                new RateLimitProperties.QrScan(qrPerHour),
-                new RateLimitProperties.Dictation(60));
+                new RateLimitProperties.QrScan(120),
+                new RateLimitProperties.Dictation(dictationPerHour));
     }
 
     @Test
     void blocksAfterHourlyCap() {
-        QrScanRateLimiter limiter = new QrScanRateLimiter(props(2, 30));
+        DictationRateLimiter limiter = new DictationRateLimiter(props(2, 30));
         UUID account = UUID.randomUUID();
 
         assertThat(limiter.tryConsume(account).allowed()).isTrue();
@@ -45,22 +45,24 @@ class QrScanRateLimiterTest {
 
     @Test
     void accountsAreIndependent() {
-        QrScanRateLimiter limiter = new QrScanRateLimiter(props(1, 30));
+        DictationRateLimiter limiter = new DictationRateLimiter(props(1, 30));
 
         assertThat(limiter.tryConsume(UUID.randomUUID()).allowed()).isTrue();
         assertThat(limiter.tryConsume(UUID.randomUUID()).allowed()).isTrue();
     }
 
     @Test
-    void exhaustingTheQrBucketLeavesTheRecognitionBucketUntouched() {
+    void exhaustingDictationLeavesTheReceiptBucketsUntouched() {
         RateLimitProperties props = props(1, 3);
-        QrScanRateLimiter qr = new QrScanRateLimiter(props);
+        DictationRateLimiter dictation = new DictationRateLimiter(props);
         ReceiptScanRateLimiter scan = new ReceiptScanRateLimiter(props);
+        QrScanRateLimiter qr = new QrScanRateLimiter(props);
         UUID account = UUID.randomUUID();
 
-        assertThat(qr.tryConsume(account).allowed()).isTrue();
-        assertThat(qr.tryConsume(account).allowed()).isFalse(); // QR budget spent…
+        assertThat(dictation.tryConsume(account).allowed()).isTrue();
+        assertThat(dictation.tryConsume(account).allowed()).isFalse(); // dictation budget spent…
 
-        assertThat(scan.tryConsume(account).allowed()).isTrue(); // …the model pass is still free
+        assertThat(scan.tryConsume(account).allowed()).isTrue();       // …reading a receipt still works
+        assertThat(qr.tryConsume(account).allowed()).isTrue();
     }
 }

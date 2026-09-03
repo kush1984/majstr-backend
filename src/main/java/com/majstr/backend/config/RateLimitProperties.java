@@ -16,7 +16,8 @@ public record RateLimitProperties(
         MessageLink messageLink,
         Question question,
         ReceiptScan receiptScan,
-        QrScan qrScan
+        QrScan qrScan,
+        Dictation dictation
 ) {
     public record Login(
             @Positive int maxAttempts,
@@ -87,6 +88,15 @@ public record RateLimitProperties(
      * bucket would let one photo batch eat the budget for the pass that actually costs money.
      */
     public record QrScan(
+            @Positive int maxPerHour
+    ) {}
+
+    /**
+     * Cap on dictated-position parses per account per hour. Same reasoning as {@link ReceiptScan}
+     * — a model call that persists nothing, reachable on FREE — but its own bucket, so a day spent
+     * photographing receipts is never why dictation stops working.
+     */
+    public record Dictation(
             @Positive int maxPerHour
     ) {}
 }
