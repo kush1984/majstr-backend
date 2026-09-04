@@ -2,14 +2,21 @@ package com.majstr.backend.service.importer;
 
 import com.majstr.backend.dto.DictationCommitRequest;
 import com.majstr.backend.dto.DictationParseResponse;
+import com.majstr.backend.dto.DictationSynonymRequest;
 import com.majstr.backend.dto.EstimateResponse;
 import com.majstr.backend.entity.CatalogItem;
+import com.majstr.backend.entity.CatalogItemSynonym;
 import com.majstr.backend.entity.EstimateStatus;
 import com.majstr.backend.entity.ItemType;
 import com.majstr.backend.entity.Unit;
+import com.majstr.backend.entity.User;
 import com.majstr.backend.exception.EstimateSignedException;
+import com.majstr.backend.exception.ResourceNotFoundException;
 import com.majstr.backend.repository.CatalogItemRepository;
+import com.majstr.backend.repository.CatalogItemSynonymRepository;
+import com.majstr.backend.repository.UserRepository;
 import com.majstr.backend.service.EstimateService;
+import org.mockito.ArgumentCaptor;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -40,6 +47,8 @@ class DictationServiceTest {
 
     @Mock private DictationExtractor extractor;
     @Mock private CatalogItemRepository catalogItemRepository;
+    @Mock private CatalogItemSynonymRepository synonymRepository;
+    @Mock private UserRepository userRepository;
     @Mock private EstimateService estimateService;
 
     private DictationService service;
@@ -59,7 +68,8 @@ class DictationServiceTest {
 
     @BeforeEach
     void setUp() {
-        service = new DictationService(extractor, catalogItemRepository, estimateService);
+        service = new DictationService(extractor, catalogItemRepository, synonymRepository,
+                userRepository, estimateService);
     }
 
     @Test
@@ -157,6 +167,60 @@ class DictationServiceTest {
     }
 
     @Test
+    void aTaughtSynonym_pinsASpokenWordingToTheCatalogRow() {
+        // The whole point of the (e) synonyms path — a wording the Dice pass could not resolve is
+        // matched by what the master already taught, without another guess.
+        given(estimateService.get(estimateId, ownerId)).willReturn(estimate(EstimateStatus.DRAFT));
+        given(catalogItemRepository.findByOwnerIdOrderByNameAsc(ownerId)).willReturn(List.of(wallpaper));
+        given(synonymRepository.findByOwnerId(ownerId)).willReturn(List.of(
+                synonym("шпалери", wallpaper)));
+        given(extractor.extract(any())).willReturn(List.of(
+                new DictationExtractor.Spoken("шпалери", null, new BigDecimal("15"), null, "WORK")));
+
+        DictationParseResponse resp = service.parse(ownerId, estimateId, "шпалери 15 квадратів");
+
+        assertThat(resp.items().getFirst().catalogItemId()).isEqualTo(wallpaper.getId());
+        assertThat(resp.items().getFirst().name()).isEqualTo("Поклейка шпалер"); // catalog wording wins
+    }
+
+    @Test
+    void teachSynonym_deletesAnyExistingRowForTheSameWordingFirst() {
+        // The UNIQUE(owner, spoken_normalized) constraint is enforced by the app as delete + insert
+        // in one tx, not by letting the DB throw. That is what makes "teach a new target for X"
+        // idempotent from the client's side.
+        given(catalogItemRepository.findById(wallpaper.getId())).willReturn(java.util.Optional.of(withOwner(wallpaper, ownerId)));
+        given(userRepository.getReferenceById(ownerId)).willReturn(User.builder().id(ownerId).build());
+
+        service.teachSynonym(ownerId,
+                new DictationSynonymRequest(wallpaper.getId(), "  Шпалери!  "));
+
+        ArgumentCaptor<CatalogItemSynonym> saved = ArgumentCaptor.forClass(CatalogItemSynonym.class);
+        verify(synonymRepository).deleteByOwnerIdAndSpokenNormalized(ownerId, "шпалери");
+        verify(synonymRepository).save(saved.capture());
+        assertThat(saved.getValue().getSpokenNormalized()).isEqualTo("шпалери"); // same key on both ends
+        assertThat(saved.getValue().getSpokenRaw()).isEqualTo("Шпалери!");        // stored verbatim
+    }
+
+    @Test
+    void teachSynonym_refusesACatalogItemBelongingToSomebodyElse() {
+        UUID stranger = UUID.randomUUID();
+        given(catalogItemRepository.findById(wallpaper.getId())).willReturn(java.util.Optional.of(withOwner(wallpaper, stranger)));
+
+        assertThatThrownBy(() -> service.teachSynonym(ownerId,
+                new DictationSynonymRequest(wallpaper.getId(), "шпалери")))
+                .isInstanceOf(ResourceNotFoundException.class);
+        verify(synonymRepository, never()).save(any());
+    }
+
+    @Test
+    void teachSynonym_refusesBlankSpokenText() {
+        assertThatThrownBy(() -> service.teachSynonym(ownerId,
+                new DictationSynonymRequest(wallpaper.getId(), "  !!!  ")))
+                .isInstanceOf(ResourceNotFoundException.class);
+        verify(synonymRepository, never()).save(any());
+    }
+
+    @Test
     void commit_appendsMappedItemsToEstimate() {
         EstimateResponse updated = estimate(EstimateStatus.DRAFT);
         given(estimateService.appendItems(eq(estimateId), anyList(), eq(ownerId))).willReturn(updated);
@@ -174,6 +238,27 @@ class DictationServiceTest {
     private void draftWithCatalog(List<CatalogItem> catalog) {
         given(estimateService.get(estimateId, ownerId)).willReturn(estimate(EstimateStatus.DRAFT));
         given(catalogItemRepository.findByOwnerIdOrderByNameAsc(ownerId)).willReturn(catalog);
+        given(synonymRepository.findByOwnerId(ownerId)).willReturn(List.of());
+    }
+
+    private CatalogItemSynonym synonym(String spoken, CatalogItem target) {
+        return CatalogItemSynonym.builder()
+                .id(UUID.randomUUID())
+                .spokenNormalized(spoken)
+                .spokenRaw(spoken)
+                .catalogItem(target)
+                .build();
+    }
+
+    private CatalogItem withOwner(CatalogItem item, UUID owner) {
+        return CatalogItem.builder()
+                .id(item.getId())
+                .name(item.getName())
+                .unit(item.getUnit())
+                .type(item.getType())
+                .defaultPrice(item.getDefaultPrice())
+                .owner(User.builder().id(owner).build())
+                .build();
     }
 
     private EstimateResponse estimate(EstimateStatus status) {

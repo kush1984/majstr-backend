@@ -27,7 +27,10 @@ public record DictationCommitRequest(
             @NotBlank @Size(max = 255) String name,
             @NotNull Unit unit,
             @NotNull @DecimalMin("0.0") @Digits(integer = 12, fraction = 3) BigDecimal quantity,
-            @NotNull @DecimalMin("0.0") @Digits(integer = 13, fraction = 2) BigDecimal unitPrice,
+            // STRICTLY positive — master decision 2026-09-04: empty/0/negative price → nothing is
+            // saved. Belt-and-braces with the PWA's `hasBad` disable-on-unpriced rule, so a bypass
+            // (offline replay, curl) also refuses.
+            @NotNull @DecimalMin(value = "0.0", inclusive = false) @Digits(integer = 13, fraction = 2) BigDecimal unitPrice,
             @NotNull ItemType type,
             @Size(max = 100) String category
     ) {}

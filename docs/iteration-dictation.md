@@ -1,11 +1,14 @@
-# Iteration: dictation, cut 0 — free text → positions matched against the master's own catalog
+# Iteration: dictation — free text → positions matched against the master's own catalog
 
-**Status:** code complete, backend build green (`./gradlew build`), PWA gate green in CI order,
-NOT pushed (awaiting the user's approval).
+**Status:** cut 0 shipped 2026-09-02 (PWA 1.37.0); **cut 1 code complete** (2026-09-04), backend
+build green (`./gradlew build`), PWA gate green in CI order, NOT pushed (awaiting the master's
+approval).
 **Source:** the "Voice input of a position" open question (catalog-picker iteration, 2026-09-01),
-promoted by the master with «так, берись» (2026-09-01).
-**Migrations:** none — nothing new is stored.
-**PWA:** 1.36.0 → **1.37.0** (minor — a new capability on the estimate editor).
+promoted by the master with «так, берись» (2026-09-01); cut 1 promoted 2026-09-04 with «давай, але
+враховуй всі моменти для айосу».
+**Migrations:** none in cut 0; **V124 `catalog_item_synonym`** in cut 1.
+**PWA:** 1.36.0 → 1.37.0 (cut 0) → **1.38.0** (cut 1 — new capabilities: in-app microphone,
+save-to-catalog per row, learn-a-synonym per row).
 
 ---
 
@@ -17,8 +20,16 @@ that wants **audio from us** — and the answer for cut 0 is no.
 
 **We add no audio, no recording and no transcription.** The field is plain text; the microphone is
 the one already on the master's **phone** keyboard, where 95 % of the product is used. The OS
-transcribes Ukrainian on the device, for free, better than a Web Speech API path that does not
-exist on iOS Safari at all.
+transcribes Ukrainian on the device, for free, and more reliably than a Web Speech API path.
+
+> **Correction (2026-09-04, cut 1).** This paragraph originally said the Web Speech API "does not
+> exist on iOS Safari at all". **That was wrong.** `webkitSpeechRecognition` has shipped in iOS
+> Safari since **14.5** (2021). The real limitation is narrower and worse for us: it does not work
+> inside a PWA installed to the home screen (a WKWebView container) — detection succeeds, no
+> microphone permission is requested, and nothing happens. Our manifest is `display: 'standalone'`,
+> so that is our case. The conclusion for cut 0 is unchanged (the OS keyboard is the right answer on
+> iOS); the reason is different, and cut 1's in-app microphone is built around the real one. See
+> §7.
 
 **Windows voice typing (`Win+H`) has no Ukrainian** — verified on the master's own machine
 (2026-09-03): it refuses with «Голосовий ввід недоступний для поточної мови: українська» before anything
@@ -167,3 +178,97 @@ the spoken-name line, the unit block, the kept text on failure, and the way back
   from the new markup, but this is reasoning, not a screenshot.
 - **No real dictated text has gone through the model yet.** Whether the prompt splits a real
   Ukrainian sentence well enough is exactly what this cut exists to find out.
+
+## 7. Cut 1 (2026-09-04) — in-app microphone, save-to-catalog, synonyms
+
+Cut 0's premise held: the master dictated on Android and reported «з клавіатури з андроїда
+надиктовка працює супер». So the want WAS «dictate», the picker had not already answered it. Cut 1
+adds the three parts he asked for after using it: an in-app microphone («натиснув надиктувати і воно
+відкрило мікрофон»), an offer to save an unmatched position to his catalog, and synonyms.
+
+### 7.1 The iOS fact this cut is built around
+
+The claim shipped in cut 0 (and in the correction paragraph in §1) that iOS Safari has no
+`SpeechRecognition` was WRONG: it has had `webkitSpeechRecognition` since Safari 14.5 (2021). The
+real limitation is narrower and worse for us: **it does not work in a PWA installed to the home
+screen.** An installed PWA runs in a WKWebView-based container where Apple has not enabled the
+speech service; feature detection SUCCEEDS, no microphone permission is ever requested, and nothing
+happens. Our manifest is `display: 'standalone'`, so that is our case. Two more iOS-specific traps:
+`continuous = true` hangs the microphone (it never stops and no result arrives), and the failure
+surfaces as `service-not-allowed`.
+
+**Consequence:** the microphone is a **ladder that degrades and never fails.** `speechAvailability`
+in `lib/speech.ts` refuses `installedIos` BEFORE looking for the constructor (the load-bearing
+order — a feature check would pass there and the mic would silently never open). What it degrades
+to is what already ships from cut 0 — the plain text field plus the OS keyboard's own microphone.
+
+The FAB gate widened to `hasOnScreenKeyboard() || speechAvailability() === 'ready'`, which is why
+the entry point now shows on desktop Chrome too — Windows voice typing has no Ukrainian, so the
+in-app one is the only way to dictate there at all.
+
+### 7.2 What ships in cut 1
+
+#### Backend
+
+| File | What |
+| --- | --- |
+| `db/migration/V124__dictation_synonyms.sql` | new table `catalog_item_synonym` (per-master, `UNIQUE(owner, spoken_normalized)`, FKs CASCADE to `users` and `catalog_items`) |
+| `entity/CatalogItemSynonym.java` | JPA entity mirroring the shape |
+| `repository/CatalogItemSynonymRepository.java` | `findByOwnerId` + `deleteByOwnerIdAndSpokenNormalized` (delete + insert is how the app enforces uniqueness, not the DB throwing) |
+| `service/importer/CatalogMatcher.java` | second `match(spoken, catalog, synonyms)` overload; **a synonym wins outright**, before the Dice pass; `normalize` now `public` so the write path stores the same key the read path looks up |
+| `service/importer/DictationService.java` | loads per-master synonyms once per parse; `teachSynonym(ownerId, req)` writes them |
+| `controller/DictationSynonymController.java` | `POST /api/dictation/synonyms` (204), NOT under `/api/estimates/{id}/dictation` — a synonym is per-master, not per-estimate |
+| `dto/DictationSynonymRequest.java` | `{catalogItemId, spokenText}` |
+
+**Why the FK is CASCADE, not RESTRICT** (decision, see open-questions.md → "A learned synonym
+outlives the catalog position it points at"): a synonym for a position that no longer exists is not
+a fact about anything, and keeping it would resurrect a deleted position's name in a match a week
+later, silently. A **rename** deliberately keeps the synonym pointing at the same row — the row is
+the same job under a new wording.
+
+**Why the synonym check is BEFORE the Dice pass.** A wording the master TAUGHT the system must not
+be overridden by a longer name that happens to share more stems. Learning has to be authoritative or
+it is a lie; the whole reason we teach is that the Dice ladder cannot resolve it.
+
+#### PWA
+
+| File | What |
+| --- | --- |
+| `lib/speech.ts` | `SpeechAvailability = 'ready' \| 'installedIos' \| 'unsupported'`; the ladder that refuses installed-iOS BEFORE feature detection |
+| `hooks/useSpeechDictation.ts` | one utterance per tap (`continuous = false` — never true, iOS-hang rule); every runtime error takes the button off the screen for this session (`denied`/`service`/`audio`/`network`); `no-speech`/`aborted` are not failures |
+| `features/estimate/DictationSheet.tsx` | mic button when `available`; per-row «Зберегти в мій каталог» (offered on a miss, DEAD until priced — a 0 ₴ catalog row is exactly what the flagging pass exists to prevent, and saving one here would let the NEXT dictation match it and price the line at 0 silently); per-row «Наступного разу розпізнавати X як цю позицію» (offered on a matched-but-different row); both writes run AFTER the estimate lines land, a failure never rolls back the commit |
+| `features/estimate/EstimateEditorPage.tsx` | FAB gate widened to `hasOnScreenKeyboard() \|\| speechAvailability() === 'ready'` (desktop Chrome is now an entry point too) |
+| `api/dictation.ts` | `saveSynonym(catalogItemId, spokenText)` |
+| `locales/{uk,en}.json` | `hintMic`, `micStart`/`micStop`/`listening`, four `mic*` block reasons, `saveToCatalog`/`saveNeedsPrice`, `saveSynonym`, `addedAndSaved` / `learnedSynonyms` (with plurals), `catalogSaveFailed`/`synonymSaveFailed`; `reviewHint` reworded (it used to say "prices are not added to the catalog") |
+
+**Why no trade picker on save-to-catalog.** A dictation review is the wrong place for two more
+pickers; the position lands in «Інше» and the master re-files it if he cares. This makes the «Інше»
+pile grow — logged in open-questions.md.
+
+**Why the synonym tick has no "unmatched row" equivalent.** A synonym is a pointer at a row that
+already exists; on an unmatched row there is nothing to point at. The correct move on a miss is
+«save to catalog» — next time the exact-name rung matches without needing a synonym.
+
+### 7.3 Tests
+
+**Backend** — `CatalogMatcherTest` gains 3: synonym wins over Dice, a synonym pointing at a deleted
+row is silently ignored, the read-path key equals the write-path key.
+`DictationServiceTest` gains 3: a taught synonym pins a spoken wording to the catalog row;
+`teachSynonym` deletes any existing row for the same wording first (the app enforces uniqueness);
+teaching against somebody else's catalog item is 404; blank-after-normalization is rejected.
+
+**PWA** — `lib/speech.test.ts` covers the 5 branches of `speechAvailability` (installed iOS refused,
+iPad-as-Mac refused, iOS Safari in the browser ready, desktop Chrome ready, no constructor
+unsupported). `hooks/useSpeechDictation.test.tsx` covers start/stop lifecycle, `not-allowed` blocks,
+`no-speech` does not, and final vs interim results. `DictationSheet.test.tsx` gains 3: save-to-catalog
+DEAD until priced, synonym tick offered only on matched-but-different, a failing synonym save never
+rolls back the commit.
+
+**Gate:** backend `./gradlew build` green; PWA green in CI order — `npm run lint` · `npx tsc -b` ·
+`npm run typecheck:tests` · `npx vitest run` · `npx vite build`.
+
+### 7.4 Not verified
+
+- **iOS is still untried** — the master reported the OS keyboard microphone works on Android; the
+  in-app path in installed iOS PWA is what `speechAvailability` refuses without needing the phone.
+- Mobile layout of the new tick + microphone button not opened in a live browser this round.

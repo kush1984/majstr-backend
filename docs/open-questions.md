@@ -1545,6 +1545,11 @@ one-line summary — keep the item in the file as a record.
   bulk action (select untagged → set trade), or a smarter backfill (fuzzy category
   match / per-item template-name match). Defer until a real master reports a painful
   "Інше" pile; the per-item edit + always-tagged-new-items covers the common case.
+- **Update (dictation cut 1, 2026-09-04):** this got MORE likely to bite. Saving an unmatched
+  dictated position into the catalog does not ask for a trade (the dialog only asks when the master
+  has ≥2 trades, and a dictation review is the wrong place for a picker), so every position learned
+  this way lands in the OTHER pile. The pile now grows from a flow the master uses on the object,
+  not just from a historical backfill.
 
 ### Price-list import from a photo / handwriting (vision-LLM)
 - **Status:** OPEN
@@ -2362,7 +2367,9 @@ one-line summary — keep the item in the file as a record.
   the master all put in the same range is one we can ship. Where they disagree, his number wins.
 
 ### Voice input of a position
-- **Status:** IN_PROGRESS — **cut 0 shipped** (dictation iteration, 2026-09-02); the rest still open.
+- **Status:** IN_PROGRESS — **cut 0 shipped** (dictation iteration, 2026-09-02); **cut 1 code
+  complete** (2026-09-04) — in-app microphone (Web Speech, refused on installed iOS PWA),
+  save-to-catalog per row, synonyms taught after commit (V124 `catalog_item_synonym`).
 - **Since:** Catalog-picker iteration (2026-09-01), from the competitor scan above.
 - **Context:** «Смета М2» added voice input of work types (v526). The situation is real — a master
   on an object, gloves on, phone in a dusty hand, typing a Ukrainian position name into a small
@@ -2371,8 +2378,9 @@ one-line summary — keep the item in the file as a record.
   without typing", the picker and templates may already answer it and a microphone adds nothing. If
   it is genuinely "dictate", the cheapest honest version is the **OS keyboard's own dictation**,
   which every master already has on the field and which costs us zero code — check whether he knows
-  it is there. Building it ourselves: the Web Speech API is Chrome/Android and needs network (iOS
-  Safari has no `SpeechRecognition`), so it would be a half-platform feature; routing audio through
+  it is there. Building it ourselves: the Web Speech API needs network and is not evenly available
+  (**this file used to claim iOS Safari has no `SpeechRecognition` — that was wrong, see the cut 1
+  correction below**), so it would be a half-platform feature; routing audio through
   `service/ai/` instead would be the **first audio input in the product**, costs a model call per
   use, and would need a plan gate and a rate limiter like every other LLM path here.
 - **Cut 0 (2026-09-02):** exactly the cheapest honest version this item proposed — **the OS
@@ -2383,13 +2391,77 @@ one-line summary — keep the item in the file as a record.
   position to the master's own `catalog_items` — **a miss comes back flagged, never priced at
   0 UAH**. Ungated (a per-account hourly bucket bounds it), online-only, nothing stored.
   [docs/iteration-dictation.md](iteration-dictation.md).
-- **Still open after cut 0:** (a) whether the want was «dictate» at all — shipping this is how we
-  find out, and if the picker already answered it the honest move is to remove the FAB item, not
-  build on it; (b) recording audio ourselves; (c) offline (the parse is a model call, so a queued
-  dictation would replay a *read*, which no outbox entity does today); (d) a PRO gate, deliberately
-  undecided until there is usage to look at; (e) learning his synonyms («шпалери» → «Поклейка
-  шпалер») so the second dictation matches better than the first — the follow-up that would help
-  most, and the only one that needs storage.
+- **(a) RESOLVED (2026-09-04)** — the premise held. The master dictated on **Android** and reported
+  «з клавіатури з андроїда надиктовка працює супер». So the want WAS «dictate», the picker had not
+  already answered it, and the FAB item stays. **iOS is still untried** — he has not tested there.
+- **Still open after cut 0:** (b) recording audio ourselves — **re-framed by cut 1's iOS finding
+  below: this is no longer "because iOS has no API", it is the only path that can ever work inside
+  an installed iOS PWA**; (c) offline (the parse is a model call, so a queued dictation would replay
+  a *read*, which no outbox entity does today); (d) a PRO gate, deliberately undecided until there is
+  usage to look at — note nothing currently MEASURES dictation use, so this cannot be decided from
+  data yet (a PostHog event would be the honest source: the backend stores nothing here, so it does
+  not violate the "PostHog only gets what the backend does not already write" boundary).
+- **Cut 1 (2026-09-04, code complete):** promoted by the master with «давай, але враховуй всі моменти
+  для айосу». Three parts, all shipped: an in-app microphone (Web Speech API, `lib/speech.ts`
+  ladder that refuses installed-iOS BEFORE feature detection because iOS's failure is silent — see
+  the iOS fact below), «Зберегти в мій каталог» per unmatched-and-priced row (`saveToCatalog`
+  branch in `DictationSheet.commit`), and **(e) synonyms — RESOLVED**: new table
+  `catalog_item_synonym` (V124, per-master, `UNIQUE(owner, spoken_normalized)`, FKs CASCADE),
+  `CatalogMatcher.match(..., synonyms)` consults it BEFORE the Dice pass so a taught wording wins
+  outright, `POST /api/dictation/synonyms` writes it, PWA offers «Наступного разу розпізнавати X як
+  цю позицію» on a matched-but-different row and calls it after the estimate lines land (a failure
+  never rolls back the commit). See [docs/iteration-dictation.md](iteration-dictation.md) §7.
+- **THE iOS FACT, corrected — load-bearing for cut 1.** The claim above (and in `SPEC.md` and
+  `docs/iteration-dictation.md`) that **iOS Safari has no `SpeechRecognition` was WRONG**: it has
+  had `webkitSpeechRecognition` since **Safari 14.5 (2021)**. The real limitation is narrower and
+  worse for us: **it does not work in a PWA installed to the home screen.** An installed PWA runs in
+  a WKWebView-based container, where Apple has not enabled the speech service — feature detection
+  **succeeds**, no microphone permission is ever requested, and nothing happens. Our manifest is
+  `display: 'standalone'`, so that is exactly our case. Two more iOS-specific traps: `continuous =
+  true` hangs the microphone (it never stops and no result arrives), and the failure surfaces as
+  `service-not-allowed`. **Consequence for cut 1:** the microphone is a LADDER that degrades and
+  never fails — feature-detect, refuse in an installed iOS PWA, treat a runtime error as "no mic" —
+  and what it degrades TO is what already ships today: the plain text field plus the OS keyboard's
+  own microphone, which works fine on iOS. Sources: caniuse `speech-recognition`; Apple Developer
+  Forums thread 748048; `react-speech-recognition` issue #104.
+
+### A dictated position saved to the catalog is priced by hand, and «Інше» is where it lands
+- **Status:** RESOLVED (2026-09-04, dictation cut 1) — per-row «Зберегти в мій каталог» tick in the
+  review, DEAD until the row has a price, calls `createCatalogItem` after commit with `trade: OTHER`.
+- **Since:** the master, 2026-09-04: «якщо все ж таки такої позиції взагалі немає і ми просто її
+  додаємо, то треба пропонувати зберегти в каталог як нову позицію».
+- **Context:** `CatalogMatcher` flags a dictated position that matches nothing (`issues` gains
+  `"catalog"`). Today the master fixes the row and the knowledge dies with the estimate — the next
+  dictation of the same words is flagged again.
+- **Decisions made when shipping it:** (1) it is a **per-row tick in the review**, not a modal — a
+  dictation is a batch, and one dialog per unmatched row is the flow the master was complaining
+  about; (2) **the tick is unavailable while the row has no price.** That second one is
+  load-bearing and not obvious: a 0 UAH catalog row is exactly what the whole flagging rule exists
+  to prevent, and saving one here would let the NEXT dictation MATCH it and price the line at 0
+  silently, a week later, through a back door. So the amber row must be priced before it can be
+  learned.
+- **Still open:** the trade — the save does not ask for one, so the position lands in **OTHER**
+  ("Інше"); see "Bulk-assign trade to the 'Інше' (OTHER) catalog pile" above, which this makes more
+  likely to bite. Also open: nothing offers to save a position that the master **corrected** into an
+  existing one (that is the synonym path below), and there is no "save all N unmatched" bulk tick —
+  deliberately, since each row needs its own price first.
+
+### A learned synonym outlives the catalog position it points at
+- **Status:** OPEN
+- **Since:** dictation cut 1 (2026-09-04), while designing (e) synonyms.
+- **Context:** a synonym is a row saying «this spoken wording means THAT `catalog_items` row». The
+  catalog is fully editable: a master renames positions, deletes them, and a catalog rebuild
+  migration retires names outright (V83/V97/V116/V121 all did).
+- **What is decided:** the FK is `ON DELETE CASCADE` — a synonym for a position that no longer
+  exists is not a fact about anything, and keeping it would resurrect a deleted position's name in a
+  match. A **rename** deliberately keeps the synonym pointing at the same row, since the row is the
+  same job under a new wording.
+- **Still open:** (a) nothing tells the master a synonym exists, so nothing lets him remove a wrong
+  one — the only correction available is to teach a new one over it; a catalog-item detail listing
+  «розпізнається також як: …» is the obvious home, deferred until there is a reason to believe
+  masters teach enough synonyms to need managing; (b) a synonym is per-master by design (his words,
+  his catalog) — whether a crowd-level version belongs beside `price_insight_candidate` is a much
+  later question and would need the same anti-abuse care.
 
 ### Contract («договір») generation, beside the act
 - **Status:** OPEN

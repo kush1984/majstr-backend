@@ -3,23 +3,31 @@ package com.majstr.backend.service.importer;
 import com.majstr.backend.dto.DictationCommitRequest;
 import com.majstr.backend.dto.DictationParseResponse;
 import com.majstr.backend.dto.DictationParseResponse.DictationItem;
+import com.majstr.backend.dto.DictationSynonymRequest;
 import com.majstr.backend.dto.EstimateResponse;
 import com.majstr.backend.entity.CatalogItem;
+import com.majstr.backend.entity.CatalogItemSynonym;
 import com.majstr.backend.entity.EstimateStatus;
 import com.majstr.backend.entity.ItemType;
 import com.majstr.backend.entity.Unit;
 import com.majstr.backend.exception.EstimateSignedException;
+import com.majstr.backend.exception.ResourceNotFoundException;
 import com.majstr.backend.repository.CatalogItemRepository;
+import com.majstr.backend.repository.CatalogItemSynonymRepository;
+import com.majstr.backend.repository.UserRepository;
 import com.majstr.backend.service.EstimateService;
 import com.majstr.backend.service.EstimateService.ImportEstimateData.ImportItem;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -51,6 +59,8 @@ public class DictationService {
 
     private final DictationExtractor extractor;
     private final CatalogItemRepository catalogItemRepository;
+    private final CatalogItemSynonymRepository synonymRepository;
+    private final UserRepository userRepository;
     private final EstimateService estimateService;
 
     public DictationParseResponse parse(UUID ownerId, UUID estimateId, String text) {
@@ -64,14 +74,58 @@ public class DictationService {
             return new DictationParseResponse(List.of());
         }
         List<CatalogItem> catalog = catalogItemRepository.findByOwnerIdOrderByNameAsc(ownerId);
+        Map<String, UUID> synonyms = loadSynonyms(ownerId);
 
         List<DictationItem> items = new ArrayList<>(spoken.size());
         for (DictationExtractor.Spoken line : spoken) {
-            items.add(toItem(line, CatalogMatcher.match(line.name(), catalog)));
+            items.add(toItem(line, CatalogMatcher.match(line.name(), catalog, synonyms)));
         }
-        log.info("Dictation for {} → estimate {}: {} spoken, {} matched", ownerId, estimateId,
-                items.size(), items.stream().filter(i -> i.catalogItemId() != null).count());
+        log.info("Dictation for {} → estimate {}: {} spoken, {} matched, {} synonyms loaded",
+                ownerId, estimateId, items.size(),
+                items.stream().filter(i -> i.catalogItemId() != null).count(), synonyms.size());
         return new DictationParseResponse(items);
+    }
+
+    private Map<String, UUID> loadSynonyms(UUID ownerId) {
+        List<CatalogItemSynonym> rows = synonymRepository.findByOwnerId(ownerId);
+        if (rows.isEmpty()) {
+            return Map.of();
+        }
+        Map<String, UUID> out = new HashMap<>(rows.size());
+        for (CatalogItemSynonym s : rows) {
+            out.put(s.getSpokenNormalized(), s.getCatalogItem().getId());
+        }
+        return out;
+    }
+
+    /**
+     * Teach «say X, mean THIS catalog row» for the current master. Overwrites any existing target
+     * for the same spoken wording in one short transaction — the UNIQUE constraint means "there is
+     * one answer per wording per master" and the app enforces that shape rather than letting the
+     * DB throw. A CatalogItem belonging to somebody else is 404 (not exposed to a stranger).
+     */
+    @Transactional
+    public void teachSynonym(UUID ownerId, DictationSynonymRequest req) {
+        String normalized = CatalogMatcher.normalize(req.spokenText());
+        if (normalized.isEmpty()) {
+            throw new ResourceNotFoundException("Spoken text is blank after normalization");
+        }
+        CatalogItem target = catalogItemRepository.findById(req.catalogItemId())
+                .filter(c -> c.getOwner() != null && ownerId.equals(c.getOwner().getId()))
+                .orElseThrow(() -> new ResourceNotFoundException("Catalog item not found"));
+
+        synonymRepository.deleteByOwnerIdAndSpokenNormalized(ownerId, normalized);
+        // Flush so the follow-up INSERT does not collide with the just-deleted row on the unique
+        // key inside the same tx — same shape as EstimateService's replace-in-place paths.
+        synonymRepository.flush();
+        CatalogItemSynonym synonym = CatalogItemSynonym.builder()
+                .owner(userRepository.getReferenceById(ownerId))
+                .catalogItem(target)
+                .spokenNormalized(normalized)
+                .spokenRaw(req.spokenText().trim())
+                .build();
+        synonymRepository.save(synonym);
+        log.info("Dictation synonym taught for {}: «{}» → catalog item {}", ownerId, normalized, target.getId());
     }
 
     /** Commit the confirmed dictated lines: append them to the estimate (SIGNED → 409). */

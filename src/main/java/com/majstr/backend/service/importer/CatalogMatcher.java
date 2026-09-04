@@ -6,8 +6,10 @@ import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.UUID;
 
 /**
  * Matches a spoken position name against the master's OWN catalog. Deterministic and explainable —
@@ -42,10 +44,38 @@ public final class CatalogMatcher {
     }
 
     public static Optional<CatalogItem> match(String spokenName, List<CatalogItem> catalog) {
+        return match(spokenName, catalog, Map.of());
+    }
+
+    /**
+     * Same as {@link #match(String, List)}, but consulting a per-master synonym map first.
+     *
+     * <p><b>A synonym wins outright.</b> The map is a wording the master TAUGHT the system to mean
+     * a specific row; if the Dice pass could then override it because a longer name shares more
+     * stems, learning would be a lie. The lookup is one equality against the same {@link #normalize}
+     * key stored in {@code catalog_item_synonym}.</p>
+     *
+     * <p>A synonym pointing at a catalog item that is no longer in {@code catalog} is treated as
+     * missing — the FK is CASCADE so it should not happen in practice, but a stale in-memory copy
+     * during a rebuild must never resurrect a row the master deleted.</p>
+     */
+    public static Optional<CatalogItem> match(String spokenName,
+                                              List<CatalogItem> catalog,
+                                              Map<String, UUID> synonyms) {
         if (spokenName == null || spokenName.isBlank() || catalog.isEmpty()) {
             return Optional.empty();
         }
         String normalized = normalize(spokenName);
+
+        UUID synonymTarget = synonyms.get(normalized);
+        if (synonymTarget != null) {
+            Optional<CatalogItem> viaSynonym = catalog.stream()
+                    .filter(c -> synonymTarget.equals(c.getId()))
+                    .findFirst();
+            if (viaSynonym.isPresent()) {
+                return viaSynonym;
+            }
+        }
 
         List<CatalogItem> exact = catalog.stream()
                 .filter(c -> normalize(c.getName()).equals(normalized))
@@ -80,8 +110,10 @@ public final class CatalogMatcher {
         return Optional.of(best);
     }
 
-    /** Lowercased, apostrophes dropped, everything else non-alphanumeric collapsed to one space. */
-    static String normalize(String raw) {
+    /** Lowercased, apostrophes dropped, everything else non-alphanumeric collapsed to one space.
+     *  Public because the synonym write path stores this exact key — computing it in a second place
+     *  is how the read and write ends of the map drift. */
+    public static String normalize(String raw) {
         StringBuilder out = new StringBuilder(raw.length());
         for (char c : raw.toLowerCase(Locale.ROOT).toCharArray()) {
             if (Character.isLetterOrDigit(c)) {

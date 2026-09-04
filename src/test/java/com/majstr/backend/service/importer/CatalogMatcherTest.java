@@ -7,6 +7,7 @@ import org.junit.jupiter.api.Test;
 
 import java.math.BigDecimal;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -83,6 +84,35 @@ class CatalogMatcherTest {
     void nothingToMatchAgainst_isSimplyNoMatch() {
         assertThat(CatalogMatcher.match("поклейка шпалер", List.of())).isEmpty();
         assertThat(CatalogMatcher.match("  ", catalog)).isEmpty();
+    }
+
+    @Test
+    void aSynonym_winsOverTheDicePass() {
+        // «шпалери» alone against these three rows scores exactly the same against «Поклейка шпалер»
+        // as the two «Штукатурка …» rows, so the Dice pass refuses it as a tie. A taught synonym
+        // must answer anyway — that IS the learning.
+        Map<String, UUID> synonyms = Map.of(CatalogMatcher.normalize("шпалери"), wallpaper.getId());
+
+        assertThat(CatalogMatcher.match("шпалери", catalog, synonyms)).contains(wallpaper);
+    }
+
+    @Test
+    void aSynonymPointingAtADeletedRow_isSilentlyIgnored() {
+        // The FK is CASCADE so in practice this cannot survive — but a stale in-memory map during a
+        // rebuild must never resurrect a row the master already deleted.
+        Map<String, UUID> synonyms = Map.of(
+                CatalogMatcher.normalize("щось видалене"), UUID.randomUUID());
+
+        assertThat(CatalogMatcher.match("щось видалене", catalog, synonyms)).isEmpty();
+    }
+
+    @Test
+    void aSynonym_isNormalizedTheSameWayAtReadTime() {
+        // The lookup key is `normalize(spoken)`, and the write path stores `normalize(spoken)` — so
+        // «Шпалери!» matches a synonym taught as «шпалери» without a second normalization pass.
+        Map<String, UUID> synonyms = Map.of(CatalogMatcher.normalize("шпалери"), wallpaper.getId());
+
+        assertThat(CatalogMatcher.match("Шпалери!", catalog, synonyms)).contains(wallpaper);
     }
 
     private static CatalogItem item(String name, Unit unit, String price) {
