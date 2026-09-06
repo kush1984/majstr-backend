@@ -107,6 +107,64 @@
             text-align: center;
             letter-spacing: .02em;
         }
+        /* The whole band is a click target on the portal (V125 iteration): a tap on the section
+           name folds/unfolds its rows. `cursor: pointer` on the whole cell tells the client the
+           row is interactive; keyboard users get Enter/Space via the JS handler below. */
+        tr.section[data-section-toggle] { cursor: pointer; }
+        tr.section[data-section-toggle]:focus-visible td {
+            outline: 2px solid var(--brand);
+            outline-offset: -2px;
+        }
+        /* Chevron rotates open in the DEFAULT state and back closed when its own <tbody> carries
+           `.collapsed`. Same visual cue the master's app uses, so a client who has seen the estimate
+           on the phone recognises it here. */
+        .chevron {
+            display: inline-block;
+            transform: rotate(90deg);
+            transition: transform 120ms ease-out;
+            color: var(--brand);
+            font-weight: 900;
+            /* Bigger than the surrounding «section» band text — master feedback 2026-09-04: the
+               tiny character was hard to see and read as decoration rather than as a control. */
+            font-size: 1.05rem;
+            line-height: 1;
+            width: 1em;
+            text-align: center;
+            vertical-align: middle;
+        }
+        tbody.collapsed .chevron { transform: rotate(0deg); }
+        /* Fold: hide every row of a collapsed tbody EXCEPT the header (which is the toggle itself). */
+        tbody.collapsed tr.section-body,
+        tbody.collapsed tr.section-total { display: none; }
+        /* «(3)» tells the client «here are still 3 lines, they are just folded», not «this stage has
+           nothing». Rendered only in the collapsed state — else it's noise on an expanded header. */
+        .section-count { color: var(--muted); font-weight: 600; display: none; }
+        tbody.collapsed .section-count { display: inline; }
+        /* Trade badge on category headers when the estimate spans ≥ 2 trades (V125). Colours are a
+           subset of the master's PWA palette — soft background + saturated text, one hue per trade,
+           adjacent enum values never share. Change this file AND components/TradeBadge.tsx together
+           or the two views drift. */
+        .trade-badge {
+            display: inline-block;
+            padding: 1px 8px;
+            margin-left: 6px;
+            border-radius: 999px;
+            font-size: 10px;
+            font-weight: 700;
+            letter-spacing: .02em;
+            vertical-align: middle;
+        }
+        .trade-ELECTRICAL { background: #fef3c7; color: #92400e; }
+        .trade-PLUMBING   { background: #e0f2fe; color: #075985; }
+        .trade-TILING     { background: #ffe4e6; color: #9f1239; }
+        .trade-BUILDER    { background: #e7e5e4; color: #292524; }
+        .trade-PAINTER    { background: #ede9fe; color: #5b21b6; }
+        .trade-DRYWALL    { background: #d1fae5; color: #065f46; }
+        .trade-FLOORING   { background: #ffedd5; color: #9a3412; }
+        .trade-DEMOLITION { background: #fee2e2; color: #991b1b; }
+        .trade-METAL      { background: #e2e8f0; color: #1e293b; }
+        .trade-GENERAL    { background: #dbeafe; color: #1e40af; }
+        .trade-OTHER      { background: #e5e5e5; color: #404040; }
         /* What this stage costs — the figure a client compares, so it carries the same weight as
            the number beside it rather than looking like a caption. */
         tr.section-total td {
@@ -651,19 +709,91 @@
         return sections;
     }
 
-    function renderItems(items, kind) {
+    // Ukrainian label for a `Trade` enum value (V125). Matches the PWA's `trades.*` i18n block —
+    // change one, change the other. The portal is a standalone page with no bundle: this is inline.
+    const TRADE_LABELS = {
+        ELECTRICAL: 'Електрика',
+        PLUMBING:   'Сантехніка',
+        TILING:     'Плитка',
+        BUILDER:    'Будівельник',
+        PAINTER:    'Малярні роботи',
+        DRYWALL:    'Гіпсокартон',
+        FLOORING:   'Підлоги',
+        DEMOLITION: 'Демонтаж',
+        METAL:      'Металоконструкції',
+        GENERAL:    'Загальні роботи',
+        OTHER:      'Інше',
+    };
+
+    // True iff the estimate carries ≥ 2 distinct non-null trades — same rule as the master's board
+    // (V125 iteration). A NULL row does NOT count as a "trade": NULL is «we don't know», not a
+    // real bucket; a mixed estimate with typed rows must not light up its own badge.
+    function estimateHasMultipleTrades(items) {
+        const seen = new Set();
+        for (const it of items) {
+            if (it.trade) seen.add(it.trade);
+            if (seen.size >= 2) return true;
+        }
+        return false;
+    }
+
+    // Client-side fold memory, per estimate. Mirrors `useCollapsedCategories` on the master's app,
+    // stored on THIS origin (portal) so it never leaks into the master's own state and vice versa.
+    // Empty set = everything expanded (the default the master asked for).
+    function collapsedKey(estimateId) { return 'portal:estimate:' + estimateId + ':collapsed'; }
+    function readCollapsed(estimateId) {
+        try {
+            const raw = localStorage.getItem(collapsedKey(estimateId));
+            if (!raw) return new Set();
+            const arr = JSON.parse(raw);
+            return Array.isArray(arr) ? new Set(arr.filter(x => typeof x === 'string')) : new Set();
+        } catch { return new Set(); }
+    }
+    function writeCollapsed(estimateId, set) {
+        try {
+            if (set.size === 0) localStorage.removeItem(collapsedKey(estimateId));
+            else localStorage.setItem(collapsedKey(estimateId), JSON.stringify([...set]));
+        } catch { /* private mode / quota — the client just loses persistence, not the page */ }
+    }
+
+    function renderItems(items, kind, estimateId, showTradeBadges) {
         const subset = items.filter(i => i.type === kind);
         if (!subset.length) return '';
+        // Legacy `?t=` links (single-estimate portal) come through `adaptLegacy` with `est.id = null`.
+        // Fold state MUST NOT leak between different `?t=` tokens: two different estimates that
+        // both happen to have a «Каркас» category would share it. `location.search` is the token
+        // for these links; on the multi-estimate route it's ignored (estimateId is a real UUID).
+        const foldKey = estimateId || ('legacy:' + (typeof location !== 'undefined' ? location.search : ''));
         const title = kind === 'WORK' ? 'Роботи' : 'Матеріали';
         const sections = toSections(subset);
         const sectioned = sections.length > 1 || sections[0].category !== '';
-        const rows = sections.map(section => {
+        const collapsedSet = readCollapsed(foldKey);
+        // Each section becomes its OWN <tbody>, so a `.collapsed` class on that tbody hides its
+        // item and footer rows without touching sibling sections — a plain `~ [data-section-body]`
+        // selector would leak across sections whose category names ever match. Also lets the header
+        // stay in the DOM at all times, so a fold-toggle is one class flip and never a DOM insert.
+        const bodies = sections.map(section => {
+            const isCollapsed = collapsedSet.has(section.category);
+            // Dominant trade of a section = trade of its first labelled item. Same rule as sortOrder:
+            // a section is the run of lines sharing a category, ordered by the first of them.
+            const trade = showTradeBadges
+                ? (section.items.find(i => i.trade) || {}).trade || null
+                : null;
+            const badge = trade
+                ? `<span class="trade-badge trade-${trade}">${escapeHtml(TRADE_LABELS[trade] || trade)}</span>`
+                : '';
             const head = sectioned ? `
-            <tr class="section">
-                <td colspan="5">${escapeHtml(section.category || 'Без категорії')}</td>
+            <tr class="section" data-section-toggle role="button" tabindex="0"
+                aria-expanded="${isCollapsed ? 'false' : 'true'}">
+                <td colspan="5">
+                    <span class="chevron" aria-hidden="true">▸</span>
+                    ${escapeHtml(section.category || 'Без категорії')}
+                    <span class="section-count" data-section-count>(${section.items.length})</span>
+                    ${badge}
+                </td>
             </tr>` : '';
-            const lines = section.items.map(i => `
-            <tr>
+            const bodyRows = section.items.map(i => `
+            <tr class="section-body">
                 <td>${escapeHtml(i.name)}</td>
                 <td class="center">${escapeHtml(unit(i.unit))}</td>
                 <td class="num">${escapeHtml(i.quantity)}</td>
@@ -676,7 +806,7 @@
                 <td colspan="4">Разом по розділу</td>
                 <td class="num">${amount(sum)}</td>
             </tr>` : '';
-            return head + lines + foot;
+            return `<tbody data-section="${escapeHtml(section.category)}" data-estimate-id="${escapeHtml(foldKey)}"${isCollapsed ? ' class="collapsed"' : ''}>${head}${bodyRows}${foot}</tbody>`;
         }).join('');
         return `
             <section class="card">
@@ -689,7 +819,7 @@
                         <th class="num">Ціна, ₴</th>
                         <th class="num">Сума, ₴</th>
                     </tr></thead>
-                    <tbody>${rows}</tbody>
+                    ${bodies}
                 </table>
             </section>
         `;
@@ -1028,10 +1158,38 @@
             setAllExpanded(expandToggle.getAttribute('data-expand-payments') === '1');
             refreshPaymentsBody();
         }
+        // Category collapse toggle (V125 iteration). Delegated because the render can rebuild the
+        // page at any point (sign, refresh) and per-row handlers would need re-binding each time.
+        const sectionToggle = e.target.closest('tr.section[data-section-toggle]');
+        if (sectionToggle) {
+            toggleSection(sectionToggle);
+        }
     });
     document.addEventListener('keydown', (e) => {
         if (e.key === 'Escape') closeInfoPopover();
+        // Enter / Space on a focused section header behaves like a click — keyboard parity for a
+        // control that carries `role="button"` + `tabindex="0"`.
+        if ((e.key === 'Enter' || e.key === ' ')
+                && e.target.matches && e.target.matches('tr.section[data-section-toggle]')) {
+            e.preventDefault();
+            toggleSection(e.target);
+        }
     });
+
+    function toggleSection(headerRow) {
+        const tbody = headerRow.parentElement;
+        if (!tbody || tbody.tagName !== 'TBODY') return;
+        const estimateId = tbody.getAttribute('data-estimate-id');
+        const category = tbody.getAttribute('data-section') || '';
+        if (!estimateId) return;
+        const willCollapse = !tbody.classList.contains('collapsed');
+        tbody.classList.toggle('collapsed', willCollapse);
+        headerRow.setAttribute('aria-expanded', willCollapse ? 'false' : 'true');
+        const stored = readCollapsed(estimateId);
+        if (willCollapse) stored.add(category);
+        else stored.delete(category);
+        writeCollapsed(estimateId, stored);
+    }
 
     // One estimate → one section: name band (ALWAYS shown — 2026-08-14, per explicit instruction;
     // previously suppressed for a single unnamed estimate, which made the estimate's identity
@@ -1058,8 +1216,13 @@
                 <p class="estimate-title">${escapeHtml(title)}</p>
                 ${est.validUntil ? `<p style="margin:4px 0 10px;color:var(--muted);">Дійсний до ${dateFormat.format(new Date(est.validUntil))}</p>` : ''}
 
-                ${renderItems(est.items, 'WORK')}
-                ${renderItems(est.items, 'MATERIAL')}
+                ${(() => {
+                    // Computed once per estimate render — the WORK and MATERIAL passes must show
+                    // the badge on the same rule (either both do or neither).
+                    const showBadges = estimateHasMultipleTrades(est.items);
+                    return renderItems(est.items, 'WORK', est.id, showBadges)
+                         + renderItems(est.items, 'MATERIAL', est.id, showBadges);
+                })()}
 
                 ${showTotals ? `
                 <section class="card">

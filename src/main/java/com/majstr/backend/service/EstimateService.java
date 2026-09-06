@@ -21,6 +21,7 @@ import com.majstr.backend.entity.MeasurementRefs;
 import com.majstr.backend.entity.PercentBaseKind;
 import com.majstr.backend.entity.Project;
 import com.majstr.backend.entity.ProjectPhoto;
+import com.majstr.backend.entity.Trade;
 import com.majstr.backend.entity.Unit;
 import com.majstr.backend.service.measurement.MeasurementService;
 import com.majstr.backend.exception.EmailNotVerifiedException;
@@ -29,6 +30,7 @@ import com.majstr.backend.exception.InvalidEstimateStatusException;
 import com.majstr.backend.exception.ResourceNotFoundException;
 import com.majstr.backend.exception.WorkActConflictException;
 import com.majstr.backend.feature.LimitService;
+import com.majstr.backend.repository.CatalogItemRepository;
 import com.majstr.backend.repository.EstimateItemRepository;
 import com.majstr.backend.repository.EstimateRepository;
 import com.majstr.backend.repository.ProjectPhotoRepository;
@@ -82,6 +84,7 @@ public class EstimateService {
     private final ProjectService projectService;
     private final ProjectRepository projectRepository;
     private final CatalogService catalogService;
+    private final CatalogItemRepository catalogItemRepository;
     private final EstimatePdfService pdfService;
     private final LimitService limitService;
     private final MeasurementService measurementService;
@@ -146,6 +149,7 @@ public class EstimateService {
         Estimate saved = estimateRepository.save(estimate);
         projectRepository.incrementEstimatesCreated(projectId); // lifetime churn counter
 
+        Map<String, Trade> tradeIdx = tradeIndex(ownerId);
         List<EstimateItem> items = new ArrayList<>();
         int sortOrder = 0;
         for (ImportEstimateData.ImportItem in : data.items()) {
@@ -154,6 +158,7 @@ public class EstimateService {
                     .type(in.type())
                     .name(in.name().trim())
                     .category(CatalogService.normalizeCategory(in.category()))
+                    .trade(resolveTrade(in.name(), in.type(), in.unit(), tradeIdx))
                     .unit(in.unit())
                     .quantity(in.quantity().setScale(QUANTITY_SCALE, MONEY_ROUNDING))
                     .unitPrice(in.unitPrice().setScale(MONEY_SCALE, MONEY_ROUNDING))
@@ -253,6 +258,7 @@ public class EstimateService {
                     .type(item.getType())
                     .name(item.getName())
                     .category(item.getCategory())
+                    .trade(item.getTrade())
                     .description(item.getDescription())
                     .unit(item.getUnit())
                     .quantity(percent && marked
@@ -381,6 +387,7 @@ public class EstimateService {
                 .type(item.getType())
                 .name(item.getName())
                 .category(item.getCategory())
+                .trade(item.getTrade())
                 .description(item.getDescription())
                 .unit(item.getUnit())
                 .quantity(item.getQuantity())
@@ -704,12 +711,16 @@ public class EstimateService {
         }
         requireNotSigned(estimate);
         Resolved r = resolveQuantity(estimate, req);
+        // A typed line that happens to name a real catalog row picks up its trade — same rule as
+        // the import paths. A name that matches nothing stays NULL, honest.
+        Trade trade = resolveTrade(req.name(), req.type(), req.unit(), tradeIndex(ownerId));
         EstimateItem item = EstimateItem.builder()
                 .id(requestedId)
                 .estimate(estimate)
                 .type(req.type())
                 .name(req.name().trim())
                 .category(CatalogService.normalizeCategory(req.category()))
+                .trade(trade)
                 .unit(req.unit())
                 .quantity(r.quantity())
                 .unitPrice(req.unitPrice())
@@ -794,6 +805,7 @@ public class EstimateService {
                 .type(source.getType())
                 .name(source.getName())
                 .category(source.getCategory())
+                .trade(source.getTrade())
                 .description(source.getDescription())
                 .unit(source.getUnit())
                 .quantity(percent ? source.getDefaultPrice() : req.quantity())
@@ -844,6 +856,7 @@ public class EstimateService {
                     .type(source.getType())
                     .name(source.getName())
                     .category(source.getCategory())
+                    .trade(source.getTrade())
                     .description(source.getDescription())
                     .unit(source.getUnit())
                     .quantity(e.quantity())
@@ -868,6 +881,9 @@ public class EstimateService {
         requireNotSigned(estimate);
         List<EstimateItem> existing = itemRepository.findByEstimateIdOrderBySortOrderAscIdAsc(estimateId);
         int sortOrder = existing.stream().mapToInt(EstimateItem::getSortOrder).max().orElse(-1) + 1;
+        // One catalog scan per append batch; a receipt-import row that names a catalog position
+        // gets the trade, a truly ad-hoc receipt line stays NULL. Same rule as `createFromImport`.
+        Map<String, Trade> tradeIdx = tradeIndex(ownerId);
         List<EstimateItem> toSave = new ArrayList<>();
         for (ImportEstimateData.ImportItem in : items) {
             toSave.add(EstimateItem.builder()
@@ -875,6 +891,7 @@ public class EstimateService {
                     .type(in.type())
                     .name(in.name().trim())
                     .category(CatalogService.normalizeCategory(in.category()))
+                    .trade(resolveTrade(in.name(), in.type(), in.unit(), tradeIdx))
                     .unit(in.unit())
                     .quantity(in.quantity().setScale(QUANTITY_SCALE, MONEY_ROUNDING))
                     .unitPrice(in.unitPrice().setScale(MONEY_SCALE, MONEY_ROUNDING))
@@ -1185,6 +1202,34 @@ public class EstimateService {
         return baseAlreadyMarkedUp
                 ? item.getQuantity()
                 : item.getQuantity().multiply(factor).setScale(QUANTITY_SCALE, MONEY_ROUNDING);
+    }
+
+    /**
+     * Build a lookup «(normalized name | type | unit) → {@link Trade}» over the master's own
+     * catalog, so every import/append path can snapshot the trade the same way V125's backfill did
+     * — one query per commit, matched in Java. Manual and receipt-import lines that happen to
+     * name a real catalog row inherit the trade automatically; a genuinely typed name that
+     * matches nothing stays NULL, and the read side treats NULL as «no group» (see V125 header).
+     *
+     * <p>{@code Locale.ROOT} on the lowercase call, same rule as {@link CatalogMatcher#normalize}:
+     * a Turkish locale's «I»/«ı» folding is exactly the class of bug this pattern removed from the
+     * dictation matcher last week.
+     */
+    private Map<String, Trade> tradeIndex(UUID ownerId) {
+        List<CatalogItem> catalog = catalogItemRepository.findByOwnerIdOrderByNameAsc(ownerId);
+        Map<String, Trade> out = new HashMap<>(catalog.size());
+        for (CatalogItem c : catalog) {
+            out.put(tradeIndexKey(c.getName(), c.getType(), c.getUnit()), c.getTrade());
+        }
+        return out;
+    }
+
+    private static String tradeIndexKey(String name, ItemType type, Unit unit) {
+        return name.trim().toLowerCase(Locale.ROOT) + "|" + type + "|" + unit;
+    }
+
+    private static Trade resolveTrade(String name, ItemType type, Unit unit, Map<String, Trade> index) {
+        return index.get(tradeIndexKey(name, type, unit));
     }
 
     private EstimateItemResponse savedItemResponse(Estimate estimate, EstimateItem item) {

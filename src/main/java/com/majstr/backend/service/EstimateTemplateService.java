@@ -490,6 +490,10 @@ public class EstimateTemplateService {
                         .type(match != null ? match.getType() : ti.getType())
                         .name(ti.getName())
                         .category(match != null ? match.getCategory() : null)
+                        // Trade rides along with the catalog match too (V125). A bundle line whose
+                        // name found no catalog row applies at 0 ₴ AND with a null trade — both are
+                        // consequences of the same «not in this master's catalog» miss.
+                        .trade(match != null ? match.getTrade() : null)
                         // The explanation rides along with the price it was joined to (V119) — a
                         // bundle carries no description of its own, the catalog position does.
                         .description(match != null ? match.getDescription() : null)

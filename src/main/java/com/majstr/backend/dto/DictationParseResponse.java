@@ -1,6 +1,7 @@
 package com.majstr.backend.dto;
 
 import com.majstr.backend.entity.ItemType;
+import com.majstr.backend.entity.Trade;
 import com.majstr.backend.entity.Unit;
 
 import java.math.BigDecimal;
@@ -31,6 +32,13 @@ public record DictationParseResponse(
             BigDecimal unitPrice,
             ItemType type,
             String category,
+            /**
+             * Trade of the matched catalog row (V125). Null on an unmatched row. Read by the review
+             * sheet so the master sees under WHICH trade a matched position was filed («Монтаж
+             * вентиляції» → «Сантехніка») — master feedback 2026-09-04: «в каталозі він під трейдом
+             * сантехніка, чому тут не видно».
+             */
+            Trade trade,
             UUID catalogItemId,
             List<String> issues
     ) {}

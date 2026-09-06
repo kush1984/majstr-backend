@@ -89,7 +89,8 @@ class DictationControllerTest {
         given(dictationService.parse(eq(userId), eq(estimateId), anyString()))
                 .willReturn(new DictationParseResponse(List.of(new DictationParseResponse.DictationItem(
                         "Поклейка шпалер", "поклеїти шпалери", Unit.M2, new BigDecimal("20"),
-                        new BigDecimal("150.00"), ItemType.WORK, "Шпалери", UUID.randomUUID(), List.of()))));
+                        new BigDecimal("150.00"), ItemType.WORK, "Шпалери", com.majstr.backend.entity.Trade.PAINTER,
+                        UUID.randomUUID(), List.of()))));
 
         mockMvc.perform(post("/api/estimates/{id}/dictation/parse", estimateId)
                         .contentType(MediaType.APPLICATION_JSON)

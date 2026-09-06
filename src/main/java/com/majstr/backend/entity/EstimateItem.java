@@ -50,6 +50,17 @@ public class EstimateItem {
     private String category;
 
     /**
+     * Snapshot of the catalog position's trade at the moment the line was added (V125). Nullable:
+     * a line the master typed himself (no catalog source) or an ADDENDUM row (off-estimate act
+     * work) stays NULL — the read side hides the trade badge either way, and NULL is deliberately
+     * NOT the same as {@link Trade#OTHER} (see V125 header). Same snapshot rule as name/unit/price/
+     * category: a later catalog re-classification never changes what a signed estimate says.
+     */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "trade", length = 50)
+    private Trade trade;
+
+    /**
      * What the position means in plain words, snapshotted from the catalog when the line was added
      * (V119) — «Q4 (еліт)» is a word only a plasterer knows, and the client reads this name in the
      * portal and in the PDF. Null for a line the master typed himself; most need no explaining.

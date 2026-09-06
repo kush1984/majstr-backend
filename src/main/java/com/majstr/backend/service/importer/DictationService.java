@@ -152,6 +152,10 @@ public class DictationService {
                 : matched.map(CatalogItem::getDefaultPrice).orElse(null);
         ItemType type = matched.map(CatalogItem::getType).orElseGet(() -> parseType(line.type()));
         String category = matched.map(CatalogItem::getCategory).orElse(null);
+        // Trade rides along on a matched row so the review can show under WHICH trade the position
+        // is filed («Монтаж вентиляції» → «Сантехніка»). Null on an unmatched row, same rule as
+        // catalogItemId — see V125 header.
+        com.majstr.backend.entity.Trade trade = matched.map(CatalogItem::getTrade).orElse(null);
 
         List<String> issues = new ArrayList<>();
         if (matched.isEmpty()) issues.add("catalog");
@@ -160,7 +164,7 @@ public class DictationService {
         if (price == null || price.signum() <= 0) issues.add("price");
 
         return new DictationItem(name, line.name().trim(), unit, line.quantity(), price, type,
-                category, matched.map(CatalogItem::getId).orElse(null), issues);
+                category, trade, matched.map(CatalogItem::getId).orElse(null), issues);
     }
 
     /** A dictated estimate is normally a list of WORK — the opposite default to a receipt's. */

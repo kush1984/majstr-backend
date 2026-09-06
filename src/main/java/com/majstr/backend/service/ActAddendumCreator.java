@@ -94,6 +94,10 @@ class ActAddendumCreator {
                 .economyVisible(false)
                 .signedAt(Instant.now())
                 .build());
+        // ADDENDUM lines deliberately carry a NULL trade (V125). An off-estimate act row is filed
+        // under a work document, not a trade, and neither the estimate board nor the portal reads
+        // trade off an ADDENDUM (it's filtered out of `listForProject` anyway). Not omitted
+        // by accident: forcing a value here would be a lie for one out of two rows on every act.
         List<EstimateItem> lines = new ArrayList<>();
         int sort = 0;
         for (WorkActItem a : additional) {

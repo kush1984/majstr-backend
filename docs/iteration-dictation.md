@@ -7,8 +7,10 @@ approval).
 promoted by the master with «так, берись» (2026-09-01); cut 1 promoted 2026-09-04 with «давай, але
 враховуй всі моменти для айосу».
 **Migrations:** none in cut 0; **V124 `catalog_item_synonym`** in cut 1.
-**PWA:** 1.36.0 → 1.37.0 (cut 0) → **1.38.0** (cut 1 — new capabilities: in-app microphone,
-save-to-catalog per row, learn-a-synonym per row).
+**PWA:** 1.36.0 → 1.37.0 (cut 0) → 1.38.0 (cut 1) → **1.38.1** (cut 1 polish — mic-first layout with
+pulsing button, category carried from matched catalog row, green-highlight + scroll on the newly
+added lines, unmatched-row save-to-catalog offer promoted to a visible «Нова позиція» card,
+empty/0/negative price blocks commit end-to-end).
 
 ---
 

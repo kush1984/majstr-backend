@@ -4,6 +4,7 @@ import com.majstr.backend.entity.EstimateItem;
 import com.majstr.backend.entity.PercentBaseKind;
 import com.majstr.backend.entity.ItemType;
 import com.majstr.backend.entity.MeasurementRefs;
+import com.majstr.backend.entity.Trade;
 import com.majstr.backend.entity.Unit;
 
 import java.math.BigDecimal;
@@ -16,6 +17,13 @@ public record EstimateItemResponse(
         ItemType type,
         String name,
         String category,
+        /**
+         * Snapshot of the position's trade at add time (V125). Null for a line the master typed
+         * himself (no catalog source) or an ADDENDUM row (off-estimate act work). The estimate
+         * board / portal render a trade badge on category headers only when the estimate carries
+         * ≥ 2 distinct non-null trades — a NULL row does not count as a "trade".
+         */
+        Trade trade,
         /**
          * Plain-words explanation of the position, frozen onto the line when it was added from the
          * catalog (V119). The client reads the estimate in the portal and in the PDF, and a name
@@ -77,6 +85,7 @@ public record EstimateItemResponse(
                 item.getType(),
                 item.getName(),
                 item.getCategory(),
+                item.getTrade(),
                 item.getDescription(),
                 item.getUnit(),
                 item.getQuantity(),
