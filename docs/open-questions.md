@@ -1545,11 +1545,13 @@ one-line summary — keep the item in the file as a record.
   bulk action (select untagged → set trade), or a smarter backfill (fuzzy category
   match / per-item template-name match). Defer until a real master reports a painful
   "Інше" pile; the per-item edit + always-tagged-new-items covers the common case.
-- **Update (dictation cut 1, 2026-09-04):** this got MORE likely to bite. Saving an unmatched
-  dictated position into the catalog does not ask for a trade (the dialog only asks when the master
-  has ≥2 trades, and a dictation review is the wrong place for a picker), so every position learned
-  this way lands in the OTHER pile. The pile now grows from a flow the master uses on the object,
-  not just from a historical backfill.
+- **Update (dictation cut 1, 2026-09-04, then CORRECTED 2026-09-06):** cut 1 added a save-to-catalog
+  flow with no trade picker, so every position learned that way landed in the OTHER pile — and this
+  entry said it "got MORE likely to bite". **Trade-tree phase 4 added the picker** (dropdown under
+  the tick, master's own + custom trades), so the flow now offers a real trade before saving. The
+  pile can still grow, because **OTHER stays the default** when the dropdown is untouched — but it
+  grows from a choice not taken, not from a missing control. Net effect on this item: unchanged
+  priority, not raised.
 
 ### Price-list import from a photo / handwriting (vision-LLM)
 - **Status:** OPEN
@@ -2367,9 +2369,10 @@ one-line summary — keep the item in the file as a record.
   the master all put in the same range is one we can ship. Where they disagree, his number wins.
 
 ### Voice input of a position
-- **Status:** IN_PROGRESS — **cut 0 shipped** (dictation iteration, 2026-09-02); **cut 1 code
-  complete** (2026-09-04) — in-app microphone (Web Speech, refused on installed iOS PWA),
-  save-to-catalog per row, synonyms taught after commit (V124 `catalog_item_synonym`).
+- **Status:** IN_PROGRESS — **all three rounds shipped and pushed**: cut 0 (2026-09-03), cut 1
+  (2026-09-04, in-app microphone + save-to-catalog + synonyms, V124), polish (2026-09-06, mic
+  auto-restart + trade badge + trade picker, filed under trade-tree phase 4). Still IN_PROGRESS for
+  (b)/(c)/(d) below, not for lack of shipping.
 - **Since:** Catalog-picker iteration (2026-09-01), from the competitor scan above.
 - **Context:** «Смета М2» added voice input of work types (v526). The situation is real — a master
   on an object, gloves on, phone in a dusty hand, typing a Ukrainian position name into a small
@@ -2397,10 +2400,20 @@ one-line summary — keep the item in the file as a record.
 - **Still open after cut 0:** (b) recording audio ourselves — **re-framed by cut 1's iOS finding
   below: this is no longer "because iOS has no API", it is the only path that can ever work inside
   an installed iOS PWA**; (c) offline (the parse is a model call, so a queued dictation would replay
-  a *read*, which no outbox entity does today); (d) a PRO gate, deliberately undecided until there is
-  usage to look at — note nothing currently MEASURES dictation use, so this cannot be decided from
-  data yet (a PostHog event would be the honest source: the backend stores nothing here, so it does
-  not violate the "PostHog only gets what the backend does not already write" boundary).
+  a *read*, which no outbox entity does today).
+- **(d) a PRO gate — still undecided, but no longer BLOCKED (2026-09-07, PWA 1.39.1).** This entry
+  used to say "nothing currently MEASURES dictation use, so this cannot be decided from data yet",
+  which made the deferral self-perpetuating: the decision waited on data nobody was collecting.
+  Two PostHog events now collect it — `dictation_parsed` (on reaching the review) and
+  `dictation_committed` (once lines land). The boundary rule permits this precisely because
+  dictation is the mirror image of `checkout_started`: `parse` persists nothing and `commit` goes
+  through `appendItems`, which cannot record that the lines were dictated, so **there is no backend
+  row a second count could drift from — PostHog is the only possible source.** Read
+  `dictation_committed / dictation_parsed` as a rate: a master who dictates, sees a bad review and
+  leaves is using the feature and getting nothing, and a commit-only count cannot see him.
+  `unmatchedCount` separates the two opposite conclusions a low rate could support — `CatalogMatcher`
+  failing in the field vs dictation being unwanted. **Revisit once there is a month of data**; the
+  dictated text itself never leaves the device (only counts), pinned by a test.
 - **Cut 1 (2026-09-04, code complete):** promoted by the master with «давай, але враховуй всі моменти
   для айосу». Three parts, all shipped: an in-app microphone (Web Speech API, `lib/speech.ts`
   ladder that refuses installed-iOS BEFORE feature detection because iOS's failure is silent — see
@@ -2440,10 +2453,14 @@ one-line summary — keep the item in the file as a record.
   to prevent, and saving one here would let the NEXT dictation MATCH it and price the line at 0
   silently, a week later, through a back door. So the amber row must be priced before it can be
   learned.
-- **Still open:** the trade — the save does not ask for one, so the position lands in **OTHER**
-  ("Інше"); see "Bulk-assign trade to the 'Інше' (OTHER) catalog pile" above, which this makes more
-  likely to bite. Also open: nothing offers to save a position that the master **corrected** into an
-  existing one (that is the synonym path below), and there is no "save all N unmatched" bulk tick —
+- **The trade — RESOLVED (2026-09-06, trade-tree phase 4).** This entry used to end "the save does
+  not ask for one, so the position lands in OTHER". It does ask now: a trade dropdown sits under the
+  tick, visible only when it is checked AND priced, offering the master's own system trades plus his
+  custom ones (`custom:<id>`, which rides under system `OTHER` per the V91 invariant). **OTHER is
+  still the default**, so a master who never opens the dropdown gets exactly the old behaviour — the
+  "Інше" pile can still grow, just no longer without an offer to prevent it.
+- **Still open:** nothing offers to save a position that the master **corrected** into an existing
+  one (that is the synonym path below), and there is no "save all N unmatched" bulk tick —
   deliberately, since each row needs its own price first.
 
 ### A learned synonym outlives the catalog position it points at
@@ -2459,7 +2476,9 @@ one-line summary — keep the item in the file as a record.
 - **Still open:** (a) nothing tells the master a synonym exists, so nothing lets him remove a wrong
   one — the only correction available is to teach a new one over it; a catalog-item detail listing
   «розпізнається також як: …» is the obvious home, deferred until there is a reason to believe
-  masters teach enough synonyms to need managing; (b) a synonym is per-master by design (his words,
+  masters teach enough synonyms to need managing — **`dictation_committed.synonymsTaught` (PostHog,
+  2026-09-07) is now that evidence**, collected at no extra event beside the PRO-gate measurement;
+  (b) a synonym is per-master by design (his words,
   his catalog) — whether a crowd-level version belongs beside `price_insight_candidate` is a much
   later question and would need the same anti-abuse care.
 

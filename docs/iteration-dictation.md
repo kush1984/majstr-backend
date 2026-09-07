@@ -1,16 +1,26 @@
 # Iteration: dictation — free text → positions matched against the master's own catalog
 
-**Status:** cut 0 shipped 2026-09-02 (PWA 1.37.0); **cut 1 code complete** (2026-09-04), backend
-build green (`./gradlew build`), PWA gate green in CI order, NOT pushed (awaiting the master's
-approval).
+**Status:** **all three rounds SHIPPED and pushed** — cut 0 (2026-09-03), cut 1 (2026-09-04), polish
+(2026-09-06). Backend green (`./gradlew build`), PWA gate green in CI order.
 **Source:** the "Voice input of a position" open question (catalog-picker iteration, 2026-09-01),
 promoted by the master with «так, берись» (2026-09-01); cut 1 promoted 2026-09-04 with «давай, але
 враховуй всі моменти для айосу».
-**Migrations:** none in cut 0; **V124 `catalog_item_synonym`** in cut 1.
-**PWA:** 1.36.0 → 1.37.0 (cut 0) → 1.38.0 (cut 1) → **1.38.1** (cut 1 polish — mic-first layout with
+**Migrations:** none in cut 0; **V124 `catalog_item_synonym`** in cut 1; V125 (`estimate_items.trade`)
+belongs to the trade-tree iteration but is read by this flow — see below.
+**PWA:** 1.36.0 → 1.37.0 (cut 0) → 1.38.0 (cut 1) → 1.38.1 (cut 1 polish — mic-first layout with
 pulsing button, category carried from matched catalog row, green-highlight + scroll on the newly
 added lines, unmatched-row save-to-catalog offer promoted to a visible «Нова позиція» card,
-empty/0/negative price blocks commit end-to-end).
+empty/0/negative price blocks commit end-to-end) → 1.39.0 → **1.39.1** (measurement only, §8 — two
+PostHog events, no user-visible change).
+
+> **Where the rest of this flow's history lives.** The 1.39.0 round is filed under
+> [iteration-estimate-trade-tree.md](iteration-estimate-trade-tree.md) **§Phase 4**, because it
+> shipped as one commit with that iteration. Four of its five items are dictation's: first-letter
+> capitalization of an unmatched spoken name, **mic auto-restart on `onend`** (the master's «дуже
+> скоро обривається конекшин» — `wantListenRef` re-arms 200 ms later, `continuous: false` stays
+> because iOS hangs otherwise), a `<TradeBadge>` on every matched row, and **the trade dropdown on
+> save-to-catalog** — which closed the «lands in Інше» gap this doc's §7.2 had left open. Read both
+> or you will re-open a resolved question.
 
 ---
 
@@ -271,6 +281,57 @@ rolls back the commit.
 
 ### 7.4 Not verified
 
-- **iOS is still untried** — the master reported the OS keyboard microphone works on Android; the
-  in-app path in installed iOS PWA is what `speechAvailability` refuses without needing the phone.
-- Mobile layout of the new tick + microphone button not opened in a live browser this round.
+- **iOS is still untried.** Nobody has opened this on an iPhone — neither the OS-keyboard path
+  (cut 0) nor the in-app mic. `speechAvailability` refuses an installed iOS PWA from *reasoning*
+  about WKWebView, not from an observed failure; the reasoning is sound and the sources are named
+  in open-questions.md, but the refusal has never been seen to do the right thing on a device.
+  **This is the single largest unknown left in the feature.**
+- **Android IS verified, including the in-app mic** (2026-09-06): the polish round exists because
+  the master used it live and reported «дуже скоро обривається конекшин» (→ mic auto-restart) and
+  «в каталозі він під трейдом сантехніка, чому тут не видно» (→ `<TradeBadge>`). So the cut-1
+  statement that no mobile layout had been opened in a live browser is **no longer true for
+  Android**; it remains true for iOS.
+
+## 8. Measurement (2026-09-07, PWA 1.39.1) — the one flow where PostHog is the ONLY source
+
+Cut 0 left the PRO gate "deliberately undecided until there is usage to look at". Nothing then
+measured dictation, so the decision was not deferred, it was **blocked on a step nobody had taken**.
+Two events unblock it.
+
+**Why this does not violate the PostHog boundary.** The rule is «money and state belong to the
+backend — PostHog only gets what the backend does not already write», and it is what killed
+`checkout_started`. Dictation is the mirror image: `parse` persists *nothing at all*, and `commit`
+goes through `EstimateService.appendItems`, which cannot record that the lines were dictated. There
+is no backend row a second count could ever drift from — so PostHog is not a second opinion here,
+it is the only possible source.
+
+**Two events, because the gap between them is the question.**
+
+| Event | Fires | Properties |
+| --- | --- | --- |
+| `dictation_parsed` | on reaching the REVIEW step | `itemCount`, `unmatchedCount`, `usedMic` |
+| `dictation_committed` | after the lines actually landed | `itemCount`, `savedToCatalog`, `synonymsTaught` |
+
+A master who dictates, sees a bad review and walks away **is using the feature and getting nothing**,
+and no commit-only event can see him. `dictation_committed / dictation_parsed` read as a rate is the
+point; `unmatchedCount` says whether a low rate is `CatalogMatcher` failing in the field rather than
+dictation being unwanted — which are opposite product conclusions.
+
+**`usedMic` is deliberately not `source: 'mic' | 'keyboard'`.** It answers only "did OUR in-app
+recogniser produce any of this text". Text typed into the field may have come from the OS keyboard's
+own microphone, and we cannot tell that from typing — a `'keyboard'` label would invent data. As a
+by-product it is the first thing that will ever report on iOS: in an installed iOS PWA it can never
+be true, because `speechAvailability` refuses there.
+
+**The dictated TEXT never travels, in any property.** It is free-form speech about a real job and
+can carry a client's name, an address or a price nobody has agreed to — the same rule under which a
+master-invented trade never travels. Only counts leave the device, and
+`DictationSheet.test.tsx` pins it by stringifying every `track` call and asserting the spoken words
+and the price are absent.
+
+`savedToCatalog`/`synonymsTaught` count what **landed**, not what was ticked (a failed catalog save
+must not inflate them) and are placed after the learning loops for that reason. They also close a
+second blocked decision at no extra event — the synonym-management open question is deferred "until
+there is a reason to believe masters teach enough synonyms to need managing", and this is that
+evidence.
+

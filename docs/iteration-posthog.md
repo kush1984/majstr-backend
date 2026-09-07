@@ -146,6 +146,24 @@ until someone builds a funnel on it.
 | `act_created` | `ActEditorPage.persist()`, create branch | — |
 | `act_shared` | `ActShareSheet`, on a real copy/send | `channel` |
 | `act_signed` | `ActEditorPage.onSign` | `mode: 'offline'` |
+| `dictation_parsed` | `DictationSheet.runParse`, on reaching the review | `itemCount`, `unmatchedCount`, `usedMic` |
+| `dictation_committed` | `DictationSheet.commit`, after the lines landed | `itemCount`, `savedToCatalog`, `synonymsTaught` |
+
+**The two dictation events (added 2026-09-07, PWA 1.39.1) are the boundary rule's mirror image, not
+an exception to it.** Everything below is dropped because the backend already writes it; dictation is
+the one flow where the backend writes **nothing**: `parse` persists nothing at all, and `commit` goes
+through `EstimateService.appendItems`, which cannot record that the lines were dictated. So there is
+no backend row a second count could drift from, and PostHog is the only possible source. They exist
+to unblock a decision that was quietly self-perpetuating — the PRO gate for dictation was «deferred
+until there is usage to look at» while nothing measured usage. **Two** events, because the gap is the
+question: a master who dictates, sees a bad review and leaves is using the feature and getting
+nothing, and a commit-only count cannot see him; `unmatchedCount` then separates «the matcher is
+failing» from «nobody wants this», which are opposite conclusions. `usedMic` reports only whether
+OUR in-app recogniser produced the text — text typed into the field may have come from the OS
+keyboard's own microphone and we cannot tell that from typing, so labelling it `'keyboard'` would
+invent data. **The dictated text never travels in any property** (free-form speech can name a client
+or an address — the master-invented-trade rule); `DictationSheet.test.tsx` pins that by stringifying
+every `track` call.
 
 **`checkout_started` — dropped.** The backend already persists a PENDING `Payment` row (period, kind
 `CHECKOUT`, wallet id when auto-renew is intended) on **every** `POST /api/billing/checkout`, before

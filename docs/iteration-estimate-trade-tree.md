@@ -174,7 +174,13 @@ board.
 
 ## 4. Not yet verified
 
-- **PWA changes not yet started** — phase 1 is backend-only. Estimate board renders `EstimateItemResponse`
-  without knowing about `trade` yet; the field is present in JSON but ignored.
-- **Real master feedback** — the shape (badge on ≥ 2 trades + collapse) is my recommendation; the
-  master approved it, but nobody has used it yet.
+> **Stale-status correction (2026-09-07).** This section used to say "PWA changes not yet started —
+> phase 1 is backend-only". All four phases are shipped and pushed (PWA 1.39.0); phase 4 was itself
+> written *from* the master's live feedback, so the "nobody has used it yet" line was outdated by
+> its own commit.
+
+- **Multi-trade estimates are still theoretical.** The badge only appears on an estimate carrying
+  ≥ 2 distinct trades, and no real master runs one yet — so the branch that motivated the whole
+  iteration has never rendered in production.
+- **iOS** — the dictation half of phase 4 (mic auto-restart) is verified on Android only; see
+  [iteration-dictation.md](iteration-dictation.md) §7.4.
