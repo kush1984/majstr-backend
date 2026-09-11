@@ -558,13 +558,16 @@ figure becomes a separate delta row. «Куплено 12 шт» that silently be
 next recalculation as unbought, and the master buys it twice. The hidden row keeps participating in
 the merge as bought, which is what blocks the re-add.
 
-**A norm is found by name and unit; `trade` is only the first rung.** Lookup is
-`(trade, name_key, unit)` → `(name_key, unit)`. `trade` cannot carry the key alone, for three
-reasons that are all in the repo: `estimate_items.trade` is nullable by design (V125 — ADDENDUM and
-hand-typed lines), V118 stores a position shared by two trades once under whichever claimed it
-first, and both the V125 backfill and `EstimateService.resolveTrade` (line 1231) *derive* trade from
-`(name, type, unit)` — it is a property of the position's identity, not part of it. An ambiguous
-second-rung hit goes to the coverage report; nothing is picked at random.
+**A norm is found by name and unit; `trade` FILTERS the answer.** The key is `(name_key, unit)`;
+`trade` cannot carry it, for three reasons that are all in the repo: `estimate_items.trade` is
+nullable by design (V125 — ADDENDUM and hand-typed lines), V118 stores a position shared by two
+trades once under whichever claimed it first, and both the V125 backfill and
+`EstimateService.resolveTrade` (line 1231) *derive* trade from `(name, type, unit)` — it is a
+property of the position's identity, not part of it. What it DOES do is decide which of the key's
+answers may be used: the position's own trade, or a norm filed under no trade at all. An ambiguous
+hit on a position that names no trade is skipped; nothing is picked at random. (§25 replaced the
+original fallback — «name and unit alone whenever the trade misses» — which was this section's
+reading and turned out to sell a painting section's materials off one drywall line.)
 
 **`name_key` is `EstimateTemplateService.nameKey`**, extracted to a shared place and used by both
 the price resolution and the norms. Two private notions of "the same name" would drift silently.
@@ -725,10 +728,15 @@ and a **screed-fill thickness** (суха збірна підлога). Recommen
 family and the joints family; the box/slope/niche family goes to the coverage report from day one
 with a «ввести» button, which is exactly the §15 rule and costs nothing extra.
 
-**F. The second lookup rung carries 27 % of DRYWALL, measured.** 15 of the 56 positions also exist
+**F. 27 % of DRYWALL is filed under another trade, measured.** 15 of the 56 positions also exist
 under another trade — PAINTER (11), DEMOLITION (2), PLUMBING (1), plus «Установка люка-ревізії
-простого». V118 stores each once under whichever trade claimed it first, so for these the first rung
-misses whenever the row was filed under the other trade. The prompt's warning is not hypothetical.
+простого». V118 stores each once under whichever trade claimed it first, so for these a lookup on
+the position's trade misses whenever the row was filed under the other one. The prompt's warning is
+not hypothetical.
+
+> **Superseded by §25.** The fix this measurement suggested — fall back to name+unit alone — is the
+> one that shipped in cut 2 and is now removed: it answered for positions of EVERY trade, not just
+> these 15. **V132 re-files the rows instead**, which is where the 27 % actually belongs.
 
 **G. Two positions can double-count the same ceiling.** «Каркасна звукоізоляція (ГКЛ в два слоя)
 стелі» carries the whole sheathing stack, and a master who also lists «Монтаж гіпсокартону на стелю
@@ -769,9 +777,10 @@ raises if any norm names a DRYWALL position the catalog does not ship.
 
 **`MaterialCalculatorService`** — the engine. Four rules, all of them load-bearing:
 
-- **the norm ladder is two rungs** (`findByTradeAndKey` → `findByKey`), because `estimate_items.trade`
-  is nullable by design (V125) and V118 stores a shared position under one trade only. §19 F measured
-  the second rung at **27 % of DRYWALL**;
+- **the norm is found by (name, unit) and the POSITION's trade decides which answer may be used**
+  (`normsFor`; a norm filed under no trade answers for anyone) — `estimate_items.trade` is nullable
+  by design (V125), and V118 filing a shared position under one trade only is handled by **V132**,
+  not by dropping the filter. (Cut 2 shipped a name+unit fallback here; **§25** removed it.);
 - **a norm's unit is read off the POSITION and nothing is converted** — a м.п. norm multiplies a м.п.
   quantity. This is the v1 bug, and it has its own test in both suites;
 - **a `PERCENT` line and a material the master already listed enter NEITHER the numerator NOR the
@@ -860,9 +869,9 @@ id, and a no-op when he has none.
 **A norm with `material_id IS NULL` is refused (400 `MATERIAL_NORM_INVALID`).** Those are the 11
 V127 «checked, consumes nothing» verdicts; there is no coefficient to correct.
 
-### 21.3 Resolution is a READ-path collapse, not a third rung
+### 21.3 Resolution is a READ-path collapse, not a second lookup
 
-The two-rung ladder (`findByTradeAndKey` → `findByKey`) is untouched and still default-only. The
+The lookup itself (the key, and after §25 the trade filter) is untouched and still default-only. The
 calculator instead asks `findAllByNameKeysForOwner(keys, ownerId)` — shipped rows **plus** this
 master's — and `preferOwn` collapses them by natural key, the owned row winning. It preserves the
 encounter order, so a corrected coefficient never reshuffles the screen.
@@ -884,3 +893,477 @@ which were typed against the old figures.
 The mobile layout was **not** checked in a live browser this round. The editor is a single column
 inside the existing math block, 44 px tap targets, buttons wrapping on `flex-wrap` — design intent,
 not a measurement.
+
+## 22. Checking V127 against the manufacturers — V130 (2026-09-11)
+
+The master asked to look at Knauf's own calculator and then: «прав норми і чекни чи є позиція під
+багаторівневу».
+
+### 22.1 What Knauf actually publishes
+
+**There is no official Ukrainian Knauf calculator.** `knauf.ua` redirects to a `knauf.com/uk-UA`
+page that has none, and that page never reaches `document_idle`, so it cannot be read by automation
+either. The one official calculator is on the Russian site, which is network-unreachable from here
+(`ECONNREFUSED`). Norm tables on Ukrainian dealer sites are the usable evidence; one common source
+publishes them as **images**, so only the text-table dealers are citable at all.
+
+Therefore: V130's figures are **dealer compilations of the handbook**, one rung weaker than a
+manufacturer datasheet, and the header of the migration says so. Where our figure already sat on
+Knauf's own datasheet (Perlfix adhesive), the datasheet won and V130 changed nothing.
+
+### 22.2 What held, and why the screws only LOOK wrong
+
+Confirmed unchanged: CD **2.9** m/m² on a ceiling and **2.0** on a wall, CW **2.0** per m² of
+partition face, finishing putty **1.2** kg/m², deep primer **~0.1** l/m².
+
+The screw counts appear to be 2× off and are not: ours are per m² of **board**, the tables' per m²
+of partition **face**. Same arithmetic as §19.2 C — the denominator, not the number.
+
+### 22.3 The four defects
+
+| # | Position(s) | Defect | V130 |
+|---|---|---|---|
+| 1 | стеля рівна / зі скосами / каркасна звукоізоляція стелі | **no connectors at all** — a CD frame has crossings and long runs; neither material existed in the dictionary | `CONNECTOR_CRAB` **1.7**, `PROFILE_CD_EXTENDER` **0.2** |
+| 2 | монтаж ГКЛ на стіни / каркасна звукоізоляція стін | **no hanger on a wall frame** — CD was normed with nothing fixing it to the wall | `HANGER_DIRECT` **1.3** |
+| 3 | all four partition positions | **no дюбель-цвях** — nothing fixed UW to floor and ceiling | `DOWEL_NAIL` **0.75** |
+| 4 | all four partition positions | **UW ~50 % high** (0.5/m² sheathing = 1.0/m² face vs the tables' 0.7) | 0.5 → **0.35** |
+
+Defect 2 is an **omission, not a judgement**: line 622 of the §19 audit already listed «підвіс
+прямий» for «Монтаж гіпсокартону на стіни»; it simply never reached V127's INSERT. Defect 1 never
+appeared in the audit at all.
+
+Defect 4's arithmetic: a partition of length L and height 3 m takes 2L of track for 3L of face →
+0.67 ≈ 0.7 per m² of face → **0.35** per m² of sheathing. The over-buy came from halving a figure
+that had already been halved.
+
+### 22.4 Two figures deliberately left alone
+
+- **`GYPSUM_GLUE` 5.0 kg/m²** — the dealer table says 3.5, Knauf's Perlfix datasheet ~5.0. Ours is
+  already the manufacturer's number.
+- **`PUTTY_JOINT` 0.4 kg/м.п.** — on the high side (handbook ~0.3), but it is bought in 25 kg bags
+  and the calculator rounds up to a bag, so on any realistic joint length the master carries the
+  same bags out of the shop. Left for his word.
+
+### 22.5 Three rules the migration obeys
+
+- **Every coefficient write is filtered `owner_id IS NULL`.** A master who forked a norm under §21
+  keeps his number; V130 corrects only the shipped default. `sort_order` **is** shifted on forks too
+  — it is presentation, not his coefficient, and a fork left behind would interleave oddly.
+- **`sort_order` is made room for, not appended to.** A crab belongs beside the profiles it joins, so
+  ranks ≥ 4 shift by +2 on the three ceiling positions and +1 on the two wall ones; the partition
+  dowel appends at each position's `max + 1`. A self-check refuses the migration on a shared rank.
+- **No new catalog position, so no ranking block.** V130 inserts no `catalog_templates` row, which is
+  the only thing that would oblige it to re-run V118's ranking verbatim (V120 PART 3).
+
+### 22.6 The multi-level ceiling question — the position does not exist, deliberately
+
+There is **no** «багаторівнева стеля» position, and its absence is a recorded decision, not a gap.
+V120 (lines 70-71) rejected it in as many words: such a job **is** a flat ceiling plus a короб by the
+linear metre, both of which we already sell, and one m² position on top of them **double-bills**.
+V116's «Стеля з гіпсокартону» bundle independently sequences exactly that pair — flat ceiling (step
+5) then прямий/радіусний короб (steps 7-8) and the niche (step 9).
+
+What a multi-level ceiling really exposes is a **norm** gap, not a position gap: the two короб and
+two ніша positions are `LINEAR_METER` and intentionally unnormed (§19 D/E — a section the position
+name cannot carry), so such an estimate surfaces a coverage gap for them. Normng them needs one
+parameter from the master (section w+h), which is the still-open «box / slope / niche parameters»
+question. **Adding the m² position would need his explicit override of V120** — not assumed here.
+
+### 22.7 Blast radius
+
+Data-only; no Java and no PWA change. `MaterialCalculatorIntegrationTest`'s coverage guard counts
+`DISTINCT name_key` **live** from the DB, and V130 adds norms only for name_keys V127 already
+covered, so the expected figure moves with the data. Only `GKL_SHEET` is referenced by code; the two
+new codes are not.
+
+### 22.8 The gate
+
+`./gradlew build` — **green: 1358 tests, 0 failures**. No new test was written and none was changed:
+V130 is data-only, and the guard that matters (`everyDrywallNormFindsItsPositionInTheShippedCatalog`)
+already reads its expected figure live from the DB. The migration's own three self-checks — every
+name_key resolves to a live position, all four UW defaults carry 0.35, and all twelve new
+(position, material) pairs exist — run at apply time, so a green Testcontainers boot **is** the
+assertion that they passed.
+
+Two traps this round, both worth remembering because each returned exit code 0 while doing nothing:
+
+- **`JAVA_HOME` on this machine points at `C:\Program Files\Java\jdk-25.0.3`, which no longer
+  exists** (only `jdk-25.0.4.1` and the `.jdks\ms-*` toolchains are installed). The wrapper prints
+  «JAVA_HOME is set to an invalid directory» and stops. Build with
+  `$env:JAVA_HOME='C:\Users\AndriyKushka\.jdks\ms-21.0.12.1'` (the toolchain is pinned to 21 anyway).
+- **`./gradlew build | tail` hides that**, because a pipeline's status is the LAST command's. The
+  first run of this round reported exit 0 having never compiled a line. Redirect to a log and read
+  the exit code separately.
+
+The **PWA gate was not run** and is not owed: nothing under `majstr-pwa/src` changed — only the
+version string in `package.json` (`1.43.1` → `1.43.2`), which no lint, type-check or test reads.
+
+## 23. The короб asks for its section — V131 (PWA v1.44.0) (2026-09-11)
+
+The master: «давай норму на короб, переріз питаємо в майстра».
+
+### 23.1 Why the box stood unnormed, and why that was already fixable
+
+§19 D/E and §22.6 left the two короб and two ніша positions deliberately without norms: they are
+`LINEAR_METER`, and the sheathing they consume depends on a figure **the position name cannot
+carry** — the розгортка, width + height. V127 had already met this shape once and answered it with
+a rule rather than a guess: a `PERIMETER` norm is **asked for, never derived from the area**. So
+this round needed a third basis, not a new concept.
+
+### 23.2 A box's consumption splits in two, and one half needs nothing new
+
+Along a короб of length L run the longitudinal UD/UW track, the dowel-nails that fix it, and the
+corner bead on its edges. Those scale with **L**, and V127's rule that *a norm's unit is read off
+the POSITION* already handles them exactly right — they stay `QUANTITY` on a `LINEAR_METER`
+position and no parameter is needed at all.
+
+Only the sheathing, the ribs and the screws scale with the розгортка. Those become `SECTION`:
+
+```
+amount = length (м.п.) × section (w+h, m) × qty_per_unit
+```
+
+which makes `SECTION` conceptually free — it is a **per-m² norm whose m² is computed rather than
+typed**. Its coefficients therefore read on the same scale as the existing ceiling/wall per-m²
+figures (`GKL_SHEET` 1.0, `PROFILE_CD` 2.2), instead of being a new kind of number nobody can
+sanity-check.
+
+### 23.3 Per POSITION, not per estimate — the one real design decision
+
+`PERIMETER` is one number for the whole estimate, larger demand winning. `SECTION` must **not**
+behave that way: a прямий короб, a радіусний короб and a ніша in one estimate are three different
+boxes with three different розгортки. One figure for all of them would be silently wrong for two —
+precisely the failure the «asked for, never derived» rule exists to prevent. Three consequences:
+
+- `MissingParameter` gains `estimateItemId` + `positionName` (both null for `PERIMETER`, which has
+  no position to name);
+- `SECTION` demands are **never merged** — no larger-wins, no single bucket;
+- the PWA asks **once per POSITION, not per material**: the board and the ribs of one короб share
+  one розгортка, so three missing parameters over two positions render two inputs.
+
+### 23.4 The figure rides the GET as one scalar
+
+`sections=<uuid>:0.4,<uuid>:1.2`. Two reasons decide the shape: `src/api/client.ts` has no
+`paramsSerializer`, so a repeated param would go out as `sections[]=` and not bind; and V127's rule
+that the calculation is a **GET because it stores nothing** has to survive — a POST would quietly
+retire it.
+
+`parseSections` **ignores** a malformed or unknown entry instead of answering 400. A stale
+estimate-line id then simply re-asks the question, whereas a 400 would be an empty screen with no
+way forward, for a figure that is optional by design.
+
+### 23.5 What V131 writes
+
+The CHECK widens to `('QUANTITY', 'PERIMETER', 'SECTION')`; one dictionary material is added
+(`ANGLE_PERFORATED`); 17 norms land on three positions (**S** = SECTION, **Q** = QUANTITY):
+
+| position | norms |
+|---|---|
+| прямий короб | `GKL_SHEET` 1.0 **S**, `PROFILE_UD` 2.1 Q, `PROFILE_CD` 2.2 **S**, `ANGLE_PERFORATED` 1.05 Q, `SCREW_TN25` 30 **S**, `DOWEL_NAIL` 4.2 Q |
+| радіусний короб | `GKL_SHEET_ARCH` 1.0 **S**, `PROFILE_UD` 2.1 Q, `PROFILE_CD` 3.0 **S**, `SCREW_TN25` 40 **S**, `DOWEL_NAIL` 4.2 Q |
+| ніша | the same six as прямий |
+
+Still deliberately unnormed: «Монтаж укосів із гіпсокартону» (a slope's width is not a section) and
+«Облаштування ніші ГКЛ з підсвічуванням» (it carries an LED profile whose length is a second,
+different unknown).
+
+Four self-checks run at apply time: every SECTION norm's `name_key` resolves to a live DRYWALL/WORK
+catalog position under V127's normalisation; the (position, material) pairs number exactly 17; no
+two norms on one position share a rank; and a box board must be `SECTION` while `PROFILE_UD` must be
+`QUANTITY` — the one mix-up that would silently double- or half-buy everything.
+
+### 23.6 A section is not a master preference
+
+A розгортка is a property of the **object**, not of how this master works, so by `MaterialPrefKey`'s
+own documented rule it must not become a preference. It is asked per estimate, every time — which is
+also why the answer is not stored anywhere.
+
+### 23.7 Blast radius
+
+Java: `NormBasis`, `MissingParameter`, `MaterialSourceLine`, `MaterialCalculatorController`,
+`MaterialCalculatorService`. PWA: `api/types.ts`, `api/materials.ts`,
+`MaterialCalculatorPage.tsx`, both locale files. Two records changed signature, so the fan-out check
+ran: `new MissingParameter(` / `new MaterialSourceLine(` appear at exactly **5** sites, all inside
+`MaterialCalculatorService`; the only external callers of `calculate(...)` are the controller and
+two test helpers (both updated); there is **no** `MaterialCalculatorControllerTest`.
+
+One PWA bug fell out of the split: `needsPerimeter` was `(data?.parameters ?? []).length > 0`, so
+the **perimeter** card would have appeared for a `SECTION` parameter. It now filters on
+`p.parameter === 'PERIMETER'`, pinned by its own test.
+
+### 23.8 The gate
+
+`./gradlew build` — **green: 1363 tests, 0 failures** (1358 + the five new SECTION tests). The PWA
+gate ran in full CI order: `npm run lint`, `npx tsc -b`, `npm run typecheck:tests`,
+`npx vitest run` (**928 tests, 123 files**), `npx vite build` — every step exit 0. Version
+`1.43.2` → **`1.44.0`**: a new headline capability is a minor bump.
+
+Mobile was **not** verified live. The переріз card reuses the shipped perimeter card's structure —
+stacked full-width inputs, one full-width action — which should hold at 375 px, but that is design
+intent, not a measurement.
+
+A machine trap worth recording beside §22.8's two: **the backend build and the PWA gate do not fit
+in memory together** on this machine (15.6 GB, with IntelliJ, an IDE-launched Spring Boot app and a
+Vite dev server resident). Run concurrently, both were killed mid-run; alone, at 2 GB free, both
+pass. `./gradlew --stop` on an idle daemon is the one safe ~600 MB to reclaim — a daemon is a warm-JVM
+cache, so nothing is lost.
+
+## 24. The coverage block names trades, and a price list stops buying — PWA v1.44.1 (2026-09-11)
+
+The master, with four screenshots of his own test estimate: «з гіпсокартону в мене одна позиція,
+звідки у матеріалах стільки матеріалів + оте порахували 8 з 39 і де в перелікує демонтаж і монтае,
+де воно і нащо береться, то думаю треба забрати і просто писати для якої категорії пораховано чи
+якось так, бо це якось взагалі не добре». Then, fixing the wording himself: «**"Порахували
+матеріали для: Гіпсокартон, Малярні роботи" - лишаємо отак**».
+
+### 24.1 One screenshot, three independent causes
+
+Read as one complaint it looks like a rendering choice. It was not — three separate things met on
+that screen, and only the first is a bug:
+
+1. **`workLines` had no quantity filter.** Every WORK line entered the calculation, including the
+   price-list rows masters keep inside an estimate at 0 («Штукатурні роботи (від) — 0 м²»). On his
+   own estimate **31 of 39 lines were exactly that.** Each one reached a norm, entered the
+   denominator, and produced a material row of zero — «Картон захисний — 0 м²», «Шпаклівка фінішна
+   — 0 кг». That is «звідки у матеріалах стільки матеріалів».
+2. **The denominator was every WORK line**, while V127 ships norms for DRYWALL `name_key`s only. A
+   mixed estimate therefore *could not* read better than «8 з 39» — the ratio was measuring the
+   catalog's norm coverage, not anything the master can act on.
+3. **Drywall materials under a painter's position** — read at the time as correct by design: the
+   lookup's second rung was name+unit only (V127, §19 F's measured 27 %), so a шпаклівка position
+   typed PAINTER resolved to a DRYWALL norm on purpose. **That reading was wrong, and §25 fixes
+   it** — the master looked at the same screen once more and ruled «оце все з малярки не має взагалі
+   попадати». What §24 shipped correctly is that this cannot be explained by a ratio.
+
+### 24.2 A ratio invites arithmetic nobody can check
+
+«8 з 39» is a claim the master is entitled to verify, and verifying it means asking after each of
+the 31 — which is what the amber gap list then answered, one name at a time, including «демонтаж» и
+«монтаж» rows whose norms deliberately consume nothing. So the number produced the list, and the
+list produced the question. His ruling removes both: **what WAS counted is named by trade; what was
+not stays silent.** One calm line replaces a figure plus 31 names.
+
+This is also why the fix is not «filter the gap list better». A shorter list is still a list of
+things the screen failed at, on a screen whose whole job is «скільки купити».
+
+### 24.3 The trade shown is the POSITION's, never the norm's
+
+The one real design decision. V127 ships DRYWALL norms only, so reading the trade off the **norm**
+would have answered «Гіпсокартон» for a painter's estimate — the very confusion of cause 3 above,
+printed as a label. The trade is therefore read off `estimate_items.trade`, the position the master
+himself typed. §25 kept this rule and removed the confusion under it: a position of another trade no
+longer resolves at all, so the two can no longer disagree.
+
+`estimate_items.trade` is **nullable by design (V125)**, and NULL ≠ `Trade.OTHER`. Folding them
+together would rewrite a deliberate distinction for a caption's convenience, and silently omitting
+untyped positions would understate what was counted. So `MaterialCoverage` carries both shapes:
+
+```java
+public record MaterialCoverage(List<String> trades, boolean otherWorks) {}
+```
+
+`trades` is a `LinkedHashSet` drained in estimate order, so the line reads in the order he wrote
+the work in and names each trade once. `otherWorks` renders as «інші роботи» after them. Nothing
+counted, and the line becomes «Норм для цього кошторису ще немає — матеріали впишіть самі.» — a
+sentence with an instruction in it, not a zero.
+
+### 24.4 Only a buying decision is counted
+
+The filter that produced the bug is now the rule the whole service states once: a `PERCENT`
+surcharge, a material the master already listed, and **a line whose quantity is still 0** are none
+of them a decision to buy. The third was the live one:
+
+```java
+.filter(i -> i.getType() == ItemType.WORK)
+.filter(i -> i.getUnit() != Unit.PERCENT)
+.filter(i -> i.getQuantity() != null && i.getQuantity().signum() > 0)
+```
+
+Downstream this makes `item.getQuantity()` non-null and positive by construction, which is the one
+place the old code could multiply a norm by nothing and still print a row.
+
+**Unit-test trap it created:** `given()` registered the norm-repository stub whenever a non-PERCENT
+WORK line existed. Under STRICT_STUBS a 0-quantity-only test then fails the *build* on an unused
+stub, because the new filter means no lookup happens at all (`normsByKey` returns early on an empty
+key list). The helper mirrors the service filter, quantity included.
+
+### 24.5 Availability collapses to one boolean
+
+`MaterialAvailabilityResponse` had three fields; nothing read the other two. It is now
+`(boolean available)`. The reason is not tidiness — a second counting surface that can disagree
+with the screen is exactly the class of bug just removed, and the probe's only job is to decide
+whether «Матеріали» appears at all (V129). It answers with the calculation's own unit rule: a norm
+in another unit is not an answer for this line, and nothing is converted.
+
+### 24.6 Deleting the gap list nearly deleted a real guard
+
+`CoverageGapKind.AMBIGUOUS` was a DTO value the integration test asserted **absence of** — its
+`doesNotContain(AMBIGUOUS)` was the only thing pinning that the shipped catalog holds no
+name+unit two trades both norm. Deleting the enum would have deleted that check silently, leaving a
+green build. It is re-expressed as two direct SQL invariants over `material_norm` + `catalog_templates`:
+no shared norm whose position the catalog no longer ships (**orphaned**), and no (name_key, unit)
+with `count(DISTINCT trade) > 1` (**ambiguous**). Strictly stronger than what it replaced: V127's
+own apply-time self-check cannot catch a *later* catalog rebuild renaming a position out from under
+a norm, and the whole-catalog run then asserts the catalog must buy something.
+
+### 24.7 Blast radius
+
+Java: `MaterialCoverage` (rewritten), `MaterialAvailabilityResponse` (collapsed),
+`MaterialCalculationResponse` (javadoc), `MaterialCalculatorService`; **deleted** `CoverageGap` and
+`CoverageGapKind`. PWA: `api/types.ts`, `MaterialCalculatorPage.tsx`, both locale files, the page
+test. The `coverage`/`coverageHint`/`showGaps`/`hideGaps` keys are **gone**, replaced by
+`coverage`/`coverageOther`/`coverageNone`, so a re-added `t('materials.coverageHint')` reddens
+`i18nKeys.test.ts`. Trade labels needed nothing: `t('trades.' + code)` already ships all of them,
+and it is a dynamic key that `i18nKeys.test.ts` deliberately skips. A repo-wide grep for
+`CoverageGap|coverage\.|coverageHint|showGaps|hideGaps` found no other consumer
+(`ProjectImportSheet`'s `coverage.total` is an unrelated measurement shape).
+
+### 24.8 The gates
+
+`./gradlew build` — **green: 1367 tests, 0 failures** (1363 + three new unit tests + one new
+integration test). The PWA gate ran in full CI order: `npm run lint`, `npx tsc -b`,
+`npm run typecheck:tests`, `npx vitest run` (**930 tests, 123 files**), `npx vite build` — every
+step exit 0. The PWA delta reads as a check on the change: 928 → 930 over an unchanged 123 files
+is exactly one deleted gap test against three new ones.
+
+Version `1.44.0` → **`1.44.1`**: a fix and a wording change on shipped work is a patch.
+
+Mobile was **not** verified live. The block now renders one short `<p>` in the same card that
+previously held a ratio, a toggle and a 31-row amber list, so 375 px can only get easier — but that
+is arithmetic about the markup, not a measurement.
+
+A note for the next round: the coverage line no longer says anything about a position it could not
+answer for, which is the intended behaviour and also removes the only on-screen hint that a norm is
+missing. If masters start asking «а чому тут нічого», the answer is a per-position hint at the line
+itself, not the return of a global list.
+
+## 25. A norm answers for its own trade, and V132 re-files the shared positions — V132 (2026-09-11)
+
+§24 fixed the screen and left the arithmetic under it alone. The master looked once more, at the
+same estimate, and named what was actually wrong:
+
+> «ну дивись суто в нашому каталозі із гіпсокартонних робіт - тільки вирізка отворів, **оце все з
+> малярки не маю взагалі попадати** тай і по гіпсокартону в нас немає ніяких матеріалів, то щось ти
+> забагато переш у калькулятор»
+
+He is right, and §24.1's cause 3 — «drywall materials under a painter's position are correct, not a
+leak» — is the claim that was wrong. Three changes, approved together («давай всі три»).
+
+### 25.1 The POSITION's trade decides which norms may answer
+
+Cut 2 shipped a two-rung lookup: the position's trade first, then **name and unit alone** whenever
+that missed. The fallback was written for the 15 shared positions §19 F measured, but it does not
+know that is what it is for — it answers for a position of **any** trade. On his estimate, one
+drywall line («Вирізка отворів») among 38 painter and tiling ones, the fallback resolved the
+painting section's шпаклювання and грунтування positions against V127's DRYWALL norms and sold him
+картон, ґрунтовку and шпаклівку he had never asked to buy.
+
+The rule now: **a norm answers for a position when its trade IS the position's, or when the norm
+carries no trade at all** (general — nothing in V126's schema or V127's data forbids it, and the
+lookup test already inserted such rows). A position whose own trade is NULL — nullable by design
+(V125) — still takes every candidate, because there is nothing to disagree with; the pre-existing
+`spansSeveralTrades` guard still refuses to guess when the candidates for such a line disagree
+among themselves.
+
+Both filters (unit, trade) live in **one** private helper, `MaterialCalculatorService#normsFor`, and
+`calculate` and `availability` both call it. That is deliberate: §24.5's invariant «the probe and
+the calculation share one lookup» has to stay literally true, not duplicated in two places that can
+drift. `rung1` is gone, and so is the ladder — the repository's two queries stay (they pin the key's
+shape and the fork tests read through them), but **which norms may be USED is now a service
+decision, not a query result**.
+
+### 25.2 «Consumes nothing» is a complete coverage answer and NO answer for the button
+
+The second half of what he reported: «по гіпсокартону в нас немає ніяких матеріалів». His one
+drywall line is a demolition one, and every norm for it carries `material_id IS NULL` — V127's
+recorded «checked, consumes nothing» verdict (§19 H). `availability` asked only «did any norm
+answer», so it answered `true`, the PWA showed «Матеріали», and the screen opened with nothing on
+it.
+
+So the probe carries **one condition the calculation does not**: the norm must actually buy
+something (`getMaterial() != null`). The trade is still counted in the coverage line — the work WAS
+checked, it just consumes nothing — which is exactly the asymmetry V127 introduced those rows for.
+Pinned by `aConsumesNothingVerdictIsNotAnAnswerForOfferingTheScreen`: `available()` false, coverage
+`containsExactly("DRYWALL")`.
+
+### 25.3 V132 — the 10 shared positions are STORED under DRYWALL for a master who has the trade
+
+With 25.1 in place, a DRYWALL master whose «Шпаклювання фінішне» sits in `catalog_items` under
+PAINTER gets no materials for it. That is not a corner case: **V118 stores one row per (owner, name,
+type, unit)**, and V116 PART 7 copies 10 positions into DRYWALL that PAINTER also ships — so for a
+two-trade master the row lands under whichever the array named first, and V118's array puts PAINTER
+before DRYWALL. Deterministically the wrong one, for every DRYWALL+PAINTER master.
+
+This is not «re-filing only moves the problem» (V118's own finding): **display is unaffected**,
+because `sharedTrades` reads the library, not the stored row, so the position keeps appearing under
+both trades with each trade's own category. What changes is the one thing that reads the STORED
+trade — the calculator, after V125 made `estimate_items.trade` derive from it.
+
+Shape decisions worth keeping:
+
+- **The 10 names are DERIVED from the library, not hardcoded.** A self-join of `catalog_templates`
+  on (`lower(trim(name))`, type, unit) where one side is DRYWALL and the other is not. Ten Ukrainian
+  string literals would silently stop matching the day a position is renamed — the V123 trap.
+- **It cannot collide.** `ux_catalog_items_owner_name_type_unit` does not contain `trade`, so
+  flipping the column can never hit the unique index.
+- **Only owners who HAVE the DRYWALL trade** are touched (`EXISTS` over `user_trades`), and only
+  rows with `custom_trade_id IS NULL` (V91's invariant).
+- **`source` is deliberately not filtered on.** V79 backfilled it by a heuristic, so a LIBRARY row
+  of an early master may read MANUAL; the (name, type, unit) + trade-pair match is the narrower
+  filter anyway.
+- **V118 PART 4's renumbering is re-run verbatim**, because the category moves with the trade and
+  `sort_order` ranks by category.
+- **No row is created or deleted** — §5b asserts `count(*)` is unchanged against a `v132_before`
+  snapshot, beside four outcome invariants (nothing shared still filed under the other trade for a
+  DRYWALL owner, gapless 0-based `sort_order` per owner, V91's CHECK, and no unsigned line left on a
+  non-DRYWALL trade over the re-filed names).
+
+### 25.4 The fourth piece: an estimate line's trade is a SNAPSHOT, and a SIGNED one keeps it
+
+`estimate_items.trade` was resolved once, when the line was added (V125). Re-filing the catalog does
+not reach back into it, so §4 of the migration re-derives it the same way `resolveTrade` does — and
+**only `WHERE e.status <> 'SIGNED'`**.
+
+A signed estimate therefore keeps its stale PAINTER snapshot, and the calculator will still answer
+nothing for such a line. That is immutability doing its job, not an oversight: the client signed
+that document, and we do not rewrite a field inside it to improve a shopping list. A master who
+needs materials for a signed estimate has the duplicate path, whose lines resolve fresh.
+
+### 25.5 Blast radius
+
+Java: `MaterialCalculatorService` (`normsFor` replaces `rung1`; `availability` gains the
+buys-something condition), and javadoc only in `MaterialNormRepository`, `MaterialNorm`,
+`MaterialCoverage`, `MaterialNormService`. SQL: `V132__shared_positions_filed_under_drywall.sql`.
+Tests: `MaterialCalculatorServiceTest` (`aTradeDisagreementDoesNotLoseThePosition` **inverted** into
+`aNormFromAnotherTradeIsNotAnAnswerForThisPosition`; a new
+`aNormWithNoTradeAnswersForAPositionOfAnyTrade`; the coverage test's two painter positions re-filed
+under PAINTER so «trades named once each in estimate order» still asserts what it meant),
+`MaterialCalculatorIntegrationTest` (the probe/coverage asymmetry above),
+`MaterialNormLookupIntegrationTest` (comments and two test names — its broad results are the QUERY
+working, and reading them as the engine's answer is how this bug got written).
+
+**No PWA change.** The screen already renders whatever the server counted; it now counts less.
+
+**Docs corrected rather than appended to**, because the old wording was a load-bearing claim and is
+now false: CLAUDE.md's two bullets (and «latest is V129» → V132),
+`docs/architecture-index-detail.md`'s shopping-list bullet, `docs/iteration-shopping-list.md`, and in
+this file §19.2 F (with a superseded note — the measurement stands, the fix it suggested does not),
+§20.1's first invariant, §21.3's heading, §24.1's cause 3 and §24.3. V126's own SQL comments are
+left alone: an applied migration is never edited.
+
+### 25.6 The gate
+
+`./gradlew build` — **green, exit 0: 1369 tests, 0 failures, 0 errors** (1367 + two new: one unit
+test for the general no-trade norm, one integration test for the probe/coverage asymmetry). The
+inverted test and the two renamed lookup tests change no count, which is itself the check that
+nothing was dropped rather than rewritten.
+
+**V132's own assertions ran as part of it.** Its five self-checks fire at apply time, so a green
+Testcontainers startup IS the proof they passed — the same reasoning V130 and V131 recorded.
+
+**The PWA gate was not run, and does not owe a run:** nothing under `majstr-pwa/src` changed. The
+server counts less; the screen renders whatever it is given. Version `1.44.1` → **`1.44.2`** — a
+correction to shipped behaviour is a patch.
+
+Mobile was **not** verified live, and here that is nearly vacuous: no markup changed, and the
+visible difference is fewer rows and a shorter coverage line.

@@ -27,7 +27,7 @@ Nothing here computes a quantity yet — every row today is typed by hand.
 | `ShoppingListController` | `GET /api/shopping-lists/summary`, `GET/POST/PATCH/DELETE /api/projects/{id}/shopping-list[/items[/{itemId}]]`, `POST …/clear-bought` |
 | `MaterialPrefService` + `MaterialPrefController` | `GET/PUT /api/me/material-prefs` — the master's habitual answers |
 | `NameKeys` | the one place a catalog/estimate name becomes a norm lookup key |
-| tests | 5 classes: two controller (Mockito), two integration (Testcontainers — the migration, the two-rung lookup), one unit-render coverage |
+| tests | 5 classes: two controller (Mockito), two integration (Testcontainers — the migration, the (name, unit) norm key), one unit-render coverage |
 
 ### PWA
 
@@ -48,11 +48,15 @@ are deleted and recreated by every catalog rebuild (V82, V116, V122) — an FK t
 construction. Norms are keyed the way this codebase already joins catalog to estimate lines: by
 **name and unit** (`NameKeys.of`).
 
-**`trade` is the first rung of the lookup, never the key.** `estimate_items.trade` is nullable by
+**`trade` is a filter on the answer, never the key.** `estimate_items.trade` is nullable by
 design (V125), V118 stores a position two trades both ship exactly **once** — under whichever trade
 claimed it first — and both the V125 backfill and `EstimateService.resolveTrade` **derive** the
-trade from (name, type, unit). So the engine asks `findByTradeAndKey`, then `findByKey`. The second
-rung is the one that will do the work.
+trade from (name, type, unit). So the key is (name_key, unit), and the engine then keeps only the
+norms of the position's own trade plus any norm filed under no trade at all.
+
+> **Corrected by V132** (calculator §25). Cut 2 read this as «ask the trade, then fall back to name
+> and unit alone», which answers for a position of ANY trade — one drywall line bought a whole
+> painting section's materials. V118's single row is re-filed by the migration instead.
 
 **A norm's unit is read off the position, never guessed.** The norm stores the unit it was written
 against; a position whose unit differs is a different norm, not a conversion.
@@ -111,8 +115,10 @@ That is a basement or a metal shed, one hand on a trolley, in a work glove:
 
 ## 6. Gotchas found while building
 
-- `catalog_items` holding a shared position **once** (V118) is why the trade rung must be a fallback
-  and not a filter — a DRYWALL norm must still answer for a position filed under PAINTING.
+- `catalog_items` holding a shared position **once** (V118) is why a DRYWALL norm seemed to need to
+  answer for a position filed under PAINTING. **Wrong conclusion, fixed in V132** (calculator §25):
+  a fallback that drops the trade answers for every trade, not just the shared positions. The row
+  itself is re-filed instead, and the trade stays a filter.
 - The optimistic patch reads with `getQueryData`, computes, then writes. Assigning into a captured
   `let` from inside a `setQueryData` callback type-checks nowhere useful and hides the ordering.
 - `initOutbox` also subscribes to reconnects — the shopping handlers are registered in the same

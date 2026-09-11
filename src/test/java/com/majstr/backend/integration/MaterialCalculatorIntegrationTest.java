@@ -1,11 +1,9 @@
 package com.majstr.backend.integration;
 
 import com.majstr.backend.dto.CalculatedMaterialLine;
-import com.majstr.backend.dto.CoverageGapKind;
 import com.majstr.backend.dto.MaterialApplyRequest;
 import com.majstr.backend.dto.MaterialAvailabilityResponse;
 import com.majstr.backend.dto.MaterialCalculationResponse;
-import com.majstr.backend.dto.MaterialCoverage;
 import com.majstr.backend.dto.MaterialLineRequest;
 import com.majstr.backend.dto.ShoppingListItemResponse;
 import com.majstr.backend.dto.ShoppingListResponse;
@@ -78,12 +76,33 @@ class MaterialCalculatorIntegrationTest extends IntegrationTestBase {
     // --- the join the whole feature rests on ------------------------------------------------
 
     /**
-     * Put the WHOLE shipped DRYWALL catalog into one estimate. Every norm key must land on the
-     * position it was written for, and no position may be ambiguous — two trades norming the same
-     * name and unit is a data conflict that would leave a line silently uncounted in the field.
+     * The join checked from both ends, then the whole shipped DRYWALL catalog run through the
+     * calculator in one estimate.
+     *
+     * <p>The two SQL invariants are the load-bearing half, and V127's own self-check cannot replace
+     * them: that check ran when V127 applied, while the failure this guards against arrives with a
+     * LATER rebuild renaming a position — the norm then answers for nothing, with no error
+     * anywhere. The second query catches the other data conflict: a (name_key, unit) two trades
+     * both norm is unresolvable for a position that names no trade of its own, so it is skipped.</p>
      */
     @Test
     void everyDrywallNormFindsItsPositionInTheShippedCatalog() {
+        List<String> orphaned = jdbc.queryForList("""
+                SELECT n.name_key || ' [' || n.unit || ']' FROM material_norm n
+                 WHERE n.owner_id IS NULL AND n.trade = 'DRYWALL'
+                   AND NOT EXISTS (SELECT 1 FROM catalog_templates t
+                                    WHERE t.trade = 'DRYWALL' AND t.type = 'WORK'
+                                      AND t.unit = n.unit
+                                      AND""" + " " + NAME_KEY + " = n.name_key)", String.class);
+        assertThat(orphaned).as("norms whose position the catalog no longer ships").isEmpty();
+
+        List<String> ambiguous = jdbc.queryForList("""
+                SELECT name_key || ' [' || unit || ']' FROM material_norm
+                 WHERE owner_id IS NULL
+                 GROUP BY name_key, unit HAVING count(DISTINCT trade) > 1
+                """, String.class);
+        assertThat(ambiguous).as("a name and unit two trades both norm cannot be resolved").isEmpty();
+
         List<Map<String, Object>> templates = jdbc.queryForList("""
                 SELECT t.name, t.unit FROM catalog_templates t
                  WHERE t.trade = 'DRYWALL' AND t.type = 'WORK'
@@ -93,48 +112,58 @@ class MaterialCalculatorIntegrationTest extends IntegrationTestBase {
 
         MaterialCalculationResponse result = calculate(null, null);
 
-        Integer normedKeys = jdbc.queryForObject("""
-                SELECT count(DISTINCT n.name_key) FROM material_norm n
-                 WHERE n.owner_id IS NULL AND n.trade = 'DRYWALL'
-                """, Integer.class);
-        assertThat(result.coverage().covered())
-                .as("positions matched by a norm — every seeded key must find its position")
-                .isEqualTo(normedKeys);
-        assertThat(result.coverage().gaps()).extracting("kind")
-                .as("a name and unit two trades both norm cannot be resolved")
-                .doesNotContain(CoverageGapKind.AMBIGUOUS);
+        assertThat(result.coverage().trades()).containsExactly("DRYWALL");
+        assertThat(result.materials()).as("the whole catalog must buy something").isNotEmpty();
     }
 
-    /** A percent surcharge is not work: it belongs to neither side of «X з Y». */
+    /** A percent surcharge is not work: it can never have a norm, so it names no trade. */
     @Test
-    void aPercentSurchargeIsOutsideTheCoverageRatio() {
+    void aPercentSurchargeNamesNoTradeOfItsOwn() {
         addWork(name("монтаж гіпсокартону на стіни", "M2"), "M2", "20");
         addWork("Робота на висоті", "PERCENT", "10");
 
         MaterialCalculationResponse result = calculate(BigDecimal.ZERO, null);
 
-        assertThat(result.coverage().total()).isEqualTo(1);
-        assertThat(result.coverage().covered()).isEqualTo(1);
+        assertThat(result.coverage().trades()).containsExactly("DRYWALL");
     }
 
-    /** Demolition buys nothing, and V127 says so on the record rather than staying silent. */
+    /**
+     * Demolition buys nothing, and V127 says so on the record rather than staying silent — the 11
+     * {@code material_id IS NULL} verdicts are still observable: the position is COUNTED (its trade
+     * is named) and proposes nothing.
+     */
     @Test
-    void aWorkThatConsumesNothingIsCoveredWithoutProposingAnything() {
+    void aWorkThatConsumesNothingIsCountedWithoutProposingAnything() {
         addWork(name("демонтаж перегородки з гіпсокартону", "M2"), "M2", "18");
 
         MaterialCalculationResponse result = calculate(BigDecimal.ZERO, null);
 
-        assertThat(result.coverage().covered()).isEqualTo(1);
-        assertThat(result.coverage().gaps()).isEmpty();
+        assertThat(result.coverage().trades()).containsExactly("DRYWALL");
         assertThat(result.materials()).isEmpty();
+    }
+
+    /**
+     * A price-list row («Штукатурні роботи (від) — 0 м²») is not a decision to buy anything. It used
+     * to reach the norms and produce rows like «Лист ГКЛ — 0 м²», which is what «звідки у матеріалах
+     * стільки матеріалів» was about (master, 2026-09-11).
+     */
+    @Test
+    void aRowWithNoQuantityBuysNothingAndIsNotOfferedTheScreen() {
+        addWork(name("монтаж гіпсокартону на стіни", "M2"), "M2", "0");
+
+        MaterialCalculationResponse result = calculate(BigDecimal.ZERO, null);
+
+        assertThat(result.materials()).isEmpty();
+        assertThat(result.coverage().trades()).isEmpty();
+        assertThat(calculatorService.availability(estimateId, ownerId).available()).isFalse();
     }
 
     // --- the availability probe: an absent answer is HIDDEN, never shown empty ---------------
 
     /**
-     * V127 norms DRYWALL and nothing else. A tiler opening the materials screen would see every
-     * position listed as a gap and an empty buying list, which reads as a broken feature rather
-     * than an absent one — so the entry point is not offered at all.
+     * V127 norms DRYWALL and nothing else. A tiler opening the materials screen would get an empty
+     * buying list, which reads as a broken feature rather than an absent one — so the entry point
+     * is not offered at all.
      */
     @Test
     void anEstimateNothingCanBeCalculatedForIsNotOfferedTheScreen() {
@@ -143,22 +172,34 @@ class MaterialCalculatorIntegrationTest extends IntegrationTestBase {
         MaterialAvailabilityResponse availability = calculatorService.availability(estimateId, ownerId);
 
         assertThat(availability.available()).isFalse();
-        assertThat(availability.workLines()).isEqualTo(1);
-        assertThat(availability.coveredLines()).isZero();
+    }
+
+    /**
+     * «Consumes nothing» is a complete answer for the coverage line and NO answer for the button.
+     * The master's estimate had one drywall position, a demolition one; every norm for it carries
+     * {@code material_id IS NULL}, so «Матеріали» opened a screen with nothing on it. The trade is
+     * still counted — the work was checked, it just buys nothing.
+     */
+    @Test
+    void aConsumesNothingVerdictIsNotAnAnswerForOfferingTheScreen() {
+        addWork(name("демонтаж перегородки з гіпсокартону", "M2"), "M2", "18");
+
+        assertThat(calculatorService.availability(estimateId, ownerId).available()).isFalse();
+        assertThat(calculate(BigDecimal.ZERO, null).coverage().trades()).containsExactly("DRYWALL");
     }
 
     /** The probe and the calculation share one lookup, so they can never disagree about this. */
     @Test
-    void theProbeCountsWhatTheCalculationCounts() {
+    void theProbeAgreesWithWhatTheCalculationCounted() {
         addWork(name("монтаж гіпсокартону на стіни", "M2"), "M2", "20");
         addWork(UNKNOWN_WORK, "M2", "40");
 
         MaterialAvailabilityResponse availability = calculatorService.availability(estimateId, ownerId);
-        MaterialCoverage coverage = calculate(BigDecimal.ZERO, null).coverage();
+        MaterialCalculationResponse result = calculate(BigDecimal.ZERO, null);
 
         assertThat(availability.available()).isTrue();
-        assertThat(availability.workLines()).isEqualTo(coverage.total());
-        assertThat(availability.coveredLines()).isEqualTo(coverage.covered());
+        assertThat(result.coverage().trades()).containsExactly("DRYWALL");
+        assertThat(result.materials()).isNotEmpty();
     }
 
     // --- the arithmetic, on real norms -------------------------------------------------------
@@ -322,7 +363,7 @@ class MaterialCalculatorIntegrationTest extends IntegrationTestBase {
     // -------------------------------------------------------------------------------------------
 
     private MaterialCalculationResponse calculate(BigDecimal waste, BigDecimal perimeter) {
-        return calculatorService.calculate(estimateId, ownerId, waste, perimeter);
+        return calculatorService.calculate(estimateId, ownerId, waste, perimeter, null);
     }
 
     private CalculatedMaterialLine line(MaterialCalculationResponse result, String namePrefix) {

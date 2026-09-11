@@ -2,8 +2,6 @@ package com.majstr.backend.service;
 
 import com.majstr.backend.dto.CalculatedMaterialLine;
 import com.majstr.backend.dto.CalculatedMaterialRow;
-import com.majstr.backend.dto.CoverageGap;
-import com.majstr.backend.dto.CoverageGapKind;
 import com.majstr.backend.dto.MaterialApplyRequest;
 import com.majstr.backend.dto.MaterialAvailabilityResponse;
 import com.majstr.backend.dto.MaterialCalculationResponse;
@@ -37,8 +35,10 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 
 /**
@@ -57,13 +57,27 @@ import java.util.UUID;
  *       of a partition, no inferred layer count: he entered the figure, we use it. The norms are
  *       written on that basis (see the V127 preamble), so board, frame and tape all measure the
  *       same thing.</li>
- *   <li><b>What we cannot answer is said out loud.</b> A position with no norm, or with norms that
- *       disagree across trades, goes to {@link MaterialCoverage} instead of being skipped. A list
- *       that looks complete and is not sends the master to the shop twice.</li>
- *   <li><b>The trade is only the FIRST rung.</b> {@code estimate_items.trade} is nullable by design
- *       (V125) and V118 files a position two trades both ship under whichever claimed it first, so
- *       the fallback on (name, unit) is the rung that actually carries the load.</li>
+ *   <li><b>Only a buying decision is counted.</b> A PERCENT surcharge, a material the master already
+ *       listed, and a line whose quantity is still 0 are none of them — a price-list row
+ *       («Штукатурні роботи (від) — 0 м²») would otherwise buy 0 of something and name a trade
+ *       nobody is buying for. What WAS counted is named by trade in {@link MaterialCoverage}; what
+ *       was not stays silent (master's ruling, 2026-09-11).</li>
+ *   <li><b>The POSITION's trade decides which norms may answer.</b> A norm applies when its trade is
+ *       the position's, or when the position names no trade at all ({@code estimate_items.trade} is
+ *       nullable by design, V125). An earlier draft fell back to (name, unit) alone whenever the
+ *       trade missed, and on the master's own estimate — one drywall line, «Вирізка отворів»,
+ *       among 38 painter and tiling ones — that sold him картон, ґрунтовка and шпаклівка off the
+ *       МАЛЯРНІ positions: «оце все з малярки не має взагалі попадати» (his ruling, 2026-09-11).
+ *       A norm filed under no trade at all still answers for anyone — see {@link #normsFor}.</li>
  * </ol>
+ *
+ * <p><b>Two figures are ASKED FOR, never derived</b> (see {@link NormBasis}). The room's
+ * {@link NormBasis#PERIMETER} is one number for the whole estimate — one room, one perimeter. A
+ * короб's {@link NormBasis#SECTION} is one number PER POSITION (V131): a короб is sold by the м.п.
+ * of its length and sheathed by the розгортка of a box the position name does not describe, and a
+ * прямий короб, a радіусний one and a ніша in the same estimate are three different boxes. One
+ * section for all of them would be silently wrong for two — so each asks separately, and until it
+ * is answered the position's SECTION materials are reported as missing parameters and left out.</p>
  *
  * <p>A master may correct a coefficient, and his correction is a norm of his own that HIDES the
  * shipped one — see {@link #preferOwn} and {@code MaterialNormService}. It is resolved on the read
@@ -94,7 +108,9 @@ public class MaterialCalculatorService {
 
     @Transactional(readOnly = true)
     public MaterialCalculationResponse calculate(UUID estimateId, UUID ownerId,
-                                                 BigDecimal wastePercent, BigDecimal perimeter) {
+                                                 BigDecimal wastePercent, BigDecimal perimeter,
+                                                 String sections) {
+        Map<UUID, BigDecimal> section = parseSections(sections);
         Estimate estimate = estimateService.loadOwned(estimateId, ownerId);
         List<EstimateItem> works = workLines(itemRepository
                 .findByEstimateIdOrderBySortOrderAscIdAsc(estimateId));
@@ -103,27 +119,22 @@ public class MaterialCalculatorService {
 
         Map<UUID, Bucket> buckets = new LinkedHashMap<>();
         Map<UUID, PerimeterDemand> perimeterDemand = new LinkedHashMap<>();
-        List<CoverageGap> gaps = new ArrayList<>();
-        int covered = 0;
+        List<MissingParameter> parameters = new ArrayList<>();
+        Set<Trade> countedTrades = new LinkedHashSet<>();
+        boolean otherWorks = false;
 
         for (EstimateItem item : works) {
-            List<MaterialNorm> candidates = byKey.getOrDefault(NameKeys.of(item.getName()), List.of())
-                    .stream()
-                    .filter(n -> n.getUnit() == item.getUnit())
-                    .toList();
-            List<MaterialNorm> norms = rung1(candidates, item.getTrade());
+            List<MaterialNorm> norms = normsFor(item, byKey);
             if (norms.isEmpty()) {
-                if (spansSeveralTrades(candidates)) {
-                    gaps.add(gap(item, CoverageGapKind.AMBIGUOUS));
-                    continue;
-                }
-                norms = candidates;
-            }
-            if (norms.isEmpty()) {
-                gaps.add(gap(item, CoverageGapKind.NO_NORM));
                 continue;
             }
-            covered++;
+            // The POSITION's trade, not the norm's: a norm filed under no trade answers for anyone,
+            // and naming ITS trade would then answer «Гіпсокартон» for a line that is not one.
+            if (item.getTrade() == null) {
+                otherWorks = true;
+            } else {
+                countedTrades.add(item.getTrade());
+            }
             for (MaterialNorm norm : norms) {
                 Material material = norm.getMaterial();
                 if (material == null) {
@@ -134,21 +145,36 @@ public class MaterialCalculatorService {
                             PerimeterDemand::larger);
                     continue;
                 }
-                BigDecimal quantity = item.getQuantity() == null ? BigDecimal.ZERO : item.getQuantity();
+                BigDecimal quantity = item.getQuantity(); // non-null and positive — see workLines
+                if (norm.getBasis() == NormBasis.SECTION) {
+                    // Per POSITION, not per estimate: this box's own розгортка or nothing at all.
+                    BigDecimal box = section.get(item.getId());
+                    if (box == null || box.signum() <= 0) {
+                        parameters.add(new MissingParameter(NormBasis.SECTION.name(),
+                                material.displayName(), item.getId(), item.getName()));
+                        continue;
+                    }
+                    BigDecimal area = quantity.multiply(box);
+                    BigDecimal amount = area.multiply(norm.getQtyPerUnit());
+                    bucket(buckets, material).add(norm, new MaterialSourceLine(
+                            item.getId(), item.getName(), item.getUnit(), scaled(quantity),
+                            norm.getQtyPerUnit(), norm.getId(), norm.getOwner() != null,
+                            NormBasis.SECTION, scaled(box), scaled(amount)), amount);
+                    continue;
+                }
                 BigDecimal amount = quantity.multiply(norm.getQtyPerUnit());
                 bucket(buckets, material).add(norm, new MaterialSourceLine(
                         item.getId(), item.getName(), item.getUnit(), scaled(quantity),
                         norm.getQtyPerUnit(), norm.getId(), norm.getOwner() != null,
-                        NormBasis.QUANTITY, scaled(amount)), amount);
+                        NormBasis.QUANTITY, null, scaled(amount)), amount);
             }
         }
 
-        List<MissingParameter> parameters = new ArrayList<>();
         boolean havePerimeter = perimeter != null && perimeter.signum() > 0;
         for (PerimeterDemand demand : perimeterDemand.values()) {
             if (!havePerimeter) {
                 parameters.add(new MissingParameter(NormBasis.PERIMETER.name(),
-                        demand.material().displayName()));
+                        demand.material().displayName(), null, null));
                 continue;
             }
             BigDecimal amount = perimeter.multiply(demand.norm().getQtyPerUnit());
@@ -156,7 +182,7 @@ public class MaterialCalculatorService {
                     null, null, Unit.LINEAR_METER, scaled(perimeter),
                     demand.norm().getQtyPerUnit(), demand.norm().getId(),
                     demand.norm().getOwner() != null,
-                    NormBasis.PERIMETER, scaled(amount)), amount);
+                    NormBasis.PERIMETER, null, scaled(amount)), amount);
         }
 
         BigDecimal effectiveWaste = effectiveWaste(ownerId, wastePercent);
@@ -169,7 +195,7 @@ public class MaterialCalculatorService {
 
         return new MaterialCalculationResponse(
                 materials,
-                new MaterialCoverage(works.size(), covered, gaps),
+                new MaterialCoverage(countedTrades.stream().map(Trade::name).toList(), otherWorks),
                 parameters,
                 effectiveWaste,
                 havePerimeter ? scaled(perimeter) : null,
@@ -180,9 +206,9 @@ public class MaterialCalculatorService {
      * Can this estimate be answered at all — is there anything to buy that we know how to count?
      *
      * <p>The Матеріали entry point is HIDDEN when the answer is no. V127 ships norms for DRYWALL
-     * and nothing else, so a tiler opening the screen would get every one of his positions listed
-     * as a gap and an empty buying list — which reads as a broken feature rather than an absent
-     * one. A trade we cannot answer for is better not offered.</p>
+     * and nothing else, so a tiler opening the screen would get an empty buying list — which reads
+     * as a broken feature rather than an absent one. A trade we cannot answer for is better not
+     * offered.</p>
      *
      * <p>Deliberately its own endpoint rather than a field on {@code EstimateResponse}: that record
      * is built in ~20 places and every one of them would then pay for this lookup.</p>
@@ -193,17 +219,14 @@ public class MaterialCalculatorService {
         List<EstimateItem> works = workLines(itemRepository
                 .findByEstimateIdOrderBySortOrderAscIdAsc(estimateId));
         Map<String, List<MaterialNorm>> byKey = normsByKey(works, ownerId);
-        int covered = 0;
-        for (EstimateItem item : works) {
-            // The same unit rule the calculation itself uses: a norm in another unit is not an
-            // answer for this line, and nothing is converted.
-            boolean hit = byKey.getOrDefault(NameKeys.of(item.getName()), List.of()).stream()
-                    .anyMatch(n -> n.getUnit() == item.getUnit());
-            if (hit) {
-                covered++;
-            }
-        }
-        return new MaterialAvailabilityResponse(covered > 0, works.size(), covered);
+        // The calculation's own lookup, so the probe and the result screen can never disagree —
+        // plus the one condition the probe alone has: the norm must BUY something. A «checked,
+        // consumes nothing» verdict (material_id IS NULL, V127) is a complete answer for the
+        // coverage line, but an estimate whose every norm is one of those has nothing to show, and
+        // the master met exactly that: the «Матеріали» button opened a screen with no materials.
+        boolean any = works.stream().anyMatch(item ->
+                normsFor(item, byKey).stream().anyMatch(n -> n.getMaterial() != null));
+        return new MaterialAvailabilityResponse(any);
     }
 
     /**
@@ -240,15 +263,23 @@ public class MaterialCalculatorService {
     }
 
     /**
-     * The denominator, and both exclusions matter. A PERCENT line is a surcharge, not work — it
-     * consumes nothing, and counting it would push the coverage ratio down for no reason. A
-     * MATERIAL line is something the master already decided to buy; we were not asked to explain
-     * it, and running it through the norms would offer him the same thing twice.
+     * What counts as a buying decision, and all three exclusions matter. A PERCENT line is a
+     * surcharge, not work — it consumes nothing. A MATERIAL line is something the master already
+     * decided to buy; we were not asked to explain it, and running it through the norms would offer
+     * him the same thing twice.
+     *
+     * <p><b>A quantity of 0 is the third, and it was a live bug.</b> Masters keep their price list
+     * inside an estimate — «Штукатурні роботи (від) — 0 м²» — and on the master's own test estimate
+     * 31 of 39 lines were exactly that. Each one reached a norm and produced a material row of 0
+     * («Картон захисний — 0 м²», «Шпаклівка фінішна — 0 кг»), which is what «звідки у матеріалах
+     * стільки матеріалів» was about. A line with no quantity is not yet a decision to buy
+     * anything.</p>
      */
     private List<EstimateItem> workLines(List<EstimateItem> items) {
         return items.stream()
                 .filter(i -> i.getType() == ItemType.WORK)
                 .filter(i -> i.getUnit() != Unit.PERCENT)
+                .filter(i -> i.getQuantity() != null && i.getQuantity().signum() > 0)
                 .toList();
     }
 
@@ -273,25 +304,36 @@ public class MaterialCalculatorService {
         return byNaturalKey.values();
     }
 
-    private List<MaterialNorm> rung1(List<MaterialNorm> candidates, Trade trade) {
-        if (trade == null) {
-            return List.of();
-        }
-        return candidates.stream().filter(n -> n.getTrade() == trade).toList();
-    }
-
     /**
-     * Two trades ship norms for the same name and unit, and the position names neither of them. We
-     * cannot tell which work this is, and picking one would put someone else's material on the list
-     * — so nothing is counted and the position is named in the coverage report instead.
+     * Which norms may answer for one position — the whole trade rule, in one place shared by the
+     * calculation and the availability probe.
+     *
+     * <p>Two filters, and both are refusals to guess. The UNIT: a norm written for m² is not an
+     * answer for the same position priced per м.п., and nothing is converted. The TRADE: the
+     * position's own trade decides, so «Шпаклювання фінішне» filed under Малярні роботи never
+     * reaches a DRYWALL norm. A norm carrying no trade at all is general and answers for anyone.</p>
+     *
+     * <p>A position with no trade of its own ({@code estimate_items.trade} is nullable by design,
+     * V125 — ADDENDUM and hand-typed lines) takes every candidate, since there is nothing to
+     * disagree with. Unless they span several trades: then two trades ship this name and unit, we
+     * cannot tell which work it is, and picking one would put someone else's material on the list —
+     * so the position is skipped and names no trade. {@code MaterialCalculatorIntegrationTest} pins
+     * that the shipped catalog contains no such collision in the first place.</p>
      */
+    private List<MaterialNorm> normsFor(EstimateItem item, Map<String, List<MaterialNorm>> byKey) {
+        List<MaterialNorm> candidates = byKey.getOrDefault(NameKeys.of(item.getName()), List.of())
+                .stream()
+                .filter(n -> n.getUnit() == item.getUnit())
+                .toList();
+        if (item.getTrade() == null) {
+            return spansSeveralTrades(candidates) ? List.of() : candidates;
+        }
+        return candidates.stream()
+                .filter(n -> n.getTrade() == null || n.getTrade() == item.getTrade())
+                .toList();
+    }
     private boolean spansSeveralTrades(List<MaterialNorm> candidates) {
         return candidates.stream().map(MaterialNorm::getTrade).distinct().count() > 1;
-    }
-
-    private CoverageGap gap(EstimateItem item, CoverageGapKind kind) {
-        return new CoverageGap(item.getId(), item.getName(), item.getUnit(),
-                scaled(item.getQuantity() == null ? BigDecimal.ZERO : item.getQuantity()), kind);
     }
 
     private Bucket bucket(Map<UUID, Bucket> buckets, Material material) {
@@ -395,6 +437,42 @@ public class MaterialCalculatorService {
             materialRepository.findById(line.materialId()).ifPresent(m -> resolved.put(line, m));
         }
         return resolved;
+    }
+
+    /**
+     * The sections the master typed, as they ride the query string: «uuid:0.4,uuid:0.55».
+     *
+     * <p>One compact scalar parameter rather than a repeated one or a request body, so asking for a
+     * переріз does not turn the calculation into a POST — it stores nothing and stays a view of the
+     * estimate (V127).</p>
+     *
+     * <p>A malformed or unknown entry is <b>ignored, never rejected</b>. The id belongs to an
+     * estimate line the master is still editing, so a stale one is ordinary — and the consequence of
+     * ignoring it is that the position asks for its section again, which is a screen he can act on.
+     * A 400 would be an empty screen with no way forward, for a figure that is optional by design.
+     * </p>
+     */
+    static Map<UUID, BigDecimal> parseSections(String raw) {
+        if (raw == null || raw.isBlank()) {
+            return Map.of();
+        }
+        Map<UUID, BigDecimal> sections = new LinkedHashMap<>();
+        for (String entry : raw.split(",")) {
+            int colon = entry.lastIndexOf(':');
+            if (colon <= 0 || colon == entry.length() - 1) {
+                continue;
+            }
+            try {
+                UUID id = UUID.fromString(entry.substring(0, colon).trim());
+                BigDecimal value = new BigDecimal(entry.substring(colon + 1).trim().replace(',', '.'));
+                if (value.signum() > 0) {
+                    sections.put(id, value);
+                }
+            } catch (IllegalArgumentException e) {
+                // not an id, or not a number — the position simply asks again
+            }
+        }
+        return sections;
     }
 
     private BigDecimal scaled(BigDecimal value) {

@@ -28,10 +28,12 @@ import java.util.UUID;
  * to {@code catalog_templates}, and the templates are deleted and recreated by every catalog
  * rebuild (V82, V116, V122), so an FK to either is broken by construction.</p>
  *
- * <p>{@link #trade} is stored but is only the <b>first rung</b> of the lookup — see
- * {@code MaterialNormRepository}. {@code estimate_items.trade} is nullable by design (V125) and
- * V118 files a position two trades both ship under only one of them, so a lookup that insists on
- * the trade misses silently.</p>
+ * <p>{@link #trade} is stored but is <b>not part of the key</b> — it is a filter on the answer, and
+ * the filter lives in {@code MaterialCalculatorService#normsFor}: a norm answers for a position of
+ * its own trade, and a norm with NO trade answers for anyone. It cannot be the key itself, because
+ * {@code estimate_items.trade} is nullable by design (V125) and is derived from (name, type, unit).
+ * V118 files a position two trades both ship under only one of them, which used to make the trade
+ * miss on real data — V132 re-files those rows instead of dropping the filter.</p>
  *
  * <p>{@link #owner} is null on a shipped norm. A master who corrects a coefficient gets a row of
  * his own here, forked on write like {@code TemplateDefaultOverride} (V113) rather than through a

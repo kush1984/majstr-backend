@@ -35,6 +35,12 @@ import java.util.UUID;
  * it carries the numbers HE left on the screen — every one of them is editable there, so the
  * server does not re-derive what it already showed him.</p>
  *
+ * <p>The two figures the estimate cannot carry ride the query string for that reason. {@code
+ * perimeter} is one number for the whole estimate; {@code sections} is per POSITION and arrives as
+ * one compact scalar — «uuid:0,4,uuid:0,55» — rather than a repeated parameter or a request body,
+ * so asking for a короб's переріз does not turn the calculation into a POST. See {@code
+ * MaterialCalculatorService.parseSections} for why a malformed entry is ignored, not rejected.</p>
+ *
  * <p>The answer lands in the shopping list and nowhere else. Adding the materials to the estimate
  * as MATERIAL lines was offered once and removed: the calculation exists so the master knows what
  * to buy, and a line in a client-facing estimate is a different decision he did not ask for.</p>
@@ -54,8 +60,10 @@ public class MaterialCalculatorController {
             @PathVariable UUID estimateId,
             @RequestParam(required = false) BigDecimal wastePercent,
             @RequestParam(required = false) BigDecimal perimeter,
+            @RequestParam(required = false) String sections,
             @AuthenticationPrincipal UserPrincipal principal) {
-        return calculatorService.calculate(estimateId, principal.id(), wastePercent, perimeter);
+        return calculatorService.calculate(
+                estimateId, principal.id(), wastePercent, perimeter, sections);
     }
 
     @GetMapping("/availability")

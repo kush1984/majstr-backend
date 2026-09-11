@@ -19,18 +19,20 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
- * The norm lookup is a two-rung ladder, and rung 2 is the one that carries the load. Keying a norm
- * on the trade alone looks correct and misses silently on two entirely ordinary kinds of line:
+ * A norm is keyed by NAME and UNIT — this is where that key is exercised against a real schema:
+ * the normalisation it goes through, the unique constraints that keep the shipped set and a master's
+ * fork apart, and the fact that a per-м.п. norm is simply not found for a per-m² line.
  *
- * <ul>
- *   <li>{@code estimate_items.trade} is <b>nullable by design</b> (V125) — an ADDENDUM line or a
- *       hand-typed one that matched nothing in the master's catalog carries no trade at all;</li>
- *   <li>V118 stores a position two trades both ship <b>exactly once</b>, under whichever trade
- *       claimed it first, so a line's trade can legitimately disagree with the norm's.</li>
- * </ul>
+ * <p><b>The trade is NOT part of the key, and these queries do not decide anything by it.</b>
+ * {@link MaterialNormRepository#findByKey} answers for the name and unit whatever trade filed the
+ * norm; which of those answers may be USED for a given position is decided in
+ * {@code MaterialCalculatorService#normsFor} — the position's own trade, or no trade on the norm at
+ * all. An earlier draft let the repository's broad answer through unfiltered and put a painter's
+ * шпаклівка on a drywall estimate's buying list. So a broad result below is the query working as
+ * intended, not the engine's behaviour.</p>
  *
- * <p>In both cases a one-rung lookup returns nothing, the calculator quietly proposes no material
- * for that line, and the master never learns a norm existed. Hence a test per rung.</p>
+ * <p>{@code estimate_items.trade} is nullable by design (V125 — an ADDENDUM line, or a hand-typed
+ * one that matched nothing in the master's catalog), which is why the trade can never be the key.</p>
  */
 class MaterialNormLookupIntegrationTest extends IntegrationTestBase {
 
@@ -98,15 +100,20 @@ class MaterialNormLookupIntegrationTest extends IntegrationTestBase {
     void aLineWithNoTradeAtAllStillFindsItsNorm() {
         norm(Trade.DRYWALL, nameKey, Unit.M2, "1.2");
 
-        // What the engine does for a V125 line whose trade is NULL: it cannot ask rung 1 at all.
+        // A V125 line whose trade is NULL has nothing to disagree with, so every candidate stands.
         List<MaterialNorm> found = normRepository.findByKey(nameKey, Unit.M2);
 
         assertThat(found).hasSize(1);
         assertThat(found.get(0).getQtyPerUnit()).isEqualByComparingTo("1.2");
     }
 
+    /**
+     * The key ignores the trade, and the SERVICE is what filters on it. Both halves are asserted
+     * here, because the broad answer below used to be taken as the engine's answer — which is how a
+     * painter's position came to buy drywall materials.
+     */
     @Test
-    void aLineWhoseTradeDisagreesWithTheNormStillFindsIt() {
+    void theKeyIgnoresTheTradeAndTheServiceIsWhatRefusesIt() {
         norm(Trade.DRYWALL, nameKey, Unit.M2, "1.2");
 
         // The V118 case: the position is filed under PAINTER for this master, the norm under DRYWALL.
@@ -115,15 +122,15 @@ class MaterialNormLookupIntegrationTest extends IntegrationTestBase {
     }
 
     @Test
-    void aTradeSpecificNormIsWhatRungOneIsFor() {
+    void aTradeSpecificNormIsFoundByItsOwnTradeAndAGeneralOneByAnyone() {
         norm(null, nameKey, Unit.M2, "1.0");
         norm(Trade.DRYWALL, nameKey, Unit.M2, "1.4");
 
         assertThat(normRepository.findByTradeAndKey(Trade.DRYWALL, nameKey, Unit.M2))
                 .singleElement()
                 .satisfies(n -> assertThat(n.getQtyPerUnit()).isEqualByComparingTo("1.4"));
-        // Rung 2 sees both — the engine takes rung 1 when it answers, so the general norm is the
-        // fallback rather than a competitor.
+        // The key sees both. Which of them may answer for a position is the service's decision: a
+        // DRYWALL line takes either, a PAINTER line takes only the one with no trade of its own.
         assertThat(normRepository.findByKey(nameKey, Unit.M2)).hasSize(2);
     }
 

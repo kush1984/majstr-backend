@@ -16,7 +16,7 @@ import java.util.List;
  * Ukrainian to drift out of step with the rest of the app.</p>
  *
  * @param materials     what to buy, one row per material, largest contribution first
- * @param coverage      how much of the estimate the norms actually explain
+ * @param coverage      which of the estimate's trades the norms actually answered for
  * @param parameters    figures the calculation needs and does not have (see {@link MissingParameter})
  * @param wastePercent  the allowance actually applied, so the screen can show which one won
  * @param perimeter     the perimeter used, or null when none was given

@@ -4,16 +4,15 @@ package com.majstr.backend.dto;
  * Whether the material calculator has anything to say about this estimate — the signal the PWA uses
  * to show or HIDE the «Матеріали» entry point (V129 round 1).
  *
- * <p>Hiding it is the point. V127 ships norms for DRYWALL only, so for every other trade the screen
- * would open with each position listed as a gap and an empty buying list. An absent feature is
- * quieter than a broken-looking one.</p>
+ * <p>Hiding it is the point. V127 ships norms for DRYWALL and nothing else, so for every other trade
+ * the screen would open with an empty buying list. An absent feature is quieter than a
+ * broken-looking one.</p>
  *
- * @param available   true when at least one work line resolves to a norm — the entry point is shown
- * @param workLines   how many lines were examined (PERCENT and MATERIAL lines are not among them)
- * @param coveredLines how many of those we can answer for, so the caller can hint at a partial answer
+ * <p>One field on purpose. It used to carry {@code workLines}/{@code coveredLines} as well, so the
+ * caller could hint at a partial answer — nothing ever read them, and they were counted off a
+ * denominator the master has since rejected (see {@link MaterialCoverage}). Two places computing
+ * «how complete is this» is two places that can disagree with the screen.</p>
+ *
+ * @param available true when at least one work line resolves to a norm — the entry point is shown
  */
-public record MaterialAvailabilityResponse(
-        boolean available,
-        int workLines,
-        int coveredLines
-) {}
+public record MaterialAvailabilityResponse(boolean available) {}

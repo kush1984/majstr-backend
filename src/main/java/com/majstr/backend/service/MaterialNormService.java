@@ -21,7 +21,8 @@ import java.util.UUID;
  * <p>A shipped norm FORKS ON WRITE, the pattern {@code TemplateDefaultOverride} established (V113):
  * the first correction copies the row under his {@code owner_id} and the copy hides the original for
  * him from then on. Editing the shared row would change every other master's arithmetic, and a
- * per-master delta table beside the norms would need the whole lookup ladder built a second time.</p>
+ * per-master delta table beside the norms would need the whole lookup — the key AND the trade
+ * filter — built a second time.</p>
  *
  * <p>Two consequences the caller must respect:</p>
  * <ol>

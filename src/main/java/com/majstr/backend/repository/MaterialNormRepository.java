@@ -12,23 +12,28 @@ import java.util.List;
 import java.util.UUID;
 
 /**
- * The norm lookup is a LADDER, and the second rung carries the load.
+ * A norm is keyed by NAME and UNIT, and the trade is a filter on the answer, not part of the key.
  *
- * <p>{@code estimate_items.trade} is nullable by design (V125 — ADDENDUM and hand-typed lines), and
- * V118 stores a position two trades both ship exactly once, under whichever trade claimed it first.
- * A lookup keyed on the trade therefore misses silently on lines that are perfectly ordinary. The
- * engine asks {@link #findByTradeAndKey} first, so a trade-specific norm can override a general
- * one, and falls back to {@link #findByKey}. Never collapse the ladder into the first rung.</p>
+ * <p>There is no foreign key to hang a norm off: {@code catalog_items} does not point at
+ * {@code catalog_templates}, and every catalog rebuild (V82, V116, V122) deletes and recreates the
+ * templates — so the key is (nameKey, unit), and {@link #findByKey} is what the name-keying itself
+ * means. {@link #findByTradeAndKey} narrows the same key to one trade.</p>
  *
- * <p>The two rung queries return default norms ({@code owner IS NULL}) only and exist to pin the
- * ladder's shape. The engine reads through {@link #findAllByNameKeysForOwner}, which loads the
- * master's own norms alongside the defaults; the fork hides the default it was copied from in
- * Java, under the natural key, rather than in a third rung here.</p>
+ * <p><b>Which norms may answer for a position is decided in the SERVICE, not here</b> — see
+ * {@code MaterialCalculatorService#normsFor}. An earlier draft asked this repository for the
+ * position's trade and, on a miss, took whatever trade had filed the norm; that put a painter's
+ * шпаклівка into a drywall estimate («оце все з малярки не має взагалі попадати», master's ruling,
+ * 2026-09-11). The rule now is the position's trade, or no trade on the norm at all.</p>
+ *
+ * <p>Both queries above return default norms ({@code owner IS NULL}) only and exist to pin the key's
+ * shape. The engine reads through {@link #findAllByNameKeysForOwner}, which loads the master's own
+ * norms alongside the defaults; the fork hides the default it was copied from in Java, under the
+ * natural key, rather than in a query here.</p>
  */
 @Repository
 public interface MaterialNormRepository extends JpaRepository<MaterialNorm, UUID> {
 
-    /** Rung 1 — the position's own trade, when it has one. */
+    /** The key narrowed to one trade. Used to pin the shape; the engine filters in Java. */
     @Query("""
             SELECT n FROM MaterialNorm n
             WHERE n.owner IS NULL AND n.trade = :trade AND n.nameKey = :nameKey AND n.unit = :unit
@@ -38,7 +43,7 @@ public interface MaterialNormRepository extends JpaRepository<MaterialNorm, UUID
                                          @Param("nameKey") String nameKey,
                                          @Param("unit") Unit unit);
 
-    /** Rung 2 — name and unit alone, whatever trade filed the norm. */
+    /** The key itself — name and unit, whatever trade filed the norm. NOT an answer on its own. */
     @Query("""
             SELECT n FROM MaterialNorm n
             WHERE n.owner IS NULL AND n.nameKey = :nameKey AND n.unit = :unit
