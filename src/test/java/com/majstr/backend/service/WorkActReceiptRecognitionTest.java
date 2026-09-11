@@ -1,6 +1,6 @@
 package com.majstr.backend.service;
 
-import com.majstr.backend.dto.ActReceiptRecognizeResponse;
+import com.majstr.backend.dto.ReceiptRecognizeResponse;
 import com.majstr.backend.dto.WorkActResponse;
 import com.majstr.backend.entity.WorkActKind;
 import com.majstr.backend.entity.WorkActStatus;
@@ -60,7 +60,7 @@ class WorkActReceiptRecognitionTest {
         when(recognizer.extractMeta(anyString(), any())).thenReturn(new ActReceiptExtractor.Recognized(
                 "Епіцентр", LocalDate.of(2026, 8, 18), new BigDecimal("483.50")));
 
-        ActReceiptRecognizeResponse read = service.recognize(ACT, OWNER, jpeg());
+        ReceiptRecognizeResponse read = service.recognize(ACT, OWNER, jpeg());
 
         assertThat(read.recognized()).isTrue();
         assertThat(read.label()).isEqualTo("Епіцентр");
@@ -89,7 +89,7 @@ class WorkActReceiptRecognitionTest {
         when(actService.get(ACT, OWNER)).thenReturn(act(WorkActStatus.DRAFT));
         when(fiscalQr.read(QR, false)).thenReturn(Optional.of(fiscalReceipt()));
 
-        ActReceiptRecognizeResponse read = service.readQr(ACT, OWNER, QR);
+        ReceiptRecognizeResponse read = service.readQr(ACT, OWNER, QR);
 
         assertThat(read.recognized()).isTrue();
         assertThat(read.label()).isEqualTo("Епіцентр");
@@ -128,7 +128,7 @@ class WorkActReceiptRecognitionTest {
         when(recognizer.extractMeta(anyString(), any())).thenReturn(new ActReceiptExtractor.Recognized(
                 "Епіцентр", LocalDate.of(2026, 8, 18), new BigDecimal("483.50")));
 
-        ActReceiptRecognizeResponse read = service.recognizeStored(ACT, RECEIPT, OWNER);
+        ReceiptRecognizeResponse read = service.recognizeStored(ACT, RECEIPT, OWNER);
 
         assertThat(read.recognized()).isTrue();
         assertThat(read.amount()).isEqualByComparingTo("483.50");

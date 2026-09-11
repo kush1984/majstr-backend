@@ -4,6 +4,7 @@ import com.majstr.backend.dto.ExpenseRequest;
 import com.majstr.backend.dto.ExpenseResponse;
 import com.majstr.backend.dto.ObjectEconomyActsResponse;
 import com.majstr.backend.dto.ObjectEconomyInternalsResponse;
+import com.majstr.backend.dto.ObjectEconomyMaterialsResponse;
 import com.majstr.backend.dto.ObjectEconomyResponse;
 import com.majstr.backend.dto.PaymentsSummaryResponse;
 import com.majstr.backend.dto.SignedEstimatePanelResponse;
@@ -18,6 +19,7 @@ import com.majstr.backend.feature.FeatureGuard;
 import com.majstr.backend.repository.EstimateRepository;
 import com.majstr.backend.repository.ObjectExpenseRepository;
 import com.majstr.backend.repository.PaymentReceiptRepository;
+import com.majstr.backend.repository.ProjectReceiptRepository;
 import com.majstr.backend.repository.UserRepository;
 import com.majstr.backend.repository.WorkActItemRepository;
 import com.majstr.backend.repository.WorkActReceiptRepository;
@@ -60,6 +62,7 @@ public class ObjectExpenseService {
     private final WorkActItemRepository workActItemRepository;
     private final WorkActReceiptRepository workActReceiptRepository;
     private final PaymentReceiptRepository paymentReceiptRepository;
+    private final ProjectReceiptRepository projectReceiptRepository;
 
     @Transactional
     public ExpenseResponse add(UUID objectId, UUID ownerId, ExpenseRequest req) {
@@ -140,12 +143,13 @@ public class ObjectExpenseService {
         projectService.loadOwned(objectId, ownerId); // existence + ownership (404 / 403)
         List<SignedEstimatePanelResponse> panels = signedEstimatePanels(objectId);
         ObjectEconomyActsResponse acts = actsAxis(objectId);
+        ObjectEconomyMaterialsResponse materials = materialsAxis(objectId);
         boolean enabled = featureGuard.isEnabled(user, Feature.OBJECT_ECONOMY);
         PaymentsSummaryResponse payments = enabled ? paymentService.summaryUnchecked(objectId) : null;
         ObjectEconomyInternalsResponse internals = enabled
                 ? internalsOf(objectId, payments.contractedTotal())
                 : null;
-        return new ObjectEconomyResponse(panels, acts, payments, internals);
+        return new ObjectEconomyResponse(panels, acts, materials, payments, internals);
     }
 
     /** The FREE-visible works axis (acts iteration): contracted / accepted-by-acts / received,
@@ -159,6 +163,20 @@ public class ObjectExpenseService {
                 .add(workActReceiptRepository.sumSignedActReceipts(objectId));
         BigDecimal received = paymentReceiptRepository.sumByProjectId(objectId);
         return new ObjectEconomyActsResponse(contracted, accepted, received);
+    }
+
+    /** The FREE-visible materials axis (V129): what the client still owes for material the
+     *  master paid for at the till. Only the receipts still marked «клієнт відшкодовує» — one
+     *  flipped to «моя витрата» is an {@code object_expenses} row and is counted there.
+     *
+     *  <p>Deliberately its own axis and NOT part of {@code contracted}/{@code acceptedByActs}:
+     *  those two count one estimate set and «Прийнято актами» must stay a subset of «За
+     *  договором». A receipt joins the contract only when an act picks it up.</p> */
+    private ObjectEconomyMaterialsResponse materialsAxis(UUID objectId) {
+        return new ObjectEconomyMaterialsResponse(
+                projectReceiptRepository.sumReimbursable(objectId),
+                projectReceiptRepository.countReimbursable(objectId),
+                projectReceiptRepository.countUnpriced(objectId));
     }
 
     private ObjectEconomyInternalsResponse internalsOf(UUID objectId, BigDecimal contracted) {

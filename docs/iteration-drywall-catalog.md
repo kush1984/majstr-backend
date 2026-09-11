@@ -659,3 +659,36 @@ and refuses to run if they are not `Q1, Q2, Q4`, so the next bundle edit that mo
 the migration instead of silently outdating the sentence. The LIBRARY propagation is V121/V122's
 rule verbatim — `description` is not on `CatalogItemRequest`, so a master cannot have authored the
 text being overwritten.
+
+## 17. The master's card goes too — `quality_note` now renders nowhere (PWA v1.43.1)
+
+> «оці такі тексти прибери з кошторисів і порталів клієнта і пдф»
+
+He pasted the block back at us — the «Стандарт робіт» heading, its hint, and the whole Q3 paragraph —
+and asked for it gone from the estimate, the portal and the PDF.
+
+**Two of those three were already gone.** V122 stopped the portal card and the PDF block (§16); a
+grep for `qualityNote` across `EstimatePdfService` and `static/portal/index.html` returns nothing.
+What he was looking at is the **master-only** card in `EstimateEditorPage`, and the reason he read it
+as a client surface is that **its own hint said so**: «Це бачить клієнт під таблицею — у порталі та в
+PDF». That sentence had been false since V122. A card that misdescribes itself is worse than no card,
+which settles the question of whether to fix the copy or drop the card.
+
+So the card is deleted, and with it `estimate.qualityNote` / `estimate.qualityNoteHint` from both
+bundles. **Deleting the keys is the regression guard** — re-adding `t('estimate.qualityNote')`
+reddens `i18nKeys.test.ts`, which reads the source for static `t('…')` calls, so the card cannot come
+back quietly the way the stale hint stayed.
+
+**What deliberately stays.** The column, the server snapshot (`EstimateTemplateService.qualityNote`),
+its offline twin in `useEstimateTemplates.ts`, and `duplicate` carrying it. Same treatment V119 gave
+`estimate_items.description` when its two client surfaces went: the data keeps accumulating and
+bringing any surface back is a render change, not a migration. The mirrored-formulas rule still binds
+the two composers, so the twin's doc comment now says out loud that nothing reads the result.
+
+**And the paragraph itself is not lost** — `estimate_templates.description` is untouched. The text
+lives on the BUNDLE, where the master picks the level and where the `(i)` in `TemplatesPage` and
+`TemplatePickerSheet` still spell it out. That is the reading that survives: the paragraph explains a
+CHOICE, it was never a promise stapled to every estimate built from that choice.
+
+**Not verified:** 375 px in a live browser. The change only removes a block, so nothing new has to
+fit; the lines below it (`EstimateNextStep`) move up.

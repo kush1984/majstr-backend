@@ -1,7 +1,7 @@
 package com.majstr.backend.controller;
 
 import com.majstr.backend.dto.ActProgressResponse;
-import com.majstr.backend.dto.ActReceiptRecognizeResponse;
+import com.majstr.backend.dto.ReceiptRecognizeResponse;
 import com.majstr.backend.dto.ActShareStateResponse;
 import com.majstr.backend.dto.FiscalQrRequest;
 import com.majstr.backend.dto.WorkActCreateRequest;
@@ -194,7 +194,7 @@ public class WorkActController {
             + "into the act. Persists nothing; an unreadable photo is a soft recognized=false, not "
             + "an error. Rate-limited per account")
     @PostMapping(value = "/api/acts/{id}/receipts/recognize", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
-    public ActReceiptRecognizeResponse recognizeReceipt(
+    public ReceiptRecognizeResponse recognizeReceipt(
             @PathVariable UUID id,
             @RequestParam("file") MultipartFile file,
             @AuthenticationPrincipal UserPrincipal principal) throws IOException {
@@ -209,7 +209,7 @@ public class WorkActController {
             + "with it, so the «✨ Розпізнати» button never re-uploads over a slow link and "
             + "survives a page reload. Persists nothing; the client applies the prefill and PATCHes")
     @PostMapping("/api/acts/{id}/receipts/{receiptId}/recognize")
-    public ActReceiptRecognizeResponse recognizeStoredReceipt(
+    public ReceiptRecognizeResponse recognizeStoredReceipt(
             @PathVariable UUID id,
             @PathVariable UUID receiptId,
             @AuthenticationPrincipal UserPrincipal principal) throws IOException {
@@ -225,7 +225,7 @@ public class WorkActController {
             + "a soft recognized=false, so the dialog falls back to the photo. Rate-limited per "
             + "account")
     @PostMapping("/api/acts/{id}/receipts/qr")
-    public ActReceiptRecognizeResponse readReceiptQr(
+    public ReceiptRecognizeResponse readReceiptQr(
             @PathVariable UUID id,
             @Valid @RequestBody FiscalQrRequest req,
             @AuthenticationPrincipal UserPrincipal principal) {

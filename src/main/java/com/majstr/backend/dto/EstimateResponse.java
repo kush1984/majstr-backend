@@ -21,6 +21,9 @@ public record EstimateResponse(
         String qualityNote,
         Instant createdAt,
         Instant updatedAt,
+        /** When the client signed it, null until then. Read-only; the editor shows it in the
+         *  next-step block. */
+        Instant signedAt,
         List<EstimateItemResponse> items,
         BigDecimal worksSubtotal,
         BigDecimal materialsSubtotal,

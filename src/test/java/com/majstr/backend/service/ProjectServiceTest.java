@@ -43,6 +43,8 @@ class ProjectServiceTest {
     // @InjectMocks would leave them null and delete would NPE.
     @Mock com.majstr.backend.repository.ProjectPhotoRepository photoRepository;
     @Mock com.majstr.backend.storage.StorageService storage;
+    // updateStatus archives/unarchives the object's shopping list, so this one must not be null.
+    @Mock com.majstr.backend.repository.ShoppingListRepository shoppingListRepository;
     @InjectMocks ProjectService projectService;
 
     private final UUID ownerId = UUID.randomUUID();

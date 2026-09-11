@@ -55,6 +55,9 @@ public final class UnitNormalizer {
             Map.entry("набір", Unit.SET), Map.entry("set", Unit.SET),
             // point (e.g. an electrical point)
             Map.entry("точка", Unit.POINT), Map.entry("точок", Unit.POINT), Map.entry("тчк", Unit.POINT),
+            // litre — primer, paint, adhesive (V126)
+            Map.entry("л", Unit.LITRE), Map.entry("літр", Unit.LITRE), Map.entry("літрів", Unit.LITRE),
+            Map.entry("літра", Unit.LITRE), Map.entry("l", Unit.LITRE),
             // percent
             Map.entry("%", Unit.PERCENT), Map.entry("відс", Unit.PERCENT), Map.entry("процент", Unit.PERCENT)
     );

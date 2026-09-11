@@ -16,6 +16,7 @@ import com.majstr.backend.repository.ProjectMessageRepository;
 import com.majstr.backend.repository.EstimateRepository;
 import com.majstr.backend.repository.ProjectPhotoRepository;
 import com.majstr.backend.repository.ProjectRepository;
+import com.majstr.backend.repository.ShoppingListRepository;
 import com.majstr.backend.repository.UserRepository;
 import com.majstr.backend.storage.StorageService;
 import lombok.RequiredArgsConstructor;
@@ -47,6 +48,7 @@ public class ProjectService {
     private final LimitService limitService;
     private final ProjectPhotoRepository photoRepository;
     private final StorageService storage;
+    private final ShoppingListRepository shoppingListRepository;
 
     @Transactional
     public ProjectResponse create(ProjectRequest req, UUID ownerId) {
@@ -132,6 +134,7 @@ public class ProjectService {
         Project project = loadOwned(id, ownerId);
         applyCompletedAt(project, status);
         project.setStatus(status);
+        applyShoppingListArchive(project, status);
         return withSummary(project);
     }
 
@@ -186,6 +189,21 @@ public class ProjectService {
     }
 
     /** Stamp completedAt when entering COMPLETED (only if unset), clear it when leaving. */
+    /**
+     * A finished or cancelled object archives its shopping list; reopening it brings the list back.
+     * The list is never deleted — the project rule is to limit what gets CREATED, never to take
+     * away access to what already exists. Archiving only removes the home-screen card; the content
+     * stays reachable from the object.
+     *
+     * <p>The repository is used directly rather than {@code ShoppingListService} because that
+     * service depends on this one for ownership, and a bean cycle for one bulk update is not worth
+     * it. This is the single object-status hook — nothing else may set {@code archived_at}.</p>
+     */
+    private void applyShoppingListArchive(Project project, ProjectStatus newStatus) {
+        boolean terminal = newStatus == ProjectStatus.COMPLETED || newStatus == ProjectStatus.CANCELLED;
+        shoppingListRepository.updateArchivedAt(project.getId(), terminal ? Instant.now() : null);
+    }
+
     private static void applyCompletedAt(Project project, ProjectStatus newStatus) {
         if (newStatus == ProjectStatus.COMPLETED) {
             if (project.getCompletedAt() == null) {

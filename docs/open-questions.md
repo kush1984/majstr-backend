@@ -895,7 +895,11 @@ one-line summary — keep the item in the file as a record.
   `object_expenses` (amount/category/date columns) with the same review screen. Build on request.
 
 ### Object economy: photo of a receipt attached to an expense
-- **Status:** OPEN
+- **Status:** IN_PROGRESS — promoted 2026-09-09 (object-receipts iteration). The master's ruling
+  reframes it: a receipt from the shopping list is by DEFAULT money the client reimburses, not the
+  master's cost, so the primary landing place is a **receivable in the visible half of the economy**,
+  and an `ObjectExpense` is what the minority «це моя витрата» case produces. See
+  [iteration-object-receipts.md](iteration-object-receipts.md).
 - **Since:** Object-economy iteration (2026-07-06)
 - **Context:** Attaching a receipt photo to an expense is a common bookkeeping want.
 - **Notes / options:** Reuse `StorageService` (a `receipt_url` on `object_expense`), owner-only
@@ -1454,7 +1458,7 @@ one-line summary — keep the item in the file as a record.
   depends on it today.
 
 ### DRYWALL: what is an extra layer of ГКЛ worth on its own?
-- **Status:** OPEN
+- **Status:** IN_PROGRESS — promoted 2026-09-07; blocked on ONE number from the master.
 - **Since:** V120 (2026-09-01)
 - **Context:** Kyiv price lists sell «Монтаж додаткового шару ГКЛ» as its own m² line and we do not.
   We do ship both ends of it - «Монтаж конструкцій (перегородки 2 сторони) із гіпсокартону в 1 шар»
@@ -1510,7 +1514,7 @@ one-line summary — keep the item in the file as a record.
   allowlist has started hiding defects instead of scheduling them.
 
 ### How materials come back after V81
-- **Status:** OPEN
+- **Status:** IN_PROGRESS — promoted 2026-09-07: the material calculator answers it via option (b).
 - **Since:** Material removal (V81, 2026-07-31)
 - **Context:** V81 removed materials from the default catalog in every trade, on the grounds that
   we shipped invented prices nobody maintains while receipt-photo import supplies the real price
@@ -1523,6 +1527,12 @@ one-line summary — keep the item in the file as a record.
   receipt imports have already produced (no invention, no shared price). (c) is the only one that
   produces a real number without us guessing, but it needs usage data we do not have yet.
   Deliberately deferred — the user's words were «наразі викидай повністю, лишаємо суто роботи».
+- **Answered by the material calculator (2026-09-07):** option **(b)** is what that iteration
+  builds — a **brand-free, price-free** MATERIAL catalog, seeded per trade, whose only purpose is to
+  give a consumption norm something to point at and a quantity somewhere to land. No price ships, so
+  the V81 grievance («ми возили вигадані ціни, які ніхто не підтримує») does not return. Option (c)
+  stays open on top of it: once these positions exist, a master's own receipt imports have a stable
+  name to attach a real price to.
 - **Related (2026-08-07):** the community-prices iteration built exactly this pattern for WORK
   lines (crowd-median off estimate data) and deliberately left materials out of its aggregate —
   see "Community prices: materials are explicitly out of scope" below. Option (c) here is the
@@ -2332,7 +2342,16 @@ one-line summary — keep the item in the file as a record.
   client and a worse one for a master who wants to edit the numbers elsewhere.
 
 ### Material calculators (quantity → how much material to buy)
-- **Status:** OPEN
+- **Status:** IN_PROGRESS — promoted 2026-09-07 by the master. **Cut 1 shipped** (V126: the
+  shopping list + material dictionary + norm schema + master parameters + the `LITRE` unit —
+  [iteration-shopping-list.md](iteration-shopping-list.md)). **Cut 2 shipped** (V127: the DRYWALL
+  norms, the estimate→materials engine with the two-rung lookup, the coverage report, and the
+  result screen — [iteration-material-calculator.md](iteration-material-calculator.md) §20). The
+  item stays IN_PROGRESS: **only DRYWALL has norms.** TILER (adhesive + grout), PAINTER (primer and
+  paint per m² per coat) and the rest of the long tail are still uncovered, and the §19 audit left
+  three things open for the master — the box/slope/niche parameters, whether «Каркасна
+  звукоізоляція» plus «Монтаж ГКЛ на стелю» for one ceiling should be flagged as a possible
+  double-count, and how the coverage report should word a position that is size-driven by nature.
 - **Since:** Catalog-picker iteration (2026-09-01), from the competitor scan above.
 - **Context:** This is ПРОраб's centre of gravity and the widest functional gap between us: mortar
   and concrete, brick, drywall ceilings / walls / partitions, tile with adhesive, wallpaper, slat
@@ -2367,6 +2386,148 @@ one-line summary — keep the item in the file as a record.
   (which parameters a trade's calculator asks for, what waste % is conventional, how packages round)
   and for spotting where several independent services agree — a norm three unrelated calculators and
   the master all put in the same range is one we can ship. Where they disagree, his number wins.
+- **Decisions taken 2026-09-07 (master), all recorded in the iteration doc:** norms come from
+  **his own practice**; **DRYWALL first**, then PAINTER/TILING, then **FLOORING** (added the same
+  day, §9 Cut 2b); **FREE entirely**, no plan gate; **both outputs** are needed — «Додати в
+  кошторис» AND «Список покупок». Two rules were added on top of the plan: **§15 — every parameter a
+  norm needs but the position name does not carry is ENTERABLE, has a default, and the default is
+  announced with a warning, never applied silently**; and **§16 — the shopping list is SAVED**, per ESTIMATE, which
+  retires the plan's «the calculation writes nothing» claim (deriving stays a pure read; saving is a
+  separate explicit write). Two further master rulings the same day: **the list is NOT money** — it
+  never reaches the economy, receipts still arrive by fact through the act chain; and **the list
+  belongs to the ESTIMATE**, because the estimate is what you build first and the materials are
+  counted off it.
+
+### A personal consumption norm — when does a master get to override one
+- **Status:** RESOLVED (2026-09-08) — option (a), «Моя норма, назавжди», shipped: an explicit
+  control on the arithmetic line, forked on write like V113, no migration needed. Option (b) (offer
+  after N corrections) is dropped, not deferred — no edit logging ships.
+- **Since:** Material-calculator prompt v4 (2026-09-07)
+- **Context:** Cut 1 ships **default norms only** (`material_norm.owner_id IS NULL`). The master can
+  edit the *result* — every number on the calculator screen is editable, and an edited shopping-list
+  row is never overwritten by a recalculation — but he cannot edit the norm itself. A master who
+  spreads 25 kg of adhesive per m² where the norm says 5 will correct the same figure in every list,
+  forever. That contradicts the decision that norms come from the master's own practice, so the
+  column is reserved now rather than bolted on later.
+- **Notes / options:** The growth path is fixed and must not be replaced by an ad-hoc "master
+  coefficient" beside it: `material_norm.owner_id NULL = default`, forked on write exactly like
+  `template_default_override` (V113) — the master's row hides the default under the same natural key.
+  Open part is the **trigger**, not the mechanism: (a) an explicit «моя норма» control on the result
+  row, discoverable but one more thing to learn; (b) offer it after the same figure is corrected N
+  times (N=3?), which needs the corrections to be recorded somewhere they currently are not; (c) do
+  nothing until a real master asks. (b) is the best fit for a non-technical audience but is the only
+  one that needs its own storage — decide before cut 2, since (b) means logging edits from cut 1.
+  **V128 does not move this** — a recalculation now parks its figure on the edited row
+  (`suggested_quantity`) and the master answers ACCEPT / KEEP_MINE, but the answer is applied and
+  discarded, never counted. Option (b) still needs storage that does not exist.
+  **2026-09-08 — the master chose (a) («Моя норма, назавжди») and it is built**: an explicit control
+  on the arithmetic line, forked on write as described above, **no migration needed** (V126 already
+  put `owner_id` inside `ux_material_norm`). Resolution is a read-path collapse (`preferOwn`), not a
+  third ladder rung. Option (b) is dropped, not deferred — no edit logging shipped. Ready to close
+  as RESOLVED on the master's word; see `docs/iteration-material-calculator.md` §21.
+
+### Masters do not discover the FAB — a field report, not a hypothesis
+- **Status:** RESOLVED (2026-09-08) — the estimate-editor redesign shipped (PWA 1.41.0), taking options (a), (c) and (d) together: `EstimateNextStep` names the next action in words at the end of the list, the FAB is a single direct «＋ Додати позицію» again, and every secondary action moved to a header ⋮. (b), the coach mark, was not built. **This is the estimate editor only** — the FAB on every other screen still opens a menu, and whether the same misread bites there is untested — reopen as a new item if a second field report says so. Details: `docs/iteration-estimate-next-step.md`.
+- **Since:** 2026-09-07, master's own conversation with another master
+- **Context:** «тільки що мав розмову з одним і він навіть не розібрався, що є фаб батон який має
+  меню всередині і там можна поділитись з кошторисом з клієнтом, він просто кидав скріншоти
+  кошторису по частинках». One real user never found the FAB at all, and fell back to sending the
+  client screenshots of the estimate in pieces — while the product's single best feature, the client
+  portal with online signing, sat one tap away behind a круглу кнопку. This is not a discoverability
+  nitpick: the whole share → sign → act chain is unreachable for a master who does not open that menu.
+- **Notes / options:** The FAB is used on **every** screen (`components/Fab.tsx`), so this is
+  product-wide, not an estimate-screen bug. Directions, none chosen: (a) promote the one or two
+  actions that matter most out of the menu into the screen itself, where content lives — a named
+  button under the list beats a pill behind a «＋»; (b) a first-run coach mark, cheap but it teaches
+  once and is skipped by exactly the people who need it; (c) an **empty/finished-state** call to
+  action — an estimate with positions and no share link is a place to say «Надішліть клієнту» in
+  words; (d) rename the button's affordance — a «＋» promises «додати», not «дії», which is arguably
+  the whole misread. Related, and blocked by this: the material calculator's entry point
+  (iteration-material-calculator.md §17) currently rests on the same assumption this report breaks.
+
+### «Нагадати клієнту» has no semantics of its own — it is the share email sent twice
+- **Status:** DEFERRED (2026-09-08) — the master dropped the action rather than the question: «для чого ми взагалі підняли те питання, думаю давай його пропустимо, не треба нічого ще раз нагадувати поки немає такого запиту». No reminder ships, and `SENT` gets a different primary action. Reopen only if a master actually asks for one.
+- **Since:** estimate-editor-redesign recon (2026-09-08)
+- **Context:** The redesign's `EstimateNextStep` gives the `SENT` state one primary action,
+  «🔔 Нагадати клієнту». No reminder flow exists — there is no locale key and no endpoint for one.
+  What does exist is `POST /api/estimates/{id}/share/send-email` (`ShareLinkService.sendByEmail`,
+  rate-limited, reuses the existing link), so the cheapest implementation sends the client **the
+  identical email a second time**: same subject, same body, «ось ваш кошторис».
+- **Notes / options:** (a) re-send as is — free, ships with the redesign, but a client who ignored
+  the first letter gets a copy that reads like a duplicate, not a nudge; (b) a `reminder` flag on
+  the same endpoint that swaps subject and opening line («нагадуємо про кошторис …»), one template
+  and one boolean, no new route; (c) a real reminder feature with its own history and «востаннє
+  нагадано {дата}» in the footer block, which is the only variant that stops a master from sending
+  four identical letters in a day (the rate limiter caps volume, not repetition). The footer block
+  makes this visible for the first time — until now the action lived behind a FAB nobody opened.
+
+### How a master measures a two-sided partition — RESOLVED by the master
+- **Status:** RESOLVED (2026-09-08) — **the m² he typed IS the sheathing area, both sides included.
+  Nothing is multiplied by 2.**
+- **Since:** DRYWALL unit audit, cut 2 step 1 (2026-09-08)
+- **Context:** «Монтаж конструкцій (перегородки 2 сторони) із гіпсокартону в 1 шар» is priced per m²
+  at 800 ₴ while the one-sided «Монтаж гіпсокартону на стіни» is 430 ₴ — almost exactly double,
+  which reads as «the m² is the partition face, the price covers both sides». Prompt B's norm table,
+  on the other hand, is written «на 1 м² **обшивки**». The two contradict, and the gap is 2x on
+  every sheet, screw and profile in four positions (straight and radius partitions, 1 and 2 layers).
+- **Resolution (master's words):** «нічого множити на 2 не треба, якщо майстер вказав 20 м2, то це
+  має бути метраж всієї перегородки з обидвох боків і це його вже проблема якщо він помилився, ми
+  тут не вгадуємо, а використовуємо дані які він же сам ввів». The rule generalises past this one
+  position: **the calculator never reinterprets a quantity the master typed.** Consequences for
+  V127: ГКЛ is 1 m²/m² per layer against the entered figure, and the frame norms (CW/UW, TN25,
+  ущільнювальна стрічка) are written per m² of **sheathing** too — roughly half of any handbook
+  figure quoted per m² of partition face. Second half of the same ruling: **layers default to 1
+  unless the position name says otherwise** («в 2 шари», «ГКЛ в два слоя» → 2), and whatever the
+  calculator assumed **must be shown and must be editable on the result screen** — announced, never
+  silent, which is §15 of the plan applied to an assumption rather than to a parameter.
+
+### `EstimateStatus.REJECTED` is unreachable — there is no door a client or master can open
+- **Status:** OPEN
+- **Since:** estimate-editor-redesign recon (2026-09-08)
+- **Context:** `EstimateStatus` carries `REJECTED`, but nothing in the product can produce it. The
+  only write is `EstimateService.updateEstimate` (`if (req.status() == EstimateStatus.REJECTED)`,
+  which also clears `countInEconomy`), so it takes a hand-made `PUT /api/estimates/{id}`. The client
+  portal has no reject action at all (`static/portal/index.html` contains no `reject`), and the PWA
+  ships only the type, a `danger` badge colour and the label «Відхилено» — no component sets it.
+  Work acts, by contrast, do have a real path: `PATCH /api/acts/{id}/status`, `SENT → REJECTED`.
+- **Consequence taken now:** `EstimateNextStep` does **not** build a REJECTED screen — REJECTED
+  renders exactly like DRAFT (the estimate is editable and re-sendable), so there is one branch and
+  no dead UI. If a door is ever opened, the state already has a home.
+- **Notes / options:** (a) leave it — a signed estimate is the outcome that matters and a refusal is
+  handled out-of-band, which is how masters work today; (b) an owner-side «клієнт відмовився» move,
+  mirroring the act's `PATCH …/status`, so a dead estimate stops polluting the DRAFT/SENT working
+  set without being deleted; (c) a client-side reject button in the portal, which is the loudest
+  option and the one most likely to end a deal that a phone call would have saved. The question is
+  product, not technical: **is a refusal a state we want to record at all?**
+
+### A consumption norm must survive a position RENAME
+- **Status:** OPEN
+- **Since:** Material-calculator planning (2026-09-07)
+- **Context:** A norm keys on the catalog position **name** (`lower(trim(name))`) — the same key a
+  template item already resolves its price through. V116 and V121/V122 prove renames and deletions
+  happen, and the failure is **silent**: the position still applies, the price still resolves, only
+  the materials quietly stop appearing. That is the exact shape of the V118 bug where `missingItems`
+  never set a rank — nothing errors, a column of output is just absent.
+- **Notes / options:** (a) key the norm on the template id instead — wrong, because a master's own
+  `catalog_items` row is not a template and V113 forks defaults on write; (b) keep the name key and
+  make a rename **carry** its norms (an explicit UPDATE in the same migration that renames, plus a
+  self-check inside the migration, the way V112 already self-checks its bundle names); (c) key on
+  name but report coverage loudly, which §6 of the iteration doc requires anyway («норму знаємо для
+  12 з 19 позицій») — so a lost norm shows up as a coverage drop rather than as silence. (b) + (c)
+  together is the honest answer; (c) alone is the cheap safety net that must exist regardless.
+
+### Calculate materials for a WHOLE OBJECT from Заміри
+- **Status:** OPEN
+- **Since:** Material-calculator planning (2026-09-07), master's own framing
+- **Context:** «можна також порахувати із замірів обєкта, типу на весь обєкт якщо заміри повністю
+  додані, але наразі давай ми це не робимо». The first cut computes strictly from the **positions
+  already in an estimate**. The measurement route is the «Смета М2» shape — a quantity exists before
+  any estimate does — and the iteration doc's §2 already lists it as one of three intended inputs.
+- **Notes / options:** It needs a precondition nothing enforces today: **measurements complete for
+  the whole object**, and no definition of «complete» exists. Without one the output silently
+  under-counts, which is §6's worst failure («the master reads the list as complete and
+  under-buys»). Deliberately out of the first cut. Related: «Measurement → quantity calculator on
+  estimate lines» (IN_PROGRESS) is the same input side, one line at a time.
 
 ### Voice input of a position
 - **Status:** IN_PROGRESS — **all three rounds shipped and pushed**: cut 0 (2026-09-03), cut 1
@@ -2645,6 +2806,20 @@ one-line summary — keep the item in the file as a record.
   the PDF appendix, and doesn't count against the receipt budget). The «Це чек» promotion is still
   unbuilt — but the affordance now sits right next to it, so a master mistaking the folder move for
   it is the signal to build the real thing.
+
+### FREE's 5-receipt-photo cap vs one shopping trip
+- **Status:** OPEN
+- **Since:** Object-receipts iteration (2026-09-09)
+- **Context:** `MAX_RECEIPT_PHOTOS_PER_OBJECT` is 5 on FREE (raised from 0 in the photo-folders
+  round, on the reasoning that FILING a receipt photo calls no LLM). Object receipts make that cap
+  meet reality: one trip to a builders' merchant routinely produces more paper than that — several
+  tills, a separate cash receipt for the delivery, a hand-written товарний чек from the yard.
+- **Notes / options:** An object receipt's own photo is stored under its own key (act receipts work
+  the same way — only the optional «Чеки» folder COPY draws on the photo budget), so the cap binds
+  the copy, not the receipt. Undecided: whether object receipts get their own count limit, share the
+  photo budget, or stay uncapped on the reasoning that a receipt is proof of money and money is not a
+  paid feature. Decide when a real master hits it — the number to watch is receipts per object on
+  FREE.
 
 ### Photo folders: the follow-ups round 4 deliberately left out
 - **Status:** OPEN

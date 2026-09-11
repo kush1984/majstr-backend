@@ -32,6 +32,12 @@ public interface EstimateRepository extends JpaRepository<Estimate, UUID> {
      *  per-project estimate limit (deleting one frees a slot). */
     long countByProjectId(UUID projectId);
 
+    /**
+     * How many of these estimates are not settled yet — the shopping list says out loud that its
+     * quantities can still move. A hint on a screen, never a gate.
+     */
+    long countByIdInAndStatusNot(Collection<UUID> ids, EstimateStatus status);
+
     // ---- admin activity ---------------------------------------------------
 
     /** Estimate count per owner for a set of users (admin list, no N+1). */

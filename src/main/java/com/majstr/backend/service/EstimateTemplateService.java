@@ -458,7 +458,7 @@ public class EstimateTemplateService {
         // Nothing is broken today (all 167 tiling names align on both sides), but a bundle line and
         // a catalog position are joined BY NAME and nothing enforces that they stay identical.
         Map<String, CatalogItem> catalog = catalogRepository.findByOwnerIdOrderByNameAsc(ownerId).stream()
-                .collect(Collectors.toMap(c -> nameKey(c.getName()), c -> c, (a, b) -> a));
+                .collect(Collectors.toMap(c -> NameKeys.of(c.getName()), c -> c, (a, b) -> a));
 
         Estimate estimate = estimateRepository.save(Estimate.builder()
                 .project(project)
@@ -477,10 +477,10 @@ public class EstimateTemplateService {
                 if (picked != null && !picked.contains(ti.getId())) {
                     continue; // the master unticked it in the picker
                 }
-                if (!seen.add(nameKey(ti.getName()))) {
+                if (!seen.add(NameKeys.of(ti.getName()))) {
                     continue; // already contributed by an earlier template
                 }
-                CatalogItem match = catalog.get(nameKey(ti.getName()));
+                CatalogItem match = catalog.get(NameKeys.of(ti.getName()));
                 Unit unit = match != null ? match.getUnit() : ti.getUnit();
                 BigDecimal catalogPrice = match != null ? match.getDefaultPrice() : BigDecimal.ZERO;
                 // A PERCENT position's catalog "price" IS the percent — see percentQuantity.
@@ -646,23 +646,4 @@ public class EstimateTemplateService {
     private static String normalize(String s) {
         return s == null || s.isBlank() ? null : s.trim();
     }
-/**
-     * The one key a bundle line and a catalog position are matched on.
-     *
-     * <p>They are joined BY NAME and nothing enforces that the two spellings stay identical, so a
-     * name differing by a single space matched nothing — and the line arrived priced at ZERO, with
-     * no error anywhere. Three call sites used to disagree about this key: the map and the lookup
-     * lowercased without trimming while the dedup trimmed. Collapsing runs of whitespace and the
-     * stray space after an opening bracket («( плюс % до м.кв.») makes the join survive the
-     * untidiness real seed data has. V88 normalises the stored names too; this is the belt to that
-     * migration's braces.</p>
-     */
-    static String nameKey(String name) {
-        if (name == null) {
-            return "";
-        }
-        return name.replaceAll("\\s+", " ").replace("( ", "(").replace(" )", ")")
-                .trim().toLowerCase();
-    }
 }
-

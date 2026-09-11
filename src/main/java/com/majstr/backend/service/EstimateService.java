@@ -1303,6 +1303,7 @@ public class EstimateService {
                 estimate.getQualityNote(),
                 estimate.getCreatedAt(),
                 estimate.getUpdatedAt(),
+                estimate.getSignedAt(),
                 itemDtos,
                 worksSubtotal,
                 materialsSubtotal,

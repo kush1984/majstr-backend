@@ -358,6 +358,20 @@ public class GlobalExceptionHandler {
         return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(body);
     }
 
+    @ExceptionHandler(MaterialPrefValidationException.class)
+    public ResponseEntity<ErrorResponse> handleMaterialPref(MaterialPrefValidationException ex, HttpServletRequest req) {
+        ErrorResponse body = ErrorResponse.coded(HttpStatus.BAD_REQUEST.value(),
+                HttpStatus.BAD_REQUEST.getReasonPhrase(), msg(ex.getMessage()), req.getRequestURI(), "MATERIAL_PREF_INVALID");
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(body);
+    }
+
+    @ExceptionHandler(MaterialNormValidationException.class)
+    public ResponseEntity<ErrorResponse> handleMaterialNorm(MaterialNormValidationException ex, HttpServletRequest req) {
+        ErrorResponse body = ErrorResponse.coded(HttpStatus.BAD_REQUEST.value(),
+                HttpStatus.BAD_REQUEST.getReasonPhrase(), msg(ex.getMessage()), req.getRequestURI(), "MATERIAL_NORM_INVALID");
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(body);
+    }
+
     @ExceptionHandler(PhotoFolderInUseException.class)
     public ResponseEntity<ErrorResponse> handlePhotoFolderInUse(PhotoFolderInUseException ex, HttpServletRequest req) {
         ErrorResponse body = ErrorResponse.coded(HttpStatus.CONFLICT.value(),
@@ -367,6 +381,13 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(WorkActValidationException.class)
     public ResponseEntity<ErrorResponse> handleWorkActValidation(WorkActValidationException ex, HttpServletRequest req) {
+        ErrorResponse body = ErrorResponse.coded(HttpStatus.BAD_REQUEST.value(),
+                HttpStatus.BAD_REQUEST.getReasonPhrase(), msg(ex.getMessage()), req.getRequestURI(), ex.getCode());
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(body);
+    }
+
+    @ExceptionHandler(ProjectReceiptValidationException.class)
+    public ResponseEntity<ErrorResponse> handleProjectReceipt(ProjectReceiptValidationException ex, HttpServletRequest req) {
         ErrorResponse body = ErrorResponse.coded(HttpStatus.BAD_REQUEST.value(),
                 HttpStatus.BAD_REQUEST.getReasonPhrase(), msg(ex.getMessage()), req.getRequestURI(), ex.getCode());
         return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(body);

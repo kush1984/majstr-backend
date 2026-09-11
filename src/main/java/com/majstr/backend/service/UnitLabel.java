@@ -27,7 +27,8 @@ public final class UnitLabel {
             entry(Unit.PERCENT,      "%"),
             entry(Unit.KM,           "км"),
             entry(Unit.DAY,          "день"),
-            entry(Unit.FLOOR,        "поверх")
+            entry(Unit.FLOOR,        "поверх"),
+            entry(Unit.LITRE,        "л")
     );
 
     private UnitLabel() {}

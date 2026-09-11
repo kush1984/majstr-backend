@@ -28,6 +28,15 @@ class UnitNormalizerTest {
     }
 
     @Test
+    void recognizesLitre() {
+        assertThat(UnitNormalizer.normalize("л")).isEqualTo(Unit.LITRE);
+        assertThat(UnitNormalizer.normalize("л.")).isEqualTo(Unit.LITRE);
+        assertThat(UnitNormalizer.normalize("літр")).isEqualTo(Unit.LITRE);
+        assertThat(UnitNormalizer.normalize("літрів")).isEqualTo(Unit.LITRE);
+        assertThat(UnitNormalizer.normalize("L")).isEqualTo(Unit.LITRE);
+    }
+
+    @Test
     void recognizesSquareMetreKilometreAndCount() {
         assertThat(UnitNormalizer.normalize("м.кв.")).isEqualTo(Unit.M2); // "м.кв." → мкв
         assertThat(UnitNormalizer.normalize("м.кв")).isEqualTo(Unit.M2);

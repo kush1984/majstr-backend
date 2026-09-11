@@ -1,6 +1,6 @@
 package com.majstr.backend.service;
 
-import com.majstr.backend.dto.ActReceiptRecognizeResponse;
+import com.majstr.backend.dto.ReceiptRecognizeResponse;
 import com.majstr.backend.dto.WorkActReceiptRequest;
 import com.majstr.backend.dto.WorkActReceiptResponse;
 import com.majstr.backend.entity.WorkAct;
@@ -189,7 +189,7 @@ public class WorkActReceiptService {
      * their own short transaction up front, so a foreign or frozen act never spends a model call —
      * the same shape as {@code ReceiptImportService.parse}.</p>
      */
-    public ActReceiptRecognizeResponse recognize(
+    public ReceiptRecognizeResponse recognize(
             UUID actId, UUID ownerId, MultipartFile file) throws IOException {
         if (actService.get(actId, ownerId).status() == WorkActStatus.SIGNED) {
             throw new WorkActSignedException();
@@ -206,15 +206,15 @@ public class WorkActReceiptService {
         return runRecognition(content);
     }
 
-    private ActReceiptRecognizeResponse runRecognition(byte[] content) {
+    private ReceiptRecognizeResponse runRecognition(byte[] content) {
         ImageKind kind = ImageContentTypeDetector.detect(
                 Arrays.copyOf(content, Math.min(HEADER_PEEK_BYTES, content.length)));
         try {
             var read = recognizer.extractMeta(kind.contentType, content);
-            return new ActReceiptRecognizeResponse(true, read.label(), read.total(), read.issuedAt());
+            return ReceiptRecognizeResponse.read(read.label(), read.total(), read.issuedAt());
         } catch (AiExtractionException e) {
             log.info("Act receipt recognition fell back to manual entry: {}", e.getMessage());
-            return ActReceiptRecognizeResponse.failed();
+            return ReceiptRecognizeResponse.failed();
         }
     }
 
@@ -231,13 +231,13 @@ public class WorkActReceiptService {
      *
      * <p>Not {@code @Transactional}: same reason as {@link #recognize}.
      */
-    public ActReceiptRecognizeResponse readQr(UUID actId, UUID ownerId, String payload) {
+    public ReceiptRecognizeResponse readQr(UUID actId, UUID ownerId, String payload) {
         if (actService.get(actId, ownerId).status() == WorkActStatus.SIGNED) {
             throw new WorkActSignedException();
         }
         return fiscalQr.read(payload, false)
-                .map(r -> new ActReceiptRecognizeResponse(true, r.label(), r.total(), r.issuedAt()))
-                .orElseGet(ActReceiptRecognizeResponse::failed);
+                .map(r -> ReceiptRecognizeResponse.read(r.label(), r.total(), r.issuedAt()))
+                .orElseGet(ReceiptRecognizeResponse::failed);
     }
 
     /**
@@ -251,7 +251,7 @@ public class WorkActReceiptService {
      * against the stored copy — so a slow read can be abandoned, retried, or resumed after a page
      * reload without spending the master's uplink again.</p>
      */
-    public ActReceiptRecognizeResponse recognizeStored(
+    public ReceiptRecognizeResponse recognizeStored(
             UUID actId, UUID receiptId, UUID ownerId) throws IOException {
         if (actService.get(actId, ownerId).status() == WorkActStatus.SIGNED) {
             throw new WorkActSignedException();

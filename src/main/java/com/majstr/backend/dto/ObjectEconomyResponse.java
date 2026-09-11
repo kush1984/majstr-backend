@@ -9,6 +9,9 @@ import java.util.List;
  *   <li>{@code estimates} — <b>FREE + PRO, always present, never gated.</b> A panel per SIGNED
  *       estimate (the acts) — "here are the deals I've actually signed" is the one thing every
  *       plan gets to see.</li>
+ *   <li>{@code materials} — <b>FREE + PRO, always present, never gated</b> (V129): what the
+ *       client still owes for material bought on receipts. A receivable, not income — see
+ *       {@link ObjectEconomyMaterialsResponse} for why it is not folded into the works axis.</li>
  *   <li>{@code acts} — <b>FREE + PRO, always present, never gated</b> (acts iteration): the works
  *       axis (contracted / accepted-by-acts / received). A contract-vs-work figure, not profit, so
  *       it sits with {@code estimates} on the free side of the split.</li>
@@ -23,6 +26,7 @@ import java.util.List;
 public record ObjectEconomyResponse(
         List<SignedEstimatePanelResponse> estimates,
         ObjectEconomyActsResponse acts,
+        ObjectEconomyMaterialsResponse materials,
         PaymentsSummaryResponse payments,
         ObjectEconomyInternalsResponse internals
 ) {}

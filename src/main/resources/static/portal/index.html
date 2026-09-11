@@ -662,8 +662,12 @@
         return 'Кошторис від ' + nameDateFormat.format(new Date(est.createdAt));
     }
 
+    // Every Unit the API can return. A missing entry falls through to the raw enum code, so a
+    // client would read «FLOOR» on his estimate — the same way PERCENT was once shown.
     const UNIT_LABEL = {
-        M2: 'м²', M: 'м', LINEAR_METER: 'м.п.', PIECE: 'шт', KG: 'кг', HOUR: 'год', SET: 'компл', PERCENT: '%'
+        M2: 'м²', M: 'м', LINEAR_METER: 'м.п.', PIECE: 'шт', KG: 'кг', HOUR: 'год', SET: 'компл',
+        M3: 'м³', T: 'т', POINT: 'точка', PERCENT: '%', KM: 'км', DAY: 'день', FLOOR: 'поверх',
+        LITRE: 'л'
     };
 
     function money(value) {

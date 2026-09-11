@@ -15,6 +15,7 @@ import com.majstr.backend.feature.DefaultFeatureGuard;
 import com.majstr.backend.repository.EstimateRepository;
 import com.majstr.backend.repository.ObjectExpenseRepository;
 import com.majstr.backend.repository.PaymentReceiptRepository;
+import com.majstr.backend.repository.ProjectReceiptRepository;
 import com.majstr.backend.repository.UserRepository;
 import com.majstr.backend.repository.WorkActItemRepository;
 import com.majstr.backend.repository.WorkActReceiptRepository;
@@ -48,6 +49,7 @@ class ObjectExpenseServiceTest {
     @Mock WorkActItemRepository workActItemRepository;
     @Mock WorkActReceiptRepository workActReceiptRepository;
     @Mock PaymentReceiptRepository paymentReceiptRepository;
+    @Mock ProjectReceiptRepository projectReceiptRepository;
 
     // The REAL gate (backed by PlanConfig) so the PRO/FREE decision is genuinely tested.
     private final DefaultFeatureGuard featureGuard = new DefaultFeatureGuard();
@@ -55,7 +57,7 @@ class ObjectExpenseServiceTest {
     private ObjectExpenseService service() {
         return new ObjectExpenseService(expenseRepository, estimateRepository, projectService,
                 userRepository, featureGuard, paymentService, workActItemRepository, workActReceiptRepository,
-                paymentReceiptRepository);
+                paymentReceiptRepository, projectReceiptRepository);
     }
 
     /** The works axis sums two queries (act lines + act receipts) and adds them — both are
@@ -63,6 +65,12 @@ class ObjectExpenseServiceTest {
     private void actsAxisZero(UUID object) {
         given(workActItemRepository.sumSignedActLineTotals(object)).willReturn(BigDecimal.ZERO);
         given(workActReceiptRepository.sumSignedActReceipts(object)).willReturn(BigDecimal.ZERO);
+    }
+
+    /** The materials axis (V129) is FREE-visible and computed unconditionally, so every economy
+     *  test walks through it; its sum is COALESCE'd in SQL and must never mock to null. */
+    private void materialsAxisZero(UUID object) {
+        given(projectReceiptRepository.sumReimbursable(object)).willReturn(BigDecimal.ZERO);
     }
 
     private void user(UUID id, Plan plan) {
@@ -95,6 +103,7 @@ class ObjectExpenseServiceTest {
         user(owner, Plan.FREE);
         given(projectService.loadOwned(object, owner)).willReturn(object(ProjectStatus.IN_PROGRESS));
         actsAxisZero(object);
+        materialsAxisZero(object);
         given(paymentService.summaryUnchecked(object)).willReturn(payments(BigDecimal.ZERO));
         given(expenseRepository.sumAll(object)).willReturn(BigDecimal.ZERO);
 
@@ -111,6 +120,7 @@ class ObjectExpenseServiceTest {
         user(owner, Plan.PRO);
         given(projectService.loadOwned(object, owner)).willReturn(object(ProjectStatus.IN_PROGRESS));
         actsAxisZero(object);
+        materialsAxisZero(object);
         given(paymentService.summaryUnchecked(object)).willReturn(payments(BigDecimal.ZERO));
         given(expenseRepository.sumAll(object)).willReturn(BigDecimal.ZERO);
 
@@ -161,6 +171,7 @@ class ObjectExpenseServiceTest {
         user(owner, Plan.PRO);
         given(projectService.loadOwned(object, owner)).willReturn(object(ProjectStatus.IN_PROGRESS));
         actsAxisZero(object);
+        materialsAxisZero(object);
         given(paymentService.summaryUnchecked(object))
                 .willReturn(payments(new BigDecimal("14000.00"), new BigDecimal("6000.00")));
         given(expenseRepository.sumAll(object)).willReturn(new BigDecimal("3500.00"));
@@ -180,6 +191,7 @@ class ObjectExpenseServiceTest {
         user(owner, Plan.PRO);
         given(projectService.loadOwned(object, owner)).willReturn(object(ProjectStatus.IN_PROGRESS));
         actsAxisZero(object);
+        materialsAxisZero(object);
         given(paymentService.summaryUnchecked(object))
                 .willReturn(payments(new BigDecimal("3000.00"), new BigDecimal("3000.00")));
         given(expenseRepository.sumAll(object)).willReturn(new BigDecimal("5000.00"));

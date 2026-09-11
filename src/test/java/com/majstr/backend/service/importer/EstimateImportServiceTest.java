@@ -209,7 +209,7 @@ class EstimateImportServiceTest {
 
     private EstimateResponse estimateResponse(BigDecimal total) {
         return new EstimateResponse(estimateId, projectId, "Import", EstimateStatus.DRAFT, null, null, null,
-                Instant.now(), Instant.now(), List.of(),
+                Instant.now(), Instant.now(), null, List.of(),
                 new BigDecimal("0.00"), new BigDecimal("0.00"), total, null, total, List.of());
     }
 }
