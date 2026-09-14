@@ -126,30 +126,33 @@ public interface UserRepository extends JpaRepository<User, UUID> {
      * built in Java (see {@link #likePattern}) and compared against
      * {@code LOWER(column)} by {@link #searchAdminByPattern}.
      *
-     * <p>{@code activeSince} pins who counts as "active right now" for the ORDER BY — passed in
-     * (not computed here) so the repository stays a plain data-access layer; the cutoff itself is
-     * the caller's business decision. Registration order is newest-first (DESC) — see the
-     * {@code registrationAscending} overload below for the toggle.</p>
+     * <p>{@code activeSince} pins who counts as "active right now" and {@code recentSince} who
+     * counts as "active today" for the ORDER BY — both passed in (not computed here) so the
+     * repository stays a plain data-access layer; the cutoffs themselves are the caller's business
+     * decision. Registration order is newest-first (DESC) — see the {@code registrationAscending}
+     * overload below for the toggle.</p>
      */
-    default Page<User> searchAdmin(Plan plan, String source, String search, Instant activeSince, Pageable pageable) {
+    default Page<User> searchAdmin(Plan plan, String source, String search, Instant activeSince,
+                                   Instant recentSince, Pageable pageable) {
         String src = (source == null || source.isBlank()) ? null : source.trim().toUpperCase(Locale.ROOT);
-        return searchAdminByPattern(plan, src, likePattern(search), idOrNull(search), activeSince, pageable);
+        return searchAdminByPattern(
+                plan, src, likePattern(search), idOrNull(search), activeSince, recentSince, pageable);
     }
 
     /**
-     * Same two-level order — active-right-now first, then registration date — but with the second
-     * level's direction picked by the caller (the admin panel's clickable «Реєстрація» header). The
-     * active bucket is always ON: an explicit registration sort narrows to WHICH end of the
-     * inactive/tied rows comes first, it never demotes someone who is active right now.
+     * Same bucketed order — active now, then active today, then registration date — but with the
+     * last level's direction picked by the caller (the admin panel's clickable «Реєстрація» header).
+     * Both active buckets are always ON: an explicit registration sort narrows to WHICH end of the
+     * inactive/tied rows comes first, it never demotes someone who is active right now or today.
      */
     default Page<User> searchAdmin(Plan plan, String source, String search, Instant activeSince,
-                                    boolean registrationAscending, Pageable pageable) {
+                                    Instant recentSince, boolean registrationAscending, Pageable pageable) {
         if (!registrationAscending) {
-            return searchAdmin(plan, source, search, activeSince, pageable);
+            return searchAdmin(plan, source, search, activeSince, recentSince, pageable);
         }
         String src = (source == null || source.isBlank()) ? null : source.trim().toUpperCase(Locale.ROOT);
         return searchAdminByPatternRegistrationAscending(
-                plan, src, likePattern(search), idOrNull(search), activeSince, pageable);
+                plan, src, likePattern(search), idOrNull(search), activeSince, recentSince, pageable);
     }
 
     /**
@@ -205,19 +208,22 @@ public interface UserRepository extends JpaRepository<User, UUID> {
     }
 
     /**
-     * Active-right-now users first (most recently active among them first), everyone else by
-     * {@code createdAt DESC}. No sort on the incoming {@code Pageable} — this ORDER BY is the only
-     * one.
+     * Three buckets in order — active right now, active within the last 24 hours, everyone else.
+     * The first two are sorted most-recently-active first, the last by {@code createdAt DESC}. No
+     * sort on the incoming {@code Pageable} — this ORDER BY is the only one.
      *
-     * <p>The second sort key is deliberately {@code CASE WHEN <active> THEN u.lastActiveAt END}, not
+     * <p>The two active buckets cannot overlap: a {@code CASE} stops at its first matching WHEN, so
+     * a user inside {@code activeSince} is bucket 0 and is never also counted as "today".</p>
+     *
+     * <p>The second sort key is deliberately {@code CASE WHEN <recent> THEN u.lastActiveAt END}, not
      * a bare {@code u.lastActiveAt DESC}: {@code lastActiveAt} is stamped on every authenticated
      * request (throttled to 5 min, {@code LastActiveTracker}), so it is non-null for nearly every
      * user who has ever logged in — a bare {@code DESC} on it would rank the "everyone else" bucket
      * by stale last-login recency instead of registration date, and {@code createdAt} would only
      * ever break exact ties (it never got a chance to actually order anything, which is the bug this
-     * comment exists to stop someone from reintroducing). Scoping the key to the active bucket makes
-     * it NULL — sorted last under DESC by default — for everyone else, so createdAt fully controls
-     * that bucket's order.</p>
+     * comment exists to stop someone from reintroducing). Scoping the key to the two active buckets
+     * makes it NULL — sorted last under DESC by default — for everyone else, so createdAt fully
+     * controls that bucket's order.</p>
      */
     @Query("""
             SELECT u FROM User u
@@ -231,8 +237,10 @@ public interface UserRepository extends JpaRepository<User, UUID> {
                 OR u.id = :id
               )
             ORDER BY
-                CASE WHEN u.lastActiveAt > :activeSince THEN 0 ELSE 1 END,
-                CASE WHEN u.lastActiveAt > :activeSince THEN u.lastActiveAt END DESC,
+                CASE WHEN u.lastActiveAt > :activeSince THEN 0
+                     WHEN u.lastActiveAt > :recentSince THEN 1
+                     ELSE 2 END,
+                CASE WHEN u.lastActiveAt > :recentSince THEN u.lastActiveAt END DESC,
                 u.createdAt DESC
             """)
     Page<User> searchAdminByPattern(@Param("plan") Plan plan,
@@ -240,6 +248,7 @@ public interface UserRepository extends JpaRepository<User, UUID> {
                                     @Param("pattern") String pattern,
                                     @Param("id") UUID id,
                                     @Param("activeSince") Instant activeSince,
+                                    @Param("recentSince") Instant recentSince,
                                     Pageable pageable);
 
     /** Same as {@link #searchAdminByPattern}, registration oldest-first instead of newest-first. */
@@ -255,8 +264,10 @@ public interface UserRepository extends JpaRepository<User, UUID> {
                 OR u.id = :id
               )
             ORDER BY
-                CASE WHEN u.lastActiveAt > :activeSince THEN 0 ELSE 1 END,
-                CASE WHEN u.lastActiveAt > :activeSince THEN u.lastActiveAt END DESC,
+                CASE WHEN u.lastActiveAt > :activeSince THEN 0
+                     WHEN u.lastActiveAt > :recentSince THEN 1
+                     ELSE 2 END,
+                CASE WHEN u.lastActiveAt > :recentSince THEN u.lastActiveAt END DESC,
                 u.createdAt ASC
             """)
     Page<User> searchAdminByPatternRegistrationAscending(@Param("plan") Plan plan,
@@ -264,6 +275,7 @@ public interface UserRepository extends JpaRepository<User, UUID> {
                                     @Param("pattern") String pattern,
                                     @Param("id") UUID id,
                                     @Param("activeSince") Instant activeSince,
+                                    @Param("recentSince") Instant recentSince,
                                     Pageable pageable);
 
     @Modifying

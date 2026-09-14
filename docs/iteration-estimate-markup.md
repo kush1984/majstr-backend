@@ -1,6 +1,6 @@
 # Iteration — «Націнка на вибрані позиції» (in-place markup on picked lines)
 
-- **Status:** code complete; both gates run before push. Not committed (push needs the owner's word).
+- **Status:** code complete, **both gates green**. Not committed (push needs the owner's word).
 - **Commit:** _pending_
 - **Migrations:** **none.** No new column, no new table — the new price simply *is* the price.
 - **PWA version:** 1.44.2 → **1.45.0** (minor — a new headline capability).
@@ -61,6 +61,45 @@ wrong instead.
 `EstimateServiceTest` — seven cases: the unit price rises; rounding to whole hryvnia (333 → 383); a
 discount moves down; **a PERCENT line is left alone**; a line belonging to another estimate is
 ignored; a SIGNED estimate is refused; zero percent never even reads the lines.
+
+`useEstimate.test.tsx` — three cases, at the level the file's existing tests use (assert the
+optimistic cache patch **and** the queued outbox op): the unit price moves, the line total is
+**re-derived** rather than carried, and **one** op is queued carrying the whole selection; a discount
+moves down from the same unsigned magnitude; and a picked «%» line is left alone.
+
+These were added because the percentage arithmetic now exists in **three** copies — the server's
+`markedUp`, the sheet's before → after preview, and the optimistic patch — and only the server's had
+a test. Precedent would have excused skipping them (the sibling bulk delete has no PWA test either,
+and nothing anywhere exercises the board's selection mode), but precedent is not a reason.
+
+**Writing the third one needed `recomputeLines` read first.** A «%» line's `unitPrice` is never
+rewritten by the percent pass, so asserting on it is valid — but under a `TOTAL` or `POSITION` base
+`unitPrice` is unread, which makes a markup there an invisible no-op and the assertion meaningless.
+The skip is observable on exactly one shape: a **consolidation-frozen** line (V92), where
+`percentBaseKind: null` defaults `kindOf` to MANUAL and the base IS `unitPrice`. That is what the
+test seeds.
+
+### 4. Verification
+
+- Backend `./gradlew build` — **1400 tests, 0 failures, 0 errors, 0 skipped**; `:test` genuinely
+  executed (`1 executed, 7 up-to-date` — with `org.gradle.caching=true`, BUILD SUCCESSFUL alone
+  proves nothing, so read the actionable-tasks line).
+- PWA gate, CI's `verify` job in order: `npm run lint` → `npx tsc -b` → `npm run typecheck:tests` →
+  `npx vitest run` (**981 tests, 127 files**) → `npx vite build`. All exit 0. The gate was re-run
+  after the test file was added — `lint` and `typecheck:tests` both cover test sources, so an
+  earlier green stops applying the moment a test file changes.
+- `npm run test:e2e:offline` — `shell.spec` (the one CI runs) green.
+
+**Two honest gaps.**
+
+- `journey.spec.ts` fails, **not because of this work**: the registration form grew a mandatory
+  privacy-policy consent and `registerAndSeed` never ticks it, so the page sits on «Потрібно
+  погодитися з Політикою конфіденційності». It fails identically on clean `master`. The fix is one
+  line (`await page.getByRole('checkbox', { name: /Політикою конфіденційності/ }).check();` before
+  the seed clicks) — deliberately not applied: unrelated file, pre-existing, not asked for.
+- **The mobile layout was not verified live.** Risk sits in the sheet's before → after pair (two
+  sums plus an arrow; the `flex-wrap` was reasoned about, not measured) and the «Націнка» label on
+  the sticky selection bar.
 
 ## Not changed / confirmed
 

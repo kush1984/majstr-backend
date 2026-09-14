@@ -25,6 +25,8 @@
             --accent-text: #ffffff;
             --success: #16a34a;
             --warn: #d97706;
+            /* Brand amber — the same #f5821f the client portal and the PWA use. */
+            --amber: #f5821f;
             --danger: #b91c1c;
         }
         * { box-sizing: border-box; }
@@ -106,6 +108,11 @@
         /* Active-right-now row — same --success green already used for .ok. */
         tr.active-row { background: rgba(22, 163, 74, 0.10); }
         tr.active-row:hover { background: rgba(22, 163, 74, 0.16); }
+        /* Seen in the last 24h but not right now — brand amber (--amber). These rows sit directly
+           under the green ones because the SERVER orders them that way (the middle bucket of
+           UserRepository#searchAdminByPattern), not because of anything done here. */
+        tr.recent-row { background: rgba(245, 130, 31, 0.10); }
+        tr.recent-row:hover { background: rgba(245, 130, 31, 0.18); }
         #login { max-width: 360px; margin: 80px auto; }
         #login label { display: block; margin: 10px 0 4px; color: var(--muted); font-size: 0.9rem; }
         #login input { width: 100%; }
@@ -468,6 +475,11 @@
     // normal gaps between requests.
     const ACTIVE_WINDOW_MS = 15 * 60 * 1000;
 
+    // «Був онлайн за останню добу» — the second bucket, right under the active-now one. Must match
+    // AdminUserService#RECENT_WINDOW, which is what actually ORDERS the rows; this only decides
+    // which of them get the amber tint. A rolling 24h, not "since midnight" — see the service.
+    const RECENT_WINDOW_MS = 24 * 60 * 60 * 1000;
+
     function api(path, opts) {
         const init = Object.assign({ headers: {} }, opts || {});
         if (token) init.headers['Authorization'] = 'Bearer ' + token;
@@ -829,22 +841,32 @@
         totalPages = Math.max(data.totalPages, 1);
         document.getElementById('pageInfo').textContent =
             `сторінка ${data.page + 1} / ${totalPages} (всього ${data.totalItems})`;
-        // By default the server returns active-right-now users first (most recently active among
-        // them first, across ALL pages — UserRepository#searchAdminByPattern's ORDER BY); with an
-        // explicit «Реєстрація» sort (regSort set) it's a literal chronological order instead
-        // (searchAdminSorted). Either way, no client-side re-sort — this just decides which rows
-        // get the green highlight, using the same 15-min window as the default query.
+        // By default the server returns two activity buckets first — active right now, then seen in
+        // the last 24h — each most-recently-active first, across ALL pages
+        // (UserRepository#searchAdminByPattern's ORDER BY); with an explicit «Реєстрація» sort
+        // (regSort set) the rest is a literal chronological order instead. Either way, no
+        // client-side re-sort — this just decides which rows get the green / amber tint, using the
+        // same windows as the query. `activeToday` deliberately EXCLUDES the active-now rows, so a
+        // row is one colour or the other, never both.
         const now = Date.now();
-        const withActivity = data.items.map(u => ({
-            u,
-            activeNow: !!u.lastActiveAt && (now - new Date(u.lastActiveAt).getTime()) <= ACTIVE_WINDOW_MS,
-        }));
+        const withActivity = data.items.map(u => {
+            const ageMs = u.lastActiveAt ? now - new Date(u.lastActiveAt).getTime() : null;
+            return {
+                u,
+                activeNow: ageMs !== null && ageMs <= ACTIVE_WINDOW_MS,
+                activeToday: ageMs !== null && ageMs > ACTIVE_WINDOW_MS && ageMs <= RECENT_WINDOW_MS,
+            };
+        });
 
-        document.getElementById('usersBody').innerHTML = withActivity.map(({ u, activeNow }) => {
+        document.getElementById('usersBody').innerHTML = withActivity.map(({ u, activeNow, activeToday }) => {
             const bypass = u.estimatesCount > 0 && !u.emailVerified;
+            const rowClass = activeNow ? 'active-row' : activeToday ? 'recent-row' : '';
+            const rowTitle = activeNow ? ' title="Активний зараз"'
+                : activeToday ? ' title="Був онлайн за останню добу"' : '';
+            const dot = activeNow ? '🟢 ' : activeToday ? '🟠 ' : '';
             return `
-            <tr class="${activeNow ? 'active-row' : ''}"${activeNow ? ' title="Активний зараз"' : ''}>
-                <td>${activeNow ? '🟢 ' : ''}<a href="#" class="user-link" data-user="${u.id}">${escapeHtml(u.email)}</a>${bypass ? ' <span title="Активний, але email не підтверджено — можливий обхід через PDF (не торкається порталу клієнта)">⚠️</span>' : ''}</td>
+            <tr class="${rowClass}"${rowTitle}>
+                <td>${dot}<a href="#" class="user-link" data-user="${u.id}">${escapeHtml(u.email)}</a>${bypass ? ' <span title="Активний, але email не підтверджено — можливий обхід через PDF (не торкається порталу клієнта)">⚠️</span>' : ''}</td>
                 <td>${u.emailVerified ? '✅' : '❌'}</td>
                 <td class="hide-mobile">${escapeHtml(u.fullName)}</td>
                 <td>${u.projectsCount}</td>

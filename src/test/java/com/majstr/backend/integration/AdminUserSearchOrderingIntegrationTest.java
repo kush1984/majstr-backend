@@ -62,17 +62,18 @@ class AdminUserSearchOrderingIntegrationTest extends IntegrationTestBase {
         entityManager.clear();
 
         Instant activeSince = now.minus(15, ChronoUnit.MINUTES);
+        Instant recentSince = now.minus(24, ChronoUnit.HOURS);
         Pageable pageable = PageRequest.of(0, 20);
 
         List<UUID> descOrder = userRepository
-                .searchAdmin(null, null, tag, activeSince, pageable)
+                .searchAdmin(null, null, tag, activeSince, recentSince, pageable)
                 .getContent().stream().map(User::getId).toList();
         assertThat(descOrder)
                 .as("online first (untouched by registration order), then registration newest→oldest")
                 .containsExactly(onlineNow.getId(), august.getId(), july.getId(), june.getId());
 
         List<UUID> ascOrder = userRepository
-                .searchAdmin(null, null, tag, activeSince, true, pageable)
+                .searchAdmin(null, null, tag, activeSince, recentSince, true, pageable)
                 .getContent().stream().map(User::getId).toList();
         assertThat(ascOrder)
                 .as("online STILL first even with the «Реєстрація» toggle set to ascending")
@@ -103,10 +104,11 @@ class AdminUserSearchOrderingIntegrationTest extends IntegrationTestBase {
         entityManager.clear();
 
         Instant activeSince = Instant.now().minus(15, ChronoUnit.MINUTES);
+        Instant recentSince = Instant.now().minus(24, ChronoUnit.HOURS);
         Pageable pageable = PageRequest.of(0, 20);
 
         List<UUID> byId = userRepository
-                .searchAdmin(null, null, target.getId().toString(), activeSince, pageable)
+                .searchAdmin(null, null, target.getId().toString(), activeSince, recentSince, pageable)
                 .getContent().stream().map(User::getId).toList();
         assertThat(byId)
                 .as("the id matches exactly one row — the sibling shares every text field but this")
@@ -115,23 +117,83 @@ class AdminUserSearchOrderingIntegrationTest extends IntegrationTestBase {
         // The id branch must not disturb the text branch: with a non-id term the id bind is NULL,
         // and a NULL comparison inside the same OR has to stay simply false, not swallow the row.
         List<UUID> byText = userRepository
-                .searchAdmin(null, null, tag, activeSince, pageable)
+                .searchAdmin(null, null, tag, activeSince, recentSince, pageable)
                 .getContent().stream().map(User::getId).toList();
         assertThat(byText).containsExactlyInAnyOrder(target.getId(), other.getId());
 
         // Same on the ascending («Реєстрація» toggled) query — it is a second, separately written
         // copy of the same WHERE clause, so it can drift.
         List<UUID> byIdAscending = userRepository
-                .searchAdmin(null, null, target.getId().toString(), activeSince, true, pageable)
+                .searchAdmin(null, null, target.getId().toString(), activeSince, recentSince, true, pageable)
                 .getContent().stream().map(User::getId).toList();
         assertThat(byIdAscending).containsExactly(target.getId());
 
         // A half-copied id is not an id. It must degrade to a text search that finds nothing,
         // never to an error.
         String truncated = target.getId().toString().substring(0, 26);
-        assertThat(userRepository.searchAdmin(null, null, truncated, activeSince, pageable))
+        assertThat(userRepository.searchAdmin(null, null, truncated, activeSince, recentSince, pageable))
                 .as("a truncated UUID falls through to LIKE, which matches no email/name/company")
                 .isEmpty();
+    }
+
+    /**
+     * The «був онлайн за останню добу» bucket sits BETWEEN active-right-now and everyone else, and
+     * nobody appears in two buckets.
+     *
+     * <p>This is the whole point of the feature: the admin sees who is on the app now, and directly
+     * under it — in brand amber — who was on it today. Both halves need a real database. The
+     * mutual exclusion is not written anywhere in Java: it comes from a SQL {@code CASE} stopping
+     * at its first matching WHEN, so a user inside {@code activeSince} can never also satisfy the
+     * "today" branch. And the middle bucket must not disturb what the older test pins — the
+     * "everyone else" rows still order strictly by registration, which they only do because the
+     * second sort key is {@code NULL} for them.</p>
+     *
+     * <p>The boundary case is the 3-hour user: active today, not active now. Ordering him above the
+     * inactive rows but below the online one is the single assertion that would have caught either
+     * bucket being written with the wrong cutoff.</p>
+     */
+    @Test
+    void yesterdaysUsersFormATheirOwnBucket_betweenActiveNowAndEveryoneElse() {
+        String tag = "daytest" + UUID.randomUUID().toString().substring(0, 8);
+        Instant now = Instant.now();
+
+        User onlineNow = save(user(tag, "online", now.minus(2, ChronoUnit.MINUTES)));
+        // Two inside the 24h window, outside the 15-min one — most recent of the two comes first.
+        User threeHours = save(user(tag, "threehours", now.minus(3, ChronoUnit.HOURS)));
+        User twentyHours = save(user(tag, "twentyhours", now.minus(20, ChronoUnit.HOURS)));
+        // Just past the window, and never active at all — both are plain "everyone else".
+        User twoDays = save(user(tag, "twodays", now.minus(48, ChronoUnit.HOURS)));
+        User never = save(user(tag, "never", null));
+
+        // Registration order is the REVERSE of the activity order, so a passing assertion can only
+        // come from the bucket sort — createdAt DESC alone would produce exactly the opposite list.
+        backdateCreatedAt(onlineNow, now.minus(50, ChronoUnit.DAYS));
+        backdateCreatedAt(threeHours, now.minus(40, ChronoUnit.DAYS));
+        backdateCreatedAt(twentyHours, now.minus(30, ChronoUnit.DAYS));
+        backdateCreatedAt(twoDays, now.minus(20, ChronoUnit.DAYS));
+        backdateCreatedAt(never, now.minus(10, ChronoUnit.DAYS));
+        entityManager.flush();
+        entityManager.clear();
+
+        Instant activeSince = now.minus(15, ChronoUnit.MINUTES);
+        Instant recentSince = now.minus(24, ChronoUnit.HOURS);
+        Pageable pageable = PageRequest.of(0, 20);
+
+        List<UUID> descOrder = userRepository
+                .searchAdmin(null, null, tag, activeSince, recentSince, pageable)
+                .getContent().stream().map(User::getId).toList();
+        assertThat(descOrder)
+                .as("online, then today most-recent-first, then the rest by registration newest→oldest")
+                .containsExactly(onlineNow.getId(), threeHours.getId(), twentyHours.getId(),
+                        never.getId(), twoDays.getId());
+
+        List<UUID> ascOrder = userRepository
+                .searchAdmin(null, null, tag, activeSince, recentSince, true, pageable)
+                .getContent().stream().map(User::getId).toList();
+        assertThat(ascOrder)
+                .as("the «Реєстрація» toggle flips only the last bucket — both active ones stay put")
+                .containsExactly(onlineNow.getId(), threeHours.getId(), twentyHours.getId(),
+                        twoDays.getId(), never.getId());
     }
 
     private void backdateCreatedAt(User user, Instant createdAt) {

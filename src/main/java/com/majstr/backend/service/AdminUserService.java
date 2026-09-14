@@ -50,6 +50,11 @@ public class AdminUserService {
     // touch throttle so a still-active master doesn't flicker in and out of the bucket.
     private static final Duration ACTIVE_WINDOW = Duration.ofMinutes(15);
 
+    // «Був онлайн за останню добу» — the second bucket, shown right under the active-now one and
+    // tinted brand amber by the admin panel. A plain rolling 24h, not "since midnight": the admin
+    // opens this at any hour, and a calendar day would empty the bucket every morning.
+    private static final Duration RECENT_WINDOW = Duration.ofHours(24);
+
     private final UserRepository userRepository;
     private final ClientRepository clientRepository;
     private final ProjectRepository projectRepository;
@@ -74,8 +79,12 @@ public class AdminUserService {
     @Transactional(readOnly = true)
     public Page<AdminUserSummary> search(Plan plan, String source, String search,
                                           boolean registrationAscending, Pageable pageable) {
+        // One clock read for both cutoffs — two Instant.now() calls could straddle a tick and put a
+        // user in neither bucket.
+        Instant now = Instant.now();
         Page<User> page = userRepository.searchAdmin(
-                plan, source, search, Instant.now().minus(ACTIVE_WINDOW), registrationAscending, pageable);
+                plan, source, search, now.minus(ACTIVE_WINDOW), now.minus(RECENT_WINDOW),
+                registrationAscending, pageable);
         List<UUID> ids = page.getContent().stream().map(User::getId).toList();
         if (ids.isEmpty()) {
             return page.map(AdminUserSummary::from);
