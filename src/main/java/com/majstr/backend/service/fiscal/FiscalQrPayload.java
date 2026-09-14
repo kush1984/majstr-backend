@@ -81,10 +81,25 @@ public record FiscalQrPayload(String fn, String id, BigDecimal sum, LocalDateTim
             int eq = pair.indexOf('=');
             if (eq <= 0) continue;
             String key = pair.substring(0, eq).trim().toLowerCase(Locale.ROOT);
-            String value = URLDecoder.decode(pair.substring(eq + 1), StandardCharsets.UTF_8).trim();
+            String value = decode(pair.substring(eq + 1));
+            if (value == null) {
+                // A stray '%' in a field we may not even need ( «?off=50%» ) is not a reason to
+                // refuse the code: a half-read payload is a soft "not recognized" at worst, and the
+                // four fields that matter are checked in `parse`.
+                continue;
+            }
             out.putIfAbsent(key, value);
         }
         return out;
+    }
+
+    /** Percent-decoded value, or null when the escape sequence is malformed. */
+    private static String decode(String raw) {
+        try {
+            return URLDecoder.decode(raw, StandardCharsets.UTF_8).trim();
+        } catch (IllegalArgumentException e) {
+            return null;
+        }
     }
 
     private static BigDecimal decimal(String raw) {
@@ -109,15 +124,22 @@ public record FiscalQrPayload(String fn, String id, BigDecimal sum, LocalDateTim
         if (space > 0 && (time == null || time.isBlank())) {
             return timestamp(d.substring(0, space), d.substring(space + 1));
         }
-        if (d.length() > 8 && time == null) {
+
+        // A date that reads as a date is one, whatever its length: «2026-08-15» and «15.08.2026» are
+        // 10 characters and splitting them after 8 produced «2026-08-» and a code rejected outright.
+        var day = parseDate(d);
+        if (day == null && glued(d) && (time == null || time.isBlank())) {
             // «20240115123045» — a date glued to a time, no separator.
             return timestamp(d.substring(0, 8), d.substring(8));
         }
-
-        var day = parseDate(d);
         if (day == null) return null;
         var at = time == null || time.isBlank() ? java.time.LocalTime.MIDNIGHT : parseTime(time.trim());
         return at == null ? null : LocalDateTime.of(day, at);
+    }
+
+    /** 8 digits of date plus HHmm or HHmmss, no separator anywhere — the one shape worth splitting. */
+    private static boolean glued(String s) {
+        return s.length() >= 12 && s.length() <= 14 && s.chars().allMatch(Character::isDigit);
     }
 
     private static java.time.LocalDate parseDate(String s) {

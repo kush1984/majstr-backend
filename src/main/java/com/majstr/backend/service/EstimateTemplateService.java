@@ -41,6 +41,7 @@ import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -235,7 +236,7 @@ public class EstimateTemplateService {
     @Transactional
     public EstimateTemplateSummary updateMeta(UUID templateId, String name, String description,
                                               UUID ownerId) {
-        EstimateTemplate template = loadWritable(templateId, ownerId);
+        EstimateTemplate template = loadWritable(templateId, ownerId).template();
         template.setName(name.trim());
         if (description != null) {
             template.setDescription(normalize(description));
@@ -296,7 +297,7 @@ public class EstimateTemplateService {
      */
     @Transactional
     public EstimateTemplateDetail addItem(UUID templateId, TemplateItemRequest req, UUID ownerId, UUID requestedId) {
-        EstimateTemplate template = loadWritable(templateId, ownerId);
+        EstimateTemplate template = loadWritable(templateId, ownerId).template();
         List<EstimateTemplateItem> items =
                 templateItemRepository.findByTemplateIdOrderBySortOrderAscIdAsc(template.getId());
         if (requestedId != null) {
@@ -324,9 +325,10 @@ public class EstimateTemplateService {
     /** Remove a position. On a system default this forks it first. */
     @Transactional
     public EstimateTemplateDetail removeItem(UUID templateId, UUID itemId, UUID ownerId) {
-        EstimateTemplate template = loadWritable(templateId, ownerId);
+        Writable writable = loadWritable(templateId, ownerId);
+        EstimateTemplate template = writable.template();
         // Idempotent: a replayed offline removal of an already-gone position is a no-op, not a 404.
-        templateItemRepository.findById(itemId)
+        templateItemRepository.findById(writable.item(itemId))
                 .filter(i -> i.getTemplate().getId().equals(template.getId()))
                 .ifPresent(templateItemRepository::delete);
         return detailOf(template);
@@ -343,8 +345,9 @@ public class EstimateTemplateService {
     @Transactional
     public EstimateTemplateDetail updateItem(UUID templateId, UUID itemId,
                                              TemplateItemRequest req, UUID ownerId) {
-        EstimateTemplate template = loadWritable(templateId, ownerId);
-        templateItemRepository.findById(itemId)
+        Writable writable = loadWritable(templateId, ownerId);
+        EstimateTemplate template = writable.template();
+        templateItemRepository.findById(writable.item(itemId))
                 .filter(i -> i.getTemplate().getId().equals(template.getId()))
                 .ifPresent(item -> {
                     item.setName(req.name().trim());
@@ -365,7 +368,8 @@ public class EstimateTemplateService {
      */
     @Transactional
     public EstimateTemplateDetail reorderItems(UUID templateId, TemplateItemsOrderRequest req, UUID ownerId) {
-        EstimateTemplate template = loadWritable(templateId, ownerId);
+        Writable writable = loadWritable(templateId, ownerId);
+        EstimateTemplate template = writable.template();
         List<EstimateTemplateItem> existing =
                 templateItemRepository.findByTemplateIdOrderBySortOrderAscIdAsc(template.getId());
         Map<UUID, EstimateTemplateItem> byId = existing.stream()
@@ -373,7 +377,8 @@ public class EstimateTemplateService {
 
         int position = 0;
         Set<UUID> placed = new LinkedHashSet<>();
-        for (UUID id : req.itemIds()) {
+        for (UUID requested : req.itemIds()) {
+            UUID id = writable.item(requested);
             EstimateTemplateItem item = byId.get(id);
             if (item == null || !placed.add(id)) {
                 continue;
@@ -574,22 +579,41 @@ public class EstimateTemplateService {
      * the same default land in the SAME copy — without it an offline replay would fork twice and
      * the master would find two half-edited bundles.</p>
      */
-    private EstimateTemplate loadWritable(UUID templateId, UUID ownerId) {
+    private Writable loadWritable(UUID templateId, UUID ownerId) {
         EstimateTemplate template = templateRepository.findById(templateId)
                 .orElseThrow(() -> new ResourceNotFoundException("Estimate template not found: " + templateId));
         if (!template.isDefault()) {
-            return loadOwnTemplate(templateId, ownerId);
+            return new Writable(loadOwnTemplate(templateId, ownerId), Map.of());
         }
         Optional<TemplateDefaultOverride> row =
                 defaultOverrideRepository.findByUserIdAndTemplateId(ownerId, templateId);
         Optional<EstimateTemplate> fork = row
                 .map(TemplateDefaultOverride::getForkedTemplateId)
                 .flatMap(templateRepository::findById);
-        return fork.orElseGet(() -> forkDefault(template, ownerId));
+        return fork.map(f -> new Writable(f, Map.<UUID, UUID>of()))
+                .orElseGet(() -> forkDefault(template, ownerId));
+    }
+
+    /**
+     * A template the caller may write to, plus the id TRANSLATION a fresh fork forces on the request
+     * that triggered it: the copy's positions are new rows with new ids, while the request in flight
+     * still names the default's. Without it a remove/edit/reorder of an untouched default addressed
+     * positions that do not exist in the copy and was silently dropped — and the PWA, which re-seeds
+     * its baseline from the answer, reported success.
+     *
+     * <p>Empty whenever nothing was forked (an own template, or a default already forked): the ids
+     * in the request are then the ones the template really carries.</p>
+     */
+    private record Writable(EstimateTemplate template, Map<UUID, UUID> itemIds) {
+        /** The id this request's {@code itemId} became in the copy, or itself when nothing moved. */
+        UUID item(UUID requested) {
+            UUID moved = itemIds.get(requested);
+            return moved == null ? requested : moved;
+        }
     }
 
     /** Copy a system default into the caller's own editable template and retire the original. */
-    private EstimateTemplate forkDefault(EstimateTemplate original, UUID ownerId) {
+    private Writable forkDefault(EstimateTemplate original, UUID ownerId) {
         User owner = userRepository.findById(ownerId)
                 .orElseThrow(() -> new ResourceNotFoundException("User not found: " + ownerId));
         // The master may have re-filed the default into one of their trades; the copy inherits that
@@ -600,25 +624,31 @@ public class EstimateTemplateService {
         EstimateTemplate copy = templateRepository.save(EstimateTemplate.builder()
                 .owner(owner)
                 .name(original.getName())
+                // The paragraph under the table (V121) is part of the bundle, so the copy inherits
+                // it: a master who edits one position of «Q4» must not lose the wording that says
+                // what Q4 is — and `applyToProject` snapshots it into `estimates.quality_note`.
+                .description(original.getDescription())
                 .trade(trade)
                 .isDefault(false)
                 .build());
-        List<EstimateTemplateItem> items = templateItemRepository
-                .findByTemplateIdOrderBySortOrderAscIdAsc(original.getId()).stream()
-                .map(i -> EstimateTemplateItem.builder()
-                        .template(copy)
-                        .name(i.getName())
-                        .type(i.getType())
-                        .unit(i.getUnit())
-                        .sortOrder(i.getSortOrder())
-                        .build())
-                .toList();
-        templateItemRepository.saveAll(items);
+        Map<UUID, UUID> itemIds = new LinkedHashMap<>();
+        for (EstimateTemplateItem i : templateItemRepository
+                .findByTemplateIdOrderBySortOrderAscIdAsc(original.getId())) {
+            EstimateTemplateItem copied = templateItemRepository.save(EstimateTemplateItem.builder()
+                    .template(copy)
+                    .name(i.getName())
+                    .type(i.getType())
+                    .unit(i.getUnit())
+                    .sortOrder(i.getSortOrder())
+                    .build());
+            // The id the request in flight is still naming → the row it must actually land on.
+            itemIds.put(i.getId(), copied.getId());
+        }
         // The filing now lives on the copy's own row; the override would point at a hidden default.
         tradeOverrideRepository.findByUserIdAndTemplateId(ownerId, original.getId())
                 .ifPresent(tradeOverrideRepository::delete);
         hideDefault(original.getId(), ownerId, copy.getId());
-        return copy;
+        return new Writable(copy, itemIds);
     }
 
     /** Take a system default out of this master's list; {@code forkId} names the copy, if any. */
@@ -627,7 +657,12 @@ public class EstimateTemplateService {
                 .findByUserIdAndTemplateId(ownerId, templateId)
                 .orElseGet(() -> TemplateDefaultOverride.builder()
                         .userId(ownerId).templateId(templateId).build());
-        row.setForkedTemplateId(forkId);
+        // «Видалити» on a default the master has already edited must not forget the copy: the link
+        // is the ONLY way back to it (the fork carries no pointer to the default it came from), and
+        // nulling it would hide the default while leaving an orphan bundle in his list.
+        if (forkId != null || row.getForkedTemplateId() == null) {
+            row.setForkedTemplateId(forkId);
+        }
         defaultOverrideRepository.save(row);
     }
 

@@ -393,6 +393,13 @@ public class GlobalExceptionHandler {
         return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(body);
     }
 
+    @ExceptionHandler(ExpenseLinkedToReceiptException.class)
+    public ResponseEntity<ErrorResponse> handleExpenseLinkedToReceipt(ExpenseLinkedToReceiptException ex, HttpServletRequest req) {
+        ErrorResponse body = ErrorResponse.coded(HttpStatus.CONFLICT.value(),
+                HttpStatus.CONFLICT.getReasonPhrase(), msg(ex.getMessage()), req.getRequestURI(), "EXPENSE_LINKED_TO_RECEIPT");
+        return ResponseEntity.status(HttpStatus.CONFLICT).body(body);
+    }
+
     @ExceptionHandler(TrialNotAvailableException.class)
     public ResponseEntity<ErrorResponse> handleTrialNotAvailable(TrialNotAvailableException ex, HttpServletRequest req) {
         ErrorResponse body = ErrorResponse.coded(HttpStatus.CONFLICT.value(),

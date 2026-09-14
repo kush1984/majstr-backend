@@ -45,6 +45,7 @@ class ProjectServiceTest {
     @Mock com.majstr.backend.storage.StorageService storage;
     // updateStatus archives/unarchives the object's shopping list, so this one must not be null.
     @Mock com.majstr.backend.repository.ShoppingListRepository shoppingListRepository;
+    @Mock com.majstr.backend.repository.ShoppingListItemRepository shoppingListItemRepository;
     @InjectMocks ProjectService projectService;
 
     private final UUID ownerId = UUID.randomUUID();
@@ -304,7 +305,13 @@ class ProjectServiceTest {
 
         projectService.delete(projectId, ownerId);
 
-        org.mockito.Mockito.verify(projectRepository).delete(project);
+        // The shopping rows go FIRST. They hang off the list (CASCADE) and off `estimates` (SET
+        // NULL) — sibling branches of one cascade, and Postgres does not define which fires first,
+        // so the SET NULL can reach a row whose list is still there and fail
+        // shopping_list_item_calculated_source_check, failing the whole delete.
+        var order = org.mockito.Mockito.inOrder(shoppingListItemRepository, projectRepository);
+        order.verify(shoppingListItemRepository).deleteByProjectId(projectId);
+        order.verify(projectRepository).delete(project);
         org.mockito.Mockito.verify(storage).delete("photos/a.jpg");
         org.mockito.Mockito.verify(storage).delete("photos/b.jpg");
     }

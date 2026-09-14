@@ -364,8 +364,49 @@ public class ShoppingListService {
     }
 
     private void applyBought(ShoppingListItem item, boolean bought) {
+        if (!bought && item.isBought()) {
+            mergeOpenSibling(item);
+        }
         item.setBought(bought);
         item.setBoughtAt(bought ? Instant.now() : null);
+    }
+
+    /**
+     * Un-ticking a row whose top-up sibling is still open MERGES the two.
+     * {@code ux_shopping_list_item_open} admits ONE open row per
+     * (list, source, source_estimate_id, dedup_key), so the second open row is a constraint
+     * violation — and the master, whose tap only meant «я його все ж не купив», is told his list
+     * did not save. The row he un-ticked survives (it is the earlier one, the original) and takes
+     * the sibling's quantity: together they are the whole demand again, which is exactly what the
+     * top-up existed to complete.
+     *
+     * <p>MANUAL rows are outside that index by design (V126), so two open ones are legal and
+     * nothing is merged — a row the master typed himself is never folded into another.</p>
+     */
+    private void mergeOpenSibling(ShoppingListItem item) {
+        if (item.getSource() == ShoppingListItemSource.MANUAL) {
+            return;
+        }
+        String key = item.dedupKey();
+        for (ShoppingListItem other : itemRepository
+                .findByShoppingListIdOrderBySortOrderAscCreatedAtAsc(item.getShoppingListId())) {
+            if (other.getId().equals(item.getId()) || other.settled()
+                    || other.getSource() != item.getSource()
+                    || !Objects.equals(other.getSourceEstimateId(), item.getSourceEstimateId())
+                    || !other.dedupKey().equals(key)) {
+                continue;
+            }
+            // A bulk delete, so the row is gone from the database before this row's own update is
+            // flushed: Hibernate orders entity updates ahead of entity deletes, and the update is
+            // the one that would collide.
+            itemRepository.deleteRow(other.getId());
+            item.setQuantity(item.getQuantity().add(other.getQuantity()));
+            // A hand-typed figure is now inside the sum, so a recalculation must keep reporting the
+            // difference instead of overwriting it.
+            item.setEdited(item.isEdited() || other.isEdited());
+            // Any parked offer was computed against the quantity that just changed.
+            item.setSuggestedQuantity(null);
+        }
     }
 
     private ShoppingList getOrCreate(Project project) {

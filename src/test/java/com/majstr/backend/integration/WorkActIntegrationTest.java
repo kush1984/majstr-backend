@@ -377,6 +377,53 @@ class WorkActIntegrationTest extends IntegrationTestBase {
                 .isEqualByComparingTo("483.50");
     }
 
+    /**
+     * The SAME replay, arriving after the act was signed — which is the ordinary case, not an edge
+     * one: the master uploads his receipts and signs, and the queued create drains when the phone
+     * finds signal. The immutability guard used to refuse it 409 WORK_ACT_SIGNED, a permanent error
+     * the outbox retried forever, and the receipt he photographed was never on the act at all.
+     *
+     * <p>A receipt that already landed is not a write, so the replay lookup goes FIRST. What must
+     * still hold is that nothing is ADDED to a signed act: the money in the act and in the SIGNED
+     * ADDENDUM it rolled up is unchanged.</p>
+     */
+    @Test
+    void receiptReplay_afterTheActWasSigned_answersWithTheLandedReceipt() throws Exception {
+        User owner = newOwner();
+        Project p = newProject(owner);
+        signedEstimateWithLine(p, "Робота", "100.000", "145.00");
+        WorkActResponse act = createInterim(p.getId(), owner.getId());
+        UUID clientId = UUID.randomUUID();
+        var landed = receiptService.add(act.id(), owner.getId(), clientId, receiptPhoto(), "Епіцентр",
+                new BigDecimal("483.50"), null, false);
+        workActService.signOffline(act.id(), new WorkActSignOfflineRequest("Клієнт"), owner.getId());
+
+        var replay = receiptService.add(act.id(), owner.getId(), clientId, receiptPhoto(), "Епіцентр",
+                new BigDecimal("483.50"), null, false);
+
+        assertThat(replay.id()).isEqualTo(landed.id());
+        assertThat(receiptService.list(act.id(), owner.getId())).hasSize(1);
+        assertThat(workActService.get(act.id(), owner.getId()).receiptsTotal())
+                .isEqualByComparingTo("483.50");
+    }
+
+    /** The guard itself is intact: a receipt the signed act has never seen is still refused. */
+    @Test
+    void aGenuinelyNewReceipt_isStillRefusedOnASignedAct() throws Exception {
+        User owner = newOwner();
+        Project p = newProject(owner);
+        Estimate est = signedEstimateWithLine(p, "Робота", "100.000", "145.00");
+        UUID lineId = estimateItemRepository.findByEstimateIdOrderBySortOrderAscIdAsc(est.getId())
+                .get(0).getId();
+        WorkActResponse act = createInterim(p.getId(), owner.getId());
+        setSingleLine(act.id(), owner.getId(), est.getId(), lineId, "40.000", "145.00");
+        workActService.signOffline(act.id(), new WorkActSignOfflineRequest("Клієнт"), owner.getId());
+
+        assertThatThrownBy(() -> receiptService.add(act.id(), owner.getId(), UUID.randomUUID(),
+                receiptPhoto(), "Епіцентр", new BigDecimal("100.00"), null, false))
+                .isInstanceOf(WorkActSignedException.class);
+    }
+
     @Test
     void anUnpricedReceipt_isSavedButBlocksSharingAndSigning() throws Exception {
         // The photo is stored before anything reads it — that is the answer to «з недостатньою

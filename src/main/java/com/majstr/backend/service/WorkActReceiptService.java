@@ -19,6 +19,7 @@ import com.majstr.backend.storage.StoredObject;
 import com.majstr.backend.storage.UnsupportedMediaTypeException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
@@ -96,6 +97,7 @@ public class WorkActReceiptService {
     private final ActReceiptExtractor recognizer;
     private final ProjectPhotoService photoService;
     private final FiscalQrService fiscalQr;
+    private final WorkActReceiptCreator creator;
 
     @Transactional(readOnly = true)
     public List<WorkActReceiptResponse> list(UUID actId, UUID ownerId) {
@@ -116,22 +118,16 @@ public class WorkActReceiptService {
      * for exactly the reason a queue replays — returns the receipt that already landed instead of
      * billing the material twice (in the act AND in its ADDENDUM rollup).</p>
      */
-    @Transactional
     public WorkActReceiptResponse add(UUID actId, UUID ownerId, UUID requestedId, MultipartFile file,
                                       String label, BigDecimal amount, LocalDate issuedAt,
                                       boolean saveToPhotos) throws IOException {
-        WorkAct act = WorkActService.requireNotSigned(actService.loadOwned(actId, ownerId));
-        if (requestedId != null) {
-            var existing = receiptRepository.findById(requestedId);
-            if (existing.isPresent()) {
-                WorkActReceipt r = existing.get();
-                // Bound to THIS act, which is already owner-checked above — a replay naming a
-                // foreign act is a 404, never a peek at somebody else's receipt.
-                if (!r.getWorkAct().getId().equals(actId)) {
-                    throw new ResourceNotFoundException("Receipt not found: " + requestedId);
-                }
-                return WorkActReceiptResponse.from(r); // idempotent replay
-            }
+        // Deliberately NOT @Transactional: the duplicate-key recovery below reads the winner's row
+        // back after a failed insert, which the poisoned transaction could not do. Only one row is
+        // written here, so nothing is lost by letting each step commit on its own — the shape
+        // WorkActService.create already uses for the same reason.
+        WorkActReceiptCreator.Prepared prepared = creator.prepare(actId, ownerId, requestedId);
+        if (prepared.replay() != null) {
+            return prepared.replay(); // idempotent replay
         }
         // The photo is the receipt's proof — mandatory (round 2, master decision; a receipt row
         // with no paper behind it is just a number anyone could type).
@@ -149,27 +145,31 @@ public class WorkActReceiptService {
         String resolvedLabel = (label == null || label.isBlank())
                 ? DEFAULT_LABEL_PREFIX + (sortOrder + 1)
                 : label.trim();
-        WorkActReceipt receipt = receiptRepository.save(WorkActReceipt.builder()
-                .id(requestedId)
-                .workAct(act)
-                .label(resolvedLabel)
-                .amount(amount.setScale(MONEY_SCALE, RoundingMode.HALF_UP))
-                .issuedAt(issuedAt)
-                .storageKey(storeBytes(content, kind))
-                .sortOrder(sortOrder)
-                .build());
+        String storageKey = storeBytes(content, kind);
+        WorkActReceiptResponse saved;
+        try {
+            saved = creator.attempt(actId, requestedId, resolvedLabel,
+                    amount.setScale(MONEY_SCALE, RoundingMode.HALF_UP), issuedAt, storageKey,
+                    sortOrder);
+        } catch (DataIntegrityViolationException e) {
+            // Two uploads of one queued receipt in flight at once: the loser's insert violates the
+            // primary key, and the row the winner wrote IS the answer — so the photo this attempt
+            // stored is an orphan. Nothing else can collide here, so a miss is a real failure.
+            saved = creator.replay(requestedId, actId).orElseThrow(() -> e);
+            tryDelete(storageKey);
+        }
         if (saveToPhotos) {
             // A SECOND copy into the object's Фото tab («Чеки» folder, photo-folders) — the act
             // keeps its own frozen copy, so the gallery one can be deleted or re-filed freely.
             // Fail-soft, and swallowed HERE: the copy runs in its own transaction (REQUIRES_NEW),
             // so the photo cap or a storage hiccup can never cost the master the receipt itself.
             try {
-                photoService.saveReceiptCopy(act.getProject().getId(), ownerId, content, kind, resolvedLabel);
+                photoService.saveReceiptCopy(prepared.projectId(), ownerId, content, kind, resolvedLabel);
             } catch (IOException | RuntimeException e) {
                 log.info("Receipt photo copy skipped for act {}: {}", actId, e.getMessage());
             }
         }
-        return WorkActReceiptResponse.from(receipt);
+        return saved;
     }
 
     /**

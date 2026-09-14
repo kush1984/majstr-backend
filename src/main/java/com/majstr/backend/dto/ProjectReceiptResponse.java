@@ -25,11 +25,17 @@ public record ProjectReceiptResponse(
          *  a MATERIALS/RECEIPT expense. True (the default) means it is a receivable and touches no
          *  money in the economy's internals. */
         boolean reimbursable,
+        /** Whether the own-cost expense this receipt posted still exists. Only ever true while
+         *  {@code reimbursable} is false; false beside a false {@code reimbursable} means the row
+         *  was removed from the journal before that became impossible, and the receipt claims a cost
+         *  the economy does not count. */
+        boolean hasExpense,
         boolean duplicate,
         int sortOrder
 ) {
     public static ProjectReceiptResponse from(ProjectReceipt r, boolean duplicate) {
         return new ProjectReceiptResponse(r.getId(), r.getLabel(), r.getAmount(), r.getIssuedAt(),
-                r.getStorageKey() != null, r.isReimbursable(), duplicate, r.getSortOrder());
+                r.getStorageKey() != null, r.isReimbursable(), r.getExpenseId() != null, duplicate,
+                r.getSortOrder());
     }
 }

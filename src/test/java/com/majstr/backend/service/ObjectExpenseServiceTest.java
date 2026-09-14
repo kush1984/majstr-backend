@@ -11,6 +11,7 @@ import com.majstr.backend.entity.Plan;
 import com.majstr.backend.entity.Project;
 import com.majstr.backend.entity.ProjectStatus;
 import com.majstr.backend.entity.User;
+import com.majstr.backend.exception.ExpenseLinkedToReceiptException;
 import com.majstr.backend.feature.DefaultFeatureGuard;
 import com.majstr.backend.repository.EstimateRepository;
 import com.majstr.backend.repository.ObjectExpenseRepository;
@@ -236,5 +237,58 @@ class ObjectExpenseServiceTest {
         assertThatCode(() -> service().delete(objectId, expenseId, ownerId)).doesNotThrowAnyException();
 
         verify(expenseRepository, never()).delete(any(ObjectExpense.class));
+    }
+
+    /**
+     * An expense an object receipt created belongs to that receipt (V129) — the receipt mirrors its
+     * amount, label and date onto the row, so the two are one fact. Editing or deleting it HERE
+     * would leave the receipt claiming «це моя витрата» over a figure the journal no longer agrees
+     * with, in the one place the master reads his profit. He is sent to the receipt instead, where
+     * the same two taps also turn the claim off outright.
+     */
+    @Test
+    void anExpenseAnObjectReceiptOwnsIsNotEditableInTheJournal() {
+        UUID ownerId = UUID.randomUUID();
+        UUID objectId = UUID.randomUUID();
+        UUID expenseId = UUID.randomUUID();
+        user(ownerId, Plan.PRO);
+        given(projectService.loadOwned(objectId, ownerId)).willReturn(object(ProjectStatus.IN_PROGRESS));
+        ObjectExpense owned = ObjectExpense.builder()
+                .id(expenseId).objectId(objectId).amount(new BigDecimal("483.50"))
+                .category(ExpenseCategory.MATERIALS).source(ExpenseSource.RECEIPT).build();
+        given(expenseRepository.findByIdAndObjectId(expenseId, objectId)).willReturn(Optional.of(owned));
+        given(projectReceiptRepository.existsByExpenseId(expenseId)).willReturn(true);
+
+        assertThatThrownBy(() -> service().delete(objectId, expenseId, ownerId))
+                .isInstanceOf(ExpenseLinkedToReceiptException.class);
+        assertThatThrownBy(() -> service().update(objectId, expenseId, ownerId,
+                new ExpenseRequest(new BigDecimal("99.00"), ExpenseCategory.MATERIALS, null, null, null)))
+                .isInstanceOf(ExpenseLinkedToReceiptException.class);
+
+        verify(expenseRepository, never()).delete(any(ObjectExpense.class));
+        assertThat(owned.getAmount()).as("refused, not half-applied").isEqualByComparingTo("483.50");
+    }
+
+    /**
+     * The test is the BACK-LINK, never {@code source = RECEIPT}: an act's receipts are posted as
+     * MATERIALS/RECEIPT rows too ({@code ActAddendumCreator.postReceiptExpenses}) and no receipt row
+     * owns those. Keying on the source would have frozen them in the journal for good.
+     */
+    @Test
+    void anActReceiptsExpenseStaysEditable_noReceiptRowOwnsIt() {
+        UUID ownerId = UUID.randomUUID();
+        UUID objectId = UUID.randomUUID();
+        UUID expenseId = UUID.randomUUID();
+        user(ownerId, Plan.PRO);
+        given(projectService.loadOwned(objectId, ownerId)).willReturn(object(ProjectStatus.IN_PROGRESS));
+        ObjectExpense fromAnAct = ObjectExpense.builder()
+                .id(expenseId).objectId(objectId).amount(new BigDecimal("2400.00"))
+                .category(ExpenseCategory.MATERIALS).source(ExpenseSource.RECEIPT).build();
+        given(expenseRepository.findByIdAndObjectId(expenseId, objectId)).willReturn(Optional.of(fromAnAct));
+        given(projectReceiptRepository.existsByExpenseId(expenseId)).willReturn(false);
+
+        service().delete(objectId, expenseId, ownerId);
+
+        verify(expenseRepository).delete(fromAnAct);
     }
 }

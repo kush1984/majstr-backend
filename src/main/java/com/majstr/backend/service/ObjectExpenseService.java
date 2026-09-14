@@ -13,6 +13,7 @@ import com.majstr.backend.entity.ExpenseSource;
 import com.majstr.backend.entity.ObjectExpense;
 import com.majstr.backend.entity.Project;
 import com.majstr.backend.entity.User;
+import com.majstr.backend.exception.ExpenseLinkedToReceiptException;
 import com.majstr.backend.exception.ResourceNotFoundException;
 import com.majstr.backend.feature.Feature;
 import com.majstr.backend.feature.FeatureGuard;
@@ -112,6 +113,7 @@ public class ObjectExpenseService {
     public ExpenseResponse update(UUID objectId, UUID expenseId, UUID ownerId, ExpenseRequest req) {
         requireEconomy(objectId, ownerId);
         ObjectExpense expense = loadExpense(objectId, expenseId);
+        requireNotOwnedByAReceipt(expense.getId());
         expense.setAmount(req.amount());
         expense.setCategory(req.category());
         expense.setNote(trimToNull(req.note()));
@@ -125,7 +127,27 @@ public class ObjectExpenseService {
     @Transactional
     public void delete(UUID objectId, UUID expenseId, UUID ownerId) {
         requireEconomy(objectId, ownerId);
-        expenseRepository.findByIdAndObjectId(expenseId, objectId).ifPresent(expenseRepository::delete);
+        expenseRepository.findByIdAndObjectId(expenseId, objectId).ifPresent(expense -> {
+            requireNotOwnedByAReceipt(expense.getId());
+            expenseRepository.delete(expense);
+        });
+    }
+
+    /**
+     * An expense an object receipt created belongs to that receipt: the two are one fact, and the
+     * receipt mirrors its amount, label and date onto the row (V129). Editing or deleting it here
+     * would leave the receipt saying «це моя витрата» over a figure the journal no longer agrees
+     * with — silently, and in the one place the master reads his profit. He is sent to the receipt,
+     * where the same two taps also turn the whole claim off.
+     *
+     * <p>The test is the BACK-LINK, never {@code source = RECEIPT}: an act's receipts are posted as
+     * MATERIALS/RECEIPT rows too ({@code ActAddendumCreator.postReceiptExpenses}) and no receipt
+     * owns those — they stay editable.</p>
+     */
+    private void requireNotOwnedByAReceipt(UUID expenseId) {
+        if (projectReceiptRepository.existsByExpenseId(expenseId)) {
+            throw new ExpenseLinkedToReceiptException();
+        }
     }
 
     /**

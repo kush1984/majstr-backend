@@ -16,6 +16,7 @@ import com.majstr.backend.repository.ProjectMessageRepository;
 import com.majstr.backend.repository.EstimateRepository;
 import com.majstr.backend.repository.ProjectPhotoRepository;
 import com.majstr.backend.repository.ProjectRepository;
+import com.majstr.backend.repository.ShoppingListItemRepository;
 import com.majstr.backend.repository.ShoppingListRepository;
 import com.majstr.backend.repository.UserRepository;
 import com.majstr.backend.storage.StorageService;
@@ -49,6 +50,9 @@ public class ProjectService {
     private final ProjectPhotoRepository photoRepository;
     private final StorageService storage;
     private final ShoppingListRepository shoppingListRepository;
+    /** Bulk queries only, like {@link ShoppingListRepository#updateArchivedAt}: this service must
+     *  not depend on {@code ShoppingListService}, which depends on it back. */
+    private final ShoppingListItemRepository shoppingListItemRepository;
 
     @Transactional
     public ProjectResponse create(ProjectRequest req, UUID ownerId) {
@@ -161,6 +165,12 @@ public class ProjectService {
                 .map(ProjectPhoto::getStorageKey)
                 .filter(k -> k != null && !k.isBlank())
                 .toList();
+
+        // The shopping rows go first. They hang off the list (CASCADE) and off `estimates` (SET
+        // NULL) — two SIBLING branches of this one cascade, and Postgres does not define which
+        // fires first, so the SET NULL can reach a row whose list is still there and fail
+        // shopping_list_item_calculated_source_check. The object is going anyway.
+        shoppingListItemRepository.deleteByProjectId(id);
 
         projectRepository.delete(project);
         // Estimates and items are cascaded by the FK ON DELETE CASCADE.

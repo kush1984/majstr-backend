@@ -30,7 +30,7 @@ import java.util.UUID;
 @RestController
 @RequestMapping("/api/material-norms/{normId}")
 @Tag(name = "Materials", description = "Material calculation from an estimate")
-@SecurityRequirement(name = "bearerAuth")
+@SecurityRequirement(name = "bearer-jwt")
 @RequiredArgsConstructor
 public class MaterialNormController {
 

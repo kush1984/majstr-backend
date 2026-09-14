@@ -75,7 +75,7 @@ public class FiscalQrService {
      * photo of a batch. Without it this method makes no network call at all.</p>
      */
     public Optional<FiscalReceipt> read(String payload, boolean withPositions) {
-        Optional<FiscalQrPayload> parsed = FiscalQrPayload.parse(payload);
+        Optional<FiscalQrPayload> parsed = parseQuietly(payload);
         if (parsed.isEmpty()) {
             return Optional.empty();
         }
@@ -97,6 +97,21 @@ public class FiscalQrService {
                 qr.issuedAt().toLocalDate(),
                 qr.sum(),
                 trustedItems(looked.items(), qr.sum())));
+    }
+
+    /**
+     * Rung 1 of the ladder, and it must not be able to throw. Whatever a scanner hands us is a
+     * string off a camera — a malformed escape, a vendor's own URL shape, something that is not a
+     * receipt code at all — and every one of those means the same thing to the master: read the photo
+     * instead. A 500 on a scan would cost him the photo-recognition fallback the ladder exists for.
+     */
+    private static Optional<FiscalQrPayload> parseQuietly(String payload) {
+        try {
+            return FiscalQrPayload.parse(payload);
+        } catch (RuntimeException e) {
+            log.info("Fiscal QR payload not readable: {}", e.toString());
+            return Optional.empty();
+        }
     }
 
     // ---- the tax service's lookup ---------------------------------------------

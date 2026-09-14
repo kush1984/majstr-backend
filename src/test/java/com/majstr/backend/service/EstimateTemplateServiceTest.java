@@ -52,6 +52,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import org.springframework.security.access.AccessDeniedException;
 
@@ -582,10 +583,12 @@ class EstimateTemplateServiceTest {
         assertThat(fork.getValue().getTrade()).isEqualTo(Trade.PAINTER);
 
         // Every position comes across — a fork is the bundle, not an empty shell with one new line.
-        ArgumentCaptor<List<EstimateTemplateItem>> copied = ArgumentCaptor.captor();
-        verify(templateItemRepository).saveAll(copied.capture());
-        assertThat(copied.getValue()).extracting(EstimateTemplateItem::getName)
-                .containsExactly("Грунтування");
+        // Saved ONE BY ONE on purpose (B-05): the copy's id is the only way to translate the item id
+        // the request in flight is still naming, and a batch save never hands those back.
+        ArgumentCaptor<EstimateTemplateItem> copied = ArgumentCaptor.forClass(EstimateTemplateItem.class);
+        verify(templateItemRepository, times(2)).save(copied.capture());
+        assertThat(copied.getAllValues()).extracting(EstimateTemplateItem::getName)
+                .containsExactly("Грунтування", "Шліфування");
 
         // And the shared default steps out of this master's list, pointing at the copy.
         ArgumentCaptor<TemplateDefaultOverride> retired =
