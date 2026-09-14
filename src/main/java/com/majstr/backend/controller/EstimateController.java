@@ -6,6 +6,7 @@ import com.majstr.backend.dto.EstimateConsolidateRequest;
 import com.majstr.backend.dto.EstimateCreateRequest;
 import com.majstr.backend.dto.EstimateDuplicateRequest;
 import com.majstr.backend.dto.EstimateItemsDeleteRequest;
+import com.majstr.backend.dto.EstimateItemsMarkupRequest;
 import com.majstr.backend.dto.EstimateItemFromCatalogRequest;
 import com.majstr.backend.dto.EstimateItemRequest;
 import com.majstr.backend.dto.EstimateItemsOrderRequest;
@@ -258,6 +259,23 @@ public class EstimateController {
                                             @Valid @RequestBody EstimateItemsDeleteRequest req,
                                             @AuthenticationPrincipal UserPrincipal principal) {
         estimateService.deleteItems(estimateId, req.itemIds(), principal.id());
+        return ResponseEntity.noContent().build();
+    }
+
+    @Operation(summary = "Raise (or lower) the price of SEVERAL lines IN PLACE",
+            description = "«Націнка на вибрані позиції»: small volumes or work at height are worth "
+                    + "more than the catalog says, and the alternative is re-typing each price by "
+                    + "hand. Same formula as «Дубль ±%» — ×(1 ± p/100), rounded to whole hryvnia — "
+                    + "but applied to THIS estimate instead of a copy. PERCENT lines are skipped: "
+                    + "they rise with the base they measure, and marking them up too would land the "
+                    + "markup twice. Nothing is recorded beyond the new price, and NOT idempotent: "
+                    + "applying +10% twice is +21%.")
+    @PostMapping("/api/estimates/{estimateId}/items/markup")
+    public ResponseEntity<Void> markItemsUp(@PathVariable UUID estimateId,
+                                            @Valid @RequestBody EstimateItemsMarkupRequest req,
+                                            @AuthenticationPrincipal UserPrincipal principal) {
+        estimateService.markItemsUp(estimateId, req.itemIds(), req.percent(), req.discount(),
+                principal.id());
         return ResponseEntity.noContent().build();
     }
 

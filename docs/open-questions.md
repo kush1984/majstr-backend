@@ -1932,6 +1932,24 @@ one-line summary — keep the item in the file as a record.
   `source_unit_price` and `source_item_id`, which is exactly what those columns record. Same shape
   as the long-standing "what changed since the client last signed" gap on `reopen`, and the two
   should probably be one component rather than two.
+- **Note (2026-09-14, in-place markup):** «Націнка на вибрані позиції» deliberately writes **no**
+  provenance — not even `source_unit_price` — so a line raised in place is invisible to any such diff
+  view. That is the owner's explicit «нічого не зберігаємо», not an oversight; it only means the diff,
+  when built, answers "parent vs copy" and never "what did he re-price by hand".
+
+### An in-place markup leaves no trace at all
+- **Status:** OPEN
+- **Since:** In-place markup iteration (2026-09-14)
+- **Context:** `POST /api/estimates/{id}/items/markup` overwrites `unit_price` and records nothing —
+  no history, no flag, no old value. Chosen deliberately (the master is editing his own estimate, and
+  a mark carried by only *some* price edits would be a half-truth for whoever reads it later), and it
+  is why the feature needed no migration. The open part is only whether anything should ever *depend*
+  on knowing: a master who applies +10 % twice by accident has no undo beyond re-typing the prices,
+  and nothing can tell him it happened.
+- **Notes / options:** Leave as is unless a master actually reports the double-apply. If it ever needs
+  answering, the honest shape is a general per-line edit history (which would also cover hand edits),
+  **not** a markup-specific column — a flag that only some price changes set is the half-truth this
+  design rejected. Related: the estimate-diff gap above.
 
 ### Portal payments card is now de-facto PRO-only — confirm this is acceptable
 - **Status:** OPEN

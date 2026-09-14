@@ -1051,6 +1051,59 @@ public class EstimateService {
     }
 
     /**
+     * Raise (or lower) the price of several lines in place — «Націнка на вибрані позиції».
+     *
+     * <p><b>Why this exists beside «Дубль ±%».</b> The duplicate answers a бригадир's two-price
+     * workflow: one sheet at the crew's prices, another at the client's. This answers something
+     * smaller and far more common — a few positions in THIS estimate are worth more than the
+     * catalog says, because the volume is small or the work is at height. The alternative is
+     * re-typing each price by hand, and a master with eight such lines quotes the job wrong
+     * instead.</p>
+     *
+     * <p><b>Nothing is recorded.</b> The new price is simply the price — no history column, no
+     * flag, nothing a later screen or the client could read as «this one was marked up». That is
+     * deliberate: the master is editing his own estimate, and a mark carried by only some price
+     * edits would be a half-truth for whoever eventually reads it. In particular this does NOT
+     * write {@code sourceUnitPrice} — that column means «what the crew's sheet charged», and giving
+     * it a second meaning would poison it for the diff view it exists for.</p>
+     *
+     * <p><b>PERCENT lines are skipped, and that is correctness rather than policy.</b> A «%» line
+     * is a share of a base that is itself in this list; the recalculation at the end already lifts
+     * it. Marking it up as well would land the markup twice — the same trap {@code markedUpPercent}
+     * exists to avoid on the duplicate path.</p>
+     *
+     * <p>Nothing cascades into duplicates either, unlike a delete: a copy IS the client's sheet at
+     * the client's prices, and the whole point of the parent is that its prices differ.</p>
+     *
+     * <p><b>Not idempotent, by design.</b> Applying +10 % twice is +21 %. That is the honest
+     * reading of a master who picked the same line twice — he is raising it again — and it is why
+     * the operation carries the whole list at once rather than one line at a time.</p>
+     */
+    @Transactional
+    public void markItemsUp(UUID estimateId, List<UUID> itemIds,
+                            BigDecimal percent, boolean discount, UUID ownerId) {
+        requireNotSigned(loadOwned(estimateId, ownerId));
+        if (itemIds == null || itemIds.isEmpty() || percent == null || percent.signum() == 0) {
+            return;
+        }
+        // Same unsigned-magnitude-plus-direction shape as the duplicate, and the same multiply:
+        // discount → factor < 1 (1 − p/100), markup → factor > 1 (1 + p/100).
+        BigDecimal factor = BigDecimal.ONE.add((discount ? percent.negate() : percent).movePointLeft(2));
+        List<EstimateItem> picked = itemRepository.findAllById(itemIds).stream()
+                .filter(i -> i.getEstimate().getId().equals(estimateId))
+                .filter(i -> i.getUnit() != Unit.PERCENT)
+                .filter(i -> i.getUnitPrice() != null)
+                .toList();
+        if (picked.isEmpty()) {
+            return;
+        }
+        for (EstimateItem item : picked) {
+            item.setUnitPrice(markedUp(item.getUnitPrice(), factor));
+        }
+        EstimateMath.recalculate(itemRepository.findByEstimateIdOrderBySortOrderAscIdAsc(estimateId));
+    }
+
+    /**
      * A percentage line whose base is being deleted keeps its money and loses its link.
      *
      * <p>The FK is {@code ON DELETE SET NULL}, so the database would quietly leave a percentage

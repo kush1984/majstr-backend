@@ -1684,4 +1684,105 @@ class EstimateServiceTest {
 
         verify(itemRepository, never()).deleteAll(anyList());
     }
+
+    // ---- «Націнка на вибрані позиції» — the price moves IN PLACE ---------------------------------
+    //
+    // The everyday sibling of «Дубль ±%». A few positions in THIS estimate are worth more than the
+    // catalog says — small volume, or work at height — and the alternative is opening eight lines
+    // and re-typing eight prices.
+
+    @Test
+    void markItemsUp_raisesTheUNITpriceOfEveryPickedLine() {
+        EstimateItem line = ownedLine("Монтаж ГКЛ", "100");
+        givenOwnedEstimate();
+        given(itemRepository.findAllById(List.of(line.getId()))).willReturn(List.of(line));
+
+        estimateService.markItemsUp(estimateId, List.of(line.getId()),
+                new BigDecimal("15"), false, ownerId);
+
+        assertThat(line.getUnitPrice()).isEqualByComparingTo("115");
+    }
+
+    @Test
+    void markItemsUp_roundsToWholeHryvnia() {
+        // 333 × 1.15 = 382.95. The client reads round numbers and the fraction lands in the margin
+        // either way, so the same HALF_UP the duplicate uses.
+        EstimateItem line = ownedLine("Шпаклювання", "333");
+        givenOwnedEstimate();
+        given(itemRepository.findAllById(List.of(line.getId()))).willReturn(List.of(line));
+
+        estimateService.markItemsUp(estimateId, List.of(line.getId()),
+                new BigDecimal("15"), false, ownerId);
+
+        assertThat(line.getUnitPrice()).isEqualByComparingTo("383");
+    }
+
+    @Test
+    void markItemsUp_appliesADISCOUNTdownwards() {
+        // Unsigned magnitude plus a direction, exactly like the duplicate — so nothing downstream
+        // has to branch on which of the two it is looking at.
+        EstimateItem line = ownedLine("Ґрунтування", "200");
+        givenOwnedEstimate();
+        given(itemRepository.findAllById(List.of(line.getId()))).willReturn(List.of(line));
+
+        estimateService.markItemsUp(estimateId, List.of(line.getId()),
+                new BigDecimal("10"), true, ownerId);
+
+        assertThat(line.getUnitPrice()).isEqualByComparingTo("180");
+    }
+
+    @Test
+    void markItemsUp_leavesAPERCENTlineALONE() {
+        // Correctness, not policy: a «%» line is a share of a base that is itself in this list, and
+        // the recalculation at the end already lifts it. Marking it up too would land the markup
+        // twice — the same trap markedUpPercent exists to avoid on the duplicate path.
+        EstimateItem work = ownedLine("Монтаж ГКЛ", "100");
+        EstimateItem percent = item(ItemType.WORK, "Доставка", "1", "10");
+        percent.setUnit(Unit.PERCENT);
+        percent.setEstimate(ownedEstimate(ownerId));
+        givenOwnedEstimate();
+        given(itemRepository.findAllById(List.of(work.getId(), percent.getId())))
+                .willReturn(List.of(work, percent));
+
+        estimateService.markItemsUp(estimateId, List.of(work.getId(), percent.getId()),
+                new BigDecimal("15"), false, ownerId);
+
+        assertThat(work.getUnitPrice()).isEqualByComparingTo("115");
+        assertThat(percent.getUnitPrice()).isEqualByComparingTo("10");
+    }
+
+    @Test
+    void markItemsUp_ignoresALineFromANOTHERestimate() {
+        // findAllById is id-only. The estimate filter is the whole reason a stray id in the request
+        // cannot reprice a sheet the master is not looking at.
+        EstimateItem foreign = item(ItemType.WORK, "Чуже", "1", "100");
+        foreign.setEstimate(Estimate.builder().id(UUID.randomUUID()).build());
+        givenOwnedEstimate();
+        given(itemRepository.findAllById(List.of(foreign.getId()))).willReturn(List.of(foreign));
+
+        estimateService.markItemsUp(estimateId, List.of(foreign.getId()),
+                new BigDecimal("15"), false, ownerId);
+
+        assertThat(foreign.getUnitPrice()).isEqualByComparingTo("100");
+    }
+
+    @Test
+    void markItemsUp_rejectsWhenEstimateIsSigned() {
+        given(estimateRepository.findById(estimateId)).willReturn(Optional.of(signedEstimate()));
+
+        assertThatThrownBy(() -> estimateService.markItemsUp(
+                estimateId, List.of(UUID.randomUUID()), new BigDecimal("15"), false, ownerId))
+                .isInstanceOf(EstimateSignedException.class);
+    }
+
+    @Test
+    void markItemsUp_isANoOpAtZeroPercent() {
+        // ×1 is not an edit, so the lines are never even read.
+        givenOwnedEstimate();
+
+        estimateService.markItemsUp(estimateId, List.of(UUID.randomUUID()),
+                BigDecimal.ZERO, false, ownerId);
+
+        verify(itemRepository, never()).findAllById(anyList());
+    }
 }
