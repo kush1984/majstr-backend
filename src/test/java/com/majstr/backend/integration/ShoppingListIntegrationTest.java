@@ -8,6 +8,7 @@ import com.majstr.backend.dto.ShoppingListResponse;
 import com.majstr.backend.entity.ProjectStatus;
 import com.majstr.backend.entity.ShoppingListItemSource;
 import com.majstr.backend.entity.Unit;
+import com.majstr.backend.service.EstimateService;
 import com.majstr.backend.service.ProjectService;
 import com.majstr.backend.service.ShoppingListService;
 import org.junit.jupiter.api.BeforeEach;
@@ -43,6 +44,7 @@ class ShoppingListIntegrationTest extends IntegrationTestBase {
     @Autowired JdbcTemplate jdbc;
     @Autowired ShoppingListService shoppingListService;
     @Autowired ProjectService projectService;
+    @Autowired EstimateService estimateService;
 
     private UUID ownerId;
     private UUID projectId;
@@ -276,6 +278,83 @@ class ShoppingListIntegrationTest extends IntegrationTestBase {
 
         // The 12 is off the screen but not out of the arithmetic — the 6 is still «ще».
         assertThat(only(after, PUTTY).topUp()).isTrue();
+    }
+
+    @Test
+    void untickingAfterATopUpMergesTheRowsInsteadOfFailing() {
+        ShoppingListResponse first = shoppingListService
+                .applyCalculated(projectId, ownerId, estimateA, List.of(row(PUTTY, "12")));
+        UUID boughtId = only(first, PUTTY).id();
+        shoppingListService.setBought(projectId, ownerId, boughtId, true);
+        // The bigger figure parks «ще 6» beside the bought 12 — by design, two rows on one key.
+        shoppingListService.applyCalculated(projectId, ownerId, estimateA, List.of(row(PUTTY, "18")));
+
+        // «я його все ж не купив». `ux_shopping_list_item_open` admits ONE open row per key, so this
+        // used to be an unmapped 500 and the master was told his list did not save.
+        shoppingListService.setBought(projectId, ownerId, boughtId, false);
+
+        ShoppingListResponse after = shoppingListService.get(projectId, ownerId);
+        ShoppingListItemResponse merged = only(after, PUTTY);
+        assertThat(merged.id()).as("the row he tapped survives").isEqualTo(boughtId);
+        assertThat(merged.bought()).isFalse();
+        // Together they are the whole demand again — which is what the top-up existed to complete.
+        assertThat(merged.quantity()).isEqualByComparingTo("18");
+        assertThat(merged.topUp()).as("nothing settled is left for it to top up").isFalse();
+    }
+
+    // --- deleting the source --------------------------------------------------------------
+
+    /**
+     * `source_estimate_id` is ON DELETE SET NULL, Postgres runs a SET NULL as an UPDATE, and a
+     * CALCULATOR row with no estimate fails `shopping_list_item_calculated_source_check` — so
+     * deleting any estimate ever sent to the list raised `check_violation` and the master was told
+     * his estimate did not delete.
+     */
+    @Test
+    void deletingAnEstimateKeepsWhatHeBought_andDropsWhatNobodyTouched() {
+        ShoppingListResponse first = shoppingListService.applyCalculated(projectId, ownerId, estimateA,
+                List.of(row(PUTTY, "12"), row("Профіль CD", "40")));
+        shoppingListService.setBought(projectId, ownerId, only(first, PUTTY).id(), true);
+
+        estimateService.delete(estimateA, ownerId);
+
+        ShoppingListResponse after = shoppingListService.get(projectId, ownerId);
+        // What he bought stays on his list; an untouched row is worth nothing once its source is gone.
+        assertThat(after.items()).extracting(ShoppingListItemResponse::name).containsExactly(PUTTY);
+        assertThat(only(after, PUTTY).quantity()).isEqualByComparingTo("12");
+        // And it is now HIS row: nothing can recalculate it any more.
+        assertThat(only(after, PUTTY).source()).isEqualTo(ShoppingListItemSource.MANUAL);
+    }
+
+    /** A hand-edited row survives the same way — it carries a figure nobody else typed. */
+    @Test
+    void deletingAnEstimateKeepsAHandCorrectedRow() {
+        ShoppingListResponse first = shoppingListService
+                .applyCalculated(projectId, ownerId, estimateA, List.of(row(PUTTY, "12")));
+        shoppingListService.update(projectId, ownerId, only(first, PUTTY).id(),
+                new ShoppingListItemUpdateRequest(new BigDecimal("9"), null, null, null));
+
+        estimateService.delete(estimateA, ownerId);
+
+        ShoppingListResponse after = shoppingListService.get(projectId, ownerId);
+        assertThat(only(after, PUTTY).quantity()).isEqualByComparingTo("9");
+        assertThat(only(after, PUTTY).source()).isEqualTo(ShoppingListItemSource.MANUAL);
+    }
+
+    /**
+     * The object's own delete reaches the rows down TWO sibling branches of one cascade — the list
+     * (CASCADE) and `estimates` (SET NULL) — and Postgres does not define which fires first, so the
+     * SET NULL could reach a row whose list was still there and fail the same CHECK.
+     */
+    @Test
+    void deletingTheObjectTakesItsShoppingRowsWithIt() {
+        shoppingListService.applyCalculated(projectId, ownerId, estimateA,
+                List.of(row(PUTTY, "12"), row("Профіль CD", "40")));
+
+        projectService.delete(projectId, ownerId);
+
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM shopping_list WHERE project_id = ?",
+                Integer.class, projectId)).isZero();
     }
 
     // --- schema -----------------------------------------------------------------------------

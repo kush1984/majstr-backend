@@ -48,7 +48,7 @@ import java.util.UUID;
 @RestController
 @RequestMapping("/api/estimates/{estimateId}/materials")
 @Tag(name = "Materials", description = "Material calculation from an estimate")
-@SecurityRequirement(name = "bearerAuth")
+@SecurityRequirement(name = "bearer-jwt")
 @RequiredArgsConstructor
 public class MaterialCalculatorController {
 

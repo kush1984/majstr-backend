@@ -22,6 +22,7 @@ import com.majstr.backend.storage.StoredObject;
 import com.majstr.backend.storage.UnsupportedMediaTypeException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
@@ -37,6 +38,7 @@ import java.util.Arrays;
 import java.util.Comparator;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 
@@ -93,6 +95,7 @@ public class ProjectReceiptService {
     private final StorageService storage;
     private final ActReceiptExtractor recognizer;
     private final FiscalQrService fiscalQr;
+    private final ProjectReceiptCreator creator;
 
     @Transactional(readOnly = true)
     public ProjectReceiptsResponse list(UUID projectId, UUID ownerId) {
@@ -104,22 +107,14 @@ public class ProjectReceiptService {
      * Attach a receipt to the object. Only the photo is required; label, amount and date may all
      * still be unknown — the batch is saved before any of it is read.
      */
-    @Transactional
     public ProjectReceiptResponse add(UUID projectId, UUID ownerId, UUID requestedId,
                                       MultipartFile file, String label, BigDecimal amount,
                                       LocalDate issuedAt) throws IOException {
-        projectService.loadOwned(projectId, ownerId);
-        if (requestedId != null) {
-            var existing = receiptRepository.findById(requestedId);
-            if (existing.isPresent()) {
-                ProjectReceipt r = existing.get();
-                // Bound to THIS object, which is already owner-checked — a replay naming a foreign
-                // object is a 404, never a peek at somebody else's receipt.
-                if (!r.getProjectId().equals(projectId)) {
-                    throw new ResourceNotFoundException("Receipt not found: " + requestedId);
-                }
-                return ProjectReceiptResponse.from(r, false); // idempotent replay
-            }
+        // Deliberately NOT @Transactional — see the recovery below: reading the winner's row back
+        // needs a transaction the failed insert has not poisoned.
+        Optional<ProjectReceiptResponse> landed = creator.prepare(projectId, ownerId, requestedId);
+        if (landed.isPresent()) {
+            return landed.get(); // idempotent replay
         }
         if (file == null || file.isEmpty()) {
             throw new ProjectReceiptValidationException(
@@ -134,18 +129,23 @@ public class ProjectReceiptService {
         byte[] content = file.getBytes();
         ImageKind kind = requireImage(content);
         int sortOrder = receiptRepository.maxSortOrder(projectId) + 1;
-        ProjectReceipt receipt = receiptRepository.save(ProjectReceipt.builder()
-                .id(requestedId)
-                .projectId(projectId)
-                .label((label == null || label.isBlank())
-                        ? DEFAULT_LABEL_PREFIX + (sortOrder + 1)
-                        : label.trim())
-                .amount(resolvedAmount.setScale(MONEY_SCALE, RoundingMode.HALF_UP))
-                .issuedAt(issuedAt)
-                .storageKey(storeBytes(content, kind))
-                .sortOrder(sortOrder)
-                .build());
-        return ProjectReceiptResponse.from(receipt, false);
+        String resolvedLabel = (label == null || label.isBlank())
+                ? DEFAULT_LABEL_PREFIX + (sortOrder + 1)
+                : label.trim();
+        String storageKey = storeBytes(content, kind);
+        try {
+            return creator.attempt(projectId, requestedId, resolvedLabel,
+                    resolvedAmount.setScale(MONEY_SCALE, RoundingMode.HALF_UP), issuedAt,
+                    storageKey, sortOrder);
+        } catch (DataIntegrityViolationException e) {
+            // Two uploads of one queued receipt in flight at once: the loser's insert violates the
+            // primary key, and the row the winner wrote IS the answer — so the photo this attempt
+            // stored is an orphan. Nothing else can collide here, so a miss is a real failure.
+            ProjectReceiptResponse winner = creator.replay(requestedId, projectId)
+                    .orElseThrow(() -> e);
+            tryDelete(storageKey);
+            return winner;
+        }
     }
 
     /**
@@ -306,6 +306,14 @@ public class ProjectReceiptService {
                 ? null
                 : expenseRepository.findByIdAndObjectId(receipt.getExpenseId(), receipt.getProjectId())
                         .orElse(null);
+        if (expense == null && requested == null) {
+            // An ordinary edit carries no opinion about whose money this is, so it must not create
+            // an expense — least of all resurrect one the master removed from the journal himself
+            // (an older row: the journal now refuses to delete a linked expense). Saving a corrected
+            // label would otherwise silently put a cost back into his profit.
+            receipt.setExpenseId(null);
+            return;
+        }
         if (expense == null) {
             expense = ObjectExpense.builder()
                     .objectId(receipt.getProjectId())

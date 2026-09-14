@@ -22,6 +22,7 @@ import com.majstr.backend.entity.PhotoVisibility;
 import com.majstr.backend.entity.Plan;
 import com.majstr.backend.entity.Project;
 import com.majstr.backend.entity.ProjectPhoto;
+import com.majstr.backend.entity.Trade;
 import com.majstr.backend.entity.Unit;
 import com.majstr.backend.entity.User;
 import com.majstr.backend.exception.LimitExceededException;
@@ -77,6 +78,7 @@ class EstimateServiceTest {
     @Mock private ProjectPhotoRepository photoRepository;
     @Mock private StorageService storage;
     @Mock private WorkActItemRepository workActItemRepository;
+    @Mock private com.majstr.backend.repository.ShoppingListItemRepository shoppingListItemRepository;
 
     @InjectMocks private EstimateService estimateService;
 
@@ -354,6 +356,86 @@ class EstimateServiceTest {
                 .isInstanceOf(EstimateSignedException.class);
     }
 
+    // ---- a rename moves the trade key, so the trade is re-derived -------------------------------
+
+    /**
+     * {@code estimate_items.trade} is DERIVED from (name, type, unit) — the same key the material
+     * norms are looked up by — so a line renamed from one trade's work to another's keeps a trade
+     * that is now a lie, and the calculator buys material for the work the line USED to be. The
+     * stored value is the only thing {@code normsFor} filters on; nothing downstream re-checks it.
+     */
+    @Test
+    void renamingALineOntoAnotherTradesPosition_refilesIt() {
+        Estimate estimate = ownedEstimate(ownerId);
+        given(estimateRepository.findById(estimateId)).willReturn(Optional.of(estimate));
+        EstimateItem line = item(ItemType.WORK, "Монтаж ГКЛ на стіни", "20", "150");
+        line.setUnit(Unit.M2);
+        line.setEstimate(estimate);
+        line.setTrade(Trade.DRYWALL);
+        given(itemRepository.findById(line.getId())).willReturn(Optional.of(line));
+        given(itemRepository.findByEstimateIdOrderBySortOrderAscIdAsc(estimateId))
+                .willReturn(List.of(line));
+        given(catalogItemRepository.findByOwnerIdOrderByNameAsc(ownerId)).willReturn(List.of(
+                CatalogItem.builder().id(UUID.randomUUID()).name("Фарбування стін")
+                        .type(ItemType.WORK).unit(Unit.M2).defaultPrice(new BigDecimal("150"))
+                        .trade(Trade.PAINTER).build()));
+
+        estimateService.updateItem(estimateId, line.getId(), new EstimateItemRequest(
+                ItemType.WORK, "Фарбування стін", null, Unit.M2,
+                new BigDecimal("20.000"), new BigDecimal("150.00"), null, null, false, null, null),
+                ownerId);
+
+        assertThat(line.getTrade()).isEqualTo(Trade.PAINTER);
+    }
+
+    /** A name his catalog does not carry answers null — the honest value, not the stale one. */
+    @Test
+    void renamingOntoAPositionHeDoesNotHave_clearsTheTrade() {
+        Estimate estimate = ownedEstimate(ownerId);
+        given(estimateRepository.findById(estimateId)).willReturn(Optional.of(estimate));
+        EstimateItem line = item(ItemType.WORK, "Монтаж ГКЛ на стіни", "20", "150");
+        line.setUnit(Unit.M2);
+        line.setEstimate(estimate);
+        line.setTrade(Trade.DRYWALL);
+        given(itemRepository.findById(line.getId())).willReturn(Optional.of(line));
+        given(itemRepository.findByEstimateIdOrderBySortOrderAscIdAsc(estimateId))
+                .willReturn(List.of(line));
+        given(catalogItemRepository.findByOwnerIdOrderByNameAsc(ownerId)).willReturn(List.of());
+
+        estimateService.updateItem(estimateId, line.getId(), new EstimateItemRequest(
+                ItemType.WORK, "Щось своє", null, Unit.M2,
+                new BigDecimal("20.000"), new BigDecimal("150.00"), null, null, false, null, null),
+                ownerId);
+
+        assertThat(line.getTrade()).isNull();
+    }
+
+    /**
+     * Re-deriving is a query, so a line the master merely repriced must not pay for one — and must
+     * not lose a trade that is still correct.
+     */
+    @Test
+    void repricingALineLeavesItsTradeAndAsksTheCatalogNothing() {
+        Estimate estimate = ownedEstimate(ownerId);
+        given(estimateRepository.findById(estimateId)).willReturn(Optional.of(estimate));
+        EstimateItem line = item(ItemType.WORK, "Фарбування стін", "20", "150");
+        line.setUnit(Unit.M2);
+        line.setEstimate(estimate);
+        line.setTrade(Trade.PAINTER);
+        given(itemRepository.findById(line.getId())).willReturn(Optional.of(line));
+        given(itemRepository.findByEstimateIdOrderBySortOrderAscIdAsc(estimateId))
+                .willReturn(List.of(line));
+
+        estimateService.updateItem(estimateId, line.getId(), new EstimateItemRequest(
+                ItemType.WORK, "Фарбування стін", null, Unit.M2,
+                new BigDecimal("20.000"), new BigDecimal("180.00"), null, null, false, null, null),
+                ownerId);
+
+        assertThat(line.getTrade()).isEqualTo(Trade.PAINTER);
+        assertThat(line.getUnitPrice()).isEqualByComparingTo("180.00");
+        verify(catalogItemRepository, never()).findByOwnerIdOrderByNameAsc(any());
+    }
+
     @Test
     void deleteItem_rejectsWhenEstimateIsSigned() {
         given(estimateRepository.findById(estimateId)).willReturn(Optional.of(signedEstimate()));
@@ -371,7 +453,14 @@ class EstimateServiceTest {
 
         estimateService.delete(estimateId, ownerId);
 
-        verify(estimateRepository).delete(draft);
+        // The shopping rows are settled BEFORE the estimate goes. The FK is ON DELETE SET NULL and
+        // Postgres runs that as an UPDATE, so a CALCULATOR row left pointing at nothing trips
+        // shopping_list_item_calculated_source_check — and the master is told his estimate did not
+        // delete, when the only problem was the order of two statements.
+        var order = org.mockito.Mockito.inOrder(shoppingListItemRepository, estimateRepository);
+        order.verify(shoppingListItemRepository).deleteUntouchedByEstimate(estimateId);
+        order.verify(shoppingListItemRepository).detachFromEstimate(estimateId);
+        order.verify(estimateRepository).delete(draft);
         verify(projectRepository).incrementEstimatesDeleted(projectId); // lifetime churn counter
     }
 

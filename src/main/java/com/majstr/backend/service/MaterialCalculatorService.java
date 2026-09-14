@@ -96,8 +96,10 @@ public class MaterialCalculatorService {
     private static final BigDecimal HUNDRED = new BigDecimal("100");
     private static final BigDecimal MM2_PER_M2 = new BigDecimal("1000000");
 
-    /** The one material whose packaging a master parameter overrides — see {@link #sheetArea}. */
-    private static final String GKL_SHEET_CODE_PREFIX = "GKL_SHEET";
+    /** The one material whose packaging a master parameter overrides — see {@link #sheetArea}.
+     *  Matched EXACTLY: {@code GKL_SHEET_ARCH} is a different product with its own package, and a
+     *  habit about flat sheets says nothing about an arched one. */
+    private static final String GKL_SHEET_CODE = "GKL_SHEET";
 
     private final EstimateService estimateService;
     private final EstimateItemRepository itemRepository;
@@ -332,8 +334,20 @@ public class MaterialCalculatorService {
                 .filter(n -> n.getTrade() == null || n.getTrade() == item.getTrade())
                 .toList();
     }
+
+    /**
+     * Two DIFFERENT trades shipping this name and unit: we cannot tell which work the position is,
+     * and picking one would buy someone else's material. A norm carrying NO trade is not a second
+     * opinion — it answers for a position of any trade (§25) — so it can never make the answer
+     * ambiguous and is left out before the count. Counting it as a distinct value refused positions
+     * that had exactly one real candidate.
+     */
     private boolean spansSeveralTrades(List<MaterialNorm> candidates) {
-        return candidates.stream().map(MaterialNorm::getTrade).distinct().count() > 1;
+        return candidates.stream()
+                .map(MaterialNorm::getTrade)
+                .filter(trade -> trade != null)
+                .distinct()
+                .count() > 1;
     }
 
     private Bucket bucket(Map<UUID, Bucket> buckets, Material material) {
@@ -371,8 +385,7 @@ public class MaterialCalculatorService {
      * is a wasted trip. Every other material keeps the dictionary's own packaging.
      */
     private BigDecimal packageSize(Material material, BigDecimal sheetArea) {
-        if (sheetArea != null && material.getCode() != null
-                && material.getCode().startsWith(GKL_SHEET_CODE_PREFIX)) {
+        if (sheetArea != null && GKL_SHEET_CODE.equals(material.getCode())) {
             return sheetArea;
         }
         return material.getPackageSize();

@@ -274,6 +274,30 @@ class MaterialCalculatorServiceTest {
         assertThat(only(calculate(NO_WASTE, null)).baseQuantity()).isEqualByComparingTo("10");
     }
 
+    /**
+     * A general norm beside a trade-specific one is NOT a disagreement — it answers for anyone
+     * (§25), so there is exactly one real candidate trade here and nothing to be ambiguous about.
+     * Counting the null as a second value made a tradeless position refuse a set that was never in
+     * conflict: the drywall sheet AND the general primer both belong on the list.
+     */
+    @Test
+    void aGeneralNormBesideATradesOwnIsNotADisagreement() {
+        Material sheet = material("GKL_SHEET", "Лист ГКЛ", Unit.M2, null, null);
+        Material primer = material("PRIMER", "Ґрунтовка", Unit.LITRE, null, null);
+        given(item("Монтаж на стіни", Unit.M2, "20", null),
+                norm(Trade.DRYWALL, "монтаж на стіни", Unit.M2, sheet, "1.0"),
+                norm(null, "монтаж на стіни", Unit.M2, primer, "0.1"));
+
+        MaterialCalculationResponse result = calculate(NO_WASTE, null);
+
+        assertThat(result.materials()).extracting(CalculatedMaterialLine::name)
+                .containsExactlyInAnyOrder("Лист ГКЛ", "Ґрунтовка");
+        // It still names no trade of its own — the position carries none, and the norm's is not the
+        // position's (that rule is what keeps «Гіпсокартон» off a line that is not one).
+        assertThat(result.coverage().trades()).isEmpty();
+        assertThat(result.coverage().otherWorks()).isTrue();
+    }
+
     @Test
     void normsFromTwoTradesThatDisagreeLeaveThePositionUncounted() {
         Material putty = material("PUTTY", "Шпаклівка", Unit.KG, null, null);
@@ -393,6 +417,26 @@ class MaterialCalculatorServiceTest {
         // 36 m² of a 3.6 m² sheet is 10, not the 12 the shipped 3.0 m² default would have bought.
         assertThat(line.packageSize()).isEqualByComparingTo("3.6");
         assertThat(line.packages()).isEqualTo(10);
+    }
+
+    /**
+     * The habit is about FLAT sheets. «GKL_SHEET_ARCH» is a different product with its own package
+     * (an arched sheet is sold thinner and smaller), and a prefix match handed it the master's
+     * 1200×3000 area — so the calculator bought 10 arched sheets where 12 are needed, and he is
+     * short on site with no way to see why.
+     */
+    @Test
+    void theSheetSizeHabitDoesNotReachADifferentSheetProduct() {
+        Material arch = material("GKL_SHEET_ARCH", "Лист ГКЛ арочний", Unit.M2, "3.0", "лист");
+        given(item("Монтаж арки", Unit.M2, "36", Trade.DRYWALL),
+                norm(Trade.DRYWALL, "монтаж арки", Unit.M2, arch, "1.0"));
+        when(prefRepository.findByUserIdAndPrefKey(OWNER, MaterialPrefKey.GKL_SHEET))
+                .thenReturn(Optional.of(pref(MaterialPrefKey.GKL_SHEET, "1200x3000")));
+
+        CalculatedMaterialLine line = only(calculate(NO_WASTE, null));
+
+        assertThat(line.packageSize()).isEqualByComparingTo("3.0");
+        assertThat(line.packages()).isEqualTo(12);
     }
 
     // --- the perimeter parameter ------------------------------------------------------------

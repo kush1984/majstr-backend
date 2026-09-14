@@ -24,6 +24,11 @@ public interface ProjectReceiptRepository extends JpaRepository<ProjectReceipt, 
 
     Optional<ProjectReceipt> findByIdAndProjectId(UUID id, UUID projectId);
 
+    /** Does an object receipt own this {@code object_expenses} row? The BACK-LINK is the test, never
+     *  {@code source = RECEIPT}: {@code ActAddendumCreator.postReceiptExpenses} posts MATERIALS
+     *  /RECEIPT rows too, and those belong to nobody — they must stay editable in the journal. */
+    boolean existsByExpenseId(UUID expenseId);
+
     long countByProjectId(UUID projectId);
 
     @Query("SELECT COALESCE(MAX(r.sortOrder), -1) FROM ProjectReceipt r WHERE r.projectId = :projectId")

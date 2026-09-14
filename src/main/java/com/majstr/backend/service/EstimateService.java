@@ -34,6 +34,7 @@ import com.majstr.backend.repository.CatalogItemRepository;
 import com.majstr.backend.repository.EstimateItemRepository;
 import com.majstr.backend.repository.EstimateRepository;
 import com.majstr.backend.repository.ProjectPhotoRepository;
+import com.majstr.backend.repository.ShoppingListItemRepository;
 import com.majstr.backend.repository.WorkActItemRepository;
 import com.majstr.backend.repository.ProjectRepository;
 import com.majstr.backend.storage.StorageService;
@@ -90,6 +91,11 @@ public class EstimateService {
     private final MeasurementService measurementService;
     private final ProjectPhotoRepository photoRepository;
     private final StorageService storage;
+    /** Only for the detach in {@link #delete} — bulk queries, never a call into
+     *  {@code ShoppingListService}: {@code ProjectService} has to take that route anyway (calling
+     *  the service there would close a dependency cycle), and both delete paths must behave the
+     *  same way. */
+    private final ShoppingListItemRepository shoppingListItemRepository;
 
     // ---- estimates ---------------------------------------------------------
 
@@ -536,6 +542,12 @@ public class EstimateService {
             throw new EstimateSignedException();
         }
         UUID projectId = estimate.getProject().getId();
+        // Detach the shopping rows this estimate produced BEFORE it goes: the FK is ON DELETE SET
+        // NULL, Postgres runs a SET NULL as an UPDATE, and a CALCULATOR row without an estimate
+        // fails shopping_list_item_calculated_source_check — the master would be told his estimate
+        // did not delete. What he bought or corrected by hand stays on his list, as his own row.
+        shoppingListItemRepository.deleteUntouchedByEstimate(estimateId);
+        shoppingListItemRepository.detachFromEstimate(estimateId);
         estimateRepository.delete(estimate);
         projectRepository.incrementEstimatesDeleted(projectId); // lifetime churn counter
     }
@@ -910,10 +922,23 @@ public class EstimateService {
         Estimate estimate = loadOwned(estimateId, ownerId);
         requireNotSigned(estimate);
         EstimateItem item = loadItemInEstimate(estimateId, itemId);
+        // The trade is DERIVED from (name, type, unit) — the very key the norm lookup uses — so a
+        // rename or a unit change makes the stored one a lie, and the calculator then buys material
+        // for the work this line USED to be. Re-derived only when that key actually moves: the
+        // lookup is a query, and a line the master merely repriced has nothing to re-derive.
+        boolean keyMoved = item.getType() != req.type()
+                || item.getUnit() != req.unit()
+                || !item.getName().equals(req.name().trim());
         item.setType(req.type());
         item.setName(req.name().trim());
         item.setCategory(CatalogService.normalizeCategory(req.category()));
         item.setUnit(req.unit());
+        if (keyMoved) {
+            // Nothing in his catalog answers for the new key ⇒ null, which is the honest value and
+            // the one `MaterialCalculatorService#normsFor` treats conservatively.
+            item.setTrade(resolveTrade(item.getName(), item.getType(), item.getUnit(),
+                    tradeIndex(ownerId)));
+        }
         Resolved r = resolveQuantity(estimate, req);
         item.setQuantity(r.quantity());
         item.setUnitPrice(req.unitPrice());

@@ -56,6 +56,32 @@ class FiscalQrPayloadTest {
     }
 
     @Test
+    void aMalformedEscapeCostsOnlyItsOwnField() {
+        // «off=50%» is a real shape on a discount receipt, and a bare '%' makes URLDecoder throw.
+        // That used to take the whole scan down — an exception out of the ladder's first rung, where
+        // the contract is a soft "not recognized" and the caller's fallback is the photo.
+        Optional<FiscalQrPayload> parsed =
+                FiscalQrPayload.parse("https://x/check?fn=4000123456&id=2&date=20260815&sm=10&off=50%");
+
+        assertThat(parsed).isPresent();
+        assertThat(parsed.get().fn()).isEqualTo("4000123456");
+        assertThat(parsed.get().sum()).isEqualByComparingTo("10");
+
+        // When the damage IS in a field we need, it stays a soft miss — never an error.
+        assertThat(FiscalQrPayload.parse("fn=1&id=2&date=20260815&sm=1%zz")).isEmpty();
+    }
+
+    @Test
+    void aSeparatedDateWithNoTimeIsMidnight() {
+        // A date that reads as a date is one, whatever its length: splitting «2026-08-15» after eight
+        // characters produced «2026-08-» and threw the receipt away as unreadable.
+        assertThat(FiscalQrPayload.parse("fn=1&id=2&sm=10&date=2026-08-15").orElseThrow().issuedAt())
+                .isEqualTo(LocalDateTime.of(2026, 8, 15, 0, 0));
+        assertThat(FiscalQrPayload.parse("fn=1&id=2&sm=10&date=15.08.2026").orElseThrow().issuedAt())
+                .isEqualTo(LocalDateTime.of(2026, 8, 15, 0, 0));
+    }
+
+    @Test
     void missingOrUnusableFieldsAreNotAFiscalCode() {
         // Each of these is a soft "not recognized" — the caller falls back to reading the photo,
         // it never surfaces as an error.
