@@ -80,8 +80,10 @@ material gets bought a second time. `edited` does the same job for a hand-typed 
 
 That is a basement or a metal shed, one hand on a trolley, in a work glove:
 
-- **Every write queues.** Ticking a row included — the outbox handles all four actions, and the add
-  replays under the same `X-Entity-Uuid`, so a retry cannot leave him buying the same material twice.
+- **Every write survives a lost connection.** Online it goes straight to the server and the screen
+  shows the answer; only a network blip drops it into the outbox instead — ticking a row included,
+  all four actions — and the add replays under the same `X-Entity-Uuid`, so a retry cannot leave him
+  buying the same material twice.
 - **The optimistic patch updates the home card too**, from the same write, so a row ticked offline
   does not still read «12 позицій» on the dashboard; an object with nothing left drops off the card.
 - **56 px rows**, the tick box and the row body **siblings, not nested buttons** — the box buys, the

@@ -22,7 +22,7 @@ from somewhere, and «somewhere» is this block.
 ### 1. `EstimateNextStep` — the block that closes the editor
 
 `src/features/estimate/EstimateNextStep.tsx`, rendered at the END of the left column, after the
-positions, the receipts and the quality note. Only when `items.length > 0` — with an empty list the
+positions and the receipts. Only when `items.length > 0` — with an empty list the
 existing `EmptyState` already says the one thing to do.
 
 | Status | Heading | Primary | Secondary |
