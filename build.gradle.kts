@@ -138,11 +138,19 @@ tasks.withType<JavaCompile> {
 // PDF generation needs Cyrillic-capable fonts. Bundled JDK fonts cannot do
 // Ukrainian, and OpenPDF ships no fonts of its own. The DejaVu source repo
 // holds only FontForge .sfd files; pre-built .ttf binaries live only in
-// SourceForge release zips. Download the zip on first build and extract
-// the two TTFs we need. Both .ttf files are .gitignore'd so the repo stays
-// small. If your network blocks SourceForge, see README for manual setup.
+// SourceForge release zips.
+//
+// The two TTFs are COMMITTED under src/main/resources/fonts/, so `onlyIf` below
+// skips this task on every ordinary build. They used to be downloaded on each
+// fresh checkout, which quietly put SourceForge on the critical path of BOTH the
+// CI job and the Railway image build (the Dockerfile runs bootJar, and
+// processResources depends on this task) — one `Connection reset` there failed
+// the build with nothing wrong in the code, and a deploy could fail the same way.
+//
+// The task stays because it is how the fonts are fetched again after a version
+// bump or a deletion. See README → PDF fonts.
 val downloadPdfFonts by tasks.registering {
-    description = "Download DejaVu fonts used by EstimatePdfService"
+    description = "Fetch DejaVu fonts if missing (normally a no-op — they are committed)"
     group = "build setup"
     val fontDir = layout.projectDirectory.dir("src/main/resources/fonts")
     val zipUrl = "https://downloads.sourceforge.net/project/dejavu/dejavu/2.37/dejavu-fonts-ttf-2.37.zip"

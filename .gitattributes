@@ -1,0 +1,4 @@
+# core.autocrlf is true on the Windows dev machine, and a line-ending rewrite inside a
+# TTF is a corrupt font — a failure that surfaces only when a PDF renders. Git's own
+# binary detection would very likely catch these anyway; this makes it certain.
+*.ttf binary

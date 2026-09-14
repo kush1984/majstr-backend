@@ -164,6 +164,24 @@ subscription, forcing all clients to re-subscribe.
 > Screen** (installed / standalone) on iOS 16.4+. A plain Safari tab gets
 > nothing — the frontend should detect this and prompt the user to install.
 
+## PDF fonts
+
+Estimates, work acts and the shopping list render to PDF with **DejaVu Sans**:
+the 14 built-in PDF fonts are Latin-only and turn Ukrainian text into question
+marks.
+
+Both TTFs are **committed** under `src/main/resources/fonts/`, so a clean clone
+builds with no network access at all. There is nothing to set up.
+
+They are re-fetched only if you delete them or bump the version — that is what
+the `downloadPdfFonts` Gradle task is for. It pulls the official
+`dejavu-fonts-ttf-2.37.zip` from SourceForge and extracts the two files; while
+they are present it skips itself entirely.
+
+The fonts are redistributed under the Bitstream Vera / DejaVu license, which
+requires the notice to travel with every copy — it sits beside them in
+`src/main/resources/fonts/LICENSE.txt` and ships inside the jar.
+
 ## Package layout
 
 ```
