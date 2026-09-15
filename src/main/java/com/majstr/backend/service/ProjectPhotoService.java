@@ -139,11 +139,7 @@ public class ProjectPhotoService {
         if (requested == null) {
             return source == PhotoSource.RECEIPT ? ProjectPhoto.FOLDER_RECEIPTS : null;
         }
-        String value = normalizeFolder(requested);
-        if (value != null && !ProjectPhoto.FOLDER_RECEIPTS.equals(value)) {
-            ensureFolderExists(projectId, value); // uploading into a new name creates the folder
-        }
-        return value;
+        return canonicalFolder(projectId, normalizeFolder(requested));
     }
 
     /**
@@ -156,11 +152,7 @@ public class ProjectPhotoService {
     public ProjectPhotoResponse setFolder(UUID projectId, UUID photoId, UUID ownerId, String folder) {
         requirePhotos(projectId, ownerId);
         ProjectPhoto photo = loadPhoto(projectId, photoId);
-        String value = normalizeFolder(folder);
-        if (value != null && !ProjectPhoto.FOLDER_RECEIPTS.equals(value)) {
-            ensureFolderExists(projectId, value); // moving into a new name creates the folder
-        }
-        photo.setFolder(value);
+        photo.setFolder(canonicalFolder(projectId, normalizeFolder(folder)));
         return ProjectPhotoResponse.from(photo);
     }
 
@@ -193,14 +185,29 @@ public class ProjectPhotoService {
         requirePhotos(projectId, ownerId);
         ProjectPhotoFolder folder = folderRepository.findByIdAndProjectId(folderId, projectId)
                 .orElseThrow(() -> new ResourceNotFoundException("Folder not found: " + folderId));
-        if (photoRepository.existsByProjectIdAndFolder(projectId, folder.getName())) {
+        if (photoRepository.existsByProjectIdAndFolderIgnoreCase(projectId, folder.getName())) {
             throw new PhotoFolderInUseException("error.photos.folder-not-empty");
         }
         folderRepository.delete(folder);
     }
 
+    /**
+     * The folder name a photo is actually filed under. A name that already exists — in ANY case —
+     * answers with the spelling that folder already has, so «фасад» typed after «Фасад» was made
+     * files the photo into «Фасад» instead of minting a twin the master then has to reconcile.
+     * The reserved «Чеки» and «Інше» (null) have no row and pass straight through.
+     */
+    private String canonicalFolder(UUID projectId, String value) {
+        if (value == null || ProjectPhoto.FOLDER_RECEIPTS.equals(value)) {
+            return value;
+        }
+        return ensureFolderExists(projectId, value).getName();
+    }
+
+    /** Idempotent on the name, case-insensitively — the identity V133's unique index enforces. A
+     *  genuinely new name is stored with the master's own capitalisation and keeps it. */
     private ProjectPhotoFolder ensureFolderExists(UUID projectId, String name) {
-        return folderRepository.findByProjectIdAndName(projectId, name)
+        return folderRepository.findByProjectIdAndNameIgnoreCase(projectId, name)
                 .orElseGet(() -> folderRepository.save(ProjectPhotoFolder.builder()
                         .projectId(projectId).name(name).build()));
     }

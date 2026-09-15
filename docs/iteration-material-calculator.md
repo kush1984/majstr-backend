@@ -1367,3 +1367,172 @@ correction to shipped behaviour is a patch.
 
 Mobile was **not** verified live, and here that is nearly vacuous: no markup changed, and the
 visible difference is fewer rows and a shorter coverage line.
+
+## 26. The datasheet round, and two review items riding with it — V133 (2026-09-15)
+
+Cut 3 of the calculator, from the master's own deeper norm research (`NORMS-SUMMARY.md`), scoped by
+him to **гіпсокартон only**: «беремо до уваги тільки гіпсокартони». Three review items from the
+2026-09 backlog (B-17, B-27, B-30) travel in the same migration because they are one round, not
+because they are related — the header of `V133__drywall_norms_from_datasheets.sql` says so outright.
+
+### 26.1 The screws were wrong everywhere, and wrong in ONE direction
+
+V127 seeded fasteners from a general handbook. Against the actual system sheets they were the one
+family wrong across the board: ~30 per m² is roughly a factory figure for screwing at **100 mm on
+every rib**. Knauf, Rigips and Siniat all screw the **field** of a board at **250 mm** and densify
+only the **edges** — which halves the count.
+
+That a whole family moved in one direction is the reassuring part, not the alarming one: a mistake
+with a single cause (one wrong spacing assumption) is a mistake you can correct in one pass. Ten
+figures moved; §19.2 C's denominator rule and §22.2's «screws only LOOK wrong» both still hold, and
+neither was what was wrong here.
+
+The partition figures look implausibly small beside the wall ones (12 against 14, 5 against 7) and
+are not typos: **rule 1** (V127 decision 1, master's ruling 2026-09-08) still governs — the m² typed
+on a «перегородки 2 сторони» position is SHEATHING area with both faces already in it, so every
+manufacturer per-partition figure is halved for us. The inner layer of a two-layer build also takes
+FEWER short screws than a single layer: it is only tacked, and the outer layer's longer TN35 does the
+holding.
+
+### 26.2 Two conflicts the sources do not settle, and what we chose
+
+Both are recorded in the migration header, because the next person to read a datasheet will hit them
+again and the reasoning is not recoverable from the numbers.
+
+**(a) The ceiling frame — keep V130's shape.** Knauf D113 hangs a two-level frame on **0,7** direct
+hangers per m² *because* it also carries cross connectors; Siniat's single-level frame has no
+connectors and needs **3,0**. Both are internally correct, and **mixing them buys the ceiling
+twice**. V130 already shipped the Knauf shape in full (0,7 `HANGER_DIRECT` + 1,7 `CONNECTOR_CRAB` +
+0,2 `PROFILE_CD_EXTENDER` + 1,6 `DOWEL_NAIL`), so it stays — with an explicit instruction in the
+header: *do not raise the hangers to 3,0 without deleting the connectors in the same migration.*
+
+**(b) Partition `DOWEL_NAIL` — keep 0,75.** The band is 0,45–0,75 for us; a deeper reading argues
+0,5. Dowels are bought in 100-piece packs the calculator rounds up to anyway, so churning every
+master's list for ~0,25/m² buys a difference no shop counter would notice. Same reasoning V130 used
+to leave `PUTTY_JOINT` alone — and §26.3 is where that reasoning ran out.
+
+Left alone deliberately: радіусні конструкції `SCREW_TN25` **35**. No manufacturer publishes a figure
+for a bent partition; 35 is denser than the straight 12 on purpose (a curve is screwed at ~100 mm),
+and it stays flagged as **our own estimate**, matching `NORMS-SUMMARY`'s «залишити з приміткою».
+
+### 26.3 Where «the calculator rounds up anyway» stops being true
+
+V130 kept `PUTTY_JOINT` at 0,4 kg/м.п. on exactly that argument. It is true for one room and **wrong
+for a flat**, where the difference is a whole 25 kg bag. Published: Rigips 0,18, Siniat UA 0,25,
+ready-mixed Semin/Kreisel 0,36 → **0,3**, the middle of the band.
+
+The rounding argument is sound only while the error is smaller than the package. It is a reason to
+tolerate imprecision, never a reason to keep a figure you now know is wrong.
+
+### 26.4 The gap: every frame we sell, and nothing screwed to it
+
+`SCREW_LN` 3,5×11 — the metal-to-metal screw fixing a hanger or connector to a profile — was in no
+position's norms at all. Every frame we sell needs it; the master finds that out at the top of a
+ladder. New dictionary row plus six norms.
+
+The figures follow **our** frame, not a datasheet's, because the datasheet's frame is a different one
+(§26.2a): walls 1,3 hangers × 2 = 2,6 → **3**; ceilings 0,7 hangers × 2 + 1,7 connectors × 4 = 8,2 →
+**8**. Change the hangers or the connectors and these must be recomputed **in the same migration** —
+stated in the SQL, and pinned by a test.
+
+Also added: `PRIMER_DEEP` **0,15** on «Монтаж гіпсокартону на клей». Every adhesive datasheet (Perlfix
+above all) requires a primed substrate; the glue shipped without it, so the list told the master to
+buy adhesive for an unprepared wall. It is a **LITRE material on an M2 norm** — correct, and exactly
+rule 2 (V127 decision 2): a norm's unit is the POSITION's, and nothing is converted.
+
+New rows are appended at `max(sort_order) + 1` per position rather than renumbering ranks, which was
+the fiddliest part of V130.
+
+**Skipped on purpose:** Стрічка розділова (Trenn-Fix) and ґрунт бетоноконтакт — no norm would
+reference them, i.e. dead dictionary data; and `PROFILE_CD_EXTENDER` stays at V130's 0,2 rather than
+`NORMS-SUMMARY`'s 0,6.
+
+### 26.5 B-17 — packaging measured in a unit the calculator never reads
+
+`MaterialCalculatorService#line` divides by `package_size` and then labels the result with the
+material's **`unit`**, never reading `package_unit`. Every row V126/V127/V130/V131 seeded happens to
+have the two agree, so the honest fix is to make the coincidence a **rule**: a CHECK that
+`package_unit IS NULL OR package_unit = unit`. The day someone adds a KG material sold in 10-LITRE
+buckets, the migration fails instead of the shopping list lying. The column stays (a future packaging
+model may need it to diverge — at which point the calculator must learn to convert **first**).
+
+### 26.6 B-27 — «Фасад» and «фасад» were two folders
+
+The reserved aliases were always compared case-insensitively; custom names were compared with `=`.
+So a master who typed «фасад» after making «Фасад» got a second folder and his photos split across
+two entries he cannot tell apart in the list. **The asymmetry was the bug.**
+
+Both halves are needed and only the second is enforceable: the service now looks folders up ignoring
+case (`findByProjectIdAndNameIgnoreCase`, `existsByProjectIdAndFolderIgnoreCase`), and the migration
+replaces `UNIQUE (project_id, name)` with a functional unique index on
+`(project_id, lower(btrim(name)))`. A service guard alone still loses a race between two uploads,
+which is how a twin got created in the first place.
+
+**Order is load-bearing in the backfill**: photos reference folders **by name** (V111), so fold the
+photos onto the surviving spelling → delete the twins → trim the survivors → swap the constraint. A
+photo left pointing at a deleted folder name lands in a folder the master can no longer see. The
+oldest row wins — it is the one he made first and the one his photos already carry.
+
+One new private method owns the whole idea: `canonicalFolder` answers with the spelling the folder
+**already has**, so a photo files into «Фасад» instead of minting a twin. The master named the
+folder, not us. `normalizeFolder`/`matchesAlias` are untouched.
+
+### 26.7 B-30 — what a self-check may and may not stop
+
+(a) V132's pattern is **already in prod** («Так, уже в проді»), so per the review item there is
+nothing to do; it is simply not repeated here.
+
+(b) The rule this round implements: **a check guarding DATA raises `EXCEPTION`; a check guarding only
+our own WORDING raises `WARNING`.** An admin renaming a catalog category between two deploys must not
+be able to stop Flyway at 3am. §7 has six EXCEPTION checks (orphan `name_key`; all ten screw
+corrections landed; box coefficients; both new materials found a position; no shared (position, rank);
+no photo orphaned by §2) and **one WARNING** — if a ceiling position no longer buys `CONNECTOR_CRAB`,
+the 0,7 hanger figure is now too low, but that is a judgement call about a live catalog, not a corrupt
+write.
+
+(c) A false claim in `MaterialCalculatorService#preferOwn`'s javadoc said a shipped norm «is deleted
+and recreated by every catalog rebuild». Rebuilds recreate the **templates** (that part, in
+`MaterialNormRepository`, is true and was left alone); norm rows are edited in place by correction
+migrations and never re-seeded. The conclusion — address the default by NAME, not id — is unchanged;
+the reason given for it was wrong.
+
+### 26.8 Blast radius
+
+SQL: `V133__drywall_norms_from_datasheets.sql` (schema §1-2, data §3-6, self-checks §7). Java: two
+repository methods renamed to their `IgnoreCase` forms, `ProjectPhotoService` (`canonicalFolder` +
+three call sites), javadoc only in `MaterialCalculatorService` and `ProjectPhotoFolder`.
+
+**V130's and V131's own self-checks stay satisfied** and were re-read to confirm it: V130 asserts
+every default `PROFILE_UW` = 0,35 and lists 12 (position, material) pairs — V133 touches neither;
+V131 hard-codes `IF pairs <> 17`, and V133 changes box **values**, not row counts.
+
+**No PWA change** beyond the version: no endpoint, field or wording moved. Mobile is therefore not
+verified live and owes no verification — the only visible difference is different numbers in rows
+that already render.
+
+### 26.9 The gate
+
+`./gradlew build` — **green: 1415 tests in 162 classes, 0 failures, 0 errors, 0 skipped**, of which
+**14 are new** (8 + 4 in two new integration classes, 2 added to `ProjectPhotoServiceTest`). The
+per-class results were read back rather than trusting the summary line, because a test class that
+silently never runs reports coverage that does not exist — the failure mode `IntegrationTestBase`'s
+own javadoc warns about.
+
+**V133's §7 assertions ran as part of it**: they fire at apply time, so a green Testcontainers
+startup IS the proof they passed (same reasoning V130, V131 and V132 recorded).
+
+The two new integration classes exist for what the migration's self-checks **cannot** do — stop a
+LATER migration from quietly undoing this one. `DrywallNormCorrectionsIntegrationTest` reads the
+corrected figures back out of a live schema (and pins B-17's CHECK from both sides);
+`ProjectPhotoFolderCaseIntegrationTest` pins the functional index and the case-insensitive lookup.
+Both clean up after themselves — the Testcontainers schema is shared.
+
+Version `1.45.0` → **`1.45.1`**: a correction to shipped behaviour is a patch.
+
+**The machine trap from §22.8 fired again, in a new way.** `JAVA_HOME` still points at
+`C:\Program Files\Java\jdk-25.0.3`; the JDK has since auto-updated to **`jdk-25.0.4.1`**, so the path
+is stale again and Gradle does not start at all. The build was run with
+`$env:JAVA_HOME='C:\Program Files\Java\jdk-25.0.4.1'` for that invocation only — the machine setting
+was **not** changed. The toolchain is pinned to 21 and no JDK 21 is installed, so the foojay resolver
+in `settings.gradle.kts` provisions it (which is why this build took 5m15s). Worth fixing at the
+machine level rather than per-session.

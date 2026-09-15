@@ -11,7 +11,9 @@ public interface ProjectPhotoFolderRepository extends JpaRepository<ProjectPhoto
 
     List<ProjectPhotoFolder> findByProjectIdOrderByCreatedAtAsc(UUID projectId);
 
-    Optional<ProjectPhotoFolder> findByProjectIdAndName(UUID projectId, String name);
+    /** Case-insensitive on purpose: «Фасад» and «фасад» are ONE folder (V133's unique index is on
+     *  {@code lower(btrim(name))}), and the row that comes back owns the spelling photos carry. */
+    Optional<ProjectPhotoFolder> findByProjectIdAndNameIgnoreCase(UUID projectId, String name);
 
     Optional<ProjectPhotoFolder> findByIdAndProjectId(UUID id, UUID projectId);
 }

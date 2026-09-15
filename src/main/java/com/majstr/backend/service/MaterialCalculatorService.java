@@ -288,8 +288,10 @@ public class MaterialCalculatorService {
     /**
      * A master's own norm HIDES the default it was forked from, and nothing else. The two are paired
      * on the natural key the unique index already uses — (trade, name, unit, material) — not on a
-     * link back to the default row: a shipped norm is deleted and recreated by every catalog
-     * rebuild, so a stored id would not survive one.
+     * link back to the default row: the norm a fork points at is addressed by NAME, and a catalog
+     * rebuild (V82, V116, V122) recreates the templates that name carries, so anything id-shaped
+     * would have to be repaired by every rebuild. Norm rows themselves are edited in place by a
+     * correction migration (V130, V133) and are never deleted and re-seeded.
      *
      * <p>The collapse keeps the incoming sort order, so correcting one coefficient never reshuffles
      * the result screen.</p>

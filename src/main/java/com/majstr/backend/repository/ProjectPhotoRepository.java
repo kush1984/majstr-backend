@@ -20,5 +20,7 @@ public interface ProjectPhotoRepository extends JpaRepository<ProjectPhoto, UUID
     Optional<ProjectPhoto> findByIdAndProjectId(UUID id, UUID projectId);
 
     /** Folder-delete guard (photo-folders): a folder may go only when no photo carries its name. */
-    boolean existsByProjectIdAndFolder(UUID projectId, String folder);
+    /** Case-insensitive to match the folder identity V133 settled: a photo filed under «фасад»
+     *  still makes the «Фасад» folder non-empty, and a delete must see it. */
+    boolean existsByProjectIdAndFolderIgnoreCase(UUID projectId, String folder);
 }

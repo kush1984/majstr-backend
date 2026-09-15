@@ -18,8 +18,10 @@ import java.util.UUID;
  * A custom folder of the object's Фото tab (photo-folders). Persisted so an EMPTY folder survives
  * (master decision — created ahead of the photos it will hold). The two defaults are virtual and
  * never stored: «Чеки» = {@link ProjectPhoto#FOLDER_RECEIPTS}, «Інше» = a null folder on the photo.
- * UNIQUE(project_id, name); photos reference the folder by NAME (a label, not an FK), and deletion
- * is refused while any photo carries it.
+ * <p>Identity is UNIQUE(project_id, lower(btrim(name))) since V133 — «Фасад» and «фасад» are ONE
+ * folder, and the stored row keeps whichever spelling was used first. Photos reference the folder by
+ * NAME (a label, not an FK), so every lookup must ignore case or it starts minting twins; deletion
+ * is refused while any photo carries the name.</p>
  */
 @Entity
 @Table(name = "project_photo_folder")

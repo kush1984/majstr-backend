@@ -166,7 +166,7 @@ class ProjectPhotoServiceTest {
         given(storage.store(any(), anyLong(), anyString(), anyString(), anyString()))
                 .willReturn(new StoredObject("photos/a.jpg", 8, "image/jpeg"));
         given(photoRepository.save(any(ProjectPhoto.class))).willAnswer(inv -> inv.getArgument(0));
-        given(folderRepository.findByProjectIdAndName(projectId, "Санвузол")).willReturn(Optional.empty());
+        given(folderRepository.findByProjectIdAndNameIgnoreCase(projectId, "Санвузол")).willReturn(Optional.empty());
         given(folderRepository.save(any(ProjectPhotoFolder.class))).willAnswer(inv -> inv.getArgument(0));
 
         ProjectPhotoResponse resp = service.upload(projectId, ownerId, file(JPEG),
@@ -189,6 +189,40 @@ class ProjectPhotoServiceTest {
                 PhotoSource.RECEIPT, null, null, "Чеки");
 
         assertThat(resp.folder()).isEqualTo(ProjectPhoto.FOLDER_RECEIPTS);
+        verify(folderRepository, never()).save(any());
+    }
+
+    @Test
+    void upload_intoAFolderSpelledInAnotherCase_filesItUnderTheExistingSpelling() throws Exception {
+        // B-27: custom names used to be compared with =, so «фасад» after «Фасад» split the
+        // master's photos across two folders he could not tell apart in the list.
+        stubGate();
+        given(storage.store(any(), anyLong(), anyString(), anyString(), anyString()))
+                .willReturn(new StoredObject("photos/a.jpg", 8, "image/jpeg"));
+        given(photoRepository.save(any(ProjectPhoto.class))).willAnswer(inv -> inv.getArgument(0));
+        given(folderRepository.findByProjectIdAndNameIgnoreCase(projectId, "фасад")).willReturn(
+                Optional.of(ProjectPhotoFolder.builder().id(UUID.randomUUID())
+                        .projectId(projectId).name("Фасад").build()));
+
+        ProjectPhotoResponse resp = service.upload(projectId, ownerId, file(JPEG),
+                PhotoSource.MANUAL, null, null, "фасад");
+
+        assertThat(resp.folder()).isEqualTo("Фасад"); // the folder's own spelling, not the typed one
+        verify(folderRepository, never()).save(any());
+    }
+
+    @Test
+    void setFolder_intoAFolderSpelledInAnotherCase_movesItIntoTheExistingOne() {
+        stubGate();
+        ProjectPhoto photo = photo(PhotoSource.MANUAL, PhotoVisibility.PRIVATE);
+        given(photoRepository.findByIdAndProjectId(photoId, projectId)).willReturn(Optional.of(photo));
+        given(folderRepository.findByProjectIdAndNameIgnoreCase(projectId, "фасад")).willReturn(
+                Optional.of(ProjectPhotoFolder.builder().id(UUID.randomUUID())
+                        .projectId(projectId).name("Фасад").build()));
+
+        ProjectPhotoResponse resp = service.setFolder(projectId, photoId, ownerId, "фасад");
+
+        assertThat(resp.folder()).isEqualTo("Фасад");
         verify(folderRepository, never()).save(any());
     }
 
@@ -277,7 +311,7 @@ class ProjectPhotoServiceTest {
         given(folderRepository.findByIdAndProjectId(folderId, projectId)).willReturn(Optional.of(
                 com.majstr.backend.entity.ProjectPhotoFolder.builder().id(folderId)
                         .projectId(projectId).name("Фасад").build()));
-        given(photoRepository.existsByProjectIdAndFolder(projectId, "Фасад")).willReturn(true);
+        given(photoRepository.existsByProjectIdAndFolderIgnoreCase(projectId, "Фасад")).willReturn(true);
 
         assertThatThrownBy(() -> service.deleteFolder(projectId, folderId, ownerId))
                 .isInstanceOf(PhotoFolderInUseException.class);

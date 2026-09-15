@@ -61,7 +61,7 @@ controllers return DTOs. `passwordHash` never appears in any response (`UserResp
 
 `hibernate.ddl-auto: validate` — never express schema changes in entity annotations. Add a new
 `V<N>__<desc>.sql` under `src/main/resources/db/migration/`; **check the highest number first**
-(latest is **V132**). **Never edit an applied migration** — Flyway checksums it and a changed file
+(latest is **V133**). **Never edit an applied migration** — Flyway checksums it and a changed file
 fails startup. New `Trade` enum constant → migration to extend the `user_trades` CHECK (a
 master-invented trade instead goes in `user_trade`, no migration needed).
 
