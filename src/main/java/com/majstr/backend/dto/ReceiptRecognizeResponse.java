@@ -38,4 +38,17 @@ public record ReceiptRecognizeResponse(
     public static ReceiptRecognizeResponse read(String label, BigDecimal amount, LocalDate issuedAt) {
         return new ReceiptRecognizeResponse(true, label, amount, issuedAt, null, null);
     }
+
+    /**
+     * A QR read: the footer fields PLUS the identity printed on the paper (B-04).
+     *
+     * <p>The identity is what makes the same slip filed twice noticeable at all, so a QR path that
+     * drops it silently disables the whole cross-check — which is exactly what the act side did
+     * until B-04. Both paths now go through {@code FiscalQrReceiptReader}, so neither can.</p>
+     */
+    public static ReceiptRecognizeResponse identified(String label, BigDecimal amount,
+                                                      LocalDate issuedAt, String fiscalFn,
+                                                      String fiscalId) {
+        return new ReceiptRecognizeResponse(true, label, amount, issuedAt, fiscalFn, fiscalId);
+    }
 }

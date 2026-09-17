@@ -20,11 +20,20 @@ public record WorkActReceiptResponse(
         /** The positions were carried into the act (round 2) — the amount is shown as reference but
          *  excluded from «Разом за чеками»/payable: the act's own lines already bill it. */
         boolean itemized,
+        /** The same paper filed against the object as well, or null (B-04). A warning in both
+         *  directions: the object's list points here, this points back. */
+        ReceiptDuplicateRef duplicateOf,
         int sortOrder
 ) {
+    /** No twin known — every path that has not looked across the two tables answers with this. */
     public static WorkActReceiptResponse from(WorkActReceipt r) {
+        return from(r, null);
+    }
+
+    public static WorkActReceiptResponse from(WorkActReceipt r, ReceiptDuplicateRef duplicateOf) {
         return new WorkActReceiptResponse(r.getId(), r.getLabel(), r.getAmount(), r.getReturnedAmount(),
-                r.getIssuedAt(), r.getStorageKey() != null, r.isItemized(), r.getSortOrder());
+                r.getIssuedAt(), r.getStorageKey() != null, r.isItemized(), duplicateOf,
+                r.getSortOrder());
     }
 
     /** Paid less returned — the figure that reaches «Разом за чеками», the ADDENDUM and the expense. */

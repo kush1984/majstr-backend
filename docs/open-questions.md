@@ -918,6 +918,19 @@ one-line summary — keep the item in the file as a record.
   expense logged directly in the journal still has nowhere to attach one. If this is picked up, the
   cheapest honest shape is now a nullable `object_expense.receipt_photo_key` plus a back-reference
   from the act-created rows, reusing the same private-storage + auth-stream path.
+- **Update (2026-09-17, review item B-04 / V134 — status unchanged, still IN_PROGRESS):** one gap
+  named in [iteration-object-receipts.md](iteration-object-receipts.md) §10 is CLOSED — «the
+  receivable never closes» is no longer true *for the act route*. A paper billed on a signed act is
+  stamped `project_receipt.billed_on_act_id` and leaves «клієнт відшкодовує», because the ADDENDUM
+  moved that money into «За договором»; and it can no longer post a second MATERIALS expense beside
+  the act's own. **What stays open is the rest of the money model**, and it is untouched: a
+  receivable settled by a plain payment (not through an act) still has no «settled» state — the
+  master's own constraint is that many do not route through acts at all («не все переводиться через
+  акти, багато хто так не працює») — and `payment_receipt` still records no PURPOSE, so a material
+  reimbursement lands on the works axis. The recommended direction is unchanged: give
+  `payment_receipt` a purpose («за роботу» / «за матеріал»). **Nothing there is approved**, and the
+  stated constraint that existing clients' figures must not change still holds — which is why V134
+  backfills nothing and asserts that it moved no row.
 
 ### Master referral reward when the referrer is on admin-granted (dateless) PRO
 - **Status:** OPEN

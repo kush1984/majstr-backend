@@ -73,6 +73,8 @@ public class WorkActService {
     private final ActAddendumCreator addendumCreator;
     private final ActSignedCopyService signedCopy;
     private final ActReceiptCompleteness receiptCompleteness;
+    private final ActReceiptReconciler receiptReconciler;
+    private final ReceiptIdentityIndex identityIndex;
     private final ProjectService projectService;
     private final EstimateRepository estimateRepository;
     private final EstimateItemRepository estimateItemRepository;
@@ -82,8 +84,12 @@ public class WorkActService {
     @Transactional(readOnly = true)
     public List<WorkActResponse> list(UUID projectId, UUID ownerId) {
         projectService.loadOwned(projectId, ownerId);
+        // The «same paper» index (B-04) is loaded ONCE for the object and handed to every act: it
+        // answers in two queries whatever the list length, and per-act it would spend two a row to
+        // say the same thing.
+        ReceiptIdentityIndex.Twins twins = identityIndex.forProject(projectId, List.of());
         return workActRepository.findByProjectIdOrderByIssuedAtDescCreatedAtDesc(projectId).stream()
-                .map(responseFactory::build)
+                .map(a -> responseFactory.build(a, twins))
                 .toList();
     }
 
@@ -268,6 +274,10 @@ public class WorkActService {
         requireItems(id); // a signed act is immutable and undeletable — never let an empty one in
         receiptCompleteness.requireAllPriced(id); // …nor one whose receipts are not priced yet
         addendumCreator.createIfNeeded(act);
+        // …and settle the object receipts that are THE SAME PAPER as one of this act's (B-04). Must
+        // follow the ADDENDUM: it is that estimate moving the money into «За договором» that takes
+        // the receipt out of the «клієнт відшкодовує» receivable.
+        receiptReconciler.reconcile(act);
         act.setStatus(WorkActStatus.SIGNED);
         act.setSignerName(req.signerName().trim());
         act.setSignedOffline(true);

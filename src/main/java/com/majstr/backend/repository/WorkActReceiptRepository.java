@@ -31,6 +31,24 @@ public interface WorkActReceiptRepository extends JpaRepository<WorkActReceipt, 
 
     Optional<WorkActReceipt> findByIdAndWorkActId(UUID id, UUID workActId);
 
+    /**
+     * Every receipt on any of this OBJECT's acts whose paper is identified by its printed fiscal
+     * code, OLDEST FIRST (review item B-04) — the act-side twin of
+     * {@code ProjectReceiptRepository.findIdentifiedByProjectId}, and the reason V134 gave this
+     * table {@code fiscal_fn}/{@code fiscal_id} at all.
+     *
+     * <p>Scoped by PROJECT, not by act: the same slip filed on two different acts of one object is
+     * exactly as wrong as filing it twice on one. The act is fetched because every warning built
+     * from these rows names it («цей чек уже в акті № 7»).</p>
+     */
+    @Query("""
+            SELECT r FROM WorkActReceipt r JOIN FETCH r.workAct wa
+            WHERE wa.project.id = :projectId
+              AND r.fiscalFn IS NOT NULL AND r.fiscalId IS NOT NULL
+            ORDER BY r.createdAt ASC, r.sortOrder ASC
+            """)
+    List<WorkActReceipt> findIdentifiedByProjectId(@Param("projectId") UUID projectId);
+
     /** Content check for the empty-act guard: receipts make an act signable too (round 2). */
     boolean existsByWorkActId(UUID workActId);
 

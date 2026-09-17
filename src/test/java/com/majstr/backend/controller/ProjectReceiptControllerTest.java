@@ -92,7 +92,7 @@ class ProjectReceiptControllerTest {
     void list_carriesBothTotalsAndTheUnpricedCount() throws Exception {
         given(receiptService.list(projectId, userId)).willReturn(new ProjectReceiptsResponse(
                 List.of(new ProjectReceiptResponse(receiptId, "Епіцентр", new BigDecimal("483.50"),
-                        LocalDate.of(2026, 9, 8), true, true, false, false, 0)),
+                        LocalDate.of(2026, 9, 8), true, true, false, null, null, null, 0)),
                 new BigDecimal("483.50"), BigDecimal.ZERO, 0));
 
         mockMvc.perform(get("/api/projects/{id}/receipts", projectId))
@@ -109,7 +109,7 @@ class ProjectReceiptControllerTest {
         UUID entityId = UUID.randomUUID();
         given(receiptService.add(eq(projectId), eq(userId), eq(entityId), any(), isNull(), isNull(), isNull()))
                 .willReturn(new ProjectReceiptResponse(entityId, "Чек №1", BigDecimal.ZERO, null,
-                        true, true, false, false, 0));
+                        true, true, false, null, null, null, 0));
 
         mockMvc.perform(multipart("/api/projects/{id}/receipts", projectId)
                         .file(new MockMultipartFile("file", "r.jpg", "image/jpeg", new byte[]{1, 2, 3, 4}))
@@ -134,7 +134,7 @@ class ProjectReceiptControllerTest {
     void update_flipsTheReceiptToTheMastersOwnCost() throws Exception {
         given(receiptService.update(eq(projectId), eq(receiptId), eq(userId), any()))
                 .willReturn(new ProjectReceiptResponse(receiptId, "Епіцентр", new BigDecimal("483.50"),
-                        LocalDate.of(2026, 9, 8), true, false, true, false, 0));
+                        LocalDate.of(2026, 9, 8), true, false, true, null, null, null, 0));
 
         mockMvc.perform(patch("/api/projects/{id}/receipts/{receiptId}", projectId, receiptId)
                         .contentType(MediaType.APPLICATION_JSON)

@@ -57,6 +57,7 @@ class WorkActIntegrationTest extends IntegrationTestBase {
     @Autowired EstimateItemRepository estimateItemRepository;
     @Autowired WorkActRepository workActRepository;
     @Autowired com.majstr.backend.service.WorkActReceiptService receiptService;
+    @Autowired com.majstr.backend.service.ProjectReceiptService projectReceiptService;
     @Autowired com.majstr.backend.repository.WorkActReceiptRepository receiptRepository;
     @Autowired com.majstr.backend.repository.ProjectPhotoRepository photoRepository;
     @Autowired com.majstr.backend.service.ProjectPortalService projectPortalService;
@@ -452,7 +453,7 @@ class WorkActIntegrationTest extends IntegrationTestBase {
 
         // Priced, both doors open again.
         receiptService.update(act.id(), saved.id(), owner.getId(),
-                new com.majstr.backend.dto.WorkActReceiptRequest("Епіцентр", new BigDecimal("483.50"), null, null));
+                new com.majstr.backend.dto.WorkActReceiptRequest("Епіцентр", new BigDecimal("483.50"), null, null, null, null));
         assertThat(workActService.signOffline(act.id(), new WorkActSignOfflineRequest("Клієнт"),
                 owner.getId()).status()).isEqualTo(WorkActStatus.SIGNED);
     }
@@ -882,7 +883,7 @@ class WorkActIntegrationTest extends IntegrationTestBase {
         var receipt = receiptService.add(act.id(), owner.getId(), null, receiptPhoto(), "Цвяхи",
                 new BigDecimal("2000.00"), null, false);
         receiptService.update(act.id(), receipt.id(), owner.getId(), new com.majstr.backend.dto.WorkActReceiptRequest(
-                "Цвяхи", new BigDecimal("2000.00"), new BigDecimal("500.00"), null));
+                "Цвяхи", new BigDecimal("2000.00"), new BigDecimal("500.00"), null, null, null));
 
         WorkActResponse withReturn = workActService.get(act.id(), owner.getId());
         // The receipt still says what the paper says — the client can open the photo and check it.
@@ -916,7 +917,7 @@ class WorkActIntegrationTest extends IntegrationTestBase {
         var receipt = receiptService.add(act.id(), owner.getId(), null, receiptPhoto(), "Цвяхи",
                 new BigDecimal("800.00"), null, false);
         receiptService.update(act.id(), receipt.id(), owner.getId(), new com.majstr.backend.dto.WorkActReceiptRequest(
-                "Цвяхи", new BigDecimal("800.00"), new BigDecimal("800.00"), null));
+                "Цвяхи", new BigDecimal("800.00"), new BigDecimal("800.00"), null, null, null));
 
         assertThat(workActService.get(act.id(), owner.getId()).receiptsTotal()).isEqualByComparingTo("0.00");
         assertThat(workActService.signOffline(act.id(), new WorkActSignOfflineRequest("Клієнт"),
@@ -942,17 +943,123 @@ class WorkActIntegrationTest extends IntegrationTestBase {
 
         assertThatThrownBy(() -> receiptService.update(act.id(), receipt.id(), owner.getId(),
                 new com.majstr.backend.dto.WorkActReceiptRequest(
-                        "Цвяхи", new BigDecimal("2000.00"), new BigDecimal("2000.01"), null)))
+                        "Цвяхи", new BigDecimal("2000.00"), new BigDecimal("2000.01"), null, null, null)))
                 .isInstanceOf(WorkActValidationException.class)
                 .satisfies(e -> assertThat(((WorkActValidationException) e).getCode())
                         .isEqualTo("WORK_ACT_RECEIPT_RETURN_TOO_BIG"));
 
         receiptService.update(act.id(), receipt.id(), owner.getId(), new com.majstr.backend.dto.WorkActReceiptRequest(
-                "Цвяхи", new BigDecimal("2000.00"), new BigDecimal("500.00"), null));
+                "Цвяхи", new BigDecimal("2000.00"), new BigDecimal("500.00"), null, null, null));
         assertThatThrownBy(() -> receiptService.update(act.id(), receipt.id(), owner.getId(),
                 new com.majstr.backend.dto.WorkActReceiptRequest(
-                        "Цвяхи", new BigDecimal("400.00"), new BigDecimal("500.00"), null)))
+                        "Цвяхи", new BigDecimal("400.00"), new BigDecimal("500.00"), null, null, null)))
                 .isInstanceOf(WorkActValidationException.class);
+    }
+
+    /**
+     * The double count B-04 is named after, end to end.
+     *
+     * <p>The master photographs a slip at the till (it lands in {@code project_receipt}, V129) and
+     * later attaches the SAME paper to an act ({@code work_act_receipt}, V110). Before V134 the two
+     * tables had no comparable key, so signing the act billed the client for that material in «За
+     * договором» while the object still listed it as «клієнт відшкодовує» — the same debt on two
+     * screens — and, with {@code receipts_to_expenses} on, posted a SECOND MATERIALS expense for a
+     * cost the object receipt already carried, understating «Прибуток» by the whole receipt.</p>
+     *
+     * <p>Nothing here is guessed: the two rows carry the same printed fiscal code, which is one slip
+     * from one till.</p>
+     */
+    @Test
+    void theSamePaperOnTheObjectAndOnTheActIsBilledAndCostedOnce() throws Exception {
+        User owner = newOwner();
+        Project p = newProject(owner);
+        Estimate est = signedEstimateWithLine(p, "Робота", "100.000", "145.00"); // 14 500
+        UUID line = estimateItemRepository.findByEstimateIdOrderBySortOrderAscIdAsc(est.getId()).get(0).getId();
+
+        // At the till: photographed, priced, and identified by its QR. «Моя витрата», so it posts
+        // its own MATERIALS expense — the half that used to be counted twice.
+        var atTheTill = projectReceiptService.add(p.getId(), owner.getId(), null, receiptPhoto(),
+                "Епіцентр", new BigDecimal("2000.00"), null);
+        projectReceiptService.update(p.getId(), atTheTill.id(), owner.getId(),
+                new com.majstr.backend.dto.ProjectReceiptRequest("Епіцентр", new BigDecimal("2000.00"),
+                        LocalDate.of(2026, 9, 8), false, "4000123456", "77"));
+        assertThat(objectExpenseService.economy(p.getId(), owner.getId()).internals().expenses())
+                .isEqualByComparingTo("2000.00");
+
+        // On the act: the same paper, re-billed to the client.
+        WorkActResponse act = createInterim(p.getId(), owner.getId());
+        setSingleLine(act.id(), owner.getId(), est.getId(), line, "50.000", "145.00"); // 7 250
+        var onTheAct = receiptService.add(act.id(), owner.getId(), null, receiptPhoto(), "Цвяхи",
+                new BigDecimal("2000.00"), null, false);
+        receiptService.update(act.id(), onTheAct.id(), owner.getId(),
+                new com.majstr.backend.dto.WorkActReceiptRequest("Цвяхи", new BigDecimal("2000.00"),
+                        null, null, "4000123456", "77"));
+
+        // The warning is live before anything is signed — both screens name the other's copy. Read
+        // off the ACT RESPONSE, not the list endpoint: that is what the editor's receipts panel
+        // renders, so a twin resolved only in `WorkActReceiptService.list` would be invisible.
+        assertThat(workActService.get(act.id(), owner.getId()).receipts().getFirst().duplicateOf())
+                .isNotNull()
+                .extracting(com.majstr.backend.dto.ReceiptDuplicateRef::kind)
+                .isEqualTo(com.majstr.backend.dto.ReceiptKind.OBJECT);
+        assertThat(projectReceiptService.list(p.getId(), owner.getId()).items().getFirst().duplicateOf())
+                .isNotNull()
+                .extracting(com.majstr.backend.dto.ReceiptDuplicateRef::kind)
+                .isEqualTo(com.majstr.backend.dto.ReceiptKind.ACT);
+
+        workActService.signOffline(act.id(), new WorkActSignOfflineRequest("Клієнт"), owner.getId());
+
+        ObjectEconomyResponse economy = objectExpenseService.economy(p.getId(), owner.getId());
+        // ONE cost, not two: the act posted the material as an expense, so the object receipt gave
+        // up the one it had posted. Without that, this reads 4 000 and profit is 2 000 short.
+        assertThat(economy.internals().expenses()).isEqualByComparingTo("2000.00");
+        assertThat(economy.acts().contracted()).isEqualByComparingTo("16500.00");    // 14 500 + 2 000
+        assertThat(economy.acts().acceptedByActs()).isEqualByComparingTo("9250.00"); // 7 250 + 2 000
+        assertThat(economy.acts().acceptedByActs()).isLessThanOrEqualTo(economy.acts().contracted());
+        // …and ONE receivable: the client owes this material under a signed act now, so the
+        // materials axis lets go of it. The ROW stays, saying which act took it.
+        assertThat(economy.materials().reimbursable()).isEqualByComparingTo("0.00");
+        var listed = projectReceiptService.list(p.getId(), owner.getId()).items().getFirst();
+        assertThat(listed.billedOnActId()).isEqualTo(act.id());
+        assertThat(listed.billedOnActNumber()).isEqualTo(act.number());
+        assertThat(listed.hasExpense()).isFalse();
+    }
+
+    /**
+     * The same pair, but the act is NOT posting its receipts as expenses. The object receipt is then
+     * the ONLY record of that cost, so dropping it would INFLATE profit by the whole receipt — the
+     * mirror-image bug of the one above, and the reason «they're duplicates, flip it» is wrong.
+     */
+    @Test
+    void withReceiptsToExpensesOff_theObjectReceiptKeepsBeingTheCost() throws Exception {
+        User owner = newOwner();
+        Project p = newProject(owner);
+        Estimate est = signedEstimateWithLine(p, "Робота", "100.000", "145.00");
+        UUID line = estimateItemRepository.findByEstimateIdOrderBySortOrderAscIdAsc(est.getId()).get(0).getId();
+
+        var atTheTill = projectReceiptService.add(p.getId(), owner.getId(), null, receiptPhoto(),
+                "Епіцентр", new BigDecimal("2000.00"), null);
+        projectReceiptService.update(p.getId(), atTheTill.id(), owner.getId(),
+                new com.majstr.backend.dto.ProjectReceiptRequest("Епіцентр", new BigDecimal("2000.00"),
+                        LocalDate.of(2026, 9, 8), false, "4000123456", "77"));
+
+        WorkActResponse act = createInterim(p.getId(), owner.getId());
+        setSingleLine(act.id(), owner.getId(), est.getId(), line, "50.000", "145.00");
+        var onTheAct = receiptService.add(act.id(), owner.getId(), null, receiptPhoto(), "Цвяхи",
+                new BigDecimal("2000.00"), null, false);
+        receiptService.update(act.id(), onTheAct.id(), owner.getId(),
+                new com.majstr.backend.dto.WorkActReceiptRequest("Цвяхи", new BigDecimal("2000.00"),
+                        null, null, "4000123456", "77"));
+        workActRepository.findById(act.id()).orElseThrow().setReceiptsToExpenses(false);
+
+        workActService.signOffline(act.id(), new WorkActSignOfflineRequest("Клієнт"), owner.getId());
+
+        ObjectEconomyResponse economy = objectExpenseService.economy(p.getId(), owner.getId());
+        assertThat(economy.internals().expenses()).isEqualByComparingTo("2000.00");
+        // The stamp is unconditional either way — the receivable moved into «За договором».
+        assertThat(projectReceiptService.list(p.getId(), owner.getId()).items().getFirst()
+                .billedOnActId()).isEqualTo(act.id());
+        assertThat(economy.materials().reimbursable()).isEqualByComparingTo("0.00");
     }
 
     // ---- fixtures ---------------------------------------------------------------

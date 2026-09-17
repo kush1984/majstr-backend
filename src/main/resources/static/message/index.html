@@ -91,6 +91,20 @@
         .picked .nm { flex: 1; min-width: 0; overflow-wrap: anywhere; }
         .picked .sz { color: var(--muted); font-family: var(--mono); font-size: 0.78rem; }
         .picked li.bad .nm { color: var(--danger); }
+        /* Touch reliability — see the long note in the portal page's stylesheet. A press landing on
+           a control's TEXT starts a native selection and the click is then never dispatched, which
+           is what made «Надіслати» need several taps on a phone. */
+        /* A text input is left out on purpose: double-tap there selects a word, and that IS the
+           gesture `manipulation` suppresses. Only things that are pressed are listed. */
+        button, label, summary, select, [role="button"],
+        input[type="checkbox"], input[type="radio"], input[type="file"], input[type="submit"] {
+            touch-action: manipulation;
+            -webkit-touch-callout: none;
+        }
+        button, label, summary, [role="button"] {
+            -webkit-user-select: none;
+            user-select: none;
+        }
         button {
             width: 100%;
             margin-top: 20px;
@@ -104,7 +118,10 @@
             border-radius: 10px;
             cursor: pointer;
         }
-        button:hover:not(:disabled) { background: var(--amber-deep); }
+        @media (hover: hover) {
+            button:hover:not(:disabled) { background: var(--amber-deep); }
+        }
+        button:active:not(:disabled) { opacity: 0.75; }
         button:disabled { opacity: 0.55; cursor: default; }
         .msg { margin-top: 14px; padding: 11px 13px; border-radius: 10px; font-size: 0.92rem; }
         .msg.error { background: #f7e3de; color: var(--danger); border: 1px solid #e6c3ba; }

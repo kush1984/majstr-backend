@@ -3,15 +3,18 @@ package com.majstr.backend.service;
 import com.majstr.backend.dto.ProjectReceiptRequest;
 import com.majstr.backend.dto.ProjectReceiptResponse;
 import com.majstr.backend.dto.ProjectReceiptsResponse;
+import com.majstr.backend.dto.ReceiptDuplicateRef;
 import com.majstr.backend.entity.ExpenseCategory;
 import com.majstr.backend.entity.ExpenseSource;
 import com.majstr.backend.entity.ObjectExpense;
 import com.majstr.backend.entity.Project;
 import com.majstr.backend.entity.ProjectReceipt;
+import com.majstr.backend.entity.WorkAct;
+import com.majstr.backend.entity.WorkActReceipt;
 import com.majstr.backend.exception.ProjectReceiptValidationException;
 import com.majstr.backend.repository.ObjectExpenseRepository;
 import com.majstr.backend.repository.ProjectReceiptRepository;
-import com.majstr.backend.service.fiscal.FiscalQrService;
+import com.majstr.backend.service.fiscal.FiscalQrReceiptReader;
 import com.majstr.backend.service.importer.ActReceiptExtractor;
 import com.majstr.backend.storage.StorageService;
 import com.majstr.backend.storage.StoredObject;
@@ -31,6 +34,7 @@ import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -63,7 +67,10 @@ class ProjectReceiptServiceTest {
     @Mock private ProjectService projectService;
     @Mock private StorageService storage;
     @Mock private ActReceiptExtractor recognizer;
-    @Mock private FiscalQrService fiscalQr;
+    @Mock private FiscalQrReceiptReader qrReader;
+    /** Stubbed, not real: it reads BOTH receipt tables (B-04) and its own logic — which of a pair
+     *  is «the original», and same-table-first — is pinned by {@code ReceiptIdentityIndexTest}. */
+    @Mock private ReceiptIdentityIndex identityIndex;
     /** The transactional half of a create lives in its own bean, so the duplicate-key recovery can
      *  re-read the winner's row in a transaction the failed insert has not poisoned. */
     @Mock private ProjectReceiptCreator creator;
@@ -249,25 +256,69 @@ class ProjectReceiptServiceTest {
     @Test
     void aRepeatedFiscalIdentityFlagsTheSecondReceipt() {
         owned();
-        ProjectReceipt first = receipt(UUID.randomUUID(), "Епіцентр", "483.50");
-        first.setFiscalFn("4000123456");
-        first.setFiscalId("77");
-        first.setCreatedAt(Instant.parse("2026-09-08T10:00:00Z"));
-        ProjectReceipt second = receipt(UUID.randomUUID(), "Епіцентр", "483.50");
-        second.setFiscalFn("4000123456");
-        second.setFiscalId("77");
-        second.setCreatedAt(Instant.parse("2026-09-08T10:05:00Z"));
-        // Newest first, the way the repository actually answers.
+        ProjectReceipt first = identified(receipt(UUID.randomUUID(), "Епіцентр", "483.50"),
+                "2026-09-08T10:00:00Z");
+        ProjectReceipt second = identified(receipt(UUID.randomUUID(), "Епіцентр", "483.50"),
+                "2026-09-08T10:05:00Z");
+        // Newest first, the way the repository actually answers — and oldest first in the index.
         when(receiptRepository.findByProjectIdNewestFirst(PROJECT)).thenReturn(List.of(second, first));
+        twins(List.of(first, second), List.of());
 
         ProjectReceiptsResponse list = service.list(PROJECT, OWNER);
 
         assertThat(list.items()).extracting(ProjectReceiptResponse::id)
                 .containsExactly(second.getId(), first.getId());
-        assertThat(list.items().get(0).duplicate()).isTrue();
-        assertThat(list.items().get(1).duplicate()).isFalse();
+        // The warning NAMES where the twin is, so «схоже на дублікат» became something to act on.
+        assertThat(list.items().get(0).duplicateOf())
+                .isEqualTo(ReceiptDuplicateRef.object(first.getId(), "Епіцентр"));
+        assertThat(list.items().get(1).duplicateOf()).isNull();
         // Both still count: the master decides, the server only warns.
         assertThat(list.reimbursableTotal()).isEqualByComparingTo("967.00");
+    }
+
+    /**
+     * The pair B-04 exists for: the slip photographed at the till AND attached to an act. Nothing
+     * could see it before — the act table had no printed identity at all — and it is the one pair
+     * that bills the client twice.
+     */
+    @Test
+    void aPaperAlsoFiledOnAnActPointsAtTheAct() {
+        owned();
+        ProjectReceipt atTheTill = identified(receipt(UUID.randomUUID(), "Епіцентр", "483.50"),
+                "2026-09-08T10:05:00Z");
+        WorkActReceipt onTheAct = WorkActReceipt.builder()
+                .id(UUID.randomUUID()).label("Цвяхи").amount(new BigDecimal("483.50"))
+                .workAct(WorkAct.builder().id(UUID.randomUUID()).number("7").build())
+                .fiscalFn("4000123456").fiscalId("77")
+                .createdAt(Instant.parse("2026-09-08T09:00:00Z"))
+                .build();
+        when(receiptRepository.findByProjectIdNewestFirst(PROJECT)).thenReturn(List.of(atTheTill));
+        twins(List.of(atTheTill), List.of(onTheAct));
+
+        ProjectReceiptsResponse list = service.list(PROJECT, OWNER);
+
+        assertThat(list.items().getFirst().duplicateOf())
+                .isEqualTo(ReceiptDuplicateRef.act(onTheAct.getId(), "Цвяхи", "7"));
+    }
+
+    /**
+     * A receipt a signed act already billed is OUT of «клієнт відшкодовує» — the ADDENDUM moved that
+     * money into «За договором», and a debt shown in two places gets asked for twice. The ROW stays,
+     * saying which act took it. This total and {@code sumReimbursable} describe one number on two
+     * screens, so they filter identically.
+     */
+    @Test
+    void aReceiptBilledOnAnActLeavesTheReceivableButKeepsItsRow() {
+        owned();
+        ProjectReceipt open = receipt(UUID.randomUUID(), "Епіцентр", "483.50");
+        ProjectReceipt billed = receipt(UUID.randomUUID(), "Нова Лінія", "120.00");
+        billed.setBilledOnActId(UUID.randomUUID());
+        when(receiptRepository.findByProjectIdNewestFirst(PROJECT)).thenReturn(List.of(billed, open));
+
+        ProjectReceiptsResponse list = service.list(PROJECT, OWNER);
+
+        assertThat(list.items()).hasSize(2);
+        assertThat(list.reimbursableTotal()).isEqualByComparingTo("483.50"); // the 120 left the axis
     }
 
     /**
@@ -313,12 +364,30 @@ class ProjectReceiptServiceTest {
     }
 
     private static ProjectReceiptResponse response(ProjectReceipt r) {
-        return ProjectReceiptResponse.from(r, false);
+        return ProjectReceiptResponse.from(r);
     }
 
     private void owned() {
         when(projectService.loadOwned(PROJECT, OWNER))
                 .thenReturn(Project.builder().id(PROJECT).build());
+        // Nothing identified anywhere — the ordinary object, and the shape every test but the
+        // duplicate ones needs. A test that cares overrides it with `twins(...)`.
+        twins(List.of(), List.of());
+    }
+
+    /** One printed identity, shared by every «same paper» fixture below — what the QR read writes. */
+    private static ProjectReceipt identified(ProjectReceipt r, String createdAt) {
+        r.setFiscalFn("4000123456");
+        r.setFiscalId("77");
+        r.setCreatedAt(Instant.parse(createdAt));
+        return r;
+    }
+
+    /** Hand the service a REAL {@link ReceiptIdentityIndex.Twins} over the rows a test set up, so
+     *  the matching under assertion is the production one and only the loading is stubbed. */
+    private void twins(List<ProjectReceipt> objectRows, List<WorkActReceipt> actRows) {
+        when(identityIndex.forProject(any(), any()))
+                .thenReturn(new ReceiptIdentityIndex.Twins(objectRows, actRows, Map.of()));
     }
 
     private void stored() throws IOException {

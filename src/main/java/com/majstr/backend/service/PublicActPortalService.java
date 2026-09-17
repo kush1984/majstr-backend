@@ -64,6 +64,7 @@ public class PublicActPortalService {
     private final WorkActPdfService pdfService;
     private final ActCumulativeCalculator cumulativeCalculator;
     private final ActAddendumCreator addendumCreator;
+    private final ActReceiptReconciler receiptReconciler;
     private final ActSignedCopyService signedCopy;
     private final ActReceiptCompleteness receiptCompleteness;
     private final WorkActReceiptService receiptService;
@@ -107,6 +108,10 @@ public class PublicActPortalService {
         // договором» absorbs them and «Прийнято актами» can never exceed it (acts-fix; the portal
         // path used to skip this, unlike the offline path).
         addendumCreator.createIfNeeded(act);
+        // …and settle the object receipts that are THE SAME PAPER as one of this act's (B-04). The
+        // client signing from his own phone is the ordinary way an act gets signed, so this must be
+        // here and not only on the offline path — receipts double-count identically either way.
+        receiptReconciler.reconcile(act);
         act.setStatus(WorkActStatus.SIGNED);
         act.setSignedAt(Instant.now());
         act.setSignerName(req.clientName().trim());

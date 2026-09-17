@@ -11,7 +11,7 @@ import com.majstr.backend.exception.ResourceNotFoundException;
 import com.majstr.backend.exception.WorkActSignedException;
 import com.majstr.backend.exception.WorkActValidationException;
 import com.majstr.backend.repository.WorkActReceiptRepository;
-import com.majstr.backend.service.fiscal.FiscalQrService;
+import com.majstr.backend.service.fiscal.FiscalQrReceiptReader;
 import com.majstr.backend.service.importer.ActReceiptExtractor;
 import com.majstr.backend.service.ImageContentTypeDetector.ImageKind;
 import com.majstr.backend.storage.StorageService;
@@ -96,14 +96,18 @@ public class WorkActReceiptService {
     private final StorageService storage;
     private final ActReceiptExtractor recognizer;
     private final ProjectPhotoService photoService;
-    private final FiscalQrService fiscalQr;
+    private final FiscalQrReceiptReader qrReader;
+    private final ReceiptIdentityIndex identityIndex;
     private final WorkActReceiptCreator creator;
 
     @Transactional(readOnly = true)
     public List<WorkActReceiptResponse> list(UUID actId, UUID ownerId) {
-        actService.loadOwned(actId, ownerId);
+        WorkAct act = actService.loadOwned(actId, ownerId);
+        // Scoped by the OBJECT, not by the act (B-04): the twin of a paper on this act can sit on
+        // the object's own «Чеки» list or on a sibling act, and both cost the same money twice.
+        ReceiptIdentityIndex.Twins twins = identityIndex.forProject(act.getProject().getId(), List.of());
         return receiptRepository.findByWorkActIdNewestFirst(actId).stream()
-                .map(WorkActReceiptResponse::from)
+                .map(r -> WorkActReceiptResponse.from(r, twins.forAct(r)))
                 .toList();
     }
 
@@ -224,10 +228,15 @@ public class WorkActReceiptService {
      * <p>Free, and deliberately gated by nothing (master decision, 2026-08-23): no model runs here,
      * so nothing on this path is a paid capability.
      *
-     * <p>The ДПС lookup is skipped outright ({@code read(payload, false)}): it only adds the seller
-     * name and the positions, and the act no longer carries positions at all, so a purely local
-     * read is instant and independent of a third party's latency — which is what makes it safe to
-     * fire automatically on every photo of a batch.
+     * <p>The ДПС lookup is skipped outright: it only adds the seller name and the positions, and the
+     * act no longer carries positions at all, so a purely local read is instant and independent of a
+     * third party's latency — which is what makes it safe to fire automatically on every photo of a
+     * batch. That decision lives in {@link FiscalQrReceiptReader} now, with the object's copy.
+     *
+     * <p><b>It answers the printed identity too, and that is the B-04 fix.</b> This path used to
+     * drop {@code fn}/{@code id} on the floor while the object's identical path returned them, so an
+     * act receipt could never be identified — and the pair that actually costs a master money, one
+     * slip filed at the till AND on an act, was the one pair nothing could see.
      *
      * <p>Not {@code @Transactional}: same reason as {@link #recognize}.
      */
@@ -235,9 +244,7 @@ public class WorkActReceiptService {
         if (actService.get(actId, ownerId).status() == WorkActStatus.SIGNED) {
             throw new WorkActSignedException();
         }
-        return fiscalQr.read(payload, false)
-                .map(r -> ReceiptRecognizeResponse.read(r.label(), r.total(), r.issuedAt()))
-                .orElseGet(ReceiptRecognizeResponse::failed);
+        return qrReader.read(payload);
     }
 
     /**
@@ -307,7 +314,18 @@ public class WorkActReceiptService {
         receipt.setAmount(amount);
         receipt.setReturnedAmount(returned);
         receipt.setIssuedAt(req.issuedAt());
-        return WorkActReceiptResponse.from(receipt);
+        if (req.fiscalFn() != null && req.fiscalId() != null) {
+            // Written once, when a QR read finally identifies the paper — the same rule and the
+            // same wording as the object receipt (B-04). Never cleared by an ordinary edit: the
+            // identity belongs to the photo, not to the numbers beside it.
+            receipt.setFiscalFn(req.fiscalFn());
+            receipt.setFiscalId(req.fiscalId());
+        }
+        // The identity arrives on THIS call, so this is the answer that can say «цей чек уже є в
+        // обʼєкті» while the master is still holding the paper.
+        ReceiptIdentityIndex.Twins twins = identityIndex
+                .forProject(receipt.getWorkAct().getProject().getId(), List.of());
+        return WorkActReceiptResponse.from(receipt, twins.forAct(receipt));
     }
 
     @Transactional

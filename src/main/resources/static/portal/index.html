@@ -397,11 +397,18 @@
            away underneath it, reading as visually "broken". This one just closes on scroll instead
            of re-tracking the trigger — simpler and can't drift stale. */
         .info-trigger {
+            position: relative;
             display: inline-flex; flex-shrink: 0; align-items: center; justify-content: center;
             width: 18px; height: 18px; border-radius: 50%;
             background: color-mix(in srgb, var(--amber) 18%, var(--white));
             color: var(--amber-deep); font-size: 0.7rem; font-weight: 700; line-height: 1;
             border: none; padding: 0; cursor: pointer;
+        }
+        /* An 18 px dot sits beside a heading, so it cannot simply be made 44 px — the hit area is
+           grown instead, invisibly, past the drawn circle. Same trick for the popover's ✕. */
+        .info-trigger::after, .info-panel-close::after {
+            content: ""; position: absolute; top: 50%; left: 50%;
+            width: 44px; height: 44px; transform: translate(-50%, -50%);
         }
         .info-panel {
             position: fixed; z-index: 61; max-width: min(20rem, calc(100vw - 2rem));
@@ -418,6 +425,28 @@
             gap: 12px;
             margin-top: 4px;
         }
+        /*
+         * Touch reliability. The client opens this page on a phone, and «Підписати» is the one
+         * action it exists for — a tap that does not register is the whole feature failing.
+         *
+         * Two browser behaviours were eating those taps, both of which look like a dead button:
+         * a press landing on the button's TEXT starts a native selection (and on a longer hold the
+         * callout menu), after which the `click` is never dispatched; and double-tap-to-zoom makes
+         * the browser wait for a possible second tap, so an immediate retry reads as a zoom rather
+         * than two clicks. Hence `user-select: none` + `touch-action: manipulation` on every
+         * control here. The PWA carries the same block in `src/styles/index.css`.
+         */
+        /* A text input is left out on purpose: double-tap there selects a word, and that IS the
+           gesture `manipulation` suppresses. Only things that are pressed are listed. */
+        button, a.btn, [role="button"], summary, select, label,
+        input[type="checkbox"], input[type="radio"], input[type="submit"] {
+            touch-action: manipulation;
+            -webkit-touch-callout: none;
+        }
+        button, a.btn, [role="button"], summary, tr.section[data-section-toggle] {
+            -webkit-user-select: none;
+            user-select: none;
+        }
         button, a.btn {
             font-family: var(--sans);
             font-size: 1rem;
@@ -432,8 +461,13 @@
             display: inline-block;
             transition: background 0.15s, border-color 0.15s, box-shadow 0.15s, transform 0.05s;
         }
-        button:hover, a.btn:hover { background: var(--paper-2); }
-        button:active, a.btn:active { transform: translateY(1px); }
+        /* A touch device has no hover but fakes one: the last-tapped control keeps the hover look
+           until something else is tapped, which is exactly the signal the client reads to decide
+           whether the tap landed. :active below is driven by a real press. */
+        @media (hover: hover) {
+            button:hover, a.btn:hover { background: var(--paper-2); }
+        }
+        button:active, a.btn:active { transform: translateY(1px); opacity: 0.75; }
         /* Primary action ("Підписати кошторис") — bright amber, dark text, prominent. */
         button.primary, a.btn.primary {
             background: var(--amber);
@@ -442,9 +476,11 @@
             font-weight: 800;
             box-shadow: 0 2px 10px rgba(245, 130, 31, 0.25);
         }
-        button.primary:hover, a.btn.primary:hover {
-            background: var(--amber-deep);
-            border-color: var(--amber-deep);
+        @media (hover: hover) {
+            button.primary:hover, a.btn.primary:hover {
+                background: var(--amber-deep);
+                border-color: var(--amber-deep);
+            }
         }
         button:disabled { opacity: 0.45; cursor: not-allowed; box-shadow: none; }
         .signed {

@@ -54,6 +54,7 @@ class PublicActPortalServiceTest {
     @Mock WorkActPdfService pdfService;
     @Mock ActCumulativeCalculator cumulativeCalculator;
     @Mock ActAddendumCreator addendumCreator;
+    @Mock ActReceiptReconciler receiptReconciler;
     @Mock ActSignedCopyService signedCopy;
     @Mock WorkActReceiptService receiptService;
     @Mock PushService pushService;
@@ -176,6 +177,10 @@ class PublicActPortalServiceTest {
         assertThat(a.getDocHash()).hasSize(64); // hex SHA-256
         assertThat(view.status()).isEqualTo("SIGNED");
         verify(pushService).sendToUser(any(), anyString(), anyString(), anyString());
+        // The client signing from his own phone is the ORDINARY way an act is signed, so the
+        // cross-table receipt settle (B-04) has to run here and not only on the offline path —
+        // a paper filed both at the till and on the act double-counts identically either way.
+        verify(receiptReconciler).reconcile(a);
         // A receipt still worth 0 ₴ must not be frozen into the doc_hash and the ADDENDUM by the
         // CLIENT either (receipts-batch — a SENT act can still gain receipts, since receipt writes
         // are governed by not-signed, not not-sent).

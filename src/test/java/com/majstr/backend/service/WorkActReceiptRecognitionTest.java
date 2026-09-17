@@ -50,7 +50,8 @@ class WorkActReceiptRecognitionTest {
     @Mock private StorageService storage;
     @Mock private ActReceiptExtractor recognizer;
     @Mock private ProjectPhotoService photoService;
-    @Mock private com.majstr.backend.service.fiscal.FiscalQrService fiscalQr;
+    @Mock private com.majstr.backend.service.fiscal.FiscalQrReceiptReader qrReader;
+    @Mock private ReceiptIdentityIndex identityIndex;
 
     @InjectMocks private WorkActReceiptService service;
 
@@ -80,27 +81,34 @@ class WorkActReceiptRecognitionTest {
 
     // ---- the QR path (fiscal-qr iteration) --------------------------------
 
+    /**
+     * The ladder itself — label, date, total, and the printed identity — moved to
+     * {@code FiscalQrReceiptReaderTest} with the code (B-04): the object's «Чеки» and the act's
+     * «Чеки та рахунки» now read a QR through ONE component, because the act's own copy silently
+     * dropping {@code fn}/{@code id} is what left the cross-table duplicate check with nothing to
+     * compare on half of every pair. What stays here is the act's own contract around it.
+     */
     @Test
-    void qrPathIsFree_andPurelyLocal() {
-        // No model call, and no ДПС lookup either: the lookup only ever added the seller name and
-        // the positions, and the act carries no positions any more. The stub is on read(QR, false)
-        // EXACTLY — a call with true would find no stub and return null (receipts-batch: this fires
-        // automatically on every photo of a batch, so it must not wait on a third party).
+    void qrPathIsFree_andSpendsNoModelCall() {
         when(actService.get(ACT, OWNER)).thenReturn(act(WorkActStatus.DRAFT));
-        when(fiscalQr.read(QR, false)).thenReturn(Optional.of(fiscalReceipt()));
+        when(qrReader.read(QR)).thenReturn(ReceiptRecognizeResponse.identified(
+                "Епіцентр", new BigDecimal("690.00"), LocalDate.of(2026, 8, 15), "4000123456", "17"));
 
         ReceiptRecognizeResponse read = service.readQr(ACT, OWNER, QR);
 
         assertThat(read.recognized()).isTrue();
-        assertThat(read.label()).isEqualTo("Епіцентр");
         assertThat(read.amount()).isEqualByComparingTo("690.00");
-        assertThat(read.issuedAt()).isEqualTo(LocalDate.of(2026, 8, 15));
+        // Answered through, not swallowed: this pair is the only thing that can match this paper
+        // against the object's own receipts, and dropping it here disabled B-04 entirely.
+        assertThat(read.fiscalFn()).isEqualTo("4000123456");
+        assertThat(read.fiscalId()).isEqualTo("17");
+        verifyNoInteractions(recognizer);
     }
 
     @Test
     void anUnreadableCodeIsSoftSoTheDialogCanFallBackToThePhoto() {
         when(actService.get(ACT, OWNER)).thenReturn(act(WorkActStatus.DRAFT));
-        when(fiscalQr.read(QR, false)).thenReturn(Optional.empty());
+        when(qrReader.read(QR)).thenReturn(ReceiptRecognizeResponse.failed());
 
         assertThat(service.readQr(ACT, OWNER, QR).recognized()).isFalse();
     }
@@ -111,7 +119,7 @@ class WorkActReceiptRecognitionTest {
 
         assertThatThrownBy(() -> service.readQr(ACT, OWNER, QR))
                 .isInstanceOf(WorkActSignedException.class);
-        verifyNoInteractions(fiscalQr);
+        verifyNoInteractions(qrReader);
     }
 
     // ---- recognition of the ALREADY-STORED photo (receipts-batch) ---------
@@ -153,13 +161,6 @@ class WorkActReceiptRecognitionTest {
     }
 
     private static final String QR = "fn=4000123456&id=17&date=20260815&time=143005&sm=690.00";
-
-    private static com.majstr.backend.service.fiscal.FiscalReceipt fiscalReceipt() {
-        return new com.majstr.backend.service.fiscal.FiscalReceipt(
-                "Епіцентр", LocalDate.of(2026, 8, 15), new BigDecimal("690.00"),
-                List.of(new com.majstr.backend.service.importer.EstimateExtractor.Extracted.Line(
-                        "Шпаклівка", "шт", new BigDecimal("2"), new BigDecimal("345"), "MATERIAL", null)));
-    }
 
     private static MockMultipartFile jpeg() {
         byte[] bytes = new byte[32];

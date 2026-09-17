@@ -82,6 +82,10 @@
             background: var(--card);
         }
         button { cursor: pointer; }
+        /* Touch reliability — see the long note in the portal page's stylesheet. */
+        button, label, summary, select, [role="button"],
+        input[type="checkbox"], input[type="radio"], input[type="submit"] { touch-action: manipulation; }
+        button, label, summary, [role="button"] { -webkit-user-select: none; user-select: none; }
         button.primary { background: var(--accent); color: var(--accent-text); border-color: var(--accent); }
         button.small { padding: 4px 8px; font-size: 0.85rem; }
         button.danger { color: var(--danger); border-color: #f3c6c6; }

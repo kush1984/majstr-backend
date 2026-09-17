@@ -285,3 +285,72 @@ stated constraint is that existing clients' figures must not change.
   the photo-folders round already made imprecise.
 * Unaddressed and known: a hand-written товарний чек has no fiscal identity, so duplicate detection
   cannot cover it.
+
+---
+
+## 12. One paper, two tables — review item B-04 (V134)
+
+### The hole
+
+V129 warned about a duplicate *inside* `project_receipt`. The pair it could not see is the one that
+costs real money: the master photographs a slip at the till (object receipt), then attaches **the
+same paper** to an act (`work_act_receipt`, V110). `work_act_receipt` had no `fiscal_fn`/`fiscal_id`
+at all, so the two tables had no comparable key and nothing could notice.
+
+Two consequences, both silent:
+
+* **The client is billed twice on screen.** Signing the act rolls the receipt into the ADDENDUM, so
+  that money lands in «За договором» — while the object still lists it under «клієнт відшкодовує».
+  The same debt on two screens, and a master who asks for it twice.
+* **«Прибуток» is understated by the whole receipt.** With `receipts_to_expenses` on, the act posts
+  a MATERIALS expense — and an object receipt flipped to «моя витрата» had already posted one.
+
+### The shape
+
+`V134` gives the act receipt the same two nullable columns, and `project_receipt` a
+`billed_on_act_id`. **Nullable, no default, no backfill** — and the migration *asserts* it moved
+nothing (`RAISE EXCEPTION` if any row comes out stamped or identified). Already-signed acts are
+deliberately not rescanned: their history is frozen, and silently restating a master's past profit
+is worse than the gap it would close.
+
+Three pieces carry it:
+
+* **`FiscalQrReceiptReader`** — ONE QR read for both surfaces. It exists because the two callers had
+  already drifted in the way that kills a feature quietly: the object's path returned `fn`/`id`, the
+  act's identical path threw them away. So an act receipt could never be identified no matter what
+  the schema allowed. `ActReceiptRecognizeResponse` is now a TS **alias** of the object's type for
+  the same reason.
+* **`ReceiptIdentityIndex`** — the read-path answer, two queries per object whatever the list length.
+  Its rules exist so the answer is STABLE beside a paper in the master's hand: **the earliest row
+  wins** (the warning lands on the copy filed second, V129's behaviour) and **the same table beats
+  the other one** (a warning sends him to the list already on screen). The warning **names** the twin
+  — «цей чек уже в акті № 7» — because «схоже на дублікат» over forty receipts is a warning a master
+  learns to ignore.
+* **`ActReceiptReconciler`** — runs inside the sign transaction, on **both** sign paths. It asks
+  nothing: two rows with the same `fn` + `id` are one slip from one till, and the alternative is an
+  arithmetic question put to a master standing in front of a client.
+
+### The half that is conditional, and why the other half is not
+
+* **Always: stamp `billed_on_act_id`.** The ADDENDUM has just moved that money into «За договором»,
+  so the receivable must let go of it. `sumReimbursable`/`countReimbursable` and the list's own
+  `reimbursableTotal` all gained the same `billed_on_act_id IS NULL` filter — they describe **one
+  number on two screens** and may never differ. The ROW stays, saying which act took it: a receipt
+  he definitely photographed must not simply vanish.
+* **Only when `receipts_to_expenses` is on: drop the object receipt's own expense.** With it OFF the
+  act writes no expense at all, so the object receipt is the ONLY carrier of that cost and dropping
+  it would **inflate** profit by the same amount. «They're duplicates, flip it» would be a new bug,
+  not a fix — `ActReceiptReconcilerTest` pins both directions.
+
+The key is the printed identity **alone**, never the amount: a partial return (V115) legitimately
+makes the two rows disagree about money while they remain the same piece of paper.
+
+**Nothing in the reconciler throws.** It runs in the transaction that signs the act — including the
+client-facing portal sign — and no bookkeeping tidy-up may cost a master a signature.
+
+### Left as it was
+
+* A hand-written товарний чек still has no identity to compare, and that gap is real — better than
+  guessing from a label and an amount that two different papers are one.
+* Duplicates are never blocked, on either side. A shop can legitimately reprint a slip, and only the
+  master is holding the paper.

@@ -59,9 +59,10 @@ class ProjectReceiptCreator {
                 .storageKey(storageKey)
                 .sortOrder(sortOrder)
                 .build();
-        // A fresh receipt is reimbursable and owns no expense, so it can never be a duplicate
-        // warning's subject yet — the flag is a read-path fact computed over the whole list.
-        return ProjectReceiptResponse.from(receiptRepository.saveAndFlush(receipt), false);
+        // A fresh receipt is reimbursable, owns no expense and carries NO fiscal identity yet — the
+        // photo is saved before anything is read off it — so it cannot be a duplicate warning's
+        // subject. The warning is a read-path fact computed across both receipt tables (B-04).
+        return ProjectReceiptResponse.from(receiptRepository.saveAndFlush(receipt));
     }
 
     private Optional<ProjectReceiptResponse> find(UUID requestedId, UUID projectId) {
@@ -72,7 +73,9 @@ class ProjectReceiptCreator {
             if (!r.getProjectId().equals(projectId)) {
                 throw new ResourceNotFoundException("Receipt not found: " + requestedId);
             }
-            return ProjectReceiptResponse.from(r, false);
+            // A replay answers with the row as it stands; the list refetch behind it carries the
+            // cross-table warning and the act number, which need a project-wide read this has not done.
+            return ProjectReceiptResponse.from(r);
         });
     }
 }

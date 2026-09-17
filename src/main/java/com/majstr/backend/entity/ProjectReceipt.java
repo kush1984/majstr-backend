@@ -78,6 +78,18 @@ public class ProjectReceipt {
     @Column(name = "fiscal_id", length = 64)
     private String fiscalId;
 
+    /**
+     * The SIGNED act that billed this very paper to the client (V134, review item B-04), stamped
+     * automatically when an act carrying the same fiscal identity is signed.
+     *
+     * <p>While it is set the receipt is out of the «клієнт відшкодовує» receivable: the act's
+     * ADDENDUM has already moved that money into «За договором», and a paper cannot be owed twice.
+     * A plain UUID rather than a relation, like {@link #expenseId} beside it — the FK is
+     * {@code ON DELETE SET NULL}, so deleting an act releases the receipt instead of taking it.</p>
+     */
+    @Column(name = "billed_on_act_id")
+    private UUID billedOnActId;
+
     @Column(name = "sort_order", nullable = false)
     private int sortOrder;
 

@@ -89,6 +89,20 @@ public class WorkActReceipt {
     @Column(name = "itemized", nullable = false)
     private boolean itemized = false;
 
+    /**
+     * The printed fiscal identity of the paper, off its QR code (V134, review item B-04) — the same
+     * two columns {@link ProjectReceipt} has carried since V129, so the two tables finally have a
+     * comparable key and the same slip filed in both can be noticed.
+     *
+     * <p>Nullable and never a constraint: the photo is saved before anything is read off it, a
+     * hand-written товарний чек has no identity at all, and a vision read never produces one.</p>
+     */
+    @Column(name = "fiscal_fn", length = 64)
+    private String fiscalFn;
+
+    @Column(name = "fiscal_id", length = 64)
+    private String fiscalId;
+
     @Column(name = "sort_order", nullable = false)
     private int sortOrder;
 

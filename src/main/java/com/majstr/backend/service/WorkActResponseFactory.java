@@ -37,8 +37,21 @@ class WorkActResponseFactory {
     private final WorkActItemRepository itemRepository;
     private final EstimateItemRepository estimateItemRepository;
     private final WorkActReceiptRepository receiptRepository;
+    private final ReceiptIdentityIndex identityIndex;
 
+    /** One act on its own — the editor, a create, a sign. Loads its own twins. */
     WorkActResponse build(WorkAct act) {
+        return build(act, identityIndex.forProject(act.getProject().getId(), List.of()));
+    }
+
+    /**
+     * One act with the object's «same paper» index ALREADY loaded — what a list of acts uses.
+     *
+     * <p>{@link ReceiptIdentityIndex} answers in two queries whatever the list length, and building
+     * it per act would spend two per row to say the same thing: the index is scoped to the OBJECT,
+     * and every act on the page belongs to that one object.</p>
+     */
+    WorkActResponse build(WorkAct act, ReceiptIdentityIndex.Twins twins) {
         List<WorkActItem> items = itemRepository.findByWorkActIdOrderBySortOrderAscIdAsc(act.getId());
         // Current quantities of the estimate lines these close, for the live exceedsEstimate flag.
         Map<UUID, BigDecimal> estimateQty = new HashMap<>();
@@ -57,9 +70,13 @@ class WorkActResponseFactory {
                         .compareTo(estimateQty.get(it.getEstimateItemId())) > 0;
             itemDtos.add(WorkActItemResponse.from(it, exceeds));
         }
+        // The «same paper» warning (B-04) is built HERE and not only in WorkActReceiptService.list,
+        // because this is the response the act editor actually renders — the receipts panel reads
+        // `WorkActResponse.receipts`, and a twin resolved only on the list endpoint would be a
+        // warning no master ever sees.
         List<WorkActReceiptResponse> receipts = receiptRepository
                 .findByWorkActIdNewestFirst(act.getId()).stream()
-                .map(WorkActReceiptResponse::from)
+                .map(r -> WorkActReceiptResponse.from(r, twins.forAct(r)))
                 .toList();
         // Itemized receipts are reference-only (their positions already bill the money as act
         // lines, round 2) — they show in the list but never in the billed subtotal. Every other

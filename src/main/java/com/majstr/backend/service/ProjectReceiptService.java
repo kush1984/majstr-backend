@@ -14,8 +14,7 @@ import com.majstr.backend.exception.ResourceNotFoundException;
 import com.majstr.backend.repository.ObjectExpenseRepository;
 import com.majstr.backend.repository.ProjectReceiptRepository;
 import com.majstr.backend.service.ImageContentTypeDetector.ImageKind;
-import com.majstr.backend.service.fiscal.FiscalQrPayload;
-import com.majstr.backend.service.fiscal.FiscalQrService;
+import com.majstr.backend.service.fiscal.FiscalQrReceiptReader;
 import com.majstr.backend.service.importer.ActReceiptExtractor;
 import com.majstr.backend.storage.StorageService;
 import com.majstr.backend.storage.StoredObject;
@@ -94,13 +93,14 @@ public class ProjectReceiptService {
     private final ProjectService projectService;
     private final StorageService storage;
     private final ActReceiptExtractor recognizer;
-    private final FiscalQrService fiscalQr;
+    private final FiscalQrReceiptReader qrReader;
     private final ProjectReceiptCreator creator;
+    private final ReceiptIdentityIndex identityIndex;
 
     @Transactional(readOnly = true)
     public ProjectReceiptsResponse list(UUID projectId, UUID ownerId) {
         projectService.loadOwned(projectId, ownerId);
-        return render(receiptRepository.findByProjectIdNewestFirst(projectId));
+        return render(projectId, receiptRepository.findByProjectIdNewestFirst(projectId));
     }
 
     /**
@@ -174,7 +174,12 @@ public class ProjectReceiptService {
             receipt.setFiscalId(req.fiscalId());
         }
         applyReimbursable(receipt, req.reimbursable());
-        return ProjectReceiptResponse.from(receipt, false);
+        // The identity arrives HERE and nowhere else — the photo is saved before anything is read
+        // off it — so this is the one answer that can tell the master «цей чек уже є» at the moment
+        // he is looking at the paper. Answering `null` would hide the warning until a later refetch.
+        ReceiptIdentityIndex.Twins twins = identityIndex.forProject(receipt.getProjectId(), List.of(receipt));
+        return ProjectReceiptResponse.from(receipt, twins.forObject(receipt),
+                twins.actNumber(receipt.getBilledOnActId()));
     }
 
     @Transactional
@@ -198,14 +203,7 @@ public class ProjectReceiptService {
      */
     public ReceiptRecognizeResponse readQr(UUID projectId, UUID ownerId, String payload) {
         projectService.loadOwned(projectId, ownerId);
-        return fiscalQr.read(payload, false)
-                .map(r -> {
-                    // The identity lives in the payload, not in what the lookup answered.
-                    FiscalQrPayload qr = FiscalQrPayload.parse(payload).orElse(null);
-                    return new ReceiptRecognizeResponse(true, r.label(), r.total(), r.issuedAt(),
-                            qr == null ? null : qr.fn(), qr == null ? null : qr.id());
-                })
-                .orElseGet(ReceiptRecognizeResponse::failed);
+        return qrReader.read(payload);
     }
 
     /**
@@ -257,39 +255,38 @@ public class ProjectReceiptService {
     // ---- helpers ----------------------------------------------------------
 
     /**
-     * Mark every receipt that shares a printed fiscal identity with an EARLIER one on this object.
-     * A warning, never a block: a shop can legitimately reprint a slip, and only the master is
-     * holding the paper. Covers fiscal receipts alone — a hand-written товарний чек has no identity
-     * to compare, and that gap is real.
+     * Point every receipt at its twin — the same printed fiscal identity filed EARLIER, on this
+     * object or on one of its acts (B-04). A warning, never a block: a shop can legitimately
+     * reprint a slip, and only the master is holding the paper. Covers fiscal receipts alone — a
+     * hand-written товарний чек has no identity to compare, and that gap is real.
+     *
+     * <p>The lookup moved out to {@link ReceiptIdentityIndex} when it gained the second table, and
+     * that is not a tidy-up: the pair the master can actually be charged for twice is one slip
+     * photographed at the till AND attached to an act, and a scan of this list alone could never
+     * see it.</p>
+     *
+     * <p><b>Σ «клієнт відшкодовує» here must agree with {@code sumReimbursable}</b>, which the
+     * economy's materials axis reads — they sit on two screens describing one number. So a receipt
+     * already billed on a signed act is excluded from the total for the same reason the query
+     * excludes it, while the ROW stays in the list saying where its money went.</p>
      */
-    private ProjectReceiptsResponse render(List<ProjectReceipt> receipts) {
-        List<ProjectReceipt> byAge = new ArrayList<>(receipts);
-        byAge.sort(Comparator.comparing(ProjectReceipt::getCreatedAt)
-                .thenComparing(ProjectReceipt::getSortOrder));
-        Set<String> seen = new HashSet<>();
-        Set<UUID> duplicates = new HashSet<>();
-        for (ProjectReceipt r : byAge) {
-            if (r.getFiscalFn() == null || r.getFiscalId() == null) {
-                continue;
-            }
-            if (!seen.add(r.getFiscalFn() + "|" + r.getFiscalId())) {
-                duplicates.add(r.getId());
-            }
-        }
+    private ProjectReceiptsResponse render(UUID projectId, List<ProjectReceipt> receipts) {
+        ReceiptIdentityIndex.Twins twins = identityIndex.forProject(projectId, receipts);
         BigDecimal reimbursable = BigDecimal.ZERO;
         BigDecimal own = BigDecimal.ZERO;
         long unpriced = 0;
         List<ProjectReceiptResponse> items = new ArrayList<>(receipts.size());
         for (ProjectReceipt r : receipts) {
-            if (r.isReimbursable()) {
-                reimbursable = reimbursable.add(r.getAmount());
-            } else {
+            if (!r.isReimbursable()) {
                 own = own.add(r.getAmount());
+            } else if (r.getBilledOnActId() == null) {
+                reimbursable = reimbursable.add(r.getAmount());
             }
             if (r.getAmount().signum() <= 0) {
                 unpriced++;
             }
-            items.add(ProjectReceiptResponse.from(r, duplicates.contains(r.getId())));
+            items.add(ProjectReceiptResponse.from(r, twins.forObject(r),
+                    twins.actNumber(r.getBilledOnActId())));
         }
         return new ProjectReceiptsResponse(items, reimbursable, own, unpriced);
     }
