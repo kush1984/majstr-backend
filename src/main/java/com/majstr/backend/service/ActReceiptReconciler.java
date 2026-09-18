@@ -1,5 +1,6 @@
 package com.majstr.backend.service;
 
+import com.majstr.backend.dto.FiscalIdentity;
 import com.majstr.backend.entity.ObjectExpense;
 import com.majstr.backend.entity.ProjectReceipt;
 import com.majstr.backend.entity.WorkAct;
@@ -119,6 +120,9 @@ class ActReceiptReconciler {
     }
 
     private static String keyOf(String fn, String id) {
-        return fn == null || id == null ? null : fn + "|" + id;
+        // Via FiscalIdentity, never inlined: this is the MONEY path (it stamps `billed_on_act_id`
+        // and can delete the object's expense), so a blank legacy identity keying as "|" would
+        // reconcile two unrelated papers into each other (B-21).
+        return FiscalIdentity.key(fn, id);
     }
 }

@@ -167,11 +167,13 @@ public class ProjectReceiptService {
         receipt.setLabel(req.label().trim());
         receipt.setAmount(amount);
         receipt.setIssuedAt(req.issuedAt());
-        if (req.fiscalFn() != null && req.fiscalId() != null) {
+        if (req.normalizedFiscalFn() != null && req.normalizedFiscalId() != null) {
             // Written once, when a QR read finally identifies the paper. Never cleared by an
             // ordinary edit: the identity belongs to the photo, not to the numbers beside it.
-            receipt.setFiscalFn(req.fiscalFn());
-            receipt.setFiscalId(req.fiscalId());
+            // NORMALIZED, so a client sending "" does not store a blank that reads as an identity
+            // and makes this receipt the twin of every other blank one (B-21).
+            receipt.setFiscalFn(req.normalizedFiscalFn());
+            receipt.setFiscalId(req.normalizedFiscalId());
         }
         applyReimbursable(receipt, req.reimbursable());
         // The identity arrives HERE and nowhere else — the photo is saved before anything is read

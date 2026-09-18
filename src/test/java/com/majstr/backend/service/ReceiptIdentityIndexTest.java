@@ -97,6 +97,28 @@ class ReceiptIdentityIndexTest {
         assertThat(twins.forObject(second).id()).isEqualTo(first.getId());
     }
 
+    /**
+     * A blank code is not an identity (review item B-21). Legacy rows were stored as {@code ""} and
+     * every reader keyed them as the one string {@code "|"}, so every blank-identity receipt on the
+     * object was flagged as the twin of every other one — across tables too.
+     */
+    @Test
+    void aBlankFiscalCodeIsNotAnIdentity() {
+        ProjectReceipt first = objectReceipt("Епіцентр", null, "10:00");
+        first.setFiscalFn("");
+        first.setFiscalId("");
+        ProjectReceipt second = objectReceipt("Нова Лінія", null, "10:05");
+        second.setFiscalFn("  ");
+        second.setFiscalId("  ");
+        WorkActReceipt onTheAct = actReceipt("Цвяхи", "77", "7", "09:00");
+        onTheAct.setFiscalFn("");
+        onTheAct.setFiscalId("");
+        var twins = new ReceiptIdentityIndex.Twins(List.of(first, second), List.of(onTheAct), Map.of());
+
+        assertThat(twins.forObject(second)).isNull();
+        assertThat(twins.forAct(onTheAct)).isNull();
+    }
+
     @Test
     void adifferentPaperIsNotATwin() {
         ProjectReceipt one = objectReceipt("Епіцентр", "77", "10:00");

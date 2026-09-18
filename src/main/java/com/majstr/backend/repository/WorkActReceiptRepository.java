@@ -40,11 +40,15 @@ public interface WorkActReceiptRepository extends JpaRepository<WorkActReceipt, 
      * <p>Scoped by PROJECT, not by act: the same slip filed on two different acts of one object is
      * exactly as wrong as filing it twice on one. The act is fetched because every warning built
      * from these rows names it («цей чек уже в акті № 7»).</p>
+     *
+     * <p>Blank codes are excluded for the same reason as on the object side — see
+     * {@code ProjectReceiptRepository.findIdentifiedByProjectId} (B-21).</p>
      */
     @Query("""
             SELECT r FROM WorkActReceipt r JOIN FETCH r.workAct wa
             WHERE wa.project.id = :projectId
-              AND r.fiscalFn IS NOT NULL AND r.fiscalId IS NOT NULL
+              AND r.fiscalFn IS NOT NULL AND TRIM(r.fiscalFn) <> ''
+              AND r.fiscalId IS NOT NULL AND TRIM(r.fiscalId) <> ''
             ORDER BY r.createdAt ASC, r.sortOrder ASC
             """)
     List<WorkActReceipt> findIdentifiedByProjectId(@Param("projectId") UUID projectId);

@@ -20,14 +20,14 @@ import java.util.Objects;
 import java.util.UUID;
 
 /**
- * What a signature leaves behind, shared by BOTH sign paths — the public portal and the offline
+ * What a signature leaves behind, shared by BOTH sign paths â the public portal and the offline
  * one (review fix: offline signing used to produce neither, so an offline-signed act had no tamper
  * stamp and the client no independent copy):
  *
  * <ul>
- *   <li>{@link #computeDocHash} — SHA-256 of the CANONICAL PDF (no doc-hash footer, no live
- *       «ДОВІДКОВО» block, so a later signing on the object never invalidates this act's stamp);</li>
- *   <li>{@link #emailClientCopy} — the stamped PDF mailed to the client, fail-soft: the signature
+ *   <li>{@link #computeDocHash} â SHA-256 of the CANONICAL PDF (no doc-hash footer, no live
+ *       Â«ÐÐÐÐÐÐÐÐÐÂ» block, so a later signing on the object never invalidates this act's stamp);</li>
+ *   <li>{@link #emailClientCopy} â the stamped PDF mailed to the client, fail-soft: the signature
  *       already landed, the emailed copy is a bonus evidence trail.</li>
  * </ul>
  */
@@ -40,7 +40,7 @@ class ActSignedCopyService {
     private final EstimateRepository estimateRepository;
     private final EmailService emailService;
 
-    /** Must be called AFTER the signer fields are set — they are part of what the hash certifies. */
+    /** Must be called AFTER the signer fields are set â they are part of what the hash certifies. */
     String computeDocHash(WorkAct act, java.util.List<WorkActItem> items,
                           java.util.List<WorkActPdfService.ReceiptRow> receipts)
             throws IOException, DocumentException {
@@ -71,14 +71,25 @@ class ActSignedCopyService {
         Map<UUID, String> names = new HashMap<>();
         items.stream().map(WorkActItem::getEstimateId).filter(Objects::nonNull).distinct().forEach(id ->
                 estimateRepository.findById(id).ifPresent(e ->
-                        names.put(id, e.getName() == null || e.getName().isBlank() ? "Кошторис" : e.getName().trim())));
+                        names.put(id, e.getName() == null || e.getName().isBlank() ? "ÐÐ¾ÑÑÐ¾ÑÐ¸Ñ" : e.getName().trim())));
         return new WorkActPdfService.PdfModel(
                 project.getOwner(), project, project.getClient(), act, items, receipts, names, docHash,
                 cumulative);
     }
 
-    private static java.math.BigDecimal receiptsTotal(java.util.List<WorkActPdfService.ReceiptRow> receipts) {
-        return receipts.stream().map(WorkActPdfService.ReceiptRow::amount)
+    /**
+     * The act's own receipts as the «ДОВІДКОВО» block counts them, mirroring
+     * {@code WorkActReceiptRepository.sumByWorkActId} exactly: <b>billed</b> amounts (paid less
+     * returned, V115) and <b>itemized rows excluded</b> — their money is already in the act lines.
+     * Summing gross over every row, as this used to, double-counted an itemized receipt and billed
+     * back a partial return. Package-private so the arithmetic is unit-testable on its own; it is
+     * dead weight for a SIGNED act (the calculator ignores own receipts there) and must still be
+     * right, because that is the only reason the divergence went unnoticed.
+     */
+    static java.math.BigDecimal receiptsTotal(java.util.List<WorkActPdfService.ReceiptRow> receipts) {
+        return receipts.stream()
+                .filter(r -> !r.itemized())
+                .map(WorkActPdfService.ReceiptRow::billedAmount)
                 .reduce(java.math.BigDecimal.ZERO, java.math.BigDecimal::add);
     }
 

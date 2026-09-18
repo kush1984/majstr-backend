@@ -484,4 +484,114 @@ class ShoppingListIntegrationTest extends IntegrationTestBase {
         assertThat(shoppingListService.get(projectId, ownerId).items()).hasSize(1);
         assertThat(first.source()).isEqualTo(ShoppingListItemSource.MANUAL);
     }
+
+    /**
+     * The replay lookup is scoped to THIS list (review item B-13). It used to be an unscoped
+     * {@code findById}, which answered about rows on other objects' lists: the id exists, so the
+     * create was treated as a replay of something that never happened here.
+     *
+     * <p>And scoping the READ alone is not enough, which is the sharper half: the client's uuid is
+     * this table's PRIMARY KEY, so writing it back is a MERGE — a create carrying another list's id
+     * would have overwritten that row and moved it here, from a header. The server drops the offered
+     * id in that case and authors its own.</p>
+     */
+    @Test
+    void aReplayedAddOnANOTHERObjectIsAFreshRowHere() {
+        UUID otherProject = UUID.randomUUID();
+        jdbc.update("""
+                INSERT INTO projects (id, owner_id, name, address, status)
+                VALUES (?, ?, 'Другий обʼєкт', 'вул. Інша 2', 'IN_PROGRESS')
+                """, otherProject, ownerId);
+        UUID clientId = UUID.randomUUID();
+        ShoppingListItemRequest req = new ShoppingListItemRequest(
+                null, "Клей Ceresit", Unit.PIECE, new BigDecimal("4"), null);
+
+        ShoppingListItemResponse there = shoppingListService
+                .addManual(otherProject, ownerId, req, clientId);
+        ShoppingListItemResponse here = shoppingListService
+                .addManual(projectId, ownerId, req, clientId);
+
+        assertThat(here.id()).as("not a replay: the row lives on another object").isNotEqualTo(there.id());
+        assertThat(shoppingListService.get(projectId, ownerId).items()).hasSize(1);
+        // The other object still has its own row, on its own list — nothing was moved.
+        assertThat(shoppingListService.get(otherProject, ownerId).items())
+                .extracting(ShoppingListItemResponse::id).containsExactly(there.id());
+    }
+
+    // --- what the master left on a row is his (review item B-14, B-31a) ----------------------
+
+    /**
+     * A NOTE keeps the row alive when the position leaves the estimate (review item B-14). Only a
+     * hand-typed QUANTITY used to, so «взяти в Епіцентрі, спитати Сергія» vanished the moment the
+     * line was removed — silently, and the errand with it.
+     */
+    @Test
+    void aNoteSurvivesTheMaterialLeavingTheEstimate() {
+        ShoppingListResponse first = shoppingListService
+                .applyCalculated(projectId, ownerId, estimateA, List.of(row(PUTTY, "12")));
+        shoppingListService.update(projectId, ownerId, only(first, PUTTY).id(),
+                new ShoppingListItemUpdateRequest(null, "взяти в Епіцентрі, спитати Сергія", null, null));
+
+        ShoppingListResponse after = shoppingListService
+                .applyCalculated(projectId, ownerId, estimateA, List.of());
+
+        ShoppingListItemResponse kept = only(after, PUTTY);
+        assertThat(kept.note()).isEqualTo("взяти в Епіцентрі, спитати Сергія");
+        // The note says something about the MATERIAL, not about the number, so the calculator still
+        // owns the quantity — the row is not `edited`.
+        assertThat(kept.edited()).isFalse();
+    }
+
+    /**
+     * …but not when his own settled purchases already cover the demand: a note does not keep a
+     * top-up he no longer needs standing in the list. The asymmetry is deliberate — the schema
+     * forbids an open row at 0, so the alternative is a stale figure, and that costs him money.
+     */
+    @Test
+    void aNoteDoesNotKeepATopUpTheMasterNoLongerNeeds() {
+        ShoppingListResponse first = shoppingListService
+                .applyCalculated(projectId, ownerId, estimateA, List.of(row(PUTTY, "18")));
+        shoppingListService.setBought(projectId, ownerId, only(first, PUTTY).id(), true);
+        ShoppingListResponse withTopUp = shoppingListService
+                .applyCalculated(projectId, ownerId, estimateA, List.of(row(PUTTY, "24")));
+        ShoppingListItemResponse topUp = withTopUp.items().stream()
+                .filter(i -> i.name().equals(PUTTY) && !i.bought()).findFirst().orElseThrow();
+        shoppingListService.update(projectId, ownerId, topUp.id(),
+                new ShoppingListItemUpdateRequest(null, "спитати Сергія", null, null));
+
+        ShoppingListResponse after = shoppingListService
+                .applyCalculated(projectId, ownerId, estimateA, List.of(row(PUTTY, "12")));
+
+        assertThat(after.items()).extracting(ShoppingListItemResponse::id).doesNotContain(topUp.id());
+        assertThat(only(after, PUTTY).bought()).as("what he bought stays").isTrue();
+    }
+
+    /**
+     * Un-buying a CLEARED row unsettles it (review item B-31a). {@code cleared_at} settles a row
+     * just as much as {@code bought} does, so leaving it standing kept the row invisible while its
+     * quantity still counted as covered: the master un-ticked a material and the next recalculation
+     * refused to ask for it.
+     */
+    @Test
+    void untickingAClearedRowBringsItBackAndTheMaterialIsAskedForAgain() {
+        ShoppingListResponse first = shoppingListService
+                .applyCalculated(projectId, ownerId, estimateA, List.of(row(PUTTY, "12")));
+        UUID itemId = only(first, PUTTY).id();
+        shoppingListService.setBought(projectId, ownerId, itemId, true);
+        shoppingListService.clearBought(projectId, ownerId);
+
+        shoppingListService.setBought(projectId, ownerId, itemId, false);
+
+        ShoppingListItemResponse back = only(shoppingListService.get(projectId, ownerId), PUTTY);
+        assertThat(back.id()).isEqualTo(itemId);
+        assertThat(back.bought()).isFalse();
+        assertThat(jdbc.queryForObject(
+                "SELECT cleared_at FROM shopping_list_item WHERE id = ?", java.sql.Timestamp.class,
+                itemId)).as("no longer hidden").isNull();
+
+        // And it is open again, so a recalculation restates it instead of treating it as covered.
+        ShoppingListResponse after = shoppingListService
+                .applyCalculated(projectId, ownerId, estimateA, List.of(row(PUTTY, "20")));
+        assertThat(only(after, PUTTY).quantity()).isEqualByComparingTo("20");
+    }
 }

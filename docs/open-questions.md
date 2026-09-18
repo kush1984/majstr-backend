@@ -952,6 +952,16 @@ one-line summary — keep the item in the file as a record.
   still missing is the same thing: a payment entered from the OBJECT screen carries no purpose, so
   only what the master tags himself is distinguishable. A real `purpose` on `payment_receipt`
   (read by the object economy too) remains unapproved.
+- **Update (2026-09-18, review item B-21 / V136 — status unchanged, still IN_PROGRESS):** the V134
+  machinery above was silently reconciling the WRONG papers. A blank `fiscal_fn`/`fiscal_id` (`""`,
+  not `NULL`) passed the `IS NOT NULL` lookups and keyed as the single string `"|"`, so two unrelated
+  receipts with no code became twins: one was stamped `billed_on_act_id` and left «клієнт
+  відшкодовує», and with `receipts_to_expenses` on its own-cost `object_expenses` row was deleted.
+  Fixed at every layer (one `FiscalIdentity` helper, both request DTOs, both services, both
+  `findIdentifiedByProjectId` queries) and V136 nulls the blanks already stored. **V136 reports
+  rather than reverts** a row already settled against a SIGNED act, for the same reason V134 refuses
+  to rescan signed acts — the `doc_hash` must keep verifying. The money model itself is still
+  untouched. See [iteration-fix-m.md](iteration-fix-m.md).
 
 ### Master referral reward when the referrer is on admin-granted (dateless) PRO
 - **Status:** OPEN

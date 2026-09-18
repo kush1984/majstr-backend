@@ -674,6 +674,33 @@ class MaterialCalculatorServiceTest {
         });
     }
 
+    /**
+     * Two lines naming one material are summed, not collapsed (review item B-31c). The result screen
+     * lists what each position asks for, so the same плита arriving twice is ordinary — and when the
+     * two figures happened to match, the request records were EQUAL and the map keyed by the record
+     * kept one of them: he was asked to buy 12 where he needs 24.
+     */
+    @Test
+    void twoLinesForOneMaterialAreSummed() {
+        Material sheet = material("GKL_SHEET", "Лист ГКЛ", Unit.M2, "3.0", "лист");
+        Estimate estimate = new Estimate();
+        Project project = new Project();
+        project.setId(UUID.randomUUID());
+        estimate.setProject(project);
+        when(estimateService.loadOwned(ESTIMATE, OWNER)).thenReturn(estimate);
+        when(materialRepository.findById(sheet.getId())).thenReturn(Optional.of(sheet));
+
+        service.toShoppingList(ESTIMATE, OWNER, new MaterialApplyRequest(List.of(
+                new MaterialLineRequest(sheet.getId(), new BigDecimal("12")),
+                new MaterialLineRequest(sheet.getId(), new BigDecimal("12")))));
+
+        ArgumentCaptor<List<CalculatedMaterialRow>> rows = ArgumentCaptor.captor();
+        org.mockito.Mockito.verify(shoppingListService)
+                .applyCalculated(any(), any(), any(), rows.capture());
+        assertThat(rows.getValue()).singleElement()
+                .satisfies(r -> assertThat(r.quantity()).isEqualByComparingTo("24"));
+    }
+
     /** Zeroing a row out on the screen is a removal, not an order for nothing. */
     @Test
     void aRowTheMasterZeroedOutIsNotSent() {

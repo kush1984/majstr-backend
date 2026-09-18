@@ -118,6 +118,19 @@ public class ShoppingListItem {
     }
 
     /**
+     * The master left something of his own on this row, so a recalculation may restate its figure
+     * but must never delete the row from under him. A hand-typed quantity ({@code edited}) was
+     * always treated this way; a NOTE was not, and «взяти в Епіцентрі, спитати Сергія» vanished the
+     * moment the position left the estimate.
+     *
+     * <p>Deliberately NOT the same thing as {@code edited}: a note says something about the
+     * material, not about the number, so the calculator still owns the quantity here.</p>
+     */
+    public boolean authoredByMaster() {
+        return edited || (note != null && !note.isBlank());
+    }
+
+    /**
      * The merge key, mirroring the {@code dedup_key} generated column: a dictionary material merges
      * by id, a hand-written row by its normalised name and unit. Change one side and rows that the
      * database considers duplicates stop merging in Java (or the reverse) — keep them identical.

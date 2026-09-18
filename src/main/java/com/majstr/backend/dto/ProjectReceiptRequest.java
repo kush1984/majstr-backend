@@ -1,5 +1,6 @@
 package com.majstr.backend.dto;
 
+import jakarta.validation.constraints.AssertTrue;
 import jakarta.validation.constraints.DecimalMax;
 import jakarta.validation.constraints.DecimalMin;
 import jakarta.validation.constraints.NotBlank;
@@ -29,4 +30,18 @@ public record ProjectReceiptRequest(
         Boolean reimbursable,
         @Size(max = 64) String fiscalFn,
         @Size(max = 64) String fiscalId
-) {}
+) {
+    /** Read these, never the raw components: blank is not an identity — see {@link FiscalIdentity}. */
+    public String normalizedFiscalFn() {
+        return FiscalIdentity.normalize(fiscalFn);
+    }
+
+    public String normalizedFiscalId() {
+        return FiscalIdentity.normalize(fiscalId);
+    }
+
+    @AssertTrue(message = "fiscalFn and fiscalId must be sent together")
+    public boolean isFiscalIdentityComplete() {
+        return FiscalIdentity.complete(fiscalFn, fiscalId);
+    }
+}

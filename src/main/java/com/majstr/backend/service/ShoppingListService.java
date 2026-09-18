@@ -17,7 +17,6 @@ import com.majstr.backend.repository.EstimateRepository;
 import com.majstr.backend.repository.ShoppingListItemRepository;
 import com.majstr.backend.repository.ShoppingListRepository;
 import lombok.RequiredArgsConstructor;
-import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -117,17 +116,28 @@ public class ShoppingListService {
                                               ShoppingListItemRequest req, UUID requestedId) {
         Project project = projectService.loadOwned(projectId, ownerId);
         ShoppingList list = getOrCreate(project);
-        if (requestedId != null) {
-            ShoppingListItem existing = itemRepository.findById(requestedId).orElse(null);
+        UUID id = requestedId;
+        if (id != null) {
+            // Scoped to THIS list, so the replay lookup is as owner-bound as the create it replays.
+            // An unscoped findById answered about somebody else's row: it either leaked that row or
+            // — for a foreign id — threw 403 at a master whose own create had simply never landed.
+            // A miss now means "not mine, not here", which is exactly the create path below.
+            ShoppingListItem existing = itemRepository
+                    .findByIdAndShoppingListId(id, list.getId()).orElse(null);
             if (existing != null) {
-                if (!existing.getShoppingListId().equals(list.getId())) {
-                    throw new AccessDeniedException("Shopping list item belongs to a different object");
-                }
                 return ShoppingListItemResponse.from(existing, false); // idempotent replay
+            }
+            if (itemRepository.existsById(id)) {
+                // Taken by a row on ANOTHER list — and the client id is this table's PRIMARY KEY, so
+                // `save()` with it set is a MERGE: reusing it would overwrite that row and move it
+                // onto this list. A header must never be able to write somebody else's row, so the
+                // id the client offered is dropped and the server authors its own. Only a colliding
+                // or forged uuid reaches here; the PWA mints a fresh one per queued create.
+                id = null;
             }
         }
         ShoppingListItem item = ShoppingListItem.builder()
-                .id(requestedId)
+                .id(id)
                 .shoppingListId(list.getId())
                 .materialId(req.materialId())
                 .name(req.name().trim())
@@ -236,6 +246,12 @@ public class ShoppingListService {
             }
             if (remaining.signum() <= 0) {
                 if (open != null) {
+                    // Deleted even when it carries a note, unlike the branch below, and that
+                    // asymmetry is deliberate: his own settled purchases of THIS material already
+                    // cover the demand, so what is left open is a top-up he no longer needs. The
+                    // schema forbids an open row at 0 (shopping_list_item_quantity_check), so the
+                    // alternative is a stale figure standing in a shop list — that costs him money,
+                    // a lost note does not.
                     itemRepository.delete(open);
                 }
                 continue;
@@ -260,7 +276,7 @@ public class ShoppingListService {
         }
 
         // Gone from the new calculation: drop only what is still open and untouched. A settled or
-        // hand-edited row records something that really happened and outlives the estimate line.
+        // hand-authored row records something that really happened and outlives the estimate line.
         for (Map.Entry<String, List<ShoppingListItem>> entry : existing.entrySet()) {
             if (target.containsKey(entry.getKey())) {
                 continue;
@@ -269,7 +285,7 @@ public class ShoppingListService {
             if (open == null) {
                 continue;
             }
-            if (open.isEdited()) {
+            if (open.authoredByMaster()) {
                 open.setSuggestedQuantity(null); // nothing left to offer against
             } else {
                 itemRepository.delete(open);
@@ -364,11 +380,19 @@ public class ShoppingListService {
     }
 
     private void applyBought(ShoppingListItem item, boolean bought) {
-        if (!bought && item.isBought()) {
+        if (!bought && item.settled()) {
             mergeOpenSibling(item);
         }
         item.setBought(bought);
         item.setBoughtAt(bought ? Instant.now() : null);
+        if (!bought) {
+            // Un-buying has to UNSETTLE the row, and `cleared_at` settles it just as much as
+            // `bought` does. Left standing, the row stayed invisible while its quantity kept
+            // counting as covered — so the master un-ticked a material and the next recalculation
+            // still refused to ask for it. It also dodged ux_shopping_list_item_open, which is why
+            // the merge above has to run for a cleared row as well.
+            item.setClearedAt(null);
+        }
     }
 
     /**

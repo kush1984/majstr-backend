@@ -1,5 +1,6 @@
 package com.majstr.backend.service;
 
+import com.majstr.backend.dto.FiscalIdentity;
 import com.majstr.backend.dto.ReceiptDuplicateRef;
 import com.majstr.backend.entity.ProjectReceipt;
 import com.majstr.backend.entity.WorkAct;
@@ -133,7 +134,9 @@ class ReceiptIdentityIndex {
         }
 
         private static String keyOf(String fn, String id) {
-            return fn == null || id == null ? null : fn + "|" + id;
+            // Not inlined as `fn + "|" + id`: a legacy row saved with a BLANK identity (B-21) would
+            // otherwise key as "|" and become the twin of every other blank row on the object.
+            return FiscalIdentity.key(fn, id);
         }
     }
 }

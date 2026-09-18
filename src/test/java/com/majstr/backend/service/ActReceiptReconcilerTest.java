@@ -127,6 +127,45 @@ class ActReceiptReconcilerTest {
         assertThat(already.getBilledOnActId()).isEqualTo(earlierAct);
     }
 
+    /**
+     * A BLANK code is not an identity (review item B-21), and this is the case that cost money. Two
+     * unrelated papers both saved with {@code ""} keyed as the same string {@code "|"}, so signing an
+     * act «recognised» a receipt it had never seen: the object row lost its place on the reimbursable
+     * axis and, with {@code receipts_to_expenses} on, its own-cost expense was deleted outright.
+     */
+    @Test
+    void aBlankFiscalCodeRecognisesNothing() {
+        WorkAct act = act(true);
+        WorkActReceipt blankOnTheAct = actReceipt(null, "483.50", "0.00");
+        blankOnTheAct.setFiscalFn("");
+        blankOnTheAct.setFiscalId("");
+        onTheAct(blankOnTheAct);
+
+        reconciler.reconcile(act);
+
+        // Not even looked for: an act carrying no identity has nothing to match against.
+        verifyNoInteractions(projectReceipts);
+        verifyNoInteractions(expenses);
+    }
+
+    /** The other half of the same bug: the blank row is on the OBJECT, the act's code is real. */
+    @Test
+    void aBlankObjectPaperIsNotTheActsPaper() {
+        WorkAct act = act(true);
+        onTheAct(actReceipt("77", "483.50", "0.00"));
+        ProjectReceipt blankAtTheTill = objectReceipt("77", false);
+        blankAtTheTill.setFiscalFn("  ");
+        blankAtTheTill.setFiscalId("  ");
+        blankAtTheTill.setExpenseId(UUID.randomUUID());
+        onTheObject(blankAtTheTill);
+
+        reconciler.reconcile(act);
+
+        assertThat(blankAtTheTill.getBilledOnActId()).isNull();
+        assertThat(blankAtTheTill.getExpenseId()).isNotNull();
+        verify(expenses, never()).deleteById(any());
+    }
+
     /** Returned to the shop in full (V115): no ADDENDUM line, no expense — so nothing to settle. */
     @Test
     void aFullyReturnedActReceiptSettlesNothing() {

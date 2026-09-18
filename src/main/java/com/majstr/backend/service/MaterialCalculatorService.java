@@ -240,8 +240,8 @@ public class MaterialCalculatorService {
     public ShoppingListResponse toShoppingList(UUID estimateId, UUID ownerId, MaterialApplyRequest req) {
         Estimate estimate = estimateService.loadOwned(estimateId, ownerId);
         List<CalculatedMaterialRow> rows = new ArrayList<>();
-        resolve(req).forEach((line, material) -> rows.add(new CalculatedMaterialRow(
-                material.getId(), material.displayName(), material.getUnit(), line.quantity(), null)));
+        resolve(req).forEach((material, quantity) -> rows.add(new CalculatedMaterialRow(
+                material.getId(), material.displayName(), material.getUnit(), quantity, null)));
         return shoppingListService.applyCalculated(
                 estimate.getProject().getId(), ownerId, estimateId, rows);
     }
@@ -442,14 +442,25 @@ public class MaterialCalculatorService {
                 .orElse(null);
     }
 
-    /** Keeps the master's own order and ignores a material id that is not in the dictionary. */
-    private Map<MaterialLineRequest, Material> resolve(MaterialApplyRequest req) {
-        Map<MaterialLineRequest, Material> resolved = new LinkedHashMap<>();
+    /**
+     * The master's lines folded onto the MATERIAL: his order is kept, a material id that is not in
+     * the dictionary is ignored, and <b>two lines naming the same material are SUMMED</b>.
+     *
+     * <p>Keyed by the material and not by the request line, and the difference is money. Two lines
+     * naming one material are ordinary — the same плита is consumed by several positions — and
+     * {@code MaterialLineRequest} is a record, so {@code (material, 12)} sent twice is ONE map key:
+     * the old version dropped the second silently and asked him to buy 12 where he needs 24.
+     * {@code ShoppingListService.mergeInput} sums by dedup key and would have caught a pair that
+     * reached it, which is exactly why this was invisible — the pair never got there.</p>
+     */
+    private Map<Material, BigDecimal> resolve(MaterialApplyRequest req) {
+        Map<Material, BigDecimal> resolved = new LinkedHashMap<>();
         for (MaterialLineRequest line : req.materials()) {
             if (line.quantity().signum() <= 0) {
                 continue; // he zeroed the row out — that is a removal, not a purchase of nothing
             }
-            materialRepository.findById(line.materialId()).ifPresent(m -> resolved.put(line, m));
+            materialRepository.findById(line.materialId())
+                    .ifPresent(m -> resolved.merge(m, line.quantity(), BigDecimal::add));
         }
         return resolved;
     }

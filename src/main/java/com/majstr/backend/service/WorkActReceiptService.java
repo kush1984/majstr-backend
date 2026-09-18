@@ -314,12 +314,13 @@ public class WorkActReceiptService {
         receipt.setAmount(amount);
         receipt.setReturnedAmount(returned);
         receipt.setIssuedAt(req.issuedAt());
-        if (req.fiscalFn() != null && req.fiscalId() != null) {
+        if (req.normalizedFiscalFn() != null && req.normalizedFiscalId() != null) {
             // Written once, when a QR read finally identifies the paper — the same rule and the
             // same wording as the object receipt (B-04). Never cleared by an ordinary edit: the
-            // identity belongs to the photo, not to the numbers beside it.
-            receipt.setFiscalFn(req.fiscalFn());
-            receipt.setFiscalId(req.fiscalId());
+            // identity belongs to the photo, not to the numbers beside it. NORMALIZED for the same
+            // reason as there: a blank is not an identity (B-21).
+            receipt.setFiscalFn(req.normalizedFiscalFn());
+            receipt.setFiscalId(req.normalizedFiscalId());
         }
         // The identity arrives on THIS call, so this is the answer that can say «цей чек уже є в
         // обʼєкті» while the master is still holding the paper.

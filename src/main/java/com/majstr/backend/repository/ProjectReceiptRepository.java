@@ -29,11 +29,16 @@ public interface ProjectReceiptRepository extends JpaRepository<ProjectReceipt, 
      * FIRST (review item B-04). The order is the contract: it decides which of a pair is «the
      * original» and which gets the duplicate warning, so it must not be relaxed to the display
      * order, which is newest-first and re-sorts whenever a date is typed.
+     *
+     * <p>A BLANK code is not an identity (B-21): {@code IS NOT NULL} alone let {@code ''} through,
+     * and one blank key made every such receipt the twin of every other. Writes normalise now, so
+     * this is belt-and-braces for the rows V136 could not have reached.</p>
      */
     @Query("""
             SELECT r FROM ProjectReceipt r
             WHERE r.projectId = :projectId
-              AND r.fiscalFn IS NOT NULL AND r.fiscalId IS NOT NULL
+              AND r.fiscalFn IS NOT NULL AND TRIM(r.fiscalFn) <> ''
+              AND r.fiscalId IS NOT NULL AND TRIM(r.fiscalId) <> ''
             ORDER BY r.createdAt ASC, r.sortOrder ASC
             """)
     List<ProjectReceipt> findIdentifiedByProjectId(@Param("projectId") UUID projectId);

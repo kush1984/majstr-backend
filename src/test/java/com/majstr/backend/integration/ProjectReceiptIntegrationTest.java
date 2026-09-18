@@ -2,6 +2,7 @@ package com.majstr.backend.integration;
 
 import com.majstr.backend.dto.ProjectReceiptRequest;
 import com.majstr.backend.dto.ProjectReceiptsResponse;
+import com.majstr.backend.repository.ProjectReceiptRepository;
 import com.majstr.backend.service.ProjectReceiptService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -32,6 +33,7 @@ class ProjectReceiptIntegrationTest extends IntegrationTestBase {
 
     @Autowired JdbcTemplate jdbc;
     @Autowired ProjectReceiptService receiptService;
+    @Autowired ProjectReceiptRepository receipts;
 
     private UUID ownerId;
     private UUID projectId;
@@ -107,6 +109,39 @@ class ProjectReceiptIntegrationTest extends IntegrationTestBase {
         assertThat(jdbc.queryForObject(
                 "SELECT count(*) FROM project_receipt WHERE project_id = ?", Long.class, projectId))
                 .isZero();
+    }
+
+    /**
+     * A BLANK fiscal code does not identify a paper (review item B-21). Legacy rows were stored as
+     * {@code ''} and the {@code IS NOT NULL} lookup let them through, so every such receipt was the
+     * twin of every other one — and at sign time the reconciler settled two unrelated papers against
+     * each other. V136 nulled what was already there; the query refuses a blank regardless, because
+     * that is the half that also covers a row written by an older client.
+     */
+    @Test
+    void aBlankFiscalCodeIsNotAnIdentifiedReceipt() {
+        UUID blank = insertReceipt("Без QR", "483.50");
+        jdbc.update("UPDATE project_receipt SET fiscal_fn = '', fiscal_id = '   ' WHERE id = ?", blank);
+        UUID identified = insertReceipt("Епіцентр", "1200.00");
+        jdbc.update("UPDATE project_receipt SET fiscal_fn = '4000123456', fiscal_id = '77' WHERE id = ?",
+                identified);
+
+        assertThat(receipts.findIdentifiedByProjectId(projectId))
+                .extracting(r -> r.getId())
+                .containsExactly(identified);
+    }
+
+    /** The write path normalises too, so a client sending {@code ""} stores no identity at all. */
+    @Test
+    void anEmptyStringSentByAClientIsStoredAsNoIdentity() {
+        UUID id = insertReceipt("Епіцентр", "483.50");
+
+        receiptService.update(projectId, id, ownerId, new ProjectReceiptRequest(
+                "Епіцентр", new BigDecimal("483.50"), LocalDate.of(2026, 9, 8), null, "", ""));
+
+        assertThat(jdbc.queryForObject(
+                "SELECT fiscal_fn FROM project_receipt WHERE id = ?", String.class, id)).isNull();
+        assertThat(receipts.findIdentifiedByProjectId(projectId)).isEmpty();
     }
 
     // ---- helpers ----------------------------------------------------------
