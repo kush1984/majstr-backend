@@ -342,7 +342,7 @@ class PaymentServiceTest {
         });
 
         List<PaymentReceiptResponse> saved = service().addReceipt(objectId, ownerId,
-                new PaymentReceiptRequest(stageId, null, new BigDecimal("400.00"), LocalDate.now(), null), null);
+                new PaymentReceiptRequest(stageId, null, new BigDecimal("400.00"), LocalDate.now(), null, false), null);
 
         assertThat(saved).hasSize(1);
         assertThat(saved.get(0).amount()).isEqualByComparingTo("400.00");
@@ -364,7 +364,7 @@ class PaymentServiceTest {
         });
 
         List<PaymentReceiptResponse> saved = service().addReceipt(objectId, ownerId,
-                new PaymentReceiptRequest(stageId, null, new BigDecimal("300.00"), LocalDate.now(), null), null);
+                new PaymentReceiptRequest(stageId, null, new BigDecimal("300.00"), LocalDate.now(), null, false), null);
 
         assertThat(saved).hasSize(1);
         assertThat(saved.get(0).amount()).isEqualByComparingTo("300.00");
@@ -381,7 +381,7 @@ class PaymentServiceTest {
                 .amount(new BigDecimal("300.00")).receivedAt(LocalDate.now()).build()));
 
         List<PaymentReceiptResponse> saved = service().addReceipt(objectId, ownerId,
-                new PaymentReceiptRequest(stageId, null, new BigDecimal("300.00"), LocalDate.now(), null), clientId);
+                new PaymentReceiptRequest(stageId, null, new BigDecimal("300.00"), LocalDate.now(), null, false), clientId);
 
         assertThat(saved).singleElement().satisfies(r -> assertThat(r.id()).isEqualTo(clientId));
         verify(receiptRepository, never()).save(any(PaymentReceipt.class));
@@ -399,7 +399,7 @@ class PaymentServiceTest {
         given(receiptRepository.sumByPlanPaymentId(stageId)).willReturn(BigDecimal.ZERO);
 
         assertThatThrownBy(() -> service().addReceipt(objectId, ownerId,
-                new PaymentReceiptRequest(stageId, null, new BigDecimal("700.00"), LocalDate.now(), null), null))
+                new PaymentReceiptRequest(stageId, null, new BigDecimal("700.00"), LocalDate.now(), null, false), null))
                 .isInstanceOf(PaymentValidationException.class);
 
         verify(receiptRepository, never()).save(any(PaymentReceipt.class));
@@ -421,7 +421,7 @@ class PaymentServiceTest {
 
         List<PaymentReceiptResponse> saved = service().addReceipt(objectId, ownerId,
                 new PaymentReceiptRequest(stageId, null, new BigDecimal("700.00"), LocalDate.now(),
-                        PaymentOverflowResolution.RESERVE), null);
+                        PaymentOverflowResolution.RESERVE, false), null);
 
         assertThat(saved).hasSize(1);
         assertThat(saved.get(0).amount()).isEqualByComparingTo("700.00");
@@ -444,7 +444,7 @@ class PaymentServiceTest {
 
         List<PaymentReceiptResponse> saved = service().addReceipt(objectId, ownerId,
                 new PaymentReceiptRequest(stageId, null, new BigDecimal("700.00"), LocalDate.now(),
-                        PaymentOverflowResolution.INCREASE), null);
+                        PaymentOverflowResolution.INCREASE, false), null);
 
         assertThat(saved).hasSize(1);
         assertThat(saved.get(0).amount()).isEqualByComparingTo("700.00");
@@ -471,7 +471,7 @@ class PaymentServiceTest {
 
         List<PaymentReceiptResponse> saved = service().addReceipt(objectId, ownerId,
                 new PaymentReceiptRequest(stageId, null, new BigDecimal("700.00"), LocalDate.now(),
-                        PaymentOverflowResolution.TRANSFER), null);
+                        PaymentOverflowResolution.TRANSFER, false), null);
 
         assertThat(saved).hasSize(2);
         assertThat(saved.get(0).planPaymentId()).isEqualTo(stageId);
@@ -495,7 +495,7 @@ class PaymentServiceTest {
 
         assertThatThrownBy(() -> service().addReceipt(objectId, ownerId,
                 new PaymentReceiptRequest(stageId, null, new BigDecimal("700.00"), LocalDate.now(),
-                        PaymentOverflowResolution.TRANSFER), null))
+                        PaymentOverflowResolution.TRANSFER, false), null))
                 .isInstanceOf(PaymentValidationException.class);
     }
 
@@ -507,7 +507,7 @@ class PaymentServiceTest {
         given(projectService.loadOwned(objectId, ownerId)).willReturn(object());
 
         assertThatThrownBy(() -> service().addReceipt(objectId, ownerId,
-                new PaymentReceiptRequest(null, "  ", new BigDecimal("300.00"), LocalDate.now(), null), null))
+                new PaymentReceiptRequest(null, "  ", new BigDecimal("300.00"), LocalDate.now(), null, false), null))
                 .isInstanceOf(PaymentValidationException.class);
     }
 
@@ -519,7 +519,7 @@ class PaymentServiceTest {
                 .willReturn(List.of(stage(UUID.randomUUID(), new BigDecimal("500"), "Аванс")));
 
         assertThatThrownBy(() -> service().addReceipt(objectId, ownerId,
-                new PaymentReceiptRequest(null, "аванс", new BigDecimal("300.00"), LocalDate.now(), null), null))
+                new PaymentReceiptRequest(null, "аванс", new BigDecimal("300.00"), LocalDate.now(), null, false), null))
                 .isInstanceOf(PaymentValidationException.class);
 
         verify(receiptRepository, never()).save(any(PaymentReceipt.class));
@@ -538,7 +538,7 @@ class PaymentServiceTest {
         });
 
         List<PaymentReceiptResponse> saved = service().addReceipt(objectId, ownerId,
-                new PaymentReceiptRequest(null, "Продаж інструменту", new BigDecimal("300.00"), LocalDate.now(), null), null);
+                new PaymentReceiptRequest(null, "Продаж інструменту", new BigDecimal("300.00"), LocalDate.now(), null, false), null);
 
         assertThat(saved).singleElement().satisfies(r -> {
             assertThat(r.planPaymentId()).isNull();
@@ -559,7 +559,7 @@ class PaymentServiceTest {
                         .amount(new BigDecimal("300.00")).receivedAt(LocalDate.now().minusDays(1)).build()));
 
         PaymentReceiptResponse resp = service().editReceipt(objectId, receiptId, ownerId,
-                new PaymentReceiptEditRequest(new BigDecimal("350.00"), LocalDate.now(), null));
+                new PaymentReceiptEditRequest(new BigDecimal("350.00"), LocalDate.now(), null, false));
 
         assertThat(resp.amount()).isEqualByComparingTo("350.00");
     }
@@ -590,7 +590,7 @@ class PaymentServiceTest {
         });
 
         List<PaymentReceiptResponse> saved = service().addReceipt(objectId, ownerId,
-                new PaymentReceiptRequest(null, "Щось", BigDecimal.TEN, LocalDate.now(), null), null);
+                new PaymentReceiptRequest(null, "Щось", BigDecimal.TEN, LocalDate.now(), null, false), null);
 
         assertThat(saved).singleElement().satisfies(r -> assertThat(r.displayLabel()).isEqualTo("Щось"));
     }

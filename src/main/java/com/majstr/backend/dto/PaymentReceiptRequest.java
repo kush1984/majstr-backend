@@ -22,5 +22,14 @@ public record PaymentReceiptRequest(
         @Size(max = 255) String label,
         @NotNull @DecimalMin(value = "0.01") @DecimalMax("100000000") BigDecimal amount,
         @NotNull LocalDate receivedAt,
-        PaymentOverflowResolution resolution
+        PaymentOverflowResolution resolution,
+        /**
+         * Money the client paid BACK for material the master laid out (V135) — not payment for work.
+         *
+         * <p>It changes nothing about this object: «Отримано», the summary and every stage's status
+         * count the receipt exactly as before. The ONE reader is the personal cash screen, which
+         * keeps it in the movement and takes it out of «Заробив». Defaults false, so no existing
+         * caller means anything different by omitting it.</p>
+         */
+        boolean materialRefund
 ) {}

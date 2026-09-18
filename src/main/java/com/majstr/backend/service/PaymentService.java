@@ -212,7 +212,8 @@ public class PaymentService {
             String label = requireLabel(req.label());
             validateUnplannedLabel(objectId, label);
             PaymentReceipt receipt = PaymentReceipt.builder()
-                    .id(requestedId).project(object).amount(req.amount()).receivedAt(req.receivedAt())
+                    .id(requestedId).project(object).amount(req.amount())
+                    .receivedAt(req.receivedAt()).materialRefund(req.materialRefund())
                     .label(label).build();
             return List.of(PaymentReceiptResponse.from(receiptRepository.save(receipt)));
         }
@@ -225,7 +226,7 @@ public class PaymentService {
         if (overflow.signum() <= 0) {
             PaymentReceipt receipt = PaymentReceipt.builder()
                     .id(requestedId).project(object).planPayment(stage).amount(req.amount())
-                    .receivedAt(req.receivedAt()).build();
+                    .receivedAt(req.receivedAt()).materialRefund(req.materialRefund()).build();
             return List.of(PaymentReceiptResponse.from(receiptRepository.save(receipt)));
         }
 
@@ -236,14 +237,14 @@ public class PaymentService {
             case RESERVE -> {
                 PaymentReceipt receipt = PaymentReceipt.builder()
                         .id(requestedId).project(object).planPayment(stage).amount(req.amount())
-                        .receivedAt(req.receivedAt()).build();
+                        .receivedAt(req.receivedAt()).materialRefund(req.materialRefund()).build();
                 yield List.of(PaymentReceiptResponse.from(receiptRepository.save(receipt)));
             }
             case INCREASE -> {
                 stage.setAmount(receivedSoFar.add(req.amount()));
                 PaymentReceipt receipt = PaymentReceipt.builder()
                         .id(requestedId).project(object).planPayment(stage).amount(req.amount())
-                        .receivedAt(req.receivedAt()).build();
+                        .receivedAt(req.receivedAt()).materialRefund(req.materialRefund()).build();
                 yield List.of(PaymentReceiptResponse.from(receiptRepository.save(receipt)));
             }
             case TRANSFER -> {
@@ -253,12 +254,12 @@ public class PaymentService {
                 if (remaining.signum() > 0) {
                     PaymentReceipt closing = PaymentReceipt.builder()
                             .id(requestedId).project(object).planPayment(stage).amount(remaining)
-                            .receivedAt(req.receivedAt()).build();
+                            .receivedAt(req.receivedAt()).materialRefund(req.materialRefund()).build();
                     result.add(PaymentReceiptResponse.from(receiptRepository.save(closing)));
                 }
                 PaymentReceipt surplus = PaymentReceipt.builder()
                         .project(object).planPayment(next).amount(overflow)
-                        .receivedAt(req.receivedAt()).build();
+                        .receivedAt(req.receivedAt()).materialRefund(req.materialRefund()).build();
                 result.add(PaymentReceiptResponse.from(receiptRepository.save(surplus)));
                 yield result;
             }
@@ -278,6 +279,7 @@ public class PaymentService {
         }
         receipt.setAmount(req.amount());
         receipt.setReceivedAt(req.receivedAt());
+        receipt.setMaterialRefund(req.materialRefund());
         return PaymentReceiptResponse.from(receipt);
     }
 

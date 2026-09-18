@@ -301,7 +301,13 @@ one-line summary — keep the item in the file as a record.
   the "I typed it wrong" case for free (live FK, no bulk op needed).
 
 ### Metric month boundary is UTC, not the contractor's local month
-- **Status:** OPEN
+- **Status:** IN_PROGRESS — promoted 2026-09-17 (personal-cashflow iteration). Period filters
+  (тиждень / місяць / рік) are the whole point of «Мої гроші», so a UTC boundary is no longer a
+  couple-of-hours curiosity: on the 1st at 01:00 Kyiv «цей місяць» would open on the previous one.
+  `LocalizationConfig.ZONE` (`Europe/Kyiv`) already exists and is what the new default ranges use.
+  **Scope of this promotion is the cash-flow screen only** — `DashboardService` and the admin
+  `MetricsService` still compute their boundaries in UTC and are deliberately left alone, so this
+  item stays open for them.
 - **Since:** Fix B (2026-05-31)
 - **Context:** `DashboardService` (and the admin `MetricsService`) compute "this month"/"today" as a calendar boundary in UTC. For a Kyiv-based contractor (UTC+2/+3) the dashboard's "completed this month" can differ from their local month for the first/last couple of hours of a month.
 - **Notes / options:** Pick a single app timezone (e.g. `Europe/Kyiv`) for all reporting boundaries, or make it per-user once users span timezones. Low impact while single-region; revisit before launch.
@@ -878,7 +884,13 @@ one-line summary — keep the item in the file as a record.
   the schema unread, pending a column drop — see the next item.
 
 ### Object economy: profit rollup across all objects (dashboard)
-- **Status:** OPEN
+- **Status:** IN_PROGRESS — promoted 2026-09-17 (personal-cashflow iteration). This item IS the
+  object half of «Мої гроші»: the master asked for his own cash flow, not per object, and the answer
+  unions what the app already records across all his objects (`payment_receipt` + `object_expenses`)
+  with new off-object rows. Two departures from the note below: it is **not** PRO-gated (it ships
+  FREE alongside the temp-free object economy), and the headline figure is **cash movement**, not
+  profit — a master wanted «рух своїх коштів», with profit («Заробив») as one of three numbers.
+  See [iteration-personal-cashflow.md](iteration-personal-cashflow.md).
 - **Since:** Object-economy iteration (2026-07-06)
 - **Context:** Per-object profit ships; a master will want a **total** — earnings across all
   objects for a month/year on the dashboard.
@@ -931,6 +943,15 @@ one-line summary — keep the item in the file as a record.
   `payment_receipt` a purpose («за роботу» / «за матеріал»). **Nothing there is approved**, and the
   stated constraint that existing clients' figures must not change still holds — which is why V134
   backfills nothing and asserts that it moved no row.
+- **Update (2026-09-17, personal-cashflow iteration — status unchanged, still IN_PROGRESS):** the
+  purpose question got its FIRST HALF, deliberately small. V135 adds
+  `payment_receipt.material_refund` and a matching flag on the new `cash_entry`: money the master
+  marks as «повернення за матеріал» stays in the cash movement but leaves «Заробив», so a month is
+  not inflated by material the client merely paid back. **It moves no object figure** — no economy
+  query reads it, only the cash-flow screen does; that is the constraint above, honoured. What is
+  still missing is the same thing: a payment entered from the OBJECT screen carries no purpose, so
+  only what the master tags himself is distinguishable. A real `purpose` on `payment_receipt`
+  (read by the object economy too) remains unapproved.
 
 ### Master referral reward when the referrer is on admin-granted (dateless) PRO
 - **Status:** OPEN

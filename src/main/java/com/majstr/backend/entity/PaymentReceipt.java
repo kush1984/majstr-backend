@@ -62,6 +62,23 @@ public class PaymentReceipt {
     @Column(name = "label", length = 255)
     private String label;
 
+    /**
+     * Money the client paid BACK for material the master laid out (V135), not payment for work.
+     *
+     * <p><b>Nothing in the object economy reads this.</b> «Отримано», the payments summary and every
+     * stage's status count the receipt exactly as they always did — the standing constraint on this
+     * area is that existing clients' figures must not shift. The ONE reader is the personal cash
+     * screen, which keeps the money in the movement but takes it out of «Заробив»: counting a
+     * reimbursement as earnings inflates a month by exactly the material.</p>
+     *
+     * <p>It is the small first half of the open «purpose on a payment» question
+     * ({@code docs/open-questions.md}): only what the master tags himself is distinguishable, and a
+     * payment entered from the OBJECT screen still carries no purpose at all.</p>
+     */
+    @Builder.Default
+    @Column(name = "material_refund", nullable = false)
+    private boolean materialRefund = false;
+
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
 

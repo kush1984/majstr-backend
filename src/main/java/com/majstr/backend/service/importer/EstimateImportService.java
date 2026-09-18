@@ -109,8 +109,10 @@ public class EstimateImportService {
         if (req.depositAmount() != null && req.depositAmount().signum() > 0) {
             ProjectPaymentResponse plan = paymentService.add(req.projectId(), ownerId,
                     new ProjectPaymentRequest(req.depositAmount(), null, null, "Завдаток"), null);
+            // Not a material refund: an imported deposit is payment for the work itself (V135).
             paymentService.addReceipt(req.projectId(), ownerId, new PaymentReceiptRequest(
-                    plan.id(), null, req.depositAmount(), LocalDate.now(LocalizationConfig.ZONE), null), null);
+                    plan.id(), null, req.depositAmount(), LocalDate.now(LocalizationConfig.ZONE),
+                    null, false), null);
         }
 
         // Catalog side-effect: only the positions the master ticked on the review screen.
