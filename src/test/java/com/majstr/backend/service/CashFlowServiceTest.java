@@ -1,8 +1,10 @@
 package com.majstr.backend.service;
 
+import com.majstr.backend.config.LocalizationConfig;
 import com.majstr.backend.dto.CashEntryKind;
 import com.majstr.backend.dto.CashEntryRequest;
 import com.majstr.backend.dto.CashFlowResponse;
+import com.majstr.backend.dto.CashSummaryResponse;
 import com.majstr.backend.dto.ExpenseRequest;
 import com.majstr.backend.dto.ExpenseResponse;
 import com.majstr.backend.exception.ResourceNotFoundException;
@@ -263,6 +265,23 @@ class CashFlowServiceTest {
         seedFeed(List.of(), List.of(), List.of());
 
         assertThat(service.summary(OWNER).hasEntries()).isFalse();
+    }
+
+    /**
+     * The strip sums the calendar MONTH (master's call — a week there was too small a window to be
+     * worth a glance), and it answers the window it used so the client can label it rather than
+     * re-deriving one and getting it subtly different.
+     */
+    @Test
+    void theHomeStripSumsTheCalendarMonth() {
+        seedFeed(List.of(), List.of(), List.of(personal(CashDirection.INCOME, "5000.00")));
+
+        CashSummaryResponse summary = service.summary(OWNER);
+
+        LocalDate today = LocalDate.now(LocalizationConfig.ZONE);
+        assertThat(summary.from()).isEqualTo(today.withDayOfMonth(1));
+        assertThat(summary.to()).isEqualTo(today.withDayOfMonth(today.lengthOfMonth()));
+        assertThat(summary.hasEntries()).isTrue();
     }
 
     // ---- fixtures ---------------------------------------------------------

@@ -250,3 +250,25 @@ The home strip passes `routes.home`, the Профіль row passes `routes.profi
 is where he goes looking for it.
 
 Pinned by three tests — from Профіль, from the dashboard, and opened cold.
+
+---
+
+## Round 5 — the strip sums the MONTH again (PWA 1.46.2)
+
+> «На головній в тій полосці давай будемо показувати кошти за місяць, не за тиждень… якщо сьогодні
+> 18.09.2026, то показуємо кошти за вересень, а коли клікаємо на ров, то переходимо в Мої кошти і за
+> місяць показуємо, коли ідемо з профілю, то так як зараз нехай буде.»
+
+Round 2 had made the strip a WEEK precisely so it could not disagree with a screen that opens on the
+week. The master wants the month back on the home screen — a week there is too small a window to be
+worth a glance — and the disagreement is settled the other way instead of being accepted:
+
+* `summary()` sums the calendar month in Kyiv again (and `startOfWeek()` went with it);
+* the strip says **«Цей місяць»**, so the period is named rather than guessed from the number;
+* **the tap carries `period: 'MONTH'`** in the navigation state, so it lands on exactly the window
+  it showed — tapping «+42 000» and arriving at 8 000 is the one thing a money screen may not do;
+* **every other door keeps the week**: the Профіль row and a cold reload open on it, which is what
+  the screen is for («коли ідемо з профілю, то так як зараз»).
+
+So the navigation state now carries two things — `from` (round 4) and `period` — and each answers a
+question the screen cannot answer for itself: which door he came in by, and which window he tapped.

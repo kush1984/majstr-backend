@@ -62,9 +62,9 @@ public class CashController {
         return cashService.flow(principal.id(), from, to, monthly);
     }
 
-    /** The home strip: this WEEK in three numbers — the same period the screen opens on. */
+    /** The home strip: this MONTH in three numbers — the window the tap then opens the screen on. */
     @GetMapping("/summary")
-    @Operation(summary = "This week's totals for the home screen")
+    @Operation(summary = "This month's totals for the home screen")
     public CashSummaryResponse summary(@AuthenticationPrincipal UserPrincipal principal) {
         return cashService.summary(principal.id());
     }

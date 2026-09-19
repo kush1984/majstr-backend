@@ -80,7 +80,6 @@ public class CashFlowService {
      */
     private static final int MAX_ENTRIES = 500;
 
-
     private final CashEntryRepository cashRepository;
     private final PaymentReceiptRepository receiptRepository;
     private final ObjectExpenseRepository expenseRepository;
@@ -122,19 +121,21 @@ public class CashFlowService {
     }
 
     /**
-     * The home strip: this WEEK in Kyiv, three numbers, and whether to render at all.
+     * The home strip: this MONTH in Kyiv, three numbers, and whether to render at all (master's
+     * call — a week on the home screen was too small a window to be worth a glance).
      *
-     * <p>The week and not the month because that is the period the screen opens on (master's call).
-     * A strip showing a month over a screen opening on a week means tapping «+42 000» lands on
-     * 8 000 — two surfaces describing the same money and disagreeing.</p>
+     * <p>Tapping the strip must land on THIS window, not on some other one: the client opens the
+     * screen already switched to the month. Every other door — the Профіль row, a reload — keeps the
+     * week, which is what the screen is for. {@code from}/{@code to} ride along so the client labels
+     * the window it was actually given rather than re-deriving one.</p>
      */
     @Transactional(readOnly = true)
     public CashSummaryResponse summary(UUID ownerId) {
-        LocalDate from = startOfWeek();
-        LocalDate to = from.plusDays(6);
-        CashFlowResponse week = flow(ownerId, from, to, true);
-        boolean any = week.income().signum() != 0 || week.expense().signum() != 0;
-        return new CashSummaryResponse(from, to, week.income(), week.expense(), week.earned(), any);
+        LocalDate from = startOfMonth();
+        LocalDate to = endOfMonth();
+        CashFlowResponse month = flow(ownerId, from, to, true);
+        boolean any = month.income().signum() != 0 || month.expense().signum() != 0;
+        return new CashSummaryResponse(from, to, month.income(), month.expense(), month.earned(), any);
     }
 
     // ---- writes -----------------------------------------------------------
@@ -414,16 +415,6 @@ public class CashFlowService {
 
     private static LocalDate startOfMonth() {
         return today().withDayOfMonth(1);
-    }
-
-    /**
-     * Monday. {@code DayOfWeek.MONDAY.getValue()} is 1 and Sunday's is 7, so subtracting
-     * {@code value - 1} keeps a Sunday in the week it actually belongs to — the one day of seven a
-     * master is most likely to be adding up.
-     */
-    private static LocalDate startOfWeek() {
-        LocalDate now = today();
-        return now.minusDays(now.getDayOfWeek().getValue() - 1L);
     }
 
     private static LocalDate endOfMonth() {
