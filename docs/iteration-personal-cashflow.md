@@ -272,3 +272,42 @@ worth a glance — and the disagreement is settled the other way instead of bein
 
 So the navigation state now carries two things — `from` (round 4) and `period` — and each answers a
 question the screen cannot answer for itself: which door he came in by, and which window he tapped.
+
+---
+
+## Round 6 — «отримано» had not worked since V135, and the cause was one Jackson default
+
+> «каже тепер мені що не коректний формат запиту при збережені завдатку, що там тепер не так?»
+
+Recording money received on an object answered **400 «Некоректний формат запиту»** — the
+`error.malformed-json` message, meaning the body never reached a validator at all. The body was
+fine. Jackson 3 turned **`FAIL_ON_NULL_FOR_PRIMITIVES` on by default** (Jackson 2 shipped it off),
+and a record's canonical constructor is handed `null` for a property the client simply leaves out.
+V135 added `boolean materialRefund` to `PaymentReceiptRequest` and `PaymentReceiptEditRequest`; the
+object economy's sheets know nothing about a refund flag and send no such field, so from that commit
+on **every** «отримано» and every receipt edit died in the message converter.
+
+It hid behind two things. Planning a payment stage still worked (`ProjectPaymentRequest` carries no
+primitive), so it read as one sheet misbehaving; and the toast that carried the refusal was painted
+*under* the bottom sheet until the `z-[70]` fix, so what the master saw first was «не зберігає» with
+no message at all. Fixing the toast is what turned the symptom into the sentence that named the bug.
+
+The fix is at the mapper, not the DTO — nine request records carry a primitive today and each is the
+same 400 waiting for the first caller that omits it:
+
+```yaml
+spring.jackson.deserialization.fail-on-null-for-primitives: false
+```
+
+An omitted primitive takes its Java default; a field that genuinely may not be missing says so with
+`@NotNull` on a **wrapper** and earns a field-level validation error instead of a whole-body
+rejection. `RequestDtoPrimitiveDeserializationIntegrationTest` sweeps every record in `dto` for a
+primitive component and feeds each one `{}` — an integration test on purpose, because a standalone
+MockMvc test builds its own converter and would answer about Jackson's defaults rather than ours.
+
+**And the money bug underneath it.** With the parse fixed, the economy's edit sheet would have
+started *landing* `materialRefund = false` on every amount correction — silently clearing a flag set
+from «Мої гроші» and moving «Заробив» on a screen the master was not even looking at. So
+`PaymentReceiptEditRequest.materialRefund` is now **three-valued** (`Boolean`, null = leave it
+alone), the same shape V129 gave `reimbursable`, and `PaymentService.editReceipt` guards on null.
+One record still serves both doors; only the door that owns the switch may move it.

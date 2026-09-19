@@ -803,6 +803,24 @@ against known-good output without spending a single LLM call.
   `com.fasterxml.jackson.*` classes may still be on the classpath
   (transitively via `jjwt-jackson`) — they're for jjwt's internal use,
   don't pull them into application code.
+- **Jackson 3 defaults `FAIL_ON_NULL_FOR_PRIMITIVES` ON** (Jackson 2 shipped
+  it off), and that one flipped default is a live 400 generator here: a
+  record's canonical constructor is handed `null` for a property the client
+  simply omitted, so a request record with a `boolean` field rejects every
+  payload that leaves the flag out — as `HttpMessageNotReadableException`,
+  i.e. `error.malformed-json`, «Некоректний формат запиту», which reads as a
+  broken client rather than a mapper setting. It shipped exactly that way:
+  V135 added `boolean materialRefund` to `PaymentReceiptRequest` and
+  `PaymentReceiptEditRequest`, and recording money received on an object was
+  impossible from that commit until
+  `spring.jackson.deserialization.fail-on-null-for-primitives: false` in
+  `application.yml`. An omitted primitive must take its Java default; a field
+  that genuinely may not be missing says so with `@NotNull` on a WRAPPER and
+  gets a field-level validation error instead of a whole-body rejection.
+  `RequestDtoPrimitiveDeserializationIntegrationTest` sweeps every record in
+  `dto` and is an integration test on purpose — a standalone MockMvc test
+  builds its own default converter and would answer about Jackson's defaults,
+  not ours.
 - **Lombok + Java 21**: works via the Spring Boot–managed Lombok version.
   If you bump Java further, verify Lombok supports it.
 - **JWT secret length**: HS256 requires ≥ 32 bytes (256 bits). Validated

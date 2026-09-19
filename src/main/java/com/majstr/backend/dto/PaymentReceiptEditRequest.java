@@ -19,6 +19,11 @@ public record PaymentReceiptEditRequest(
          * the flag has ONE door in and out — «Мої гроші» edits object payments in place, and a
          * second write path just for this boolean would be the thing that drifts. Reads nothing in
          * the object economy; only the cash screen takes it out of «Заробив».
+         *
+         * <p>Three-valued on purpose, like V129's {@code reimbursable}: null = leave it alone. The
+         * object economy's edit sheet has no refund switch and sends no such field, and this one
+         * record serves both doors — as a primitive it silently cleared a flag set from the cash
+         * screen and moved «Заробив» on a master who only retyped an amount.</p>
          */
-        boolean materialRefund
+        Boolean materialRefund
 ) {}

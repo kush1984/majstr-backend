@@ -29,6 +29,15 @@ spring:
         format_sql: false
   jackson:
     default-property-inclusion: non_null
+    deserialization:
+      # Jackson 3 turned FAIL_ON_NULL_FOR_PRIMITIVES ON by default (Jackson 2 shipped it off).
+      # A record's canonical constructor is handed null for a property the client simply left
+      # out, so every request record carrying a primitive field started answering 400
+      # error.malformed-json for payloads that are perfectly well formed — the receipt ones
+      # did exactly that from V135 on, the moment `boolean materialRefund` was added.
+      # An omitted primitive must take its Java default; a field that truly may not be missing
+      # says so with @NotNull on a wrapper type and gets a field-level validation error.
+      fail-on-null-for-primitives: false
   flyway:
     enabled: true
     baseline-on-migrate: true

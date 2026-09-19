@@ -565,6 +565,31 @@ class PaymentServiceTest {
     }
 
     @Test
+    void editReceipt_absentMaterialRefundLeavesTheFlagAlone() {
+        // The object economy's edit sheet has no refund switch and sends no such field. Read as a
+        // primitive it arrived false and quietly cleared a flag «Мої гроші» had set — moving that
+        // screen's «Заробив» because the master retyped an amount on a different screen.
+        UUID receiptId = UUID.randomUUID();
+        user(ownerId, Plan.PRO);
+        PaymentReceipt stored = PaymentReceipt.builder().id(receiptId).project(object())
+                .planPayment(stage(UUID.randomUUID(), new BigDecimal("500"), "Аванс"))
+                .amount(new BigDecimal("300.00")).receivedAt(LocalDate.now()).materialRefund(true).build();
+        given(projectService.loadOwned(objectId, ownerId)).willReturn(object());
+        given(receiptRepository.findByIdAndProjectId(receiptId, objectId)).willReturn(Optional.of(stored));
+
+        service().editReceipt(objectId, receiptId, ownerId,
+                new PaymentReceiptEditRequest(new BigDecimal("350.00"), LocalDate.now(), null, null));
+
+        assertThat(stored.isMaterialRefund()).isTrue();
+
+        // …and the caller that DOES own the switch still turns it off.
+        service().editReceipt(objectId, receiptId, ownerId,
+                new PaymentReceiptEditRequest(new BigDecimal("350.00"), LocalDate.now(), null, false));
+
+        assertThat(stored.isMaterialRefund()).isFalse();
+    }
+
+    @Test
     void deleteReceipt_alreadyGoneIsANoOp() {
         UUID receiptId = UUID.randomUUID();
         user(ownerId, Plan.PRO);

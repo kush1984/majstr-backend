@@ -279,7 +279,11 @@ public class PaymentService {
         }
         receipt.setAmount(req.amount());
         receipt.setReceivedAt(req.receivedAt());
-        receipt.setMaterialRefund(req.materialRefund());
+        // null = leave it alone: the object economy's edit sheet never asks about a material
+        // refund, so only the caller that owns the switch («Мої гроші») may move it.
+        if (req.materialRefund() != null) {
+            receipt.setMaterialRefund(req.materialRefund());
+        }
         return PaymentReceiptResponse.from(receipt);
     }
 
