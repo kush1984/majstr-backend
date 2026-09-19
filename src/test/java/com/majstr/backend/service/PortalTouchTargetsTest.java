@@ -52,6 +52,18 @@ class PortalTouchTargetsTest {
                 .contains("user-select: none");
     }
 
+    @ParameterizedTest
+    @ValueSource(strings = {"portal", "message", "admin"})
+    void everyClientPageLetsAFieldOptBackIn(String name) throws IOException {
+        // `user-select` INHERITS, so the block above reaches every <input> a <label> wraps — and on
+        // iOS Safari an inherited `none` fights the caret: the field focuses, the keyboard opens,
+        // and placing the caret in what is already typed does not work. The opt-out is part of the
+        // fix rather than a detail of it, and it is the half a later tidy-up would drop first.
+        assertThat(page(name))
+                .as("fields on the %s page opt back into selection", name)
+                .contains("user-select: text");
+    }
+
     @Test
     void portalDoesNotLeaveAStickyHoverStandingInForPressedState() throws IOException {
         String portal = page("portal");

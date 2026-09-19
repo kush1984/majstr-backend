@@ -447,6 +447,14 @@
             -webkit-user-select: none;
             user-select: none;
         }
+        /* ...and back out again for anything typed into: `user-select` INHERITS, so a <label>
+           wrapping its own field hands `none` to the <input> inside it, which on iOS Safari fights
+           the caret. Mirrors the same opt-out in the PWA's `src/styles/index.css`. */
+        input:not([type="button"]):not([type="checkbox"]):not([type="radio"]):not([type="submit"]),
+        textarea {
+            -webkit-user-select: text;
+            user-select: text;
+        }
         button, a.btn {
             font-family: var(--sans);
             font-size: 1rem;
