@@ -341,13 +341,32 @@ Five strings, deleted from both bundles (so `i18nKeys.test.ts` stays honest):
   `estimates.quality_note` any more (see the V121 index bullet). Two copies went: the editor's and
   `TemplatePickerSheet`'s preview.
 
-### What folded
+### What folded, and then went (same day)
 
-«Опис для клієнта» is now a `▸`/`▾` disclosure, collapsed on open, with the first line of the text
-shown truncated beside the caret so a bundle that HAS a paragraph doesn't look like one that
-doesn't. The field is typed once per bundle and read rarely; the positions are why the sheet opens.
-`TemplatesPage.test.tsx` pins both halves — the position renders on the first frame while
-`template-description` is absent, and the toggle reveals the stored text.
+The first pass folded «Опис для клієнта» behind a caret. The master read that and asked the
+question the fold had dodged: **«хіба ми десь в порталі чи ПДФ щось показуємо?»**
+
+We do not, and a grep settles it: `estimates.quality_note` is written (snapshotted at apply time,
+copied on duplicate, carried in `EstimateResponse`) and **read by nothing** — not
+`EstimatePdfService`, not `static/portal/`, not one public DTO, not one PWA screen. V122 took both
+client surfaces and PWA v1.43.1 took the master's own «Стандарт робіт» card. Folding a field whose
+output goes nowhere just hides the problem one tap deeper, so the field is gone:
+
+- The disclosure and the `<textarea>` are removed from `EditModal`; `Draft` no longer carries
+  `description`, so `dirty` is name-or-positions and `save()` sends `{ id, name }`.
+- **`description` is never sent on the rename.** Absent is «leave it alone» on a three-valued field
+  (V121) — the one thing that must not regress here, because a rename is also what FORKS a default
+  bundle (V113), and sending `""` would strip the Q-level paragraph off the copy at that moment.
+- `templates.promisePlaceholder` is deleted; `templates.promiseTitle` is renamed to
+  `templates.aboutTitle` and re-worded «Про цей шаблон». The old heading — «Опис для клієнта» /
+  «What the client is told» — was the same false claim as `promiseHint`, just shorter.
+
+**What stays, deliberately:** both READ-ONLY renders of `EstimateTemplate.description` — the row
+preview on «Мої шаблони» and `TemplatePickerSheet`'s preview. The Q1/Q2/Q4 bundles ship a
+paragraph written by the migrations, and it is the only thing that separates «Підготовка ГКЛ · Q4»
+from «· Q2» at the moment of picking. The column, the snapshot into `quality_note`, and the offline
+twin in `useEstimateTemplates.ts` all stay too — same treatment as V119's
+`estimate_items.description`: bringing an editor or a client surface back is a render change.
 
 ### The other door into «Мої шаблони»
 
@@ -373,5 +392,5 @@ estimate, the ＋ is on another screen), the page's `emptyMyPage` names the ＋.
 
 ### Not verified
 
-Mobile layout was not opened in a browser — the folded state and the FAB offset (`bottom-20`, which
-clears the bottom nav) are judged from the existing components, not from a phone.
+Mobile layout was not opened in a browser — the FAB offset (`bottom-20`, which clears the bottom
+nav) is judged from the existing components, not from a phone.
