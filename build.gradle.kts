@@ -129,6 +129,10 @@ dependencies {
 
 tasks.withType<Test> {
     useJUnitPlatform()
+    // Gradle forks the test JVM and does NOT pass its own system properties down, so
+    // `-Dcontract.update=true` (RequestContractSnapshotTest, the PWA request contract)
+    // would silently do nothing without this hand-off.
+    systemProperty("contract.update", providers.systemProperty("contract.update").getOrElse("false"))
 }
 
 tasks.withType<JavaCompile> {

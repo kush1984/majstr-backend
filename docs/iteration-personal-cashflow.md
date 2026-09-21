@@ -311,3 +311,51 @@ from «Мої гроші» and moving «Заробив» on a screen the master 
 `PaymentReceiptEditRequest.materialRefund` is now **three-valued** (`Boolean`, null = leave it
 alone), the same shape V129 gave `reimbursable`, and `PaymentService.editReceipt` guards on null.
 One record still serves both doors; only the door that owns the switch may move it.
+
+## Round 7 — closing the hole that let Round 6 happen
+
+Round 6 fixed «отримано». It did not explain why nothing caught it, and the answer turned out to be
+structural rather than a missing assertion.
+
+The backend's `PaymentReceiptRequest` grew `boolean materialRefund` in V135. The PWA's
+`src/api/types.ts` is written BY HAND: its interface never grew the field, so the app kept sending
+the old body. TypeScript cannot object — it is checking the app against its own hand-written
+declaration, not against the backend. And no test on either side crosses the gap:
+
+- the backend's service tests build the record in Java (`new PaymentReceiptRequest(…)`), so Jackson
+  never runs and the JSON→record step — the one step that was broken — is not executed;
+- there was no controller test for payments **at all**, and a standalone MockMvc one would not have
+  helped: it builds its own message converter, so it answers about Jackson's defaults rather than
+  about this application's configuration;
+- the PWA's tests `vi.mock('@/api/payments.ts')`, so the body is never serialized;
+- adding the field forced every Java call site to be updated, and the compiler made each one pass
+  `false` — every test was corrected into sending the field the PWA was omitting.
+
+Three layers now, because no single one is enough.
+
+**1. The contract is a file.** `RequestContractSnapshotTest` reflects every `*Request` record into
+`src/test/resources/contract/request-dtos.json`: field name, coarse type, and whether the CLIENT
+must send it. Any DTO change reddens it in the same commit and names the PWA file to move with it.
+Regenerate with `-Dcontract.update=true`; `build.gradle.kts` hands the flag to the forked test JVM,
+which Gradle does not do on its own — the first version of the instruction silently did nothing.
+
+*The trap inside the trap:* `@NotNull` does not list `RECORD_COMPONENT` among its targets, so javac
+puts it on the backing field and the constructor parameter and leaves the component bare. The first
+draft asked the component, got nothing, and recorded all 80 DTOs as fully optional — a contract that
+would have gone green forever. `required()` now reads the component, its annotated type, the field
+and the canonical constructor's parameter.
+
+**2. The PWA checks itself against that file.** `src/api/contract.test.ts` parses `types.ts` and
+asserts, per interface: we declare nothing the backend lacks, we declare every field it REQUIRES and
+not as optional, and the types agree. A field the backend merely accepts may be omitted — demanding
+those would flag every endpoint with options this app has no screen for, and a guard that cries wolf
+gets deleted. The copy is checked byte-for-byte against the live backend snapshot whenever
+`../majstr-backend` exists, so it cannot go stale on the machine pushes are made from.
+
+**3. The endpoint is exercised over a real socket.** `PaymentReceiptHttpIntegrationTest` posts the
+body copied out of `majstr-pwa/src/api/payments.ts` as JSON TEXT — never as a serialized DTO, which
+would reintroduce the blind spot, since the compiler would fill in whatever the record declares
+today. Proven by reverting `fail-on-null-for-primitives` and watching 4 of 6 tests fail.
+
+Still open: the payload is copied by a human, not captured from the running PWA. A true end-to-end
+contract test would need the two repos to share a build, which they do not.
