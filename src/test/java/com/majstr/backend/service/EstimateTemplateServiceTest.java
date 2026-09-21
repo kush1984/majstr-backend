@@ -292,6 +292,59 @@ class EstimateTemplateServiceTest {
         verify(estimateRepository, never()).save(any());
     }
 
+    // ---- create from scratch -----------------------------------------------
+
+    @Test
+    void create_makesAnEmptyOwnTemplateAndNeverTouchesTheItemTable() {
+        User owner = User.builder().id(ownerId).build();
+        given(userRepository.findById(ownerId)).willReturn(Optional.of(owner));
+        given(templateRepository.save(any())).willAnswer(inv -> {
+            EstimateTemplate t = inv.getArgument(0);
+            t.setId(UUID.randomUUID());
+            return t;
+        });
+
+        EstimateTemplateSummary summary =
+                service.create("  Санвузол під ключ  ", null, null, null, ownerId);
+
+        ArgumentCaptor<EstimateTemplate> captor = ArgumentCaptor.forClass(EstimateTemplate.class);
+        verify(templateRepository).save(captor.capture());
+        assertThat(captor.getValue().getName()).isEqualTo("Санвузол під ключ"); // trimmed
+        assertThat(captor.getValue().isDefault()).isFalse();
+        assertThat(captor.getValue().getOwner()).isSameAs(owner);
+        assertThat(summary.itemCount()).isZero();
+        assertThat(summary.isDefault()).isFalse();
+        // An empty bundle is the whole point — positions arrive through the item endpoints.
+        verify(templateItemRepository, never()).saveAll(anyList());
+    }
+
+    @Test
+    void create_withCustomTrade_forcesTradeToOtherAndStoresTheLink() {
+        given(userRepository.findById(ownerId)).willReturn(Optional.of(User.builder().id(ownerId).build()));
+        com.majstr.backend.entity.UserTrade custom =
+                com.majstr.backend.entity.UserTrade.builder().id(UUID.randomUUID()).name("Натяжні стелі").build();
+        given(userTradeRepository.findByIdAndUserId(custom.getId(), ownerId)).willReturn(Optional.of(custom));
+        given(templateRepository.save(any())).willAnswer(inv -> inv.getArgument(0));
+
+        EstimateTemplateSummary summary =
+                service.create("Стелі", null, Trade.TILING, custom.getId(), ownerId);
+
+        assertThat(summary.trade()).isEqualTo(Trade.OTHER);
+        assertThat(summary.customTradeId()).isEqualTo(custom.getId());
+        assertThat(summary.customTradeName()).isEqualTo("Натяжні стелі");
+    }
+
+    @Test
+    void create_refusesACustomTradeThatIsNotMine() {
+        UUID foreign = UUID.randomUUID();
+        given(userRepository.findById(ownerId)).willReturn(Optional.of(User.builder().id(ownerId).build()));
+        given(userTradeRepository.findByIdAndUserId(foreign, ownerId)).willReturn(Optional.empty());
+
+        assertThatThrownBy(() -> service.create("Стелі", null, null, foreign, ownerId))
+                .isInstanceOf(com.majstr.backend.exception.ResourceNotFoundException.class);
+        verify(templateRepository, never()).save(any());
+    }
+
     // ---- save as template --------------------------------------------------
 
     @Test

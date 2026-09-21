@@ -114,6 +114,32 @@ class EstimateTemplateControllerTest {
     }
 
     @Test
+    void create_returns201WithAnEmptySummary() throws Exception {
+        UUID created = UUID.randomUUID();
+        given(templateService.create("Санвузол під ключ", null, null, null, userId))
+                .willReturn(new EstimateTemplateSummary(created, "Санвузол під ключ", null, null, null, null, false, 0));
+
+        mockMvc.perform(post("/api/estimate-templates")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json.writeValueAsString(
+                                new SaveAsTemplateRequest("Санвузол під ключ", null, null, null))))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.id", is(created.toString())))
+                .andExpect(jsonPath("$.itemCount", is(0)))
+                .andExpect(jsonPath("$.isDefault", is(false)));
+    }
+
+    @Test
+    void create_blankNameIsRejected() throws Exception {
+        mockMvc.perform(post("/api/estimate-templates")
+                        .header("Accept-Language", "en")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json.writeValueAsString(new SaveAsTemplateRequest("  ", null, null, null))))
+                .andExpect(status().isBadRequest());
+        verify(templateService, never()).create(any(), any(), any(), any(), any());
+    }
+
+    @Test
     void saveAsTemplate_returns201WithSummary() throws Exception {
         UUID estimateId = UUID.randomUUID();
         given(templateService.saveFromEstimate(estimateId, "Санвузол Іванова", null, null, null, userId))

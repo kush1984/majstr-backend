@@ -53,6 +53,19 @@ public class EstimateTemplateController {
         return templateService.listForUser(user);
     }
 
+    @Operation(summary = "Create an empty template of my own",
+            description = "The other door into «Мої шаблони»: until now a bundle could only be "
+                    + "born from an existing estimate. Positions are added afterwards through "
+                    + "the item endpoints.")
+    @PostMapping("/api/estimate-templates")
+    public ResponseEntity<EstimateTemplateSummary> create(
+            @Valid @RequestBody SaveAsTemplateRequest req,
+            @AuthenticationPrincipal UserPrincipal principal) {
+        EstimateTemplateSummary created = templateService.create(
+                req.name(), req.description(), req.trade(), req.customTradeId(), principal.id());
+        return ResponseEntity.status(HttpStatus.CREATED).body(created);
+    }
+
     @Operation(summary = "Preview a template's composition (its positions)")
     @GetMapping("/api/estimate-templates/{id}")
     public EstimateTemplateDetail get(@PathVariable UUID id,

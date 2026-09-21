@@ -315,3 +315,63 @@ gone. The lookup there is scoped to `[data-template-item-id] button` — the nam
 
 Mobile layout was not opened in a browser. The green is `bg-success-soft` + `border-success/50`,
 already used elsewhere in the app, and the scroll needs a real phone to judge.
+
+---
+
+## Round N: the editor is the positions, and a bundle can be born empty (2026-09-21)
+
+Master feedback on the phone: «дуже багато опису і на екрані телефону це прям капець як заважає».
+The screenshot said it plainly — on a 6" screen the edit sheet opened on a four-row textarea and
+five paragraphs of explanation, and the first position sat below the fold. The sheet is open to
+arrange works; everything else was talking over them.
+
+### What went
+
+Five strings, deleted from both bundles (so `i18nKeys.test.ts` stays honest):
+
+- `templates.saveHint` / `templates.unsavedHint` — a **disabled** «Зберегти» already says «нічого
+  зберігати», and an enabled one says the opposite. The sentence under it was narrating the button.
+- `templates.sequenceHint` («Шаблон — це послідовність робіт… перетягуйте») — the drag grips are the
+  affordance; a master who has dragged one row does not need the paragraph, and one who hasn't
+  won't read it.
+- `templates.defaultForkHint` — the fork is explained again by the toast that fires when it happens
+  (`templates.forked`), at the moment it means something.
+- `templates.promiseHint` («копіюється в кошторис і показується клієнту під таблицею — у порталі та
+  в PDF») — **it had also become false.** V122 took both client surfaces away; nothing renders
+  `estimates.quality_note` any more (see the V121 index bullet). Two copies went: the editor's and
+  `TemplatePickerSheet`'s preview.
+
+### What folded
+
+«Опис для клієнта» is now a `▸`/`▾` disclosure, collapsed on open, with the first line of the text
+shown truncated beside the caret so a bundle that HAS a paragraph doesn't look like one that
+doesn't. The field is typed once per bundle and read rarely; the positions are why the sheet opens.
+`TemplatesPage.test.tsx` pins both halves — the position renders on the first frame while
+`template-description` is absent, and the toggle reveals the stored text.
+
+### The other door into «Мої шаблони»
+
+`POST /api/estimate-templates` (`EstimateTemplateService#create`) makes an **empty** owned bundle
+from a name. Until now the only way to own one was `saveFromEstimate`, which is backwards for a
+master who knows his sequence and has no object to write it on — he had to invent an estimate first.
+
+- It reuses `SaveAsTemplateRequest` (name + optional description/trade/customTradeId), so the
+  request-DTO snapshot is untouched.
+- No plan gate: templates carry no `Limit` entry and `saveFromEstimate` gates nothing either.
+- A `customTradeId` forces `trade = OTHER`, the V91 invariant, and a custom trade that isn't the
+  caller's is a 404 — same `resolveCustomTrade` the rest of the service uses.
+- It writes the row and **nothing else**: positions arrive through the ordinary item endpoints.
+
+PWA: a direct-action `Fab` on «Мої шаблони» (no speed-dial — there is one thing to create here, and
+a «＋» that opens a menu is read as «add» anyway), a sheet that asks for the name alone, and then
+**straight into the editor** — a named empty row is not yet a template, and the master came to write
+a sequence. `useCreateTemplate` is online-only for the same reason `useSaveAsTemplate` is: an
+offline template would need its own outbox entity AND a local id for the positions to attach to.
+
+`templates.emptyMy` split in two: the picker's copy points at «Зберегти як шаблон» (he is inside an
+estimate, the ＋ is on another screen), the page's `emptyMyPage` names the ＋.
+
+### Not verified
+
+Mobile layout was not opened in a browser — the folded state and the FAB offset (`bottom-20`, which
+clears the bottom nav) are judged from the existing components, not from a phone.

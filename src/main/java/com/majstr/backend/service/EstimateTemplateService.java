@@ -185,6 +185,38 @@ public class EstimateTemplateService {
     // ---- own templates -----------------------------------------------------
 
     /**
+     * Create an empty template of the master's own — the other door into «Мої шаблони», beside
+     * {@link #saveFromEstimate}.
+     *
+     * <p>Until now the only way to own a bundle was to build an estimate first and save it, which
+     * is backwards for a master who already knows his sequence and has no object to write it on.
+     * Positions are added afterwards through the ordinary item endpoints, so this method is
+     * deliberately nothing but the row: no items, and no plan gate — templates carry no
+     * {@code Limit} entry and {@code saveFromEstimate} gates nothing either.</p>
+     */
+    @Transactional
+    public EstimateTemplateSummary create(String name, String description, Trade trade,
+                                          UUID customTradeId, UUID ownerId) {
+        User owner = userRepository.findById(ownerId)
+                .orElseThrow(() -> new ResourceNotFoundException("User not found: " + ownerId));
+        UserTrade customTrade = resolveCustomTrade(customTradeId, ownerId);
+        Trade effectiveTrade = customTrade != null ? Trade.OTHER : trade;
+        EstimateTemplate template = templateRepository.save(EstimateTemplate.builder()
+                .owner(owner)
+                .name(name.trim())
+                .description(normalize(description))
+                .trade(effectiveTrade)
+                .customTrade(customTrade)
+                .isDefault(false)
+                .build());
+        return new EstimateTemplateSummary(
+                template.getId(), template.getName(), template.getDescription(), effectiveTrade,
+                customTrade != null ? customTrade.getId() : null,
+                customTrade != null ? customTrade.getName() : null,
+                false, 0);
+    }
+
+    /**
      * Saves the current estimate as the master's own template. Names + units +
      * type + order are kept; quantities and prices are dropped (a template is
      * object-agnostic). {@code trade} files it under a trade (null = general);
