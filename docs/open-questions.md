@@ -55,17 +55,16 @@ one-line summary — keep the item in the file as a record.
   can reach.
 
 ### Offline-first follow-ups (Phase 1 shipped; these are the deferred pieces)
-- **Status:** IN_PROGRESS (2026-07-26) — the offline programme resumed. **O3 shipped** (see
-  below and [iteration-offline-step1-nothing-is-lost.md](iteration-offline-step1-nothing-is-lost.md)):
-  the outbox is owner-stamped and now survives a logout or a dead session, and the refresh
-  rotation that was killing sessions got a grace window. Next, in order: the core-loop gaps
-  found by reading the code rather than the docs — **estimate status/name/deposit and object
-  status offline**, **deleting an object or estimate offline** (today these have no
-  `networkMode: 'always'`, so they silently PAUSE and are lost on reload — and this strands a
-  master who is over the FREE limit, since the gate tells them to delete something they cannot
-  delete), then **adding catalog positions into an estimate offline** (item #4 below — reclassified
-  as core, since it is how estimates are actually built), then **notes + economy expenses**
-  (O4), then **photos** (O6).
+- **Status:** IN_PROGRESS — **status rewritten 2026-09-24, because the list below it had gone
+  stale: every "next, in order" item named in July has since shipped.** Verified in the code, not
+  in the docs: the outbox is owner-stamped and survives a logout (`db.ts` v2 `ownerId`, O2/O3);
+  estimate create/update/delete, object status, catalog positions into an estimate (the batch is
+  ONE op with per-line ids), notes and economy expenses (O4), shopping-list writes, act receipts
+  and cash entries all ride `offlineMutate`. **What actually remains is two things**: the general
+  **blob outbox (O6)** — a progress photo and the estimate-side receipt import are still
+  online-only, act receipts being the one exception already built — and a **conflict UI** for the
+  case where a replayed op meets a server state that moved. Anything else in the notes below that
+  reads as pending should be checked against the code before it is believed.
 - **Since:** Offline-first iteration (2026-07-22)
 - **Context:** Offline authoring shipped for **clients / objects / estimates / line items /
   measurements / catalog / own templates** (outbox + client-UUID idempotent replay), plus
@@ -301,7 +300,8 @@ one-line summary — keep the item in the file as a record.
   the "I typed it wrong" case for free (live FK, no bulk op needed).
 
 ### Metric month boundary is UTC, not the contractor's local month
-- **Status:** IN_PROGRESS — promoted 2026-09-17 (personal-cashflow iteration). Period filters
+- **Status:** OPEN — narrowed, not in progress (label corrected 2026-09-24: the cash-flow half
+  shipped, nobody is working on the rest). Promoted 2026-09-17 (personal-cashflow iteration). Period filters
   (тиждень / місяць / рік) are the whole point of «Мої гроші», so a UTC boundary is no longer a
   couple-of-hours curiosity: on the 1st at 01:00 Kyiv «цей місяць» would open on the previous one.
   `LocalizationConfig.ZONE` (`Europe/Kyiv`) already exists and is what the new default ranges use.
@@ -884,7 +884,7 @@ one-line summary — keep the item in the file as a record.
   the schema unread, pending a column drop — see the next item.
 
 ### Object economy: profit rollup across all objects (dashboard)
-- **Status:** IN_PROGRESS — promoted 2026-09-17 (personal-cashflow iteration). This item IS the
+- **Status:** RESOLVED (2026-09-17, «Мої гроші» V135; label corrected 2026-09-24). This item IS the
   object half of «Мої гроші»: the master asked for his own cash flow, not per object, and the answer
   unions what the app already records across all his objects (`payment_receipt` + `object_expenses`)
   with new off-object rows. Two departures from the note below: it is **not** PRO-gated (it ships
@@ -907,7 +907,10 @@ one-line summary — keep the item in the file as a record.
   `object_expenses` (amount/category/date columns) with the same review screen. Build on request.
 
 ### Object economy: photo of a receipt attached to an expense
-- **Status:** IN_PROGRESS — promoted 2026-09-09 (object-receipts iteration). The master's ruling
+- **Status:** OPEN — label corrected 2026-09-24: what was promoted here SHIPPED as V129 object
+  receipts (photo mandatory, reimbursable by default), and what is left is a different question —
+  an expense typed straight into the journal still has nowhere to attach a photo, and the money
+  model around it is the parked «Прибуток/Витрати» item. Nobody is working on it. The master's ruling
   reframes it: a receipt from the shopping list is by DEFAULT money the client reimburses, not the
   master's cost, so the primary landing place is a **receivable in the visible half of the economy**,
   and an `ObjectExpense` is what the minority «це моя витрата» case produces. See
@@ -1043,7 +1046,12 @@ one-line summary — keep the item in the file as a record.
   already exists, no new entry. But confirm the concrete want first.
 
 ### Market-price updates for existing catalog items
-- **Status:** IN_PROGRESS
+- **Status:** RESOLVED (status corrected 2026-09-24) — shipped exactly in the shape described
+  below: `catalog_update_notices` is a QUEUE (V94) whose `PRICE_DRIFT` kind carries old→new, and
+  **`acceptUpdateNotice` is the only door that ever writes a master's `default_price`** — per item,
+  opt-in, and only while his price still equals the notice's `old_price`, so nothing is silently
+  overwritten. A price migration (V120) queues notices and writes nothing. The live supplier-price
+  feed is a different, unbuilt idea and lives in SPEC G.
 - **Since:** Default-catalog iteration (2026-06-22)
 - **Context:** The default-catalog versioning ("Add new from library") only ever
   **adds new** items — it deliberately never touches the price or name of an item
@@ -1139,7 +1147,11 @@ one-line summary — keep the item in the file as a record.
   here so the two don't drift into contradictory answers if picked up separately.
 
 ### Estimate templates (typical work sets per object type)
-- **Status:** IN_PROGRESS
+- **Status:** RESOLVED (status corrected 2026-09-24 — shipped long before, the label never moved).
+  Bundles ship as system defaults and own templates, an estimate can be built from SEVERAL at once
+  with only the ticked positions (`ApplyTemplatesRequest`), a default FORKS ON WRITE (V113
+  `template_default_override`), a bundle can be born empty, and the picker is a trade tree. What
+  the note below calls "the next stage" is the feature as it stands.
 - **Since:** Default-catalog iteration (2026-06-22) — flagged as "next stage"
 - **Context:** The catalog is a flat library of individual positions. The next
   level up is a **template estimate**: a ready set of works/materials for a typical
@@ -1187,7 +1199,9 @@ one-line summary — keep the item in the file as a record.
   Revisit after real use — empty-first avoids the silent-wrong-number risk.
 
 ### Measurement → quantity calculator on estimate lines
-- **Status:** IN_PROGRESS
+- **Status:** RESOLVED (status corrected 2026-09-24) — `MeasureCalculator.tsx`, wired into
+  `ItemForm`, is the v1 described below: area / length / openings computed on the quantity field,
+  dimensions not persisted. The stored-breakdown want was met separately by Заміри (V46).
 - **Since:** Excel-example review (2026-07-10)
 - **Context:** The same master's Excel auto-computes area from side lengths
   (5.31 × 3.69 → 19.59 m²) and multiplies by the m² rate. Majstr requires the master to
@@ -1204,7 +1218,11 @@ one-line summary — keep the item in the file as a record.
   замірів". This single-line calculator stays as the quick per-line helper (unchanged, надбудова).
 
 ### Object measurements: complex shapes (mansard / triangle / cut corner) in SURFACE
-- **Status:** IN_PROGRESS
+- **Status:** RESOLVED (status corrected 2026-09-24) — the surface-shapes iteration shipped it:
+  `src/lib/shapes.ts` holds the geometry (rectangle / trapezoid / mansard ×2 / triangle ×2 / cut
+  corner, area via the shoelace formula) shared by BOTH the single-line calculator and the SURFACE
+  editor, each shape with its SVG diagram. Arbitrary contours and circular forms stay their own
+  OPEN items below.
 - **Since:** Object-measurements iteration (2026-07-11)
 - **Context:** SURFACE is Σ(д×ш) − прорізи (like the single-line calculator). Rooms with a
   mansard, triangular gable, or cut corner need a shape calculator with figures.
@@ -1502,7 +1520,8 @@ one-line summary — keep the item in the file as a record.
   depends on it today.
 
 ### DRYWALL: what is an extra layer of ГКЛ worth on its own?
-- **Status:** IN_PROGRESS — promoted 2026-09-07; blocked on ONE number from the master.
+- **Status:** OPEN — **waiting on the master, not on us** (label corrected 2026-09-24: nothing is
+  in progress and nothing can be until one number arrives). Promoted 2026-09-07.
 - **Since:** V120 (2026-09-01)
 - **Context:** Kyiv price lists sell «Монтаж додаткового шару ГКЛ» as its own m² line and we do not.
   We do ship both ends of it - «Монтаж конструкцій (перегородки 2 сторони) із гіпсокартону в 1 шар»
@@ -1558,7 +1577,12 @@ one-line summary — keep the item in the file as a record.
   allowlist has started hiding defects instead of scheduling them.
 
 ### How materials come back after V81
-- **Status:** IN_PROGRESS — promoted 2026-09-07: the material calculator answers it via option (b).
+- **Status:** RESOLVED (status corrected 2026-09-24) — option (b) shipped and is what masters use:
+  the calculator turns an estimate's work lines into quantities and the shopping list is where the
+  answer lands (V126/V127), carrying **no price**, which is the whole point V81 was arguing about.
+  V129 then settled where the MONEY enters — a receipt at the till, a receivable by default. The
+  question «how do materials come back» has an answer in production; what materials are still
+  UNNORMED is tracked by the calculator item above, not here.
 - **Since:** Material removal (V81, 2026-07-31)
 - **Context:** V81 removed materials from the default catalog in every trade, on the grounds that
   we shipped invented prices nobody maintains while receipt-photo import supplies the real price
@@ -2413,10 +2437,14 @@ one-line summary — keep the item in the file as a record.
   **Cut 4 shipped** (V137, 2026-09-23: the **TILING** and **PAINTER** norms — 99 of 167 tiling
   positions and 95 of 233 painting ones — the fourth `NormBasis` **THICKNESS** for everything sold
   per m² per mm, `default_param` so a missing parameter carries its own suggestion, and the two
-  master habits that rescale a shipped coefficient — §27). The item stays IN_PROGRESS: **FLOORING
-  and the long tail (BUILDER, PLUMBING, ELECTRICAL, METAL, DEMOLITION) still have no norms at all**,
-  and the deliberate gaps inside the two trades just shipped are listed in §27.6 (epoxy grout,
-  decorative plasters beyond короїд/баранець, plastered reveals, facade/enamel paints). The §19
+  master habits that rescale a shipped coefficient — §27). **Cut 4 follow-ups shipped** (V138: the
+  facade paint, wood enamel and clear varnish the survey turned out to have after all; V139,
+  2026-09-24: the AREA behind a painted moulding, baguette and door, which needed no Java — see
+  §28). The item stays IN_PROGRESS: **FLOORING and the long tail (BUILDER, PLUMBING, ELECTRICAL,
+  METAL, DEMOLITION) still have no norms at all**, and the gaps deliberately left inside the trades
+  already covered are now just three — epoxy grout, the decorative plasters beyond короїд/баранець,
+  and the hidden aluminium skirting — each with its looked-up ranges recorded in V138's and V139's
+  headers so nobody repeats the search. The §19
   audit left three things open for the master — the box/slope/niche parameters, whether «Каркасна
   звукоізоляція» plus «Монтаж ГКЛ на стелю» for one ceiling should be flagged as a possible
   double-count, and how the coverage report should word a position that is size-driven by nature.
@@ -2880,7 +2908,11 @@ one-line summary — keep the item in the file as a record.
 ## Features in the catalog enum but not implemented
 
 ### PHOTO_REPORTS
-- **Status:** IN_PROGRESS
+- **Status:** RESOLVED (status corrected 2026-09-24) — the object «Фото» tab shipped (`project_photo`
+  V47, sources RECEIPT|MANUAL, PRIVATE|SHARED, per-object caps, 8 MB server cap + client downscale,
+  fullscreen lightbox), and V111 added named folders. Still deliberately deferred and small: the
+  **swipe gesture** in the lightbox (chevrons only), and offline upload of a progress photo, which
+  belongs to the offline blob outbox (O6) above.
 - **Since:** step 3
 - **Context:** Enum value exists in `Feature` and grants to **all plans incl. FREE** (part of
   the "show the client the product" workflow). No code path used it — dead until now.
