@@ -34,5 +34,10 @@ public record EstimateResponse(
         BigDecimal balance,
         /** For a consolidated estimate: the ids of the estimates it was rolled up from (empty
          *  otherwise). Lets the client offer those sources' receipts when building the PDF. */
-        List<UUID> sourceEstimateIds
+        List<UUID> sourceEstimateIds,
+        /** «Бригаді / Твоя націнка» while the copy is still a draft, so the master sees what he is
+         *  about to send BEFORE he sends it. Same figures the economy panel reports once it is
+         *  signed, and null on anything but a markup duplicate. Owner-only: see
+         *  {@link CrewMarginResponse}. */
+        CrewMarginResponse crewMargin
 ) {}

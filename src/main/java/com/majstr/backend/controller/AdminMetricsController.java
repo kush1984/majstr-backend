@@ -1,6 +1,7 @@
 package com.majstr.backend.controller;
 
 import com.majstr.backend.dto.ActivationFunnelResponse;
+import com.majstr.backend.dto.CrewUsageResponse;
 import com.majstr.backend.dto.MetricsGrowthResponse;
 import com.majstr.backend.dto.MetricsOverviewResponse;
 import com.majstr.backend.dto.SourceBreakdownResponse;
@@ -42,6 +43,12 @@ public class AdminMetricsController {
     @GetMapping("/funnel")
     public ActivationFunnelResponse funnel() {
         return metricsService.activationFunnel();
+    }
+
+    @Operation(summary = "How many masters work with a crew — a FLOOR, counted from duplicate-with-markup usage")
+    @GetMapping("/crew-usage")
+    public CrewUsageResponse crewUsage() {
+        return metricsService.crewUsage();
     }
 
     @Operation(summary = "Registrations / activation / PRO interest grouped by referral source (partner rev-share)")

@@ -18,6 +18,10 @@ public interface EstimateItemRepository extends JpaRepository<EstimateItem, UUID
      *  to find each removed position's twin in the client-price copy. */
     List<EstimateItem> findByEstimateIdAndSourceItemIdIn(UUID estimateId, Collection<UUID> sourceItemIds);
 
+    /** Every line of several estimates at once — one query where a loop would be N+1. Used by the
+     *  economy to rebuild each marked-up copy at the crew's prices. */
+    List<EstimateItem> findByEstimateIdInOrderBySortOrderAscIdAsc(Collection<UUID> estimateIds);
+
     /**
      * Every distinct line name that has ever been written into an estimate, with how often.
      * Feeds the admin's "which of our default positions does nobody use" screen.

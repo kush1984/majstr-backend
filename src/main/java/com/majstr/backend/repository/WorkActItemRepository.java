@@ -77,4 +77,34 @@ public interface WorkActItemRepository extends JpaRepository<WorkActItem, UUID> 
               AND (wai.estimate_id IS NULL OR e.count_in_economy = true)
             """, nativeQuery = true)
     BigDecimal sumSignedActLineTotals(@Param("projectId") UUID projectId);
+
+    /**
+     * The бригадир's margin the client has already ACCEPTED, per marked-up copy:
+     * {@code Σ (act price − crew price) × act quantity} over SIGNED acts.
+     *
+     * <p><b>The set is deliberately NARROWER than «Прийнято актами»</b>
+     * ({@link #sumSignedActLineTotals}), and the difference is not an oversight — it is forced.
+     * That query counts an off-estimate ADDITIONAL line ({@code estimate_id IS NULL}) because its
+     * rolled-up ADDENDUM is part of «За договором»; here such a line cannot be counted at all,
+     * because it was never a copy line and no crew price for it exists anywhere. Same for a line
+     * whose {@code source_unit_price} is NULL — added to the copy afterwards, and we do not know
+     * whether the crew is paid for it, so it contributes zero rather than the whole amount.</p>
+     *
+     * <p>PERCENT lines need no exclusion clause: an act is built from the progress picker, which
+     * skips them outright («a «%» line has no quantity to close»), so one can never reach a
+     * {@code work_act_item} row.</p>
+     *
+     * <p>The price is read from the ACT line, not the estimate line: the master may bill a
+     * different figure on the act, and the margin follows the money that was actually accepted.</p>
+     */
+    @Query(value = """
+            SELECT COALESCE(SUM((wai.unit_price - ei.source_unit_price) * wai.quantity), 0)
+            FROM work_act_item wai
+            JOIN work_act wa ON wa.id = wai.work_act_id
+            JOIN estimate_items ei ON ei.id = wai.estimate_item_id
+            WHERE wa.status = 'SIGNED'
+              AND ei.estimate_id = :estimateId
+              AND ei.source_unit_price IS NOT NULL
+            """, nativeQuery = true)
+    BigDecimal sumSignedActMargin(@Param("estimateId") UUID estimateId);
 }

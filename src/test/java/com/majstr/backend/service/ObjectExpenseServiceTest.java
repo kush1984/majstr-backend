@@ -44,6 +44,7 @@ class ObjectExpenseServiceTest {
 
     @Mock ObjectExpenseRepository expenseRepository;
     @Mock EstimateRepository estimateRepository;
+    @Mock com.majstr.backend.repository.EstimateItemRepository estimateItemRepository;
     @Mock ProjectService projectService;
     @Mock UserRepository userRepository;
     @Mock PaymentService paymentService;
@@ -56,7 +57,7 @@ class ObjectExpenseServiceTest {
     private final DefaultFeatureGuard featureGuard = new DefaultFeatureGuard();
 
     private ObjectExpenseService service() {
-        return new ObjectExpenseService(expenseRepository, estimateRepository, projectService,
+        return new ObjectExpenseService(expenseRepository, estimateRepository, estimateItemRepository, projectService,
                 userRepository, featureGuard, paymentService, workActItemRepository, workActReceiptRepository,
                 paymentReceiptRepository, projectReceiptRepository);
     }

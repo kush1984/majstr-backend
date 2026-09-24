@@ -799,7 +799,15 @@ one-line summary — keep the item in the file as a record.
   rather than folded into the provenance fix.
 
 ### Object economy: PLAN-margin (my price vs client price) on estimate positions
-- **Status:** OPEN
+- **Status:** RESOLVED (2026-09-24, crew-margin iteration) — answered, but NOT by the second price
+  column this note proposed. The duplicate-with-markup already records a cost price per line
+  (`source_unit_price`, V85), so the margin is derived from data that exists instead of from a new
+  nullable column every estimate would carry. The «critical isolation» demanded below is in place and
+  is now enforced rather than assumed: no public DTO shares a line record with the owner's, and
+  `PublicEstimateIsolationTest` walks all three public trees PLUS the estimate PDF model, with
+  `crew` and `sourceunitprice` added to its forbidden list — neither name contained any of the five
+  substrings it already looked for. What stays unbuilt is a cost price on an estimate that is NOT a
+  duplicate; nobody has asked for it.
 - **Since:** Object-economy iteration (2026-07-06)
 - **Context:** v1 object economy is **fact** — real spend logged after the fact. The natural
   next step is **plan-margin**: a second (cost/my) price per estimate position alongside the
@@ -2183,7 +2191,16 @@ one-line summary — keep the item in the file as a record.
   list are unconditionally visible.
 
 ### Object economy: Прибуток/Витрати parked again — needs an honest earnings model
-- **Status:** OPEN
+- **Status:** RESOLVED (2026-09-24, crew-margin iteration) — **removed, not un-parked**, and replaced
+  by a figure that needs no journal. Reading the code settled it: no screen in the app adds an
+  expense against an OBJECT (`object_expenses` fills only from act receipts and a till receipt
+  flipped to «моя витрата»; crew pay goes to «Мої гроші» as a `CREW` row with no object), so the
+  formula had no inputs and would have read ≈ «За договором» for everyone — while the бригадир who
+  records everything would have got a number that disagrees with «Мої гроші». «Скільки я заробив» is
+  answered there, where it counts everything. The object now shows «Бригаді / Твоя націнка» on a
+  marked-up copy, computed from `estimate_items.source_unit_price` (V85) — from what the master
+  TYPED, not from what he remembered to record. See
+  [iteration-economy-crew-margin.md](iteration-economy-crew-margin.md).
 - **Since:** Economy-hide-internals iteration (2026-08-09)
 - **Context:** Full circle from the item above — after a live trial, the very formula that
   justified un-hiding the expense journal (`Прибуток = contracted − Σ all expenses`) turned out to

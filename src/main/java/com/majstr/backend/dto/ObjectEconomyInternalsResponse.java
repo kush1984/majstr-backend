@@ -3,6 +3,13 @@ package com.majstr.backend.dto;
 import java.math.BigDecimal;
 
 /**
+ * <p><b>Not rendered anywhere since the crew-margin iteration.</b> The PWA dropped «Прибуток/Витрати»
+ * and the object expense journal for good: this formula subtracts expenses the app gives the master
+ * no way to enter against an object, so it read ≈ «За договором» for everyone. It is still computed
+ * and still served — removing a field from a response the PWA caches for a week buys nothing — but
+ * treat it as dead weight, not as a figure anyone sees. «Скільки я заробив» is answered by «Мої
+ * гроші»; the object answers «скільки моя націнка над бригадою» ({@code CrewMarginResponse}).</p>
+ *
  * PRO-only internal economy — the master's real earnings, distinct from {@code payments} (FREE,
  * "what came in from the client"). See {@link ObjectEconomyResponse} for how the two combine.
  *

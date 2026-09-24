@@ -1,6 +1,7 @@
 package com.majstr.backend.service;
 
 import com.majstr.backend.dto.AddCatalogItemsBatchRequest;
+import com.majstr.backend.dto.CrewMarginResponse;
 import com.majstr.backend.dto.EstimateCreateRequest;
 import com.majstr.backend.dto.EstimateDuplicateRequest;
 import com.majstr.backend.dto.EstimateItemFromCatalogRequest;
@@ -193,19 +194,20 @@ public class EstimateService {
      * which figure was his: counting both said he earned his crew's wages as well as his margin.</p>
      *
      * <p><b>What actually keeps the money honest is the flag flip below</b>: the SOURCE stops
-     * counting in the economy here, so «За договором» carries the client's copy only, and the
-     * foreman logs what he pays the crew in the expense journal — profit = contracted − expenses
-     * (the V95 simplified model). This is the one automatic edit to another estimate in the whole
-     * service, so it is stated rather than buried: the master can switch it back on the estimate
-     * list if his object really works the other way.</p>
+     * counting in the economy here, so «За договором» carries the client's copy only. This is the
+     * one automatic edit to another estimate in the whole service, so it is stated rather than
+     * buried: the master can switch it back on the estimate list if his object really works the
+     * other way. (The old sentence here said the foreman then logs crew pay in the object's expense
+     * journal — that convention is RETIRED: no screen ever let him, and the journal itself is gone
+     * from the object. See the crew-margin iteration.)</p>
      *
-     * <p><b>{@code sourceUnitPrice} is recorded but, today, read by nothing</b> (economy-review
-     * 2026-08): every copied line keeps what it cost in the source — data for a possible future
-     * automatic-margin view, deliberately per-line rather than "the markup percent" (the percent
-     * stops being true the moment the master marks up only some lines, edits a price afterwards,
-     * adds a line the crew is not paid for, or deletes the source). Do NOT wire it into the
-     * economy without retiring the expense-journal convention above, or crew costs would be
-     * subtracted twice.</p>
+     * <p><b>{@code sourceUnitPrice} is what «Твоя націнка» is computed from</b> (crew-margin
+     * iteration; recorded since V85 and read by nothing until then). Every copied line keeps what it
+     * cost in the source, deliberately per-line rather than "the markup percent" — the percent stops
+     * being true the moment the master marks up only some lines, edits a price afterwards, adds a
+     * line the crew is not paid for, or deletes the source, and the per-line figure survives all
+     * four. Nothing is subtracted twice, because nothing else subtracts crew cost anywhere: the
+     * expense journal never received it.</p>
      *
      * <p>Not copied: the deposit (money already received against the source, not against this copy)
      * and portal visibility (nothing is ever shared by default). Measurement links ARE copied —
@@ -1402,8 +1404,25 @@ public class EstimateService {
                 total,
                 deposit,
                 balance,
-                List.copyOf(estimate.getConsolidationSourceIds())
+                List.copyOf(estimate.getConsolidationSourceIds()),
+                // Null on everything but a markup duplicate, so an ordinary estimate pays only the
+                // two null checks inside. The act half is asked for only when there IS a margin —
+                // a draft copy has no signed acts against it, and an ordinary estimate no margin.
+                crewMargin(estimate, items)
         );
+    }
+
+    /**
+     * «Бригаді / Твоя націнка» for the editor, identical to what the economy panel reports once the
+     * copy is signed — the same {@link CrewMarginCalculator}, so the two can never disagree.
+     */
+    private CrewMarginResponse crewMargin(Estimate estimate, List<EstimateItem> items) {
+        CrewMarginResponse margin = CrewMarginCalculator.of(estimate, items, BigDecimal.ZERO);
+        if (margin == null || estimate.getStatus() != EstimateStatus.SIGNED) {
+            return margin;
+        }
+        return CrewMarginCalculator.of(estimate, items,
+                workActItemRepository.sumSignedActMargin(estimate.getId()));
     }
 
     /** Σ SIGNED-act quantity per estimate line for a project, keyed by {@code estimate_item_id}. */

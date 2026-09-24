@@ -1117,6 +1117,6 @@ class EstimateTemplateServiceTest {
     private static EstimateResponse stubResponse(UUID estimateId, UUID projectId) {
         return new EstimateResponse(estimateId, projectId, "Кухня",
                 com.majstr.backend.entity.EstimateStatus.DRAFT, null, null, null, null, null, null,
-                List.of(), BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, null, BigDecimal.ZERO, List.of());
+                List.of(), BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, null, BigDecimal.ZERO, List.of(), null);
     }
 }

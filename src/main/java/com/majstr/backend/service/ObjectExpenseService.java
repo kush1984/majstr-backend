@@ -1,5 +1,6 @@
 package com.majstr.backend.service;
 
+import com.majstr.backend.dto.CrewMarginResponse;
 import com.majstr.backend.dto.ExpenseRequest;
 import com.majstr.backend.dto.ExpenseResponse;
 import com.majstr.backend.dto.ObjectEconomyActsResponse;
@@ -8,6 +9,8 @@ import com.majstr.backend.dto.ObjectEconomyMaterialsResponse;
 import com.majstr.backend.dto.ObjectEconomyResponse;
 import com.majstr.backend.dto.PaymentsSummaryResponse;
 import com.majstr.backend.dto.SignedEstimatePanelResponse;
+import com.majstr.backend.entity.Estimate;
+import com.majstr.backend.entity.EstimateItem;
 import com.majstr.backend.entity.EstimateKind;
 import com.majstr.backend.entity.ExpenseSource;
 import com.majstr.backend.entity.ObjectExpense;
@@ -17,6 +20,7 @@ import com.majstr.backend.exception.ExpenseLinkedToReceiptException;
 import com.majstr.backend.exception.ResourceNotFoundException;
 import com.majstr.backend.feature.Feature;
 import com.majstr.backend.feature.FeatureGuard;
+import com.majstr.backend.repository.EstimateItemRepository;
 import com.majstr.backend.repository.EstimateRepository;
 import com.majstr.backend.repository.ObjectExpenseRepository;
 import com.majstr.backend.repository.PaymentReceiptRepository;
@@ -34,8 +38,11 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 /**
  * Object economy: the per-object expense journal + a real-profit summary (income from the
@@ -56,6 +63,7 @@ public class ObjectExpenseService {
 
     private final ObjectExpenseRepository expenseRepository;
     private final EstimateRepository estimateRepository;
+    private final EstimateItemRepository estimateItemRepository;
     private final ProjectService projectService;
     private final UserRepository userRepository;
     private final FeatureGuard featureGuard;
@@ -163,10 +171,13 @@ public class ObjectExpenseService {
     public ObjectEconomyResponse economy(UUID objectId, UUID ownerId) {
         User user = loadUser(ownerId);
         projectService.loadOwned(objectId, ownerId); // existence + ownership (404 / 403)
-        List<SignedEstimatePanelResponse> panels = signedEstimatePanels(objectId);
+        boolean enabled = featureGuard.isEnabled(user, Feature.OBJECT_ECONOMY);
+        // The panels themselves are FREE-visible; the crew margin on them is NOT — it belongs to the
+        // same gated tier as payments and internals, so it rides the same soft check rather than a
+        // 403 of its own.
+        List<SignedEstimatePanelResponse> panels = signedEstimatePanels(objectId, enabled);
         ObjectEconomyActsResponse acts = actsAxis(objectId);
         ObjectEconomyMaterialsResponse materials = materialsAxis(objectId);
-        boolean enabled = featureGuard.isEnabled(user, Feature.OBJECT_ECONOMY);
         PaymentsSummaryResponse payments = enabled ? paymentService.summaryUnchecked(objectId) : null;
         ObjectEconomyInternalsResponse internals = enabled
                 ? internalsOf(objectId, payments.contractedTotal())
@@ -207,8 +218,38 @@ public class ObjectExpenseService {
         return new ObjectEconomyInternalsResponse(expenses, profit);
     }
 
-    private List<SignedEstimatePanelResponse> signedEstimatePanels(UUID objectId) {
+    /**
+     * «Бригаді / Твоя націнка» for every marked-up copy signed on this object, keyed by estimate id.
+     *
+     * <p>Two queries for the whole object, not two per panel: the eligible copies come back in one
+     * shot and their lines in a second. The margin already accepted by acts is one small aggregate
+     * per copy — there are rarely more than a couple, and it cannot be folded into the lines query
+     * because it sums over act rows, not estimate rows.</p>
+     */
+    private Map<UUID, CrewMarginResponse> crewMargins(UUID objectId) {
+        List<Estimate> copies = estimateRepository.findSignedMarkupDuplicates(objectId);
+        if (copies.isEmpty()) {
+            return Map.of();
+        }
+        Map<UUID, List<EstimateItem>> itemsByEstimate = estimateItemRepository
+                .findByEstimateIdInOrderBySortOrderAscIdAsc(copies.stream().map(Estimate::getId).toList())
+                .stream()
+                .collect(Collectors.groupingBy(i -> i.getEstimate().getId()));
+        Map<UUID, CrewMarginResponse> byEstimate = new LinkedHashMap<>();
+        for (Estimate copy : copies) {
+            CrewMarginResponse margin = CrewMarginCalculator.of(copy,
+                    itemsByEstimate.getOrDefault(copy.getId(), List.of()),
+                    workActItemRepository.sumSignedActMargin(copy.getId()));
+            if (margin != null) {
+                byEstimate.put(copy.getId(), margin);
+            }
+        }
+        return byEstimate;
+    }
+
+    private List<SignedEstimatePanelResponse> signedEstimatePanels(UUID objectId, boolean withCrewMargin) {
         List<SignedEstimatePanelResponse> panels = new ArrayList<>();
+        Map<UUID, CrewMarginResponse> margins = withCrewMargin ? crewMargins(objectId) : Map.of();
         for (Object[] row : estimateRepository.findSignedEstimateSummaries(objectId)) {
             UUID id = (UUID) row[0];
             String name = (String) row[1];
@@ -221,9 +262,12 @@ public class ObjectExpenseService {
             // works/materials are gross (pre-adjustment) now — the actual signed total adds the
             // markup back and subtracts the discount back in (discount is already negative).
             BigDecimal total = works.add(materials).add(markup).add(discount);
-            EstimateKind kind = EstimateKind.valueOf((String) row[8]);
+            BigDecimal markupRate = row[8] == null ? null : toBigDecimal(row[8]);
+            BigDecimal discountRate = row[9] == null ? null : toBigDecimal(row[9]);
+            EstimateKind kind = EstimateKind.valueOf((String) row[10]);
             panels.add(new SignedEstimatePanelResponse(
-                    id, name, works, materials, markup, discount, total, counted, signedAt, kind));
+                    id, name, works, materials, markup, discount, total, counted, signedAt, kind,
+                    markupRate, discountRate, margins.get(id)));
         }
         return panels;
     }

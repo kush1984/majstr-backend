@@ -19,11 +19,21 @@ import static org.assertj.core.api.Assertions.assertThat;
  */
 class PublicEstimateIsolationTest {
 
-    private static final String[] FORBIDDEN = {"expense", "profit", "economy", "cost", "margin"};
+    // «crew» and «sourceunitprice» joined the list with the crew-margin iteration. The reflection
+    // walk below matches on SUBSTRINGS of a component name, and neither `crewMargin` nor
+    // `sourceUnitPrice` contains any of the original five — so a leak of the бригадир's own prices,
+    // the one number in this product the client must never see, would have passed this guard
+    // silently. The serialization test beside it covers the same ground from the other end.
+    private static final String[] FORBIDDEN =
+            {"expense", "profit", "economy", "cost", "margin", "crew", "sourceunitprice"};
     // PublicActView (acts iteration) is a third public DTO tree — the client-facing view of one
     // signed act. Walked here too, so an accidental economy/note leak on it fails at build time.
+    // The estimate PDF's model is walked here too (crew-margin iteration): it is the fourth thing a
+    // client receives, it is assembled from the same entities, and nothing else would notice a crew
+    // price added to it.
     private static final Class<?>[] PUBLIC_ROOTS =
-            {PublicEstimateView.class, PublicPortalView.class, PublicActView.class};
+            {PublicEstimateView.class, PublicPortalView.class, PublicActView.class,
+             com.majstr.backend.service.EstimatePdfService.PdfModel.class};
 
     @Test
     void publicViewsCarryNoEconomyData() {

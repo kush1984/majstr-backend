@@ -67,7 +67,20 @@ public record EstimateItemResponse(
          * or the estimate isn't SIGNED (only a signed estimate's lines can be closed by an act); a
          * DRAFT act never contributes, same rule as the running total.
          */
-        BigDecimal closedByActs
+        BigDecimal closedByActs,
+        /**
+         * What this line cost in the estimate it was duplicated FROM — the crew's own price, or on
+         * a PERCENT line the crew's own percent (V85). Null on an ordinary estimate and on a line
+         * added to a copy afterwards.
+         *
+         * <p><b>Owner-only, and the one field here that must never leak.</b> It travels because the
+         * editor recomputes «Бригаді / Твоя націнка» locally — the PWA is offline-first and cannot
+         * wait for a server figure on a draft it is still editing. No public DTO tree may carry it:
+         * {@code PublicEstimateView}, {@code PublicPortalView} and {@code PublicActView} each define
+         * their own line record, and {@code PublicEstimateIsolationTest} fails the build if one of
+         * them ever grows this name.</p>
+         */
+        BigDecimal sourceUnitPrice
 ) {
     public static EstimateItemResponse from(EstimateItem item) {
         return from(item, null);
@@ -98,7 +111,8 @@ public record EstimateItemResponse(
                 item.getPercentBaseItemId(),
                 item.isBaseDetached(),
                 item.getBaseOriginLabel(),
-                closedByActs
+                closedByActs,
+                item.getSourceUnitPrice()
         );
     }
 }

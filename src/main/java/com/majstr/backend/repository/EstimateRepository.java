@@ -235,9 +235,18 @@ public interface EstimateRepository extends JpaRepository<Estimate, UUID> {
      * (discount is negative), not {@code works + materials} — see {@link
      * com.majstr.backend.service.ObjectExpenseService#signedEstimatePanels}.</p>
      *
+     * <p><b>The RATE columns</b> ({@code markup_rate}/{@code discount_rate}) carry the percent each
+     * adjustment was actually written at, and NULL when several «% від кошторису» lines disagree —
+     * one figure would then be a number nobody's estimate carries. They are sent rather than derived
+     * on the client because such a line is measured against its OWN TYPE's subtotal: dividing the
+     * amount by works+materials is what made the panel print «14,776%» for a discount the master had
+     * typed as 15. (Note for whoever edits the SQL below: an apostrophe inside a {@code --} comment
+     * there is read as the start of a string literal and the query fails to parse at startup.)</p>
+     *
      * <p>Row shape: {@code [id (UUID), name (String), count_in_economy (Boolean),
      * signed_at (Timestamp), works (BigDecimal), materials (BigDecimal), markup (BigDecimal),
-     * discount (BigDecimal)]}.</p>
+     * discount (BigDecimal), markup_rate (BigDecimal, nullable), discount_rate (BigDecimal,
+     * nullable), kind (String)]}.</p>
      */
     @Query(value = """
             SELECT e.id, e.name, e.count_in_economy, e.signed_at,
@@ -255,6 +264,18 @@ public interface EstimateRepository extends JpaRepository<Estimate, UUID> {
                    COALESCE(SUM(CASE WHEN i.unit = 'PERCENT' AND i.line_total < 0
                                        AND (i.percent_base_kind = 'TOTAL' OR i.base_origin_label IS NOT NULL)
                                   THEN i.line_total ELSE 0 END), 0) AS discount,
+                   CASE WHEN COUNT(DISTINCT CASE WHEN i.unit = 'PERCENT' AND i.line_total > 0
+                                                   AND (i.percent_base_kind = 'TOTAL' OR i.base_origin_label IS NOT NULL)
+                                              THEN i.quantity END) = 1
+                        THEN MIN(CASE WHEN i.unit = 'PERCENT' AND i.line_total > 0
+                                        AND (i.percent_base_kind = 'TOTAL' OR i.base_origin_label IS NOT NULL)
+                                   THEN i.quantity END) END AS markup_rate,
+                   CASE WHEN COUNT(DISTINCT CASE WHEN i.unit = 'PERCENT' AND i.line_total < 0
+                                                   AND (i.percent_base_kind = 'TOTAL' OR i.base_origin_label IS NOT NULL)
+                                              THEN i.quantity END) = 1
+                        THEN MIN(CASE WHEN i.unit = 'PERCENT' AND i.line_total < 0
+                                        AND (i.percent_base_kind = 'TOTAL' OR i.base_origin_label IS NOT NULL)
+                                   THEN i.quantity END) END AS discount_rate,
                    e.kind
             FROM estimates e
             LEFT JOIN estimate_items i ON i.estimate_id = e.id
@@ -263,4 +284,37 @@ public interface EstimateRepository extends JpaRepository<Estimate, UUID> {
             ORDER BY e.signed_at ASC
             """, nativeQuery = true)
     List<Object[]> findSignedEstimateSummaries(@Param("projectId") UUID projectId);
+
+    /** The object's SIGNED copies made with a MARKUP — the only estimates that can report a crew
+     *  margin. A DISCOUNT duplicate is excluded at the query, not later: it is a cheaper offer to
+     *  the client, not a crew sheet. */
+    @Query("""
+            SELECT e FROM Estimate e
+            WHERE e.project.id = :projectId
+              AND e.status = com.majstr.backend.entity.EstimateStatus.SIGNED
+              AND e.markupPercent > 0
+            """)
+    List<Estimate> findSignedMarkupDuplicates(@Param("projectId") UUID projectId);
+
+    /**
+     * Masters who have ever priced a client's sheet ABOVE a crew's — the only footprint a бригадир
+     * leaves in this product. Counts owners, not estimates, so a master with five copies is one.
+     *
+     * <p>{@code role = USER} for the same reason every funnel step filters it: an admin's demo data
+     * must not appear in one report and be missing from the one beside it.</p>
+     *
+     * @param since   count only copies created after this instant. Never null — {@code Instant.EPOCH}
+     *                means «all time». A nullable parameter here made Postgres refuse the query
+     *                outright («could not determine data type of parameter»), and a sentinel reads
+     *                better than a cast anyway.
+     * @param signed  when true, only copies the client actually signed
+     */
+    @Query("""
+            SELECT COUNT(DISTINCT e.project.owner.id) FROM Estimate e
+            WHERE e.project.owner.role = com.majstr.backend.entity.Role.USER
+              AND e.markupPercent > 0
+              AND e.createdAt >= :since
+              AND (:signed = false OR e.status = com.majstr.backend.entity.EstimateStatus.SIGNED)
+            """)
+    long countMastersWithMarkupCopy(@Param("since") Instant since, @Param("signed") boolean signed);
 }

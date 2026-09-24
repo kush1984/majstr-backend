@@ -125,10 +125,17 @@ public class EstimateItem {
     /**
      * What this line cost in the estimate it was duplicated FROM — the foreman's own cost.
      *
-     * <p>Null on an ordinary estimate. Also null on a line ADDED to a duplicate afterwards, and
-     * that null is meaningful: nobody is paid for it downstream, so the whole line is margin.</p>
+     * <p>Null on an ordinary estimate, and null on a line ADDED to a duplicate afterwards.</p>
      *
-     * <p>This, not the estimate's {@code markupPercent}, is what the object economy subtracts.
+     * <p><b>That second null used to be read as «the whole line is margin». It is not</b>
+     * (crew-margin iteration, reversing the V85 decision). Work added to the copy may well be work
+     * the crew does and is paid for — the data simply does not say, and crediting it to the master
+     * is the same flattering arithmetic that got the object's «Прибуток» hidden in the first place.
+     * Such a line contributes ZERO to the margin and is reported separately
+     * ({@code CrewMarginResponse.unpricedCount}), so the screen names it instead of inflating a
+     * figure the master has no way to check.</p>
+     *
+     * <p>This, not the estimate's {@code markupPercent}, is what the crew margin is computed from.
      * A percent stops describing the sheet the moment the master marks up only some lines, edits
      * one price, or deletes the parent — this survives all three, because the earning is always
      * the same subtraction against a figure that was true when the copy was made.</p>
