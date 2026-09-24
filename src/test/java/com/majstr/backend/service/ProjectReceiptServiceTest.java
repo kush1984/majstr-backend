@@ -74,6 +74,7 @@ class ProjectReceiptServiceTest {
     /** The transactional half of a create lives in its own bean, so the duplicate-key recovery can
      *  re-read the winner's row in a transaction the failed insert has not poisoned. */
     @Mock private ProjectReceiptCreator creator;
+    @Mock private StorageCleanup cleanup;
 
     @InjectMocks private ProjectReceiptService service;
 
@@ -229,6 +230,9 @@ class ProjectReceiptServiceTest {
 
         verify(expenseRepository).delete(expense);
         verify(receiptRepository).delete(r);
+        // The paper goes AFTER the row (B-25): inline, a rollback left the receipt claiming a
+        // photo we had already destroyed.
+        verify(cleanup).afterCommit(r.getStorageKey());
     }
 
     /**

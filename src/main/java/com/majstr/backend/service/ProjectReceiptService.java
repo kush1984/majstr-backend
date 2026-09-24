@@ -96,6 +96,7 @@ public class ProjectReceiptService {
     private final FiscalQrReceiptReader qrReader;
     private final ProjectReceiptCreator creator;
     private final ReceiptIdentityIndex identityIndex;
+    private final StorageCleanup cleanup;
 
     @Transactional(readOnly = true)
     public ProjectReceiptsResponse list(UUID projectId, UUID ownerId) {
@@ -189,10 +190,9 @@ public class ProjectReceiptService {
         projectService.loadOwned(projectId, ownerId);
         ProjectReceipt receipt = load(projectId, receiptId);
         dropExpense(receipt);
-        if (receipt.getStorageKey() != null) {
-            tryDelete(receipt.getStorageKey());
-        }
         receiptRepository.delete(receipt);
+        // The paper goes AFTER the row, never before it (B-25).
+        cleanup.afterCommit(receipt.getStorageKey());
     }
 
     /**

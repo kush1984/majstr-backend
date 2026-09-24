@@ -8,18 +8,16 @@ import org.springframework.stereotype.Component;
 
 import java.time.Duration;
 import java.util.UUID;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ConcurrentMap;
 
 /**
  * Per-user cooldown for resending the verification email (default 1 per 60s).
- * Process-local {@link ConcurrentHashMap} — same single-node limitation as the
+ * Process-local {@link BucketRegistry} — same single-node limitation as the
  * other limiters (see open-questions).
  */
 @Component
 public class VerificationEmailRateLimiter {
 
-    private final ConcurrentMap<UUID, Bucket> buckets = new ConcurrentHashMap<>();
+    private final BucketRegistry<UUID> buckets;
     private final Bandwidth bandwidth;
 
     public VerificationEmailRateLimiter(RateLimitProperties props) {
@@ -28,10 +26,12 @@ public class VerificationEmailRateLimiter {
                 .capacity(1)
                 .refillIntervally(1, Duration.ofSeconds(cooldown))
                 .build();
+        // The map that used to sit here never dropped a key (B-22).
+        this.buckets = new BucketRegistry<>(this.bandwidth, Duration.ofSeconds(cooldown));
     }
 
     public ConsumeResult tryConsume(UUID userId) {
-        Bucket bucket = buckets.computeIfAbsent(userId, k -> Bucket.builder().addLimit(bandwidth).build());
+        Bucket bucket = buckets.get(userId);
         ConsumptionProbe probe = bucket.tryConsumeAndReturnRemaining(1);
         if (probe.isConsumed()) {
             return new ConsumeResult(true, 0L);

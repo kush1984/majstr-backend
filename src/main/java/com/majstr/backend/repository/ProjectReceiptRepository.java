@@ -84,4 +84,9 @@ public interface ProjectReceiptRepository extends JpaRepository<ProjectReceipt, 
             WHERE r.projectId = :projectId AND r.amount <= 0
             """)
     long countUnpriced(@Param("projectId") UUID projectId);
+
+    /** Every stored photo of this object's receipts, for the delete that takes the rows with it
+     *  (B-26): the cascade removes the only pointer to the file, so the keys are read BEFORE it. */
+    @Query("SELECT r.storageKey FROM ProjectReceipt r WHERE r.projectId = :projectId")
+    List<String> findStorageKeysByProjectId(@Param("projectId") UUID projectId);
 }

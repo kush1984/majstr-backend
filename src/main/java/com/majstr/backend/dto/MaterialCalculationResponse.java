@@ -23,6 +23,12 @@ import java.util.List;
  * @param estimateSigned whether the estimate behind these figures is settled. Nothing is gated on
  *                      it: it is said out loud because quantities on an unsigned estimate can still
  *                      move, and a master about to buy deserves to know that
+ * @param quantitiesMissing the estimate HAS work we could answer for, but not one line carries a
+ *                      quantity yet — the ordinary state straight out of a bundle. It separates
+ *                      «нема що рахувати» into its two very different sentences: this one, which
+ *                      asks him for numbers, and «we know no norms for this work», which is the
+ *                      screen admitting a gap. Saying the second when the first is true reads as
+ *                      the feature being broken
  */
 public record MaterialCalculationResponse(
         List<CalculatedMaterialLine> materials,
@@ -30,5 +36,6 @@ public record MaterialCalculationResponse(
         List<MissingParameter> parameters,
         BigDecimal wastePercent,
         BigDecimal perimeter,
-        boolean estimateSigned
+        boolean estimateSigned,
+        boolean quantitiesMissing
 ) {}

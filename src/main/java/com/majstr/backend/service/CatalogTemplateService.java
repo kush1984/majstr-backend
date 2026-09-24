@@ -19,6 +19,7 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
@@ -208,10 +209,10 @@ public class CatalogTemplateService {
      *  duplicate. Must match the {@code ux_catalog_items_owner_name_type_unit} index
      *  expression {@code lower(trim(name))} so a copy never inserts a row the DB rejects. */
     private static String key(CatalogItem item) {
-        return item.getName().trim().toLowerCase() + "|" + item.getType() + "|" + item.getUnit();
+        return item.getName().trim().toLowerCase(Locale.ROOT) + "|" + item.getType() + "|" + item.getUnit();
     }
 
     private static String key(CatalogTemplate template) {
-        return template.getName().trim().toLowerCase() + "|" + template.getType() + "|" + template.getUnit();
+        return template.getName().trim().toLowerCase(Locale.ROOT) + "|" + template.getType() + "|" + template.getUnit();
     }
 }

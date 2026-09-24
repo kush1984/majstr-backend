@@ -1,5 +1,6 @@
 package com.majstr.backend.service.importer;
 
+import com.majstr.backend.config.FiscalQrProperties;
 import com.majstr.backend.dto.EstimateImportParseResponse;
 import com.majstr.backend.dto.EstimateResponse;
 import com.majstr.backend.dto.ReceiptItemsCommitRequest;
@@ -41,6 +42,7 @@ public class ReceiptImportService {
     private final EstimateExtractor extractor;
     private final EstimateService estimateService;
     private final FiscalQrService fiscalQr;
+    private final FiscalQrProperties fiscalQrProps;
 
     /** Parse a receipt photo into a review proposal. Nothing is written; the bytes are discarded. */
     public EstimateImportParseResponse parse(UUID ownerId, UUID estimateId,
@@ -75,7 +77,12 @@ public class ReceiptImportService {
                 .map(r -> ReceiptLines.toParsedItems(r.items()))
                 .orElseThrow(() -> new CatalogImportException("error.fiscal-qr.unreadable"));
         if (items.isEmpty()) {
-            throw new CatalogImportException("error.fiscal-qr.no-items");
+            // With the lookup switched off the QR carries a total and a date and NO positions, so
+            // «позицій у чеку немає» blames the paper for our configuration (B-23). Distinct code,
+            // because the master's next move differs: retry with a photo, not with another QR.
+            throw new CatalogImportException(fiscalQrProps.enabled()
+                    ? "error.fiscal-qr.no-items"
+                    : "error.fiscal-qr.lookup-disabled");
         }
         return new EstimateImportParseResponse(items, null);
     }

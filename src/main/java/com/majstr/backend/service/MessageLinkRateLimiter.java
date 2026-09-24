@@ -7,8 +7,6 @@ import io.github.bucket4j.ConsumptionProbe;
 import org.springframework.stereotype.Component;
 
 import java.time.Duration;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ConcurrentMap;
 
 /**
  * Rate limit for messages arriving through a master's message link, keyed on IP + link token.
@@ -19,7 +17,7 @@ import java.util.concurrent.ConcurrentMap;
 @Component
 public class MessageLinkRateLimiter {
 
-    private final ConcurrentMap<String, Bucket> buckets = new ConcurrentHashMap<>();
+    private final BucketRegistry<String> buckets;
     private final Bandwidth bandwidth;
 
     public MessageLinkRateLimiter(RateLimitProperties props) {
@@ -28,10 +26,12 @@ public class MessageLinkRateLimiter {
                 .capacity(portal.maxAttempts())
                 .refillIntervally(portal.maxAttempts(), Duration.ofMinutes(portal.windowMinutes()))
                 .build();
+        // The map that used to sit here never dropped a key (B-22).
+        this.buckets = new BucketRegistry<>(this.bandwidth, Duration.ofMinutes(portal.windowMinutes()));
     }
 
     public ConsumeResult tryConsume(String key) {
-        Bucket bucket = buckets.computeIfAbsent(key, k -> Bucket.builder().addLimit(bandwidth).build());
+        Bucket bucket = buckets.get(key);
         ConsumptionProbe probe = bucket.tryConsumeAndReturnRemaining(1);
         if (probe.isConsumed()) {
             return new ConsumeResult(true, 0L);

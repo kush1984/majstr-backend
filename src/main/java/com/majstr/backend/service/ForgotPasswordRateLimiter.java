@@ -7,19 +7,17 @@ import io.github.bucket4j.ConsumptionProbe;
 import org.springframework.stereotype.Component;
 
 import java.time.Duration;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ConcurrentMap;
 
 /**
  * Caps password-reset requests per client IP+email (default 5/hour) — curbs abusing the
- * mailer to spam reset links at an address. Process-local {@link ConcurrentHashMap}, same
+ * mailer to spam reset links at an address. Process-local {@link BucketRegistry}, same
  * single-node limitation as the other limiters. Keyed on IP+email (not the account, which
  * may not exist — the endpoint is anti-enumeration and always answers 200).
  */
 @Component
 public class ForgotPasswordRateLimiter {
 
-    private final ConcurrentMap<String, Bucket> buckets = new ConcurrentHashMap<>();
+    private final BucketRegistry<String> buckets;
     private final Bandwidth bandwidth;
 
     public ForgotPasswordRateLimiter(RateLimitProperties props) {
@@ -28,10 +26,12 @@ public class ForgotPasswordRateLimiter {
                 .capacity(forgot.maxAttempts())
                 .refillIntervally(forgot.maxAttempts(), Duration.ofMinutes(forgot.windowMinutes()))
                 .build();
+        // The map that used to sit here never dropped a key (B-22).
+        this.buckets = new BucketRegistry<>(this.bandwidth, Duration.ofMinutes(forgot.windowMinutes()));
     }
 
     public ConsumeResult tryConsume(String key) {
-        Bucket bucket = buckets.computeIfAbsent(key, k -> Bucket.builder().addLimit(bandwidth).build());
+        Bucket bucket = buckets.get(key);
         ConsumptionProbe probe = bucket.tryConsumeAndReturnRemaining(1);
         if (probe.isConsumed()) {
             return new ConsumeResult(true, 0L);

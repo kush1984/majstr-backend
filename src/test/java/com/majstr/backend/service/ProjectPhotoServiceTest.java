@@ -59,6 +59,7 @@ class ProjectPhotoServiceTest {
     @Mock private FeatureGuard featureGuard;
     @Mock private LimitService limitService;
     @Mock private StorageService storage;
+    @Mock private StorageCleanup cleanup;
 
     private ProjectPhotoService service;
 
@@ -73,7 +74,7 @@ class ProjectPhotoServiceTest {
     @BeforeEach
     void setUp() {
         service = new ProjectPhotoService(photoRepository, folderRepository, projectService,
-                estimateService, userRepository, featureGuard, limitService, storage);
+                estimateService, userRepository, featureGuard, limitService, storage, cleanup);
     }
 
     @Test

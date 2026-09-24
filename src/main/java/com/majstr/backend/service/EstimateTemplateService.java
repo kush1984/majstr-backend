@@ -12,6 +12,7 @@ import com.majstr.backend.entity.Estimate;
 import com.majstr.backend.entity.EstimateItem;
 import com.majstr.backend.entity.EstimateTemplate;
 import com.majstr.backend.entity.EstimateTemplateItem;
+import com.majstr.backend.entity.ItemType;
 import com.majstr.backend.entity.PercentBaseKind;
 import com.majstr.backend.entity.Project;
 import com.majstr.backend.entity.TemplateDefaultOverride;
@@ -78,6 +79,18 @@ public class EstimateTemplateService {
     private final TemplateDefaultOverrideRepository defaultOverrideRepository;
     private final UserTradeRepository userTradeRepository;
     private final UserRepository userRepository;
+    private final CatalogFiling catalogFiling;
+
+    /**
+     * The trade a bundle is being applied «from» — what decides where its lines are filed.
+     *
+     * <p>A bundle of the master's OWN custom trade carries {@code trade = OTHER} for storage
+     * reasons only (V91), and the library ships nothing under OTHER, so re-filing could only ever
+     * clear a folder he chose himself. It answers null and the matched row's filing stands.</p>
+     */
+    private static Trade workingTradeOf(EstimateTemplate template) {
+        return template.getCustomTrade() != null ? null : template.getTrade();
+    }
 
     // ---- listing -----------------------------------------------------------
 
@@ -507,7 +520,15 @@ public class EstimateTemplateService {
 
         Set<String> seen = new HashSet<>();
         List<EstimateItem> toSave = new ArrayList<>();
+        // The folder index of each bundle's own trade, read once per trade however many bundles
+        // share it. See CatalogFiling: the catalog row is filed under whichever trade claimed the
+        // name first, and copying that verbatim is what put DRYWALL and TILING headers on a
+        // painting estimate.
+        Map<Trade, Map<String, String>> foldersByTrade = new HashMap<>();
         for (EstimateTemplate template : templates) {
+            Trade workingIn = workingTradeOf(template);
+            Map<String, String> folders = workingIn == null ? Map.<String, String>of()
+                    : foldersByTrade.computeIfAbsent(workingIn, catalogFiling::categoriesUnder);
             Set<UUID> picked = pickedItems.get(template.getId());
             for (EstimateTemplateItem ti : templateItemRepository
                     .findByTemplateIdOrderBySortOrderAscIdAsc(template.getId())) {
@@ -520,17 +541,27 @@ public class EstimateTemplateService {
                 CatalogItem match = catalog.get(NameKeys.of(ti.getName()));
                 Unit unit = match != null ? match.getUnit() : ti.getUnit();
                 BigDecimal catalogPrice = match != null ? match.getDefaultPrice() : BigDecimal.ZERO;
+                // Where the line belongs: the BUNDLE's trade when the library ships this name
+                // under it, the matched row's own filing otherwise. Only the filing moves —
+                // price, unit, type and wording stay the master's.
+                ItemType type = match != null ? match.getType() : ti.getType();
+                CatalogFiling.Filing filing =
+                        CatalogFiling.fileUnder(workingIn, folders, ti.getName(), type, unit, match);
                 // A PERCENT position's catalog "price" IS the percent — see percentQuantity.
                 boolean percent = unit == Unit.PERCENT;
                 toSave.add(EstimateItem.builder()
                         .estimate(estimate)
-                        .type(match != null ? match.getType() : ti.getType())
+                        .type(type)
                         .name(ti.getName())
-                        .category(match != null ? match.getCategory() : null)
-                        // Trade rides along with the catalog match too (V125). A bundle line whose
-                        // name found no catalog row applies at 0 ₴ AND with a null trade — both are
-                        // consequences of the same «not in this master's catalog» miss.
-                        .trade(match != null ? match.getTrade() : null)
+                        // Filing follows the BUNDLE the master picked, not the row that priced the
+                        // line (CatalogFiling). Before that, a position two trades both ship
+                        // arrived under whichever claimed it in this master's catalog — so a
+                        // PAINTER bundle grew DRYWALL and TILING folders. A name the bundle's
+                        // trade does not ship keeps the matched row's filing, and a line that
+                        // matched nothing at all still lands in the right folder when the library
+                        // knows it: the 0 ₴ miss is about the PRICE, not about where it belongs.
+                        .category(filing.category())
+                        .trade(filing.trade())
                         // The explanation rides along with the price it was joined to (V119) — a
                         // bundle carries no description of its own, the catalog position does.
                         .description(match != null ? match.getDescription() : null)
@@ -570,7 +601,21 @@ public class EstimateTemplateService {
         if (joined.isBlank()) {
             return null;
         }
-        return joined.length() <= QUALITY_NOTE_MAX ? joined : joined.substring(0, QUALITY_NOTE_MAX);
+        return joined.length() <= QUALITY_NOTE_MAX ? joined : trimToLimit(joined);
+    }
+
+    /**
+     * Cut at a whitespace boundary within the column's limit, and never through a character
+     * (B-31): a blind {@code substring} can split a surrogate pair — an emoji in a master's own
+     * wording — and leave half a code point that renders as «�» in the PDF and the portal. Falling
+     * back to a code-point boundary keeps the cut safe when the text has no space to cut at.
+     */
+    private static String trimToLimit(String text) {
+        int space = text.lastIndexOf(' ', QUALITY_NOTE_MAX);
+        int cut = space > QUALITY_NOTE_MAX / 2 ? space
+                : (Character.isLowSurrogate(text.charAt(QUALITY_NOTE_MAX))
+                        ? QUALITY_NOTE_MAX - 1 : QUALITY_NOTE_MAX);
+        return text.substring(0, cut).stripTrailing();
     }
 
     // ---- helpers -----------------------------------------------------------

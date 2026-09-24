@@ -35,11 +35,14 @@ import java.util.UUID;
  * it carries the numbers HE left on the screen — every one of them is editable there, so the
  * server does not re-derive what it already showed him.</p>
  *
- * <p>The two figures the estimate cannot carry ride the query string for that reason. {@code
- * perimeter} is one number for the whole estimate; {@code sections} is per POSITION and arrives as
- * one compact scalar — «uuid:0,4,uuid:0,55» — rather than a repeated parameter or a request body,
- * so asking for a короб's переріз does not turn the calculation into a POST. See {@code
- * MaterialCalculatorService.parseSections} for why a malformed entry is ignored, not rejected.</p>
+ * <p>The three figures the estimate cannot carry ride the query string for that reason. {@code
+ * perimeter} is one number for the whole estimate; {@code sections} (a короб's розгортка, in
+ * metres) and {@code thicknesses} (a layer's thickness, in MILLIMETRES — V137) are per POSITION and
+ * each arrives as one compact scalar — «uuid:0,4,uuid:0,55» — rather than a repeated parameter or a
+ * request body, so asking for a переріз does not turn the calculation into a POST. Two parameters
+ * and not one map: a single line can carry both questions, and a shared map would answer one of
+ * them with the other's number. See {@code MaterialCalculatorService.parsePerPosition} for why a
+ * malformed entry is ignored, not rejected.</p>
  *
  * <p>The answer lands in the shopping list and nowhere else. Adding the materials to the estimate
  * as MATERIAL lines was offered once and removed: the calculation exists so the master knows what
@@ -61,9 +64,10 @@ public class MaterialCalculatorController {
             @RequestParam(required = false) BigDecimal wastePercent,
             @RequestParam(required = false) BigDecimal perimeter,
             @RequestParam(required = false) String sections,
+            @RequestParam(required = false) String thicknesses,
             @AuthenticationPrincipal UserPrincipal principal) {
         return calculatorService.calculate(
-                estimateId, principal.id(), wastePercent, perimeter, sections);
+                estimateId, principal.id(), wastePercent, perimeter, sections, thicknesses);
     }
 
     @GetMapping("/availability")

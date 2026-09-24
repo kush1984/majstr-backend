@@ -99,6 +99,7 @@ public class WorkActReceiptService {
     private final FiscalQrReceiptReader qrReader;
     private final ReceiptIdentityIndex identityIndex;
     private final WorkActReceiptCreator creator;
+    private final StorageCleanup cleanup;
 
     @Transactional(readOnly = true)
     public List<WorkActReceiptResponse> list(UUID actId, UUID ownerId) {
@@ -305,9 +306,11 @@ public class WorkActReceiptService {
      */
     @Transactional
     public WorkActReceiptResponse update(UUID actId, UUID receiptId, UUID ownerId, WorkActReceiptRequest req) {
-        WorkActService.requireNotSigned(actService.loadOwned(actId, ownerId));
+        WorkAct act = actService.loadOwned(actId, ownerId);
+        WorkActService.requireNotSigned(act);
         WorkActReceipt receipt = load(actId, receiptId);
         BigDecimal amount = req.amount().setScale(MONEY_SCALE, RoundingMode.HALF_UP);
+        requirePricedWhileSent(act, amount);
         BigDecimal returned = req.returnedOrZero().setScale(MONEY_SCALE, RoundingMode.HALF_UP);
         requireValidFields(req.label(), amount, returned);
         receipt.setLabel(req.label().trim());
@@ -333,10 +336,10 @@ public class WorkActReceiptService {
     public void delete(UUID actId, UUID receiptId, UUID ownerId) {
         WorkActService.requireNotSigned(actService.loadOwned(actId, ownerId));
         WorkActReceipt receipt = load(actId, receiptId);
-        if (receipt.getStorageKey() != null) {
-            tryDelete(receipt.getStorageKey());
-        }
         receiptRepository.delete(receipt);
+        // The paper goes AFTER the row, never before it (B-25): a rollback here used to leave the
+        // receipt pointing at a photo we had already destroyed.
+        cleanup.afterCommit(receipt.getStorageKey());
     }
 
     /** Owner download of a receipt photo — authenticated, never through {@code /api/files}. */
@@ -383,6 +386,25 @@ public class WorkActReceiptService {
         StoredObject stored = storage.store(new ByteArrayInputStream(content), content.length,
                 RECEIPT_PREFIX, kind.extension, kind.contentType);
         return stored.key();
+    }
+
+    /**
+     * While an act is SENT the client can sign it at any second, and {@link ActReceiptCompleteness}
+     * refuses a signature over an unpriced receipt — so pricing one DOWN to zero on a SENT act
+     * hands the client an error that is the master's to fix and that nothing on the client's screen
+     * explains (review B-28).
+     *
+     * <p>Only on {@code update}, deliberately. A zero on {@code add} is the receipts-batch state
+     * («save the photo first, price it later»), and it is also what an offline queue replays hours
+     * after the act went out; refusing it there would trade an awkward window for a lost photo. An
+     * explicit edit to zero has neither excuse — and the master always has the door V108 gave him:
+     * move the act back to DRAFT, fix the receipts, send it again.</p>
+     */
+    private void requirePricedWhileSent(WorkAct act, BigDecimal amount) {
+        if (act.getStatus() == WorkActStatus.SENT && amount.signum() <= 0) {
+            throw new WorkActValidationException(
+                    "error.work-act.receipt-unpriced-sent", "WORK_ACT_RECEIPT_UNPRICED");
+        }
     }
 
     private WorkActReceipt load(UUID actId, UUID receiptId) {

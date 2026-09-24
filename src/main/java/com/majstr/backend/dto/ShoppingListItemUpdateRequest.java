@@ -1,6 +1,7 @@
 package com.majstr.backend.dto;
 
 import jakarta.validation.constraints.DecimalMin;
+import jakarta.validation.constraints.Digits;
 import jakarta.validation.constraints.Size;
 
 import java.math.BigDecimal;
@@ -11,7 +12,7 @@ import java.math.BigDecimal;
  * own number.
  */
 public record ShoppingListItemUpdateRequest(
-        @DecimalMin(value = "0.001") BigDecimal quantity,
+        @DecimalMin(value = "0.001") @Digits(integer = 12, fraction = 3) BigDecimal quantity,
         @Size(max = 500) String note,
         Boolean bought,
         Suggestion suggestion

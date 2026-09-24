@@ -1,9 +1,13 @@
 # Iteration (PLAN): material calculator — «скільки цього купити»
 
-**Status:** **CUT 1 SHIPPED** (2026-09-07, V126) — the shopping list, the material dictionary, the
-norm schema, the master parameters and the `LITRE` unit; see
-[iteration-shopping-list.md](iteration-shopping-list.md) for what actually landed. **The rest of this
-document is still PLAN**: no norms are seeded and nothing derives a material quantity yet. Written
+**Status:** **CUTS 1-4 SHIPPED.** Cut 1 (2026-09-07, V126) — the shopping list, the material
+dictionary, the norm schema, the master parameters and the `LITRE` unit; see
+[iteration-shopping-list.md](iteration-shopping-list.md) for what actually landed. Cut 2 (V127, §20)
+— the DRYWALL norms and the estimate→materials engine. Cut 3 (V133, §26) — the drywall figures
+re-derived from the manufacturers' datasheets. Cut 4 (V137, §27) — **TILING and PAINTER**, the
+THICKNESS basis, and the master habits nothing had been reading. **§§1-19 below are the original
+PLAN and are superseded wherever §§20-27 say otherwise** — read the numbered sections from §20 for
+what is actually built. FLOORING and the long tail still have no norms. Written
 2026-09-01 at the user's request («давай формуй план») so the thinking does not live only in a chat.
 **Source:** the competitor scan in [open-questions.md](open-questions.md) → «Material calculators
 (quantity → how much material to buy)», itself opened after a master named «ПРОраб» (АПК) and
@@ -1536,3 +1540,293 @@ is stale again and Gradle does not start at all. The build was run with
 was **not** changed. The toolchain is pinned to 21 and no JDK 21 is installed, so the foojay resolver
 in `settings.gradle.kts` provisions it (which is why this build took 5m15s). Worth fixing at the
 machine level rather than per-session.
+
+---
+
+## 27. The other two trades, and the habits nothing was reading — V137 (2026-09-23)
+
+Cut 4 of the calculator: the **TILING** and **PAINTER** halves, from the same manufacturer-datasheet
+survey V133 used for drywall (`Materials calculators/NORMS-SUMMARY.md`, §§2-4). The prompt asked for
+the two trades **and** for whatever the survey made visible about the machinery itself — and it made
+five things visible, one of which had been shipping since V126.
+
+### 27.1 Six preference keys, zero readers
+
+`master_material_pref` has held six keys since V126. `MaterialCalculatorService` read **two** of
+them — `GKL_SHEET` and `WASTE_PERCENT`. `TILE_SIZE`, `TILE_JOINT_MM`, `TILE_THICKNESS_MM`,
+`TILE_LAYOUT`, `PAINT_COVERAGE` and `PAINT_COATS` were stored, guarded by a CHECK, carried in a
+request DTO, answered by a live endpoint — and read by nothing at all.
+
+Worse than dead code: **no screen ever called that endpoint.** `materialsApi` had no `prefs()`
+before this round, so `GKL_SHEET`, which the calculator *does* read and which decides whether a sheet
+is 3,0 m² or 3,6, could not be answered either. Every master has been buying against the shipped
+1200×2500 sheet whether or not it is the one he carries.
+
+This is the defect the round is really about. A norm that is wrong is visible on the arithmetic line
+and correctable there (§21); a habit that is never read is invisible from both ends — the field
+looks answered and the figure never moves.
+
+Two of the four dead keys are now read (`coefficient()` in `MaterialCalculatorService`), three are
+deleted (§27.2), and the survivors got a door: the **«Мої звички»** card on the calculator screen,
+folded shut and showing only the fields the trades ON THIS ESTIMATE need — a drywaller is never
+handed a paint question.
+
+### 27.2 Three keys were the wrong KIND of answer
+
+`TILE_SIZE` and `TILE_THICKNESS_MM` are properties of the **work**, not of the master, and the
+catalog already names them: «Укладання плитки 300х600», «Укладання плитки 1200х3200 мм».
+`TILE_LAYOUT` is its own PERCENT position («по діагоналі», «ялинкою»). Storing them per master is not
+merely redundant — it is **silently wrong for the ordinary bathroom**, which mixes 300×300 on the
+floor with 600×1200 on the wall. One answer, two right answers needed, nothing on screen saying so.
+
+They are dropped (rows first, then the CHECK — a stored value for a dropped key would refuse the new
+constraint). The adhesive figure now comes off the position name, by notch, which is where the
+format has always been: ≤10 cm → 4 mm → 2,6 kg/m², up to ≥40 cm → 12 mm → 7,8, and from 60×60 the
+tile is laid on elastic C2 with back-buttering at ~8,5 (NORMS-SUMMARY §§2.1-2.2).
+
+The two that survive are genuine habits, and both scale their material **linearly**, which is what
+makes a stored scalar enough:
+
+- **paint** — `PAINT_COVERAGE` («скільки м² з літра за шар») × `PAINT_COATS`, rescaled against the
+  pair the shipped 0,22 л/м² was written for (9 м²/л, 2 шари);
+- **grout** — `TILE_JOINT_MM` against the 2,5 mm joint the shipped 0,4 kg/m² assumes.
+
+Two rules keep that honest. The rescaled coefficient is what the **arithmetic line reports**, not the
+shipped one — a coefficient he cannot see is a number he cannot check, and the row must multiply out
+to the quantity printed beside it. And **an owned norm is never rescaled**: a master who corrected
+the coefficient has already told us the number he buys against, so applying his habit on top would
+apply the same opinion twice. His prefs are then not merely ignored, they are **never read** —
+`hisOwnCoefficientIsNeverRescaledByHisOwnHabit` asserts the repository is not called at all.
+
+### 27.3 The parameter that was genuinely missing is the layer THICKNESS
+
+Plaster, screed, levelling compound and start putty are consumed per m² **per millimetre**, so the
+millimetres ARE the bill: «Стяжка маякова цементна» at 20 mm and at 60 mm differ threefold. A
+position name carries at most a bound — «до 2 см» is not a thickness — and a per-master answer is
+wrong for the same reason `TILE_SIZE` was: **one estimate plasters walls at 15 mm and a ceiling at
+10**.
+
+So it gets exactly the treatment V131 gave the короб section: a fourth `NormBasis`, **THICKNESS**,
+asked once per POSITION, reported as a missing parameter and left out of the list until it is
+answered. Arithmetically identical to SECTION — `amount = quantity × param × qtyPerUnit` — so a
+THICKNESS norm's coefficient is written **per m² per mm** (hand gypsum 1,0; machine gypsum 0,95;
+cement-lime 1,4 — NORMS-SUMMARY §§3.1-3.3).
+
+**Two query parameters, not one map.** `sections` (metres) and `thicknesses` (millimetres) each ride
+as their own compact scalar. One position can be asked both questions, and a shared map would answer
+one with the other's number — 0,4 mm of plaster, or a короб 15 m deep, neither of which looks wrong
+on screen.
+
+The same reasoning renamed the DTO field. `MaterialSourceLine.section` is now **`param`**, because
+`basis` is what says which unit it is in: a field named after one of its two meanings is how a
+millimetre gets rendered as a metre. Mirrored by hand in the PWA's `api/types.ts` and in the two
+branches of `SourceRow`.
+
+### 27.4 A missing parameter now carries its own suggestion
+
+§15's rule (master, 2026-09-07) is that a parameter the position name does not carry must be
+**enterable, have a default, and have that default ANNOUNCED rather than applied silently**. The box
+section had no honest default and got none — a розгортка is anywhere between 0,2 m and 1,2 m, and
+pre-filling one would pass a guess off as our answer. A thickness has one: «до 2 см» plasterwork is
+15 mm of real work, «від 5 см» is 60, a self-levelling floor is 5.
+
+`material_norm.default_param` carries it, in the parameter's **own** unit, and rides out on
+`MissingParameter.suggested`. The PWA **pre-fills the field and says out loud that the number is
+ours** («Підставили типову товщину — змініть, якщо у вас інша»), and never refills a field the master
+has touched — an emptied one included, because «» is an answer. Nothing is applied on his behalf: he
+still taps «Порахувати».
+
+A NULL suggestion is therefore meaningful rather than missing — it is «we have no honest number» —
+which is why the guard is on the BASIS and not on the column: **every THICKNESS norm must carry one**,
+checked by the migration when it applies and again by
+`everyThicknessNormSuggestsTheMillimetresItAsksFor` for the round that adds one later.
+`MaterialNormService.saveOwn` copies it onto the fork, or a corrected norm would ask for millimetres
+over an empty field.
+
+### 27.5 Ten positions were filed under one trade and worked for two
+
+«Грунтування», «Обезпилення поверхні», «Захист підлоги картоном», «Поклейка склополотна»,
+«Шпаклювання фінішне (2-4 рази)» and five more are shipped by BOTH the drywall and the painting
+catalogs, and V132 stored their norms under `trade = 'DRYWALL'`. Under §25's rule a norm answers for a
+position of its **own** trade, or for anyone when it carries **no** trade — so a painter's line got no
+answer at all.
+
+They are **re-filed to `trade = NULL`, not duplicated**: two rows saying the same thing is how two
+figures drift apart. The same treatment goes to the eight organisational positions both catalogs ship
+(«Прибирання приміщення після робіт», «Розвантаження матеріалу», «Транспортні витрати за містом»…),
+which buy nothing and now say so wherever they appear.
+
+The fifth thing the survey caught: the deep-primer norm **disagreed with itself** — V127 wrote
+0,12 l/m² for «Грунтування» and 0,15 for «Монтаж гіпсокартону на клей». One material, one coat, two
+numbers. The survey (§2.4, n = 14, range 0,05-0,3) settles on 0,15.
+
+### 27.6 What is deliberately left unnormed
+
+A gap is an answer the coverage report can render; an invented figure is not. Left out on purpose,
+and so landing in the gap list by construction:
+
+- **EPOXY grout**, in all of its positions — no manufacturer publishes a per-m² figure that survived
+  the survey, and an invented number for the most expensive grout on the market is worse than a gap.
+- **Decorative plasters other than короїд / баранець** (венеціанська, травертин, мікробетон,
+  марморіно, мікроцемент) — each is a different product with its own rate and its own grain
+  parameter.
+- **«Штукатурка укосів» and every LINEAR_METER plastered reveal** — a plastered reveal needs BOTH a
+  width and a thickness, and one position asks for one number. V131 refused the same question for
+  «Монтаж укосів із гіпсокартону»: asking the wrong question is worse than asking none. A **tiled**
+  reveal or stair is fine — an area needs one figure, so it is SECTION.
+- **Paints outside the interior wall/ceiling pair** — facade, lacquer, enamel on wood and metal; none
+  is in the dictionary yet.
+- **Products the master chooses rather than consumes** — піддони, трапи, люки, сифони, мембрани.
+- **The ГКЛ constructions inside the tiling and painting catalogs** (фальшстіна, конструкція під
+  інсталяцію, каркасна звукоізоляція) — their figures live in V127 under DRYWALL, and copying them
+  here is exactly the drift §27.5 is about.
+
+Per §24.4 a position that buys nothing is still **covered**, so the «consumes nothing» verdicts
+(демонтаж, різ, шліфування, замір, надбавки, виїзди) are written as rows with `material_id IS NULL`
+rather than left absent — without them the ratio reads «24 of 61» on an estimate that is in fact
+answered in full.
+
+### 27.7 Blast radius
+
+SQL: `V137__tiling_and_painter_material_norms.sql` — the fourth basis and `default_param` (§1), the
+pref-key CHECK (§2), **19** new dictionary materials (§3), the re-filing and the primer fix (§4),
+**99** normed TILING positions (§5, of 167 the catalog ships), **95** PAINTER ones (§6, of 233), and
+five self-checks (§7).
+
+Java: `NormBasis` (+THICKNESS), `MaterialNorm.defaultParam`, `MaterialPrefKey` (−3),
+`MissingParameter.suggested`, `MaterialSourceLine.section` → `param`, `MaterialCalculatorService`
+(`calculate` takes `thicknesses`, `parseSections` → `parsePerPosition`, the new `coefficient` +
+`Habits` + `paintScale`/`jointScale`), `MaterialNormService.saveOwn`, `MaterialCalculatorController`.
+
+**No request DTO changed**, so `RequestContractSnapshotTest` is untouched — the two new figures are
+query parameters. The two DTOs that did change are **responses**, which that snapshot deliberately
+does not cover; the PWA's hand-written `types.ts` was edited in the same round, which is the only
+thing keeping them honest.
+
+**V127's, V130's, V131's and V133's own self-checks stay satisfied.** V137 adds rows and re-files ten
+`trade` values; it changes no figure any earlier check pins except the primer 0,12 → 0,15, which none
+of them asserts. `ux_material_norm` already carries `owner_id` (§21), so nothing here can collide
+with a master's fork.
+
+PWA (`1.46.7` → **`1.47.0`** — new behaviour, so a minor): the thickness ask, the «Мої звички» card,
+the `param` rename, `materialsApi.prefs`/`savePrefs`, and the section card refactored into one
+`PerPositionAsk` used twice — the two asks differ only in wording and unit, and a screen that asks
+both must ask them the same way. Mobile-first: both are one-column cards of full-width fields with
+`inputMode="decimal"`, and the habits card is **folded shut**, so the common estimate is not longer
+by four fields it does not need.
+
+### 27.8 The gate
+
+`./gradlew build` — **green: 1512 tests in 173 classes, 0 failures, 0 errors, 0 skipped**, of which
+**10 are new** (8 in `MaterialCalculatorServiceTest`, 2 in `MaterialCalculatorIntegrationTest`). The
+per-class XML was read back rather than the summary line, for the reason `IntegrationTestBase`'s
+javadoc gives: a class that silently never runs reports coverage that does not exist.
+
+**V137's §7 self-checks ran as part of it** — they fire at apply time, so a green Testcontainers
+startup IS the proof they passed (the reasoning V130-V133 each recorded). Five of them: no norm names
+a position the catalog no longer ships, no trade-less norm names a position anywhere at all, every
+THICKNESS norm carries a `default_param`, no (name, unit) is normed by two trades at once, and the
+two row counts (99 / 95) are what this file wrote.
+
+The three integration tests exist for what a migration's self-check **cannot** do — stop a LATER
+round from quietly undoing this one. `everyShippedNormFindsItsPositionInTheShippedCatalog` now walks
+all three normed trades and asserts the whole catalog of each buys something (it builds a **fresh
+estimate per trade**, or the per-trade `containsExactly` on coverage would answer about all three at
+once); `everyThicknessNormSuggestsTheMillimetresItAsksFor` guards §27.4;
+`theShippedPaintNormAgreesWithTheDefaultsItIsRescaledAgainst` pins the one statement made twice —
+the shipped 0,22 л/м² and the Java constants it is rescaled against are linked by nothing but
+arithmetic, and a later re-pricing that moved one without the other would rescale every master's
+figure off the wrong base **while the master who set no preference saw no change at all**.
+
+PWA gate, CI's `verify` job mirrored in order: `npm run lint` ✓, `npx tsc -b` ✓,
+`npm run typecheck:tests` ✓, `npx vitest run` — **1174 tests in 133 files, all passing**, of which
+**5 are new** — and `npx vite build` ✓. No service-worker or offline change, so `test:e2e:offline`
+is not owed.
+
+## 28. The area behind a painted moulding and a door — V139 (2026-09-24)
+
+V138 shipped enamel at 0,22 л/м² and a clear varnish at 0,20, then listed the family it could not
+answer: the ~12 remaining painting positions are billed by the **metre** («Фарбування молдинга/
+багета до 6 см», the ceiling baguettes) or by the **piece** («Фарбування дверей»), and the open
+question recorded it as a question for the master. He handed it straight back — *«числа можеш сам
+десь пошукати, бо я не знаю, і воно має едітатись»* — which is the whole shape of the answer: derive
+it, write the derivation down, suggest it visibly, and let him type over it.
+
+**The missing half was never a rate.** The litres per m² were already in the dictionary; what was
+missing was the AREA — how many m² one metre of profile presents. And the calculator has asked that
+exact question since V131: `NormBasis.SECTION` means «length × param × qty_per_unit», asked **per
+POSITION**, which is what V131 built for a короб and what a moulding is too. So V139 is a migration
+and nothing else — no new basis, no service change, no DTO.
+
+**Where the suggestions come from.** Two unrelated manufacturers publish their whole profile range,
+and both were read off rather than guessed at: NMC NOMASTYL (A 110×110, A1 80×80, A2 50×50, B1
+66×78, C 83×66, D 49×42, E 25×17 mm) and Orac Decor Purotouch (2,9×2,9 … 17,6×13 cm). A cornice is
+glued along its two flanks and painted across the profiled face between them, so the painted width
+follows the **outline**, not the straight line across it: ≈1,15 × √(h² + w²), the 1,15 being the
+profiling. For the near-square sections both tables are full of that is ≈1,6 × the nominal size a
+position name gives, it reproduces both tables inside ~10 %, and it always lands slightly high —
+**the right direction to err**, because a high figure costs paint left in the tin and a low one
+costs a second drive to the merchant.
+
+| name band | suggested розгортка |
+|---|---|
+| «до 6 см» | 0,10 м |
+| «до 8 см» | 0,13 м |
+| «6–10 см» | 0,16 м |
+| «10+ см» | 0,25 м (the name has no upper bound; 15-17 cm is where the catalogues stop) |
+| no size in the name | 0,12 м (7-8 cm is the commonest ceiling cornice — the middle of the range, not a figure pretending to describe a particular profile) |
+
+**This is the trade's own method, not our geometry in a manufacturer's clothes** — the §19 rule that
+kept epoxy grout out. ДБН Д.2.4-12-2000 tabulates cornice painting against the developed width, and
+Д.2.5-10-2001 applies a coefficient of 1,6 to a ribbed surface measured over its projection. The
+number is ours; the way of getting it is not.
+
+**A door is asked nothing.** A leaf does not vary the way a profile does, so a SECTION question here
+would buy nothing but an empty field on a phone in a merchant's yard. The m² is folded into a
+QUANTITY coefficient instead — 0,8 × 2,0 plus edges and rebate ≈ **2,0 м² a side**, which is already
+this catalog's own door figure (V137 buys 2,0 м² of masking cardboard for one entrance door) — where
+the ordinary V126 fork still corrects it **permanently, once**, rather than on every estimate. The
+materials differ on purpose: a door of прихованого монтажу is finished flush with the wall and
+painted with the wall's own paint (the entire point of it), so it takes `PAINT_INTERIOR` over the
+deep primer like any other puttied surface; an ordinary door is wood or MDF and takes V138's
+`ENAMEL_WOOD` at 0,22 л/м², with **no primer row** — a wood primer is not in this dictionary and the
+deep primer above it is for mineral surfaces.
+
+**Nothing is applied silently.** Each metre figure is a `material_norm.default_param`, so it arrives
+through §15's machinery: pre-filled into the field the position asks him to fill, labelled
+«Підставили типову розгортку — змініть, якщо профіль інший», and overwritten by typing. The PWA's
+SECTION card was widened for it — the hint had been written for a короб alone («ширина + висота»),
+which is not what a baguette's owner would recognise, and the label went from «переріз» to
+«розгортка», the word the trade uses for both.
+
+**Still refused, and why:** «Фарбування плінтуса прихованого монтажу (перед монтажем)». It is
+painted off the wall before it goes up, so whether the back and the return get a coat is the
+fitter's habit and not something a norm can state; and the profile is usually anodised aluminium,
+which wants an adhesion primer this dictionary does not carry. A deep primer on aluminium is not a
+small error, so the row stays unnormed rather than half right.
+
+V139 inserts no `catalog_templates` row, so V118's ranking is not re-run. Its self-check runs the
+two V137/V138 carry (no norm names a dead position; the count is what the file wrote) plus one of
+its own: **a metre row that is not SECTION, or a SECTION row with nothing to suggest, re-opens the
+very gap this file closes — and would do it silently.** Two integration tests cover the other
+direction: `aPaintedMouldingAsksForItsDevelopedWidthAndSuggestsOne` (asked per position, suggestion
+0,10, nothing bought until answered, then 30 м.п. × 0,10 × 0,22 = 0,66 л) and
+`aPaintedHiddenDoorBuysItsPaintPerLeafWithoutAsking` (4 leaves × 2,0 м² → 1,76 л, `parameters()`
+empty).
+
+### Verification (§28 + B-31b)
+
+`./gradlew build` — **green, exit 0: 1524 tests in 175 classes, 0 failures, 0 errors, 0 skipped**,
+of which **5 are new**: the two V139 integration tests above, and the three in
+`ShoppingListIntegrationTest` that pin B-31b's three delete paths (a bought row hides and is not
+re-added, an open row really goes and the material comes back, un-tick-then-delete removes it for
+good). The per-class XML was read back rather than the summary line, for the reason
+`IntegrationTestBase`'s javadoc gives.
+
+**V139's self-checks ran as part of it** — they fire at apply time, so a green Testcontainers
+startup IS the proof they passed: no norm names a position the catalog no longer ships, the count is
+the 19 this file wrote, and no metre row asks for nothing or asks with nothing to suggest.
+
+PWA gate, CI's `verify` job mirrored in order: `npm run lint` ✓, `npx tsc -b` ✓,
+`npm run typecheck:tests` ✓, `npx vitest run` — **1175 tests in 133 files, all passing** — and
+`npx vite build` ✓. No service-worker or offline change, so `test:e2e:offline` is not owed.

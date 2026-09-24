@@ -2408,10 +2408,16 @@ one-line summary — keep the item in the file as a record.
   shopping list + material dictionary + norm schema + master parameters + the `LITRE` unit —
   [iteration-shopping-list.md](iteration-shopping-list.md)). **Cut 2 shipped** (V127: the DRYWALL
   norms, the estimate→materials engine with the two-rung lookup, the coverage report, and the
-  result screen — [iteration-material-calculator.md](iteration-material-calculator.md) §20). The
-  item stays IN_PROGRESS: **only DRYWALL has norms.** TILER (adhesive + grout), PAINTER (primer and
-  paint per m² per coat) and the rest of the long tail are still uncovered, and the §19 audit left
-  three things open for the master — the box/slope/niche parameters, whether «Каркасна
+  result screen — [iteration-material-calculator.md](iteration-material-calculator.md) §20).
+  **Cut 3 shipped** (V133: the drywall figures re-derived from the manufacturers' datasheets — §26).
+  **Cut 4 shipped** (V137, 2026-09-23: the **TILING** and **PAINTER** norms — 99 of 167 tiling
+  positions and 95 of 233 painting ones — the fourth `NormBasis` **THICKNESS** for everything sold
+  per m² per mm, `default_param` so a missing parameter carries its own suggestion, and the two
+  master habits that rescale a shipped coefficient — §27). The item stays IN_PROGRESS: **FLOORING
+  and the long tail (BUILDER, PLUMBING, ELECTRICAL, METAL, DEMOLITION) still have no norms at all**,
+  and the deliberate gaps inside the two trades just shipped are listed in §27.6 (epoxy grout,
+  decorative plasters beyond короїд/баранець, plastered reveals, facade/enamel paints). The §19
+  audit left three things open for the master — the box/slope/niche parameters, whether «Каркасна
   звукоізоляція» plus «Монтаж ГКЛ на стелю» for one ceiling should be flagged as a possible
   double-count, and how the coverage report should word a position that is size-driven by nature.
 - **Since:** Catalog-picker iteration (2026-09-01), from the competitor scan above.
@@ -2459,6 +2465,14 @@ one-line summary — keep the item in the file as a record.
   never reaches the economy, receipts still arrive by fact through the act chain; and **the list
   belongs to the ESTIMATE**, because the estimate is what you build first and the materials are
   counted off it.
+- **Defect found and closed 2026-09-23 (V137), worth keeping in the log because it hid for four
+  cuts:** `master_material_pref` shipped SIX keys in V126 and the calculator read **two** of them —
+  and **no screen ever called `/api/me/material-prefs` at all**, so even `GKL_SHEET`, which the
+  calculator does read, could not be answered. A habit that is never read is invisible from both
+  ends: the field looks answered and the figure never moves. The lesson generalises past this
+  feature — **a stored preference needs a reader and a door in the same round it gets a column**,
+  or it is worse than absent. §15's «announced, never silently applied» is what
+  `MissingParameter.suggested` now implements for the one parameter that has an honest default.
 
 ### A personal consumption norm — when does a master get to override one
 - **Status:** RESOLVED (2026-09-08) — option (a), «Моя норма, назавжди», shipped: an explicit
@@ -2800,6 +2814,44 @@ one-line summary — keep the item in the file as a record.
   which removes the argument that carried half of this item — a wrong sentence now misleads nobody
   but the master, who can fix it in his own catalog. If the client half returns, so does the full
   question, including the rename case.
+
+### An estimate line was filed by the catalog ROW, not by the trade the master was working in
+
+- **Status:** RESOLVED (2026-09-24, fix O + V140).
+- **Since:** V118 shipped the one-row-per-name rule; reported 2026-09-24 («появляються якісь не
+  зрозумілі категорії з плитки, гіпсокартону»).
+- **Context:** `catalog_items` holds ONE row per (owner, name, type, unit), under whichever trade
+  claimed the name first, and every door that built an estimate line copied that row's `trade` and
+  `category` verbatim — while the bundle's own trade, which the code had in hand, was discarded. A
+  PAINTER bundle therefore produced «Шпаклювання фінішне» under DRYWALL / «Оздоблення під
+  фарбування» and «Прибирання приміщення» under TILING. Not cosmetic: the same stamp filters
+  consumption norms, so eight positions in the master's live catalog could not reach their own
+  materials — «Фарбування фасаду» filed under BUILDER against a PAINTER norm, among them.
+- **Resolution:** `CatalogFiling` — one rule behind all three doors. The caller names the trade the
+  master was working in (the bundle's `trade`; the BRANCH of the picker tree, sent as an optional
+  `trade` on the two from-catalog requests; null for everything else), and the line is re-filed ONLY
+  if the shipped library files that exact name+type+unit under it. The trade is a hint from a
+  screen, never an instruction — an unsourceable answer is a guess, and a guess moves a position
+  into a folder the master never chose. Only the filing moves; price and wording stay his.
+  **V140** repairs DRAFTS already written (his ruling — signed is a snapshot, sent is already on the
+  client's phone), skipping lines with no trade, estimates with no majority trade, and names the
+  majority does not ship. [docs/iteration-fix-o.md](iteration-fix-o.md).
+
+### «Матеріали» was hidden on an estimate straight out of a bundle
+
+- **Status:** RESOLVED (2026-09-24, fix O).
+- **Since:** V129 added the availability probe; reported 2026-09-24 («я вибираю шаблон і потім я не
+  бачу внизу того калькулятора»).
+- **Context:** the probe shared `workLines` with the calculation «so the two can never disagree», and
+  that filter drops `quantity <= 0` — right for the calculation, wrong for the probe, because an
+  estimate applied from a bundle carries nothing but zeros. The button was therefore hidden at
+  exactly the moment the estimate was created. It then failed to come back when quantities were
+  typed, because nothing invalidated `MATERIALS_AVAILABILITY_KEY` (60 s `staleTime`, no refetch on
+  focus, week-long `gcTime`) — which is why it looked as though adding a drywall line had unlocked it.
+- **Resolution:** the probe asks about position NAMES (`buyableLines`), the calculation keeps the
+  quantity filter (`priced`), and `MaterialCalculationResponse.quantitiesMissing` carries the
+  difference so the screen says «Впишіть кількості» rather than «ми не знаємо норм для цих робіт».
+  The query key now hangs off `useInvalidateEstimate`.
 
 ### The catalog PAGE still browses by chips, while the picker is a tree
 - **Status:** OPEN
@@ -3169,6 +3221,90 @@ one-line summary — keep the item in the file as a record.
 - **Since:** anti-abuse-email iteration
 - **Context:** `AdminSeeder` and `DevDataSeeder` built a `User` without `referralCode`, which is `NOT NULL UNIQUE` (V41) — a fresh seed (empty DB) failed on that column. Dormant today because existing DBs were backfilled by V41; only bit a brand-new deploy/dev DB.
 - **Resolution:** Both seeders now inject `ReferralService` and set `.referralCode(referralService.generateUniqueCode())` (plus `.emailCanonical(...)` from V55). `AdminSeederTest` asserts the saved admin has non-null `referralCode`/`emailCanonical`. (DevDataSeeder is `@Profile("dev")`, untested.)
+
+
+### Deleting a BOUGHT shopping-list row (review B-31b)
+
+- **Status:** RESOLVED (2026-09-24) — the master ruled **hide, not refuse**: a delete on a settled
+  row stamps `cleared_at`, which is option (c) without the new column the note expected.
+- **Since:** 2026-09-23 (fix-N batch; item raised by the 2026-09-11 review)
+- **Context:** `ShoppingListService.delete` lets a row that is ticked **bought** be deleted. The next
+  recalculation then sees no row for that material, finds the demand uncovered, and **adds it
+  again — unbought**. The master buys it twice. The row's own history is what stops that: this is
+  exactly why `clearBought` HIDES (`cleared_at`) rather than deletes (V126), and why `edited` parks a
+  suggestion rather than overwriting.
+- **Notes / options:** (a) refuse it — 409 `SHOPPING_ROW_BOUGHT`, «куплений рядок можна лише
+  прибрати зі списку»; the tick is a fact, and a fact is not deleted. (b) Accept it as his own
+  action — he ticked it, he untied it, it is his list. (c) Delete it but remember the dedup key as
+  settled, so a recalculation does not re-add it — the most forgiving, and the one that needs a new
+  column. **The asymmetry that decides it:** a wrong «hide» costs him one line on a screen, a wrong
+  «delete» costs him a second trip and a second purchase.
+- **Resolution:** `delete` now branches on `settled()`: an OPEN row is really deleted (nothing is
+  covered, so a recalculation re-adding the material is the honest answer), a SETTLED one gets
+  `cleared_at` and disappears from the screen exactly like a deleted row — which is all a delete
+  ever promised him — while its quantity stays inside `covered`. No new column: `cleared_at` is the
+  settled marker V126 already keys `applyCalculated` off, so option (c) came for free. Deliberately
+  **not** a 409 — this swipe replays from the offline outbox hours later, where a refusal is
+  unactionable (the same argument that narrowed B-28). The honest «I did not buy it after all»
+  gesture still removes the row for good: un-tick first (`applyBought(false)` clears BOTH `bought`
+  and `cleared_at`), then delete. Three integration tests in `ShoppingListIntegrationTest` pin all
+  three paths.
+
+### Painting a baguette, a moulding or a door: the rate exists, the AREA does not
+
+- **Status:** RESOLVED (2026-09-24, V139) — the master handed it back («числа можеш сам пошукати,
+  бо я не знаю, і воно має едітатись»), so the area is DERIVED, written down, suggested visibly and
+  editable — never applied silently.
+- **Since:** 2026-09-23 (V138)
+- **Context:** V138 shipped enamel at 0,22 л/м² over two coats, sourced from three manufacturers. It
+  answers «Фарбування дерев'яної вагонки» (m²) and nothing else, because the ~12 remaining painting
+  positions are sold by the **metre** («Фарбування молдинга/багета до 6 см», «6–10», «10+», the
+  ceiling baguettes, the hidden skirting, the joint strip) or by the **piece** («Фарбування дверей»,
+  «Фарбування дверей прихованого монтажу (з двох сторін)», «Фарбування гіпсових світильників»).
+- **Notes / options:** What is missing is how many m² a metre of «багет до 6 см» actually presents —
+  the developed surface of a profile, not its stated width — and how many m² a door leaf takes with
+  its edges. No datasheet states either, and inventing a development factor would be our geometry
+  wearing a manufacturer's authority (the §19 rule). **The master bills these by the metre and knows
+  what they take**; his figures close this in one message, the same way the drywall norms arrived.
+  Until then the coverage report NAMES them as gaps, which is the intended behaviour.
+- **Resolution:** V139. The missing half was never a rate — it was the AREA, and the calculator
+  already has the shape of that question: `NormBasis.SECTION` (V131) means «length × param ×
+  qty_per_unit» and is asked per POSITION, which is a moulding exactly. So no Java changed. The
+  suggestion comes from two manufacturers' full profile tables (NMC NOMASTYL, Orac Decor Purotouch)
+  read off rather than guessed at: a cornice is painted across its outline, ≈1,15 × √(h²+w²), which
+  reproduces both tables inside ~10 % and always lands slightly high — the right direction, since a
+  high figure costs paint left in the tin and a low one costs a second drive. Bands: до 6 см →
+  0,10 м, до 8 см → 0,13, 6–10 → 0,16, 10+ → 0,25, no size in the name → 0,12. **The method is the
+  trade's own** (ДБН Д.2.4-12-2000 tabulates cornice painting against the developed width;
+  Д.2.5-10-2001 applies 1,6 to a ribbed surface over its projection), so this is not our geometry
+  wearing a manufacturer's authority — and every figure lands as a `default_param`: pre-filled,
+  labelled («Підставили типову розгортку — змініть, якщо профіль інший»), overwritten by typing.
+  **A door is not asked at all** — a leaf does not vary the way a profile does, so the m² is folded
+  into a QUANTITY coefficient (0,8 × 2,0 + edges ≈ 2,0 м² a side, already this catalog's own figure:
+  V137 buys 2,0 м² of masking cardboard for one door), where the ordinary V126 fork still corrects
+  it once and permanently instead of on every estimate. Hidden-mount doors take `PAINT_INTERIOR`
+  (they are finished flush and painted with the wall's own paint — the whole point of them), an
+  ordinary door takes V138's `ENAMEL_WOOD` and carries no primer row, because a wood primer is not
+  in this dictionary and the deep primer above it is for mineral surfaces. **Still refused:**
+  «Фарбування плінтуса прихованого монтажу (перед монтажем)» — painted off the wall, so whether the
+  back and return get a coat is the fitter's habit, and the profile is usually anodised aluminium,
+  which wants an adhesion primer we do not carry.
+
+### Material norms deliberately refused after a second look (epoxy grout, decorative plasters)
+
+- **Status:** OPEN — refused, with the evidence recorded so nobody repeats the search.
+- **Since:** 2026-09-23 (V138; V137 §27.6 first listed them)
+- **Context:** Both were looked up again for V138 and both stayed out. **Epoxy grout:** Ceresit
+  CE 79's own table spans 0,08–12,40 кг/м² across formats, and Litokol Starlike is quoted at
+  ~1,6 кг/м² for a 15×15 mosaic at a 2 mm joint where our CEMENT figure for the same geometry is
+  0,6 — so epoxy is not cement × a constant; most of the difference is washing loss, which no sheet
+  states. **Decorative plasters** beyond короїд/баранець: microcement 0,4–1,4 кг/м² per base coat and
+  1,2–3,5 over the finish «depending on the desired effect»; venetian 0,5–1,0. A threefold spread
+  inside one product name is a range, not a norm.
+- **Notes / options:** Both are closed by the master's own practice, not by more searching — the
+  same route V127's drywall figures took. Epoxy is the more valuable of the two: it is the most
+  expensive grout on the market, so the position where a wrong figure costs the most is also the one
+  we currently answer not at all.
 
 ---
 

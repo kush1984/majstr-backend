@@ -1,5 +1,7 @@
 package com.majstr.backend.service;
 
+import java.util.Locale;
+
 /**
  * The one key by which a position's NAME is matched across the product.
  *
@@ -23,7 +25,10 @@ public final class NameKeys {
         if (name == null) {
             return "";
         }
+        // Locale.ROOT, never the JVM default (B-20): the same key is computed in SQL by `lower()`,
+        // and a server booted in a Turkish locale would lower-case «I» to «ı» on this side only —
+        // which shows up as a position that quietly matches nothing, never as an error.
         return name.replaceAll("\\s+", " ").replace("( ", "(").replace(" )", ")")
-                .trim().toLowerCase();
+                .trim().toLowerCase(Locale.ROOT);
     }
 }

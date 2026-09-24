@@ -41,6 +41,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /**
@@ -519,7 +521,7 @@ class MaterialCalculatorServiceTest {
             assertThat(s.basis()).isEqualTo(NormBasis.SECTION);
             assertThat(s.quantity()).isEqualByComparingTo("12");
             // Carried apart from the coefficient, which stays the norm's own editable figure.
-            assertThat(s.section()).isEqualByComparingTo("0.4");
+            assertThat(s.param()).isEqualByComparingTo("0.4");
             assertThat(s.qtyPerUnit()).isEqualByComparingTo("2.2");
         });
     }
@@ -585,6 +587,174 @@ class MaterialCalculatorServiceTest {
         assertThat(result.materials()).isEmpty();
         assertThat(result.parameters()).singleElement()
                 .satisfies(p -> assertThat(p.parameter()).isEqualTo("SECTION"));
+    }
+
+    // --- THICKNESS: the millimetres are the bill (V137) ---------------------------------------
+
+    /**
+     * «Штукатурка стін (до 2 см)» names a BOUND, not a thickness, and the same position is 15 mm on
+     * one wall and 8 on another. The figure is asked for, with the norm's own suggestion attached so
+     * the app can pre-fill it VISIBLY — open-questions §15: announced, never silently applied.
+     */
+    @Test
+    void aThicknessNormIsAskedForAndCarriesTheSuggestionItDoesNotApply() {
+        Material plaster = material("PLASTER_GYPSUM", "Штукатурка гіпсова", Unit.KG, "30", "мішок");
+        EstimateItem walls = item("Штукатурка стін (до 2 см)", Unit.M2, "20", Trade.PAINTER);
+        given(walls, thicknessNorm(Trade.PAINTER, "штукатурка стін (до 2 см)",
+                Unit.M2, plaster, "0.95", "15"));
+
+        MaterialCalculationResponse result = calculate(NO_WASTE, null, null);
+
+        assertThat(result.materials()).isEmpty();
+        assertThat(result.parameters()).singleElement().satisfies(p -> {
+            assertThat(p.parameter()).isEqualTo("THICKNESS");
+            assertThat(p.materialName()).isEqualTo("Штукатурка гіпсова");
+            assertThat(p.estimateItemId()).isEqualTo(walls.getId());
+            assertThat(p.positionName()).isEqualTo("Штукатурка стін (до 2 см)");
+            assertThat(p.suggested()).isEqualByComparingTo("15");
+        });
+        assertThat(result.coverage().trades()).containsExactly("PAINTER");
+    }
+
+    /** «20 м² × 15 мм × 0,95 = 285 кг» — the coefficient is per m² PER MILLIMETRE. */
+    @Test
+    void aThicknessNormMultipliesTheAreaByTheMillimetresTheMasterTyped() {
+        Material plaster = material("PLASTER_GYPSUM", "Штукатурка гіпсова", Unit.KG, null, null);
+        EstimateItem walls = item("Штукатурка стін (до 2 см)", Unit.M2, "20", Trade.PAINTER);
+        given(walls, thicknessNorm(Trade.PAINTER, "штукатурка стін (до 2 см)",
+                Unit.M2, plaster, "0.95", "15"));
+
+        CalculatedMaterialLine line = only(calculate(NO_WASTE, null, null, walls.getId() + ":15"));
+
+        assertThat(line.baseQuantity()).isEqualByComparingTo("285");
+        assertThat(line.sources()).singleElement().satisfies(s -> {
+            assertThat(s.basis()).isEqualTo(NormBasis.THICKNESS);
+            assertThat(s.param()).isEqualByComparingTo("15");
+            assertThat(s.qtyPerUnit()).isEqualByComparingTo("0.95");
+        });
+    }
+
+    /**
+     * One estimate plasters walls at 15 mm and a ceiling at 10. The answer belongs to the POSITION,
+     * which is the whole reason this is not a master preference: one number would be wrong for one
+     * of the two, and nothing on the screen would say so.
+     */
+    @Test
+    void twoLayersEachApplyTheirOwnThicknessAndAreNeverMerged() {
+        Material plaster = material("PLASTER_GYPSUM", "Штукатурка гіпсова", Unit.KG, null, null);
+        EstimateItem walls = item("Штукатурка стін (до 2 см)", Unit.M2, "20", Trade.PAINTER);
+        EstimateItem ceiling = item("Штукатурка стелі (до 2 см)", Unit.M2, "10", Trade.PAINTER);
+        given(List.of(walls, ceiling),
+                List.of(thicknessNorm(Trade.PAINTER, "штукатурка стін (до 2 см)",
+                                Unit.M2, plaster, "1.0", "15"),
+                        thicknessNorm(Trade.PAINTER, "штукатурка стелі (до 2 см)",
+                                Unit.M2, plaster, "1.0", "15")));
+
+        CalculatedMaterialLine line = only(calculate(NO_WASTE, null, null,
+                walls.getId() + ":15," + ceiling.getId() + ":10"));
+
+        // 20 × 15 + 10 × 10 = 400. One figure for both would have read 450 or 300.
+        assertThat(line.baseQuantity()).isEqualByComparingTo("400");
+        assertThat(line.sources()).hasSize(2);
+    }
+
+    /**
+     * The two questions travel as two parameters, and this is why: one line can be a box with a
+     * розгортка AND a layer with a thickness. A shared map would answer one of them with the other's
+     * number — 0,4 mm of plaster, or a короб 15 m deep — and neither would look wrong on screen.
+     */
+    @Test
+    void aSectionAnswerIsNotAlsoAnAnswerToTheThicknessQuestion() {
+        Material plaster = material("PLASTER_GYPSUM", "Штукатурка гіпсова", Unit.KG, null, null);
+        EstimateItem walls = item("Штукатурка стін (до 2 см)", Unit.M2, "20", Trade.PAINTER);
+        given(walls, thicknessNorm(Trade.PAINTER, "штукатурка стін (до 2 см)",
+                Unit.M2, plaster, "0.95", "15"));
+
+        MaterialCalculationResponse result = calculate(NO_WASTE, null, walls.getId() + ":0.4", null);
+
+        assertThat(result.materials()).isEmpty();
+        assertThat(result.parameters()).singleElement()
+                .satisfies(p -> assertThat(p.parameter()).isEqualTo("THICKNESS"));
+    }
+
+    // --- habits that rescale a shipped coefficient (V137) -------------------------------------
+
+    /**
+     * «Скільки м² з літра» × «скільки шарів» against the pair the shipped 0,22 л/м² was written for
+     * (9 м²/л, 2 шари). Three coats at 12 м²/л is 3/12 ÷ (2/9) = 1,125, so 0,22 becomes 0,2475.
+     *
+     * <p>The SOURCE line reports the scaled figure, not the shipped one: a coefficient the master
+     * cannot see is a number he cannot check, and the arithmetic must multiply out to the quantity
+     * printed beside it.</p>
+     */
+    @Test
+    void thePaintHabitRescalesTheShippedCoefficientAndTheScreenShowsTheScaledOne() {
+        Material paint = material("PAINT_INTERIOR", "Фарба інтер'єрна", Unit.LITRE, null, null);
+        EstimateItem walls = item("Фарбування стін", Unit.M2, "100", Trade.PAINTER);
+        given(walls, norm(Trade.PAINTER, "фарбування стін", Unit.M2, paint, "0.22"));
+        when(prefRepository.findByUserIdAndPrefKey(OWNER, MaterialPrefKey.PAINT_COVERAGE))
+                .thenReturn(Optional.of(pref(MaterialPrefKey.PAINT_COVERAGE, "12")));
+        when(prefRepository.findByUserIdAndPrefKey(OWNER, MaterialPrefKey.PAINT_COATS))
+                .thenReturn(Optional.of(pref(MaterialPrefKey.PAINT_COATS, "3")));
+
+        CalculatedMaterialLine line = only(calculate(NO_WASTE, null));
+
+        assertThat(line.baseQuantity()).isEqualByComparingTo("24.75");
+        assertThat(line.sources()).singleElement()
+                .satisfies(s -> assertThat(s.qtyPerUnit()).isEqualByComparingTo("0.2475"));
+    }
+
+    /** Half the pair is still an answer: the other half falls back to the figure we shipped. */
+    @Test
+    void namingOnlyTheCoatsStillRescalesAgainstTheDefaultCoverage() {
+        Material paint = material("PAINT_INTERIOR", "Фарба інтер'єрна", Unit.LITRE, null, null);
+        EstimateItem walls = item("Фарбування стін", Unit.M2, "100", Trade.PAINTER);
+        given(walls, norm(Trade.PAINTER, "фарбування стін", Unit.M2, paint, "0.22"));
+        when(prefRepository.findByUserIdAndPrefKey(OWNER, MaterialPrefKey.PAINT_COVERAGE))
+                .thenReturn(Optional.empty());
+        when(prefRepository.findByUserIdAndPrefKey(OWNER, MaterialPrefKey.PAINT_COATS))
+                .thenReturn(Optional.of(pref(MaterialPrefKey.PAINT_COATS, "3")));
+
+        // 3 coats instead of 2, coverage unchanged: exactly half as much again.
+        assertThat(only(calculate(NO_WASTE, null)).baseQuantity()).isEqualByComparingTo("33");
+    }
+
+    /** A joint twice as wide holds twice the grout, and nothing else on the list moves. */
+    @Test
+    void theJointWidthHabitRescalesGroutAndLeavesTheAdhesiveAlone() {
+        Material grout = material("TILE_GROUT", "Затирка для швів", Unit.KG, null, null);
+        Material glue = material("TILE_ADHESIVE_C1", "Клей для плитки C1", Unit.KG, null, null);
+        EstimateItem tiling = item("Укладання плитки 300х600", Unit.M2, "10", Trade.TILING);
+        given(tiling,
+                norm(Trade.TILING, "укладання плитки 300х600", Unit.M2, grout, "0.4"),
+                norm(Trade.TILING, "укладання плитки 300х600", Unit.M2, glue, "3.9"));
+        when(prefRepository.findByUserIdAndPrefKey(OWNER, MaterialPrefKey.TILE_JOINT_MM))
+                .thenReturn(Optional.of(pref(MaterialPrefKey.TILE_JOINT_MM, "5")));
+
+        MaterialCalculationResponse result = calculate(NO_WASTE, null);
+
+        assertThat(line(result, "Затирка").baseQuantity()).isEqualByComparingTo("8");
+        assertThat(line(result, "Клей").baseQuantity()).isEqualByComparingTo("39");
+    }
+
+    /**
+     * A master who corrected the coefficient has already told us the number he buys against.
+     * Multiplying his answer by his own habit applies the same opinion twice, and nothing on the
+     * screen would say it happened — so his habit is not merely ignored, it is never even read.
+     */
+    @Test
+    void hisOwnCoefficientIsNeverRescaledByHisOwnHabit() {
+        Material paint = material("PAINT_INTERIOR", "Фарба інтер'єрна", Unit.LITRE, null, null);
+        EstimateItem walls = item("Фарбування стін", Unit.M2, "100", Trade.PAINTER);
+        MaterialNorm mine = norm(Trade.PAINTER, "фарбування стін", Unit.M2, paint, "0.30");
+        mine.setOwner(new User());
+        given(walls, mine);
+
+        assertThat(only(calculate(NO_WASTE, null)).baseQuantity()).isEqualByComparingTo("30");
+        verify(prefRepository, never())
+                .findByUserIdAndPrefKey(OWNER, MaterialPrefKey.PAINT_COVERAGE);
+        verify(prefRepository, never())
+                .findByUserIdAndPrefKey(OWNER, MaterialPrefKey.PAINT_COATS);
     }
 
     // --- «моя норма»: the master's own coefficient -------------------------------------------
@@ -728,12 +898,24 @@ class MaterialCalculatorServiceTest {
 
     private MaterialCalculationResponse calculate(BigDecimal waste, BigDecimal perimeter,
                                                   String sections) {
-        return service.calculate(ESTIMATE, OWNER, waste, perimeter, sections);
+        return calculate(waste, perimeter, sections, null);
+    }
+
+    private MaterialCalculationResponse calculate(BigDecimal waste, BigDecimal perimeter,
+                                                  String sections, String thicknesses) {
+        return service.calculate(ESTIMATE, OWNER, waste, perimeter, sections, thicknesses);
     }
 
     private CalculatedMaterialLine only(MaterialCalculationResponse result) {
         assertThat(result.materials()).hasSize(1);
         return result.materials().get(0);
+    }
+
+    private CalculatedMaterialLine line(MaterialCalculationResponse result, String namePrefix) {
+        return result.materials().stream()
+                .filter(l -> l.name().startsWith(namePrefix))
+                .findFirst()
+                .orElseThrow(() -> new AssertionError("no material named " + namePrefix));
     }
 
     private void given(EstimateItem item, MaterialNorm... norms) {
@@ -803,6 +985,15 @@ class MaterialCalculatorServiceTest {
                                      String qty) {
         MaterialNorm norm = norm(trade, nameKey, unit, material, qty);
         norm.setBasis(NormBasis.SECTION);
+        return norm;
+    }
+
+    /** {@code qty} is per unit PER MILLIMETRE; {@code defaultParam} is the suggestion, in mm. */
+    private MaterialNorm thicknessNorm(Trade trade, String nameKey, Unit unit, Material material,
+                                       String qty, String defaultParam) {
+        MaterialNorm norm = norm(trade, nameKey, unit, material, qty);
+        norm.setBasis(NormBasis.THICKNESS);
+        norm.setDefaultParam(new BigDecimal(defaultParam));
         return norm;
     }
 

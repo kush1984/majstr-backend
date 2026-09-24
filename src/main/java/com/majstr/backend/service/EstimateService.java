@@ -85,6 +85,7 @@ public class EstimateService {
     private final ProjectService projectService;
     private final ProjectRepository projectRepository;
     private final CatalogService catalogService;
+    private final CatalogFiling catalogFiling;
     private final CatalogItemRepository catalogItemRepository;
     private final EstimatePdfService pdfService;
     private final LimitService limitService;
@@ -810,14 +811,21 @@ public class EstimateService {
         // percentage of. POSITION is the right default because the wording («плюс % до м.кв.»)
         // means "of the m² work this is an extra on".
         boolean percent = source.getUnit() == Unit.PERCENT;
-        // Copy the category from the catalog item so the estimate can group too.
+        // The folder the estimate groups this line under. It follows the branch of the picker tree
+        // the master tapped in, not the row's own storage trade — a position two trades both ship
+        // is stored once, under whichever claimed it first (V118), and is offered under both. See
+        // CatalogFiling; an unknown or unshipped trade leaves the row's own filing alone.
+        Map<String, String> folders = req.trade() == null ? Map.of()
+                : catalogFiling.categoriesUnder(req.trade());
+        CatalogFiling.Filing filing = CatalogFiling.fileUnder(req.trade(), folders,
+                source.getName(), source.getType(), source.getUnit(), source);
         EstimateItem item = EstimateItem.builder()
                 .id(requestedId)
                 .estimate(estimate)
                 .type(source.getType())
                 .name(source.getName())
-                .category(source.getCategory())
-                .trade(source.getTrade())
+                .category(filing.category())
+                .trade(filing.trade())
                 .description(source.getDescription())
                 .unit(source.getUnit())
                 .quantity(percent ? source.getDefaultPrice() : req.quantity())
@@ -860,15 +868,21 @@ public class EstimateService {
         }
         requireNotSigned(estimate);
         List<EstimateItem> toSave = new ArrayList<>();
+        // One folder index per branch the selection spans, however many rows came from it.
+        Map<Trade, Map<String, String>> foldersByTrade = new HashMap<>();
         for (AddCatalogItemsBatchRequest.Entry e : fresh) {
             CatalogItem source = catalogService.loadOwned(e.catalogItemId(), ownerId);
+            Map<String, String> folders = e.trade() == null ? Map.<String, String>of()
+                    : foldersByTrade.computeIfAbsent(e.trade(), catalogFiling::categoriesUnder);
+            CatalogFiling.Filing filing = CatalogFiling.fileUnder(e.trade(), folders,
+                    source.getName(), source.getType(), source.getUnit(), source);
             toSave.add(EstimateItem.builder()
                     .id(e.id())
                     .estimate(estimate)
                     .type(source.getType())
                     .name(source.getName())
-                    .category(source.getCategory())
-                    .trade(source.getTrade())
+                    .category(filing.category())
+                    .trade(filing.trade())
                     .description(source.getDescription())
                     .unit(source.getUnit())
                     .quantity(e.quantity())

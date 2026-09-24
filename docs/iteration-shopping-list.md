@@ -183,3 +183,35 @@ What shipped instead:
 - **The top-up row now says WHY it appeared** — «Кошторис змінився після покупки». §7 gave the delta
   row its «ще»; without the reason, a master who had not touched the list still had to guess where
   a second number for a material he already bought came from.
+
+## 9. Follow-up: deleting a BOUGHT row hides it (review B-31b, 2026-09-24)
+
+`delete` was the one door that walked past the rule the rest of this feature is built on. §1's
+arithmetic is `remaining = потреба − covered`, and `covered` counts **settled** rows —
+`bought || cleared_at != null`. That is exactly why `clearBought` hides rather than deletes: drop a
+bought row and the demand returns in full, so the next recalculation re-adds the material as
+unbought and the master buys it a second time. A swipe on one row did precisely what «Очистити
+куплені» goes out of its way to avoid, and the damage was invisible — the re-added row looks like
+any other. The second casualty was the neighbour: `topUp()` is derived from a settled sibling with a
+lower `sortOrder`, so deleting the bought 12 turns the open «6» from «ще один» into arithmetic that
+appears to have slipped.
+
+The master's ruling was **hide**, and `delete` now branches on `settled()`:
+
+- an **OPEN** row is really deleted — nothing is covered, so a recalculation asking for the material
+  again is the honest outcome;
+- a **SETTLED** row is stamped `cleared_at`. It leaves the screen, which is all a delete ever
+  promised him, and its quantity stays inside `covered`.
+
+This is the open question's option (c) — «delete it but remember the key as settled» — without the
+new column the note expected, because `cleared_at` is already that memory.
+
+**Deliberately not a 409.** The delete rides the `shoppingItem` outbox entity and replays hours
+later; a refusal arriving then is unactionable — he is on another screen and the row simply
+reappears. Same argument that narrowed B-28 (`add` still accepts 0 because that is what an offline
+queue replays). And «I did not buy it after all» already has an honest gesture that still removes
+the row for good: un-tick first — `applyBought(false)` clears **both** `bought` and `cleared_at` —
+then delete, and the branch takes the OPEN path.
+
+`ShoppingListIntegrationTest` pins all three: a bought row hides and is not re-added, an open row is
+really gone and the material comes back, and un-tick-then-delete removes it permanently.

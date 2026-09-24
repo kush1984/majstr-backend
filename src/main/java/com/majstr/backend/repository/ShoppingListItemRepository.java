@@ -26,10 +26,6 @@ public interface ShoppingListItemRepository extends JpaRepository<ShoppingListIt
     List<ShoppingListItem> findByShoppingListIdAndSourceAndSourceEstimateId(
             UUID shoppingListId, ShoppingListItemSource source, UUID sourceEstimateId);
 
-    /** Manual rows carry no estimate, so they are their own contribution. */
-    List<ShoppingListItem> findByShoppingListIdAndSourceAndSourceEstimateIdIsNull(
-            UUID shoppingListId, ShoppingListItemSource source);
-
     Optional<ShoppingListItem> findByIdAndShoppingListId(UUID id, UUID shoppingListId);
 
     List<ShoppingListItem> findByShoppingListIdAndBoughtTrueAndClearedAtIsNull(UUID shoppingListId);

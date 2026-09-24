@@ -594,4 +594,65 @@ class ShoppingListIntegrationTest extends IntegrationTestBase {
                 .applyCalculated(projectId, ownerId, estimateA, List.of(row(PUTTY, "20")));
         assertThat(only(after, PUTTY).quantity()).isEqualByComparingTo("20");
     }
+
+    /**
+     * Deleting a BOUGHT row HIDES it instead of removing it (review item B-31b, the master's
+     * ruling). Removing it would drop its quantity out of {@code covered}, and the very next
+     * recalculation would put the whole demand back as unbought — a second trip to the merchant for
+     * material already in the van.
+     */
+    @Test
+    void deletingABoughtRowHidesItSoTheMaterialIsNotBoughtTwice() {
+        ShoppingListResponse first = shoppingListService
+                .applyCalculated(projectId, ownerId, estimateA, List.of(row(PUTTY, "12")));
+        UUID itemId = only(first, PUTTY).id();
+        shoppingListService.setBought(projectId, ownerId, itemId, true);
+
+        shoppingListService.delete(projectId, ownerId, itemId);
+
+        // Off the screen, which is all a delete ever promised him.
+        assertThat(shoppingListService.get(projectId, ownerId).items())
+                .extracting(ShoppingListItemResponse::name).doesNotContain(PUTTY);
+        // Still on the row, and that is what keeps the quantity covered.
+        assertThat(jdbc.queryForObject(
+                "SELECT cleared_at FROM shopping_list_item WHERE id = ?", java.sql.Timestamp.class,
+                itemId)).isNotNull();
+
+        ShoppingListResponse after = shoppingListService
+                .applyCalculated(projectId, ownerId, estimateA, List.of(row(PUTTY, "12")));
+        assertThat(after.items()).extracting(ShoppingListItemResponse::name).doesNotContain(PUTTY);
+    }
+
+    @Test
+    void deletingAnOpenRowReallyDeletesIt() {
+        ShoppingListResponse first = shoppingListService
+                .applyCalculated(projectId, ownerId, estimateA, List.of(row(PUTTY, "12")));
+        UUID itemId = only(first, PUTTY).id();
+
+        shoppingListService.delete(projectId, ownerId, itemId);
+
+        assertThat(jdbc.queryForObject(
+                "SELECT COUNT(*) FROM shopping_list_item WHERE id = ?", Integer.class, itemId))
+                .isZero();
+        // Nothing is covered, so the calculator asks for the material again — the honest outcome.
+        ShoppingListResponse after = shoppingListService
+                .applyCalculated(projectId, ownerId, estimateA, List.of(row(PUTTY, "12")));
+        assertThat(only(after, PUTTY).quantity()).isEqualByComparingTo("12");
+    }
+
+    /** «I did not buy it after all» is un-tick and THEN delete, and that still removes the row. */
+    @Test
+    void untickingBeforeDeletingRemovesTheRowForGood() {
+        ShoppingListResponse first = shoppingListService
+                .applyCalculated(projectId, ownerId, estimateA, List.of(row(PUTTY, "12")));
+        UUID itemId = only(first, PUTTY).id();
+        shoppingListService.setBought(projectId, ownerId, itemId, true);
+        shoppingListService.setBought(projectId, ownerId, itemId, false);
+
+        shoppingListService.delete(projectId, ownerId, itemId);
+
+        assertThat(jdbc.queryForObject(
+                "SELECT COUNT(*) FROM shopping_list_item WHERE id = ?", Integer.class, itemId))
+                .isZero();
+    }
 }

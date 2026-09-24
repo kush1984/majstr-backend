@@ -8,8 +8,6 @@ import org.springframework.stereotype.Component;
 
 import java.time.Duration;
 import java.util.UUID;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ConcurrentMap;
 
 /**
  * Per-account cap on act-receipt recognition (default 30/hour). Unlike every other LLM flow, the
@@ -19,12 +17,12 @@ import java.util.concurrent.ConcurrentMap;
  * our money on, and recognition persists nothing — so no business counter bounds it and this cap
  * has to. Generous on purpose: a master photographing a day's receipts stays far under it.
  *
- * <p>Process-local {@link ConcurrentHashMap}, same single-node limitation as the other limiters.</p>
+ * <p>Process-local {@link BucketRegistry}, same single-node limitation as the other limiters.</p>
  */
 @Component
 public class ReceiptScanRateLimiter {
 
-    private final ConcurrentMap<UUID, Bucket> buckets = new ConcurrentHashMap<>();
+    private final BucketRegistry<UUID> buckets;
     private final Bandwidth bandwidth;
 
     public ReceiptScanRateLimiter(RateLimitProperties props) {
@@ -33,10 +31,12 @@ public class ReceiptScanRateLimiter {
                 .capacity(maxPerHour)
                 .refillIntervally(maxPerHour, Duration.ofHours(1))
                 .build();
+        // The map that used to sit here never dropped a key (B-22).
+        this.buckets = new BucketRegistry<>(this.bandwidth, Duration.ofHours(1));
     }
 
     public ConsumeResult tryConsume(UUID accountId) {
-        Bucket bucket = buckets.computeIfAbsent(accountId, k -> Bucket.builder().addLimit(bandwidth).build());
+        Bucket bucket = buckets.get(accountId);
         ConsumptionProbe probe = bucket.tryConsumeAndReturnRemaining(1);
         if (probe.isConsumed()) {
             return new ConsumeResult(true, 0L);

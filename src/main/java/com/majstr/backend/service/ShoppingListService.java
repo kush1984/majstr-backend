@@ -179,6 +179,18 @@ public class ShoppingListService {
         return rendered(item);
     }
 
+    /**
+     * Deleting a SETTLED row HIDES it ({@code cleared_at}) instead of removing it — the same rule,
+     * and the same reason, as {@link #clearBought}. A bought row's quantity is what {@code covered}
+     * counts; drop the row and the demand returns in full, so the next recalculation re-adds the
+     * material as unbought and the master buys it a second time. A hidden row stays settled, which
+     * is exactly what stops that, and it costs him nothing — hidden and deleted look alike on the
+     * screen.
+     *
+     * <p>Deliberately not a 409. This swipe replays from the offline outbox hours later, where a
+     * refusal is unactionable (the argument that narrowed B-28). The honest «I did not buy it»
+     * gesture still deletes: un-tick first — {@code applyBought} clears BOTH flags — then delete.</p>
+     */
     @Transactional
     public void delete(UUID projectId, UUID ownerId, UUID itemId) {
         projectService.loadOwned(projectId, ownerId);
@@ -186,7 +198,13 @@ public class ShoppingListService {
         if (list == null) {
             return; // idempotent, like every other offline-replayable delete
         }
-        itemRepository.findByIdAndShoppingListId(itemId, list.getId()).ifPresent(itemRepository::delete);
+        itemRepository.findByIdAndShoppingListId(itemId, list.getId()).ifPresent(item -> {
+            if (!item.settled()) {
+                itemRepository.delete(item);
+            } else if (item.getClearedAt() == null) {
+                item.setClearedAt(Instant.now());
+            }
+        });
     }
 
     /**

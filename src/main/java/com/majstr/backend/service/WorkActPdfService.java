@@ -402,7 +402,15 @@ public class WorkActPdfService {
                 Image image = Image.getInstance(stream.readAllBytes());
                 image.scaleToFit(500, 620);
                 image.setAlignment(Element.ALIGN_CENTER);
-                Paragraph caption = new Paragraph(n + ". " + r.label() + " — " + formatMoney(r.amount()),
+                // The money table bills billedAmount(); this caption used to print the GROSS one
+                // (B-31), so a receipt with a partial return (V115) read as two different sums on
+                // two pages of one document — and the bigger one sat under the photo that proves
+                // it. Both figures when there is a return, because the PAPER says the gross one.
+                String money = r.returnedOrZero().signum() > 0
+                        ? formatMoney(r.billedAmount()) + " (на чеку " + formatMoney(r.amount())
+                                + ", повернуто " + formatMoney(r.returnedOrZero()) + ")"
+                        : formatMoney(r.amount());
+                Paragraph caption = new Paragraph(n + ". " + r.label() + " — " + money,
                         fonts.regular(9));
                 caption.setSpacingBefore(6);
                 caption.setSpacingAfter(2);

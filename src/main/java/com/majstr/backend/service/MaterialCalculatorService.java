@@ -71,13 +71,26 @@ import java.util.UUID;
  *       A norm filed under no trade at all still answers for anyone — see {@link #normsFor}.</li>
  * </ol>
  *
- * <p><b>Two figures are ASKED FOR, never derived</b> (see {@link NormBasis}). The room's
+ * <p><b>Three figures are ASKED FOR, never derived</b> (see {@link NormBasis}). The room's
  * {@link NormBasis#PERIMETER} is one number for the whole estimate — one room, one perimeter. A
  * короб's {@link NormBasis#SECTION} is one number PER POSITION (V131): a короб is sold by the м.п.
  * of its length and sheathed by the розгортка of a box the position name does not describe, and a
  * прямий короб, a радіусний one and a ніша in the same estimate are three different boxes. One
  * section for all of them would be silently wrong for two — so each asks separately, and until it
- * is answered the position's SECTION materials are reported as missing parameters and left out.</p>
+ * is answered the position's SECTION materials are reported as missing parameters and left out.
+ * A layer's {@link NormBasis#THICKNESS} in millimetres is the third, asked per POSITION for the
+ * same reason and answered the same way (V137) — plaster, screed and levelling compound are sold
+ * per m² per mm, so the millimetres ARE the bill. Unlike a розгортка a thickness has an honest
+ * suggestion, which rides the ask as {@link MissingParameter#suggested()} to be PRE-FILLED and
+ * still visible; nothing is ever applied on the master's behalf.</p>
+ *
+ * <p><b>Two habits rescale a shipped coefficient</b> — {@code PAINT_COVERAGE} × {@code PAINT_COATS}
+ * for paint and {@code TILE_JOINT_MM} for grout (see {@link #coefficient}). Both are properties of
+ * the MASTER, both scale their material linearly, and the scaled figure is what the arithmetic line
+ * on screen reports — a coefficient he cannot see is a number he cannot check. V126 shipped four
+ * further keys that were properties of the WORK, and V137 deleted them: the catalog already names
+ * the tile format and the plaster bound, and one answer per master is wrong for the bathroom that
+ * mixes 300×300 on the floor with 600×1200 on the wall.</p>
  *
  * <p>A master may correct a coefficient, and his correction is a norm of his own that HIDES the
  * shipped one — see {@link #preferOwn} and {@code MaterialNormService}. It is resolved on the read
@@ -101,6 +114,34 @@ public class MaterialCalculatorService {
      *  habit about flat sheets says nothing about an arched one. */
     private static final String GKL_SHEET_CODE = "GKL_SHEET";
 
+    /**
+     * The two materials a master's HABIT rescales, and the figures the shipped norms were written
+     * against (V137). They are matched by material code, not by norm, so a coefficient corrected in
+     * a later migration keeps scaling with his answer instead of quietly falling out of it.
+     *
+     * <p>A prefix for paint — {@code PAINT_INTERIOR}, {@code PAINT_CEILING} and V138's
+     * {@code PAINT_FACADE} are all spread by the same hand — and an exact code for grout, which is
+     * the only material a joint width governs. The habit is applied as a RATIO, which is what lets
+     * it cross a facade norm written against a different base (6,5 м²/л, not 9): a master who
+     * covers a third more than we assume covers a third more out there too. Adhesive, primer and
+     * putty do not scale with either: they are consumed per m2 of surface, and their own habit is a
+     * thickness, which the POSITION now answers.</p>
+     */
+    private static final String PAINT_CODE_PREFIX = "PAINT_";
+    private static final String GROUT_CODE = "TILE_GROUT";
+
+    /** Square metres one litre covers in ONE coat, and how many coats — the shipped 0,22 л/м². */
+    public static final BigDecimal DEFAULT_PAINT_COVERAGE = new BigDecimal("9");
+    public static final BigDecimal DEFAULT_PAINT_COATS = new BigDecimal("2");
+
+    /** The joint the shipped grout figures assume, in millimetres. */
+    public static final BigDecimal DEFAULT_TILE_JOINT_MM = new BigDecimal("2.5");
+
+    /** Upper bound on a figure the master types per position — metres for a розгортка, millimetres
+     *  for a thickness. One bound for both because it is a stray extra digit it looks for, not a
+     *  rule of building; the PWA's own field guard uses the same number. */
+    private static final BigDecimal MAX_PER_POSITION = new BigDecimal("1000");
+
     private final EstimateService estimateService;
     private final EstimateItemRepository itemRepository;
     private final MaterialNormRepository normRepository;
@@ -111,11 +152,18 @@ public class MaterialCalculatorService {
     @Transactional(readOnly = true)
     public MaterialCalculationResponse calculate(UUID estimateId, UUID ownerId,
                                                  BigDecimal wastePercent, BigDecimal perimeter,
-                                                 String sections) {
-        Map<UUID, BigDecimal> section = parseSections(sections);
+                                                 String sections, String thicknesses) {
+        Map<UUID, BigDecimal> section = parsePerPosition(sections);
+        Map<UUID, BigDecimal> thickness = parsePerPosition(thicknesses);
+        Habits habits = new Habits(ownerId);
         Estimate estimate = estimateService.loadOwned(estimateId, ownerId);
-        List<EstimateItem> works = workLines(itemRepository
+        List<EstimateItem> buyable = buyableLines(itemRepository
                 .findByEstimateIdOrderBySortOrderAscIdAsc(estimateId));
+        List<EstimateItem> works = priced(buyable);
+        // Nothing to count because nothing has a quantity yet — the ordinary state of an estimate
+        // straight out of a bundle. The screen says that instead of «we know no norms for this
+        // work», which is a different sentence and, here, a false one.
+        boolean quantitiesMissing = works.isEmpty() && !buyable.isEmpty();
 
         Map<String, List<MaterialNorm>> byKey = normsByKey(works, ownerId);
 
@@ -148,26 +196,29 @@ public class MaterialCalculatorService {
                     continue;
                 }
                 BigDecimal quantity = item.getQuantity(); // non-null and positive — see workLines
-                if (norm.getBasis() == NormBasis.SECTION) {
-                    // Per POSITION, not per estimate: this box's own розгортка or nothing at all.
-                    BigDecimal box = section.get(item.getId());
-                    if (box == null || box.signum() <= 0) {
-                        parameters.add(new MissingParameter(NormBasis.SECTION.name(),
-                                material.displayName(), item.getId(), item.getName()));
+                BigDecimal per = coefficient(norm, material, habits);
+                NormBasis basis = norm.getBasis();
+                if (basis == NormBasis.SECTION || basis == NormBasis.THICKNESS) {
+                    // Per POSITION, not per estimate: this box's own розгортка, this layer's own
+                    // millimetres, or nothing at all.
+                    Map<UUID, BigDecimal> answers = basis == NormBasis.SECTION ? section : thickness;
+                    BigDecimal param = answers.get(item.getId());
+                    if (param == null || param.signum() <= 0) {
+                        parameters.add(new MissingParameter(basis.name(), material.displayName(),
+                                item.getId(), item.getName(), norm.getDefaultParam()));
                         continue;
                     }
-                    BigDecimal area = quantity.multiply(box);
-                    BigDecimal amount = area.multiply(norm.getQtyPerUnit());
+                    BigDecimal amount = quantity.multiply(param).multiply(per);
                     bucket(buckets, material).add(norm, new MaterialSourceLine(
                             item.getId(), item.getName(), item.getUnit(), scaled(quantity),
-                            norm.getQtyPerUnit(), norm.getId(), norm.getOwner() != null,
-                            NormBasis.SECTION, scaled(box), scaled(amount)), amount);
+                            per, norm.getId(), norm.getOwner() != null,
+                            basis, scaled(param), scaled(amount)), amount);
                     continue;
                 }
-                BigDecimal amount = quantity.multiply(norm.getQtyPerUnit());
+                BigDecimal amount = quantity.multiply(per);
                 bucket(buckets, material).add(norm, new MaterialSourceLine(
                         item.getId(), item.getName(), item.getUnit(), scaled(quantity),
-                        norm.getQtyPerUnit(), norm.getId(), norm.getOwner() != null,
+                        per, norm.getId(), norm.getOwner() != null,
                         NormBasis.QUANTITY, null, scaled(amount)), amount);
             }
         }
@@ -176,7 +227,8 @@ public class MaterialCalculatorService {
         for (PerimeterDemand demand : perimeterDemand.values()) {
             if (!havePerimeter) {
                 parameters.add(new MissingParameter(NormBasis.PERIMETER.name(),
-                        demand.material().displayName(), null, null));
+                        demand.material().displayName(), null, null,
+                        demand.norm().getDefaultParam()));
                 continue;
             }
             BigDecimal amount = perimeter.multiply(demand.norm().getQtyPerUnit());
@@ -201,24 +253,29 @@ public class MaterialCalculatorService {
                 parameters,
                 effectiveWaste,
                 havePerimeter ? scaled(perimeter) : null,
-                estimate.getStatus() == EstimateStatus.SIGNED);
+                estimate.getStatus() == EstimateStatus.SIGNED,
+                quantitiesMissing);
     }
 
     /**
      * Can this estimate be answered at all — is there anything to buy that we know how to count?
      *
-     * <p>The Матеріали entry point is HIDDEN when the answer is no. V127 ships norms for DRYWALL
-     * and nothing else, so a tiler opening the screen would get an empty buying list — which reads
-     * as a broken feature rather than an absent one. A trade we cannot answer for is better not
-     * offered.</p>
+     * <p>The Матеріали entry point is HIDDEN when the answer is no. DRYWALL, TILING and PAINTER
+     * have norms (V127 + V137) and the rest of the trades do not, so a floorer opening the screen
+     * would get an empty buying list — which reads as a broken feature rather than an absent one.
+     * A trade we cannot answer for is better not offered.</p>
      *
      * <p>Deliberately its own endpoint rather than a field on {@code EstimateResponse}: that record
      * is built in ~20 places and every one of them would then pay for this lookup.</p>
+     *
+     * <p><b>Quantities are no part of the question</b> — see {@link #priced}. The probe asks what
+     * the estimate's position NAMES can be answered for; an estimate applied from a bundle carries
+     * nothing but zeros and is precisely when the button is wanted.</p>
      */
     @Transactional(readOnly = true)
     public MaterialAvailabilityResponse availability(UUID estimateId, UUID ownerId) {
         estimateService.loadOwned(estimateId, ownerId);
-        List<EstimateItem> works = workLines(itemRepository
+        List<EstimateItem> works = buyableLines(itemRepository
                 .findByEstimateIdOrderBySortOrderAscIdAsc(estimateId));
         Map<String, List<MaterialNorm>> byKey = normsByKey(works, ownerId);
         // The calculation's own lookup, so the probe and the result screen can never disagree —
@@ -265,22 +322,35 @@ public class MaterialCalculatorService {
     }
 
     /**
-     * What counts as a buying decision, and all three exclusions matter. A PERCENT line is a
-     * surcharge, not work — it consumes nothing. A MATERIAL line is something the master already
-     * decided to buy; we were not asked to explain it, and running it through the norms would offer
-     * him the same thing twice.
-     *
-     * <p><b>A quantity of 0 is the third, and it was a live bug.</b> Masters keep their price list
-     * inside an estimate — «Штукатурні роботи (від) — 0 м²» — and on the master's own test estimate
-     * 31 of 39 lines were exactly that. Each one reached a norm and produced a material row of 0
-     * («Картон захисний — 0 м²», «Шпаклівка фінішна — 0 кг»), which is what «звідки у матеріалах
-     * стільки матеріалів» was about. A line with no quantity is not yet a decision to buy
-     * anything.</p>
+     * A line that could consume something, whatever its quantity says yet. Both exclusions matter:
+     * a PERCENT line is a surcharge, not work — it consumes nothing — and a MATERIAL line is
+     * something the master already decided to buy, so running it through the norms would offer him
+     * the same thing twice.
      */
-    private List<EstimateItem> workLines(List<EstimateItem> items) {
+    private List<EstimateItem> buyableLines(List<EstimateItem> items) {
         return items.stream()
                 .filter(i -> i.getType() == ItemType.WORK)
                 .filter(i -> i.getUnit() != Unit.PERCENT)
+                .toList();
+    }
+
+    /**
+     * ...and of those, the ones that are a decision to buy, which is where the quantity comes in.
+     *
+     * <p><b>A quantity of 0 was a live bug.</b> Masters keep their price list inside an estimate —
+     * «Штукатурні роботи (від) — 0 м²» — and on the master's own test estimate 31 of 39 lines were
+     * exactly that. Each one reached a norm and produced a material row of 0 («Картон захисний —
+     * 0 м²», «Шпаклівка фінішна — 0 кг»), which is what «звідки у матеріалах стільки матеріалів»
+     * was about. A line with no quantity is not yet a decision to buy anything.</p>
+     *
+     * <p><b>It is the CALCULATION's filter, never the probe's</b> — that was the second half of the
+     * bug. An estimate straight out of a bundle has every quantity at zero, so a probe sharing this
+     * filter answered «nothing to buy» and the Матеріали button was hidden at exactly the moment
+     * the estimate was created: «я не бачу внизу того калькулятора». Whether we can answer for an
+     * estimate is a property of its position NAMES, not of numbers the master has not typed yet.</p>
+     */
+    private List<EstimateItem> priced(List<EstimateItem> buyable) {
+        return buyable.stream()
                 .filter(i -> i.getQuantity() != null && i.getQuantity().signum() > 0)
                 .toList();
     }
@@ -382,6 +452,104 @@ public class MaterialCalculatorService {
     }
 
     /**
+     * The coefficient actually used, which is the shipped one rescaled by the master's habits.
+     *
+     * <p>Two habits genuinely are habits — how thickly he paints, and how wide he leaves a joint —
+     * and both scale their material LINEARLY, so a stored figure is enough and no second norm is
+     * needed. The scale is 1 when he has said nothing, so the shipped figure stands.</p>
+     *
+     * <p><b>An owned norm is never rescaled.</b> A master who corrected a coefficient has already
+     * told us the number he buys against; multiplying his answer by his own habit would apply the
+     * same opinion twice, and he has no way to see that it happened.</p>
+     */
+    private BigDecimal coefficient(MaterialNorm norm, Material material, Habits habits) {
+        BigDecimal per = norm.getQtyPerUnit();
+        if (norm.getOwner() != null) {
+            return per;
+        }
+        String code = material.getCode();
+        if (code == null) {
+            return per;
+        }
+        if (code.startsWith(PAINT_CODE_PREFIX)) {
+            return scaleBy(per, habits.paint());
+        }
+        if (GROUT_CODE.equals(code)) {
+            return scaleBy(per, habits.joint());
+        }
+        return per;
+    }
+
+    /**
+     * The two rescaling habits, each read on FIRST demand and never twice.
+     *
+     * <p>Not a micro-optimisation: most estimates buy neither paint nor grout, and a drywall job
+     * asking the database twice for an answer nothing will consult is work done for nobody. It also
+     * keeps the read honest — a pref row is touched only when a material on THIS list scales with
+     * it, which is what a master's own norm relies on when it declines to be rescaled at all.</p>
+     */
+    private final class Habits {
+        private final UUID ownerId;
+        private BigDecimal paint;
+        private BigDecimal joint;
+        private boolean paintRead;
+        private boolean jointRead;
+
+        private Habits(UUID ownerId) {
+            this.ownerId = ownerId;
+        }
+
+        private BigDecimal paint() {
+            if (!paintRead) {
+                paint = paintScale(ownerId);
+                paintRead = true;
+            }
+            return paint;
+        }
+
+        private BigDecimal joint() {
+            if (!jointRead) {
+                joint = jointScale(ownerId);
+                jointRead = true;
+            }
+            return joint;
+        }
+    }
+
+    private BigDecimal scaleBy(BigDecimal per, BigDecimal scale) {
+        return scale == null ? per : per.multiply(scale).setScale(4, RoundingMode.HALF_UP);
+    }
+
+    /**
+     * «Скільки м² з літра» × «скільки шарів», against the pair the shipped norms were written for.
+     * Null when he has said nothing or typed something we cannot read — the shipped figure then
+     * stands untouched, which is the same outcome as a scale of 1 and one fewer thing to get wrong.
+     */
+    private BigDecimal paintScale(UUID ownerId) {
+        BigDecimal coverage = positive(pref(ownerId, MaterialPrefKey.PAINT_COVERAGE));
+        BigDecimal coats = positive(pref(ownerId, MaterialPrefKey.PAINT_COATS));
+        if (coverage == null && coats == null) {
+            return null;
+        }
+        BigDecimal effectiveCoverage = coverage == null ? DEFAULT_PAINT_COVERAGE : coverage;
+        BigDecimal effectiveCoats = coats == null ? DEFAULT_PAINT_COATS : coats;
+        return effectiveCoats.divide(effectiveCoverage, 6, RoundingMode.HALF_UP)
+                .divide(DEFAULT_PAINT_COATS.divide(DEFAULT_PAINT_COVERAGE, 6, RoundingMode.HALF_UP),
+                        6, RoundingMode.HALF_UP);
+    }
+
+    /** Grout fills the joint, so it scales with the joint's width and nothing else. */
+    private BigDecimal jointScale(UUID ownerId) {
+        BigDecimal joint = positive(pref(ownerId, MaterialPrefKey.TILE_JOINT_MM));
+        return joint == null ? null : joint.divide(DEFAULT_TILE_JOINT_MM, 6, RoundingMode.HALF_UP);
+    }
+
+    private BigDecimal positive(String raw) {
+        BigDecimal value = parseWaste(raw);
+        return value == null || value.signum() <= 0 ? null : value;
+    }
+
+    /**
      * The drywall sheet is the one material whose package the master's own habit defines: a
      * 1200×3000 sheet is 3,6 m² where the shipped default is 3,0, and rounding to the wrong sheet
      * is a wasted trip. Every other material keeps the dictionary's own packaging.
@@ -466,7 +634,10 @@ public class MaterialCalculatorService {
     }
 
     /**
-     * The sections the master typed, as they ride the query string: «uuid:0.4,uuid:0.55».
+     * The per-position figures the master typed, as they ride the query string:
+     * «uuid:0.4,uuid:0.55». Shared by SECTION (metres) and THICKNESS (millimetres), which travel as
+     * two separate parameters — one map per QUESTION, because one короб line can be both a box with
+     * a розгортка and a layer with a thickness, and merging them would answer one with the other.
      *
      * <p>One compact scalar parameter rather than a repeated one or a request body, so asking for a
      * переріз does not turn the calculation into a POST — it stores nothing and stays a view of the
@@ -474,11 +645,11 @@ public class MaterialCalculatorService {
      *
      * <p>A malformed or unknown entry is <b>ignored, never rejected</b>. The id belongs to an
      * estimate line the master is still editing, so a stale one is ordinary — and the consequence of
-     * ignoring it is that the position asks for its section again, which is a screen he can act on.
+     * ignoring it is that the position asks for its figure again, which is a screen he can act on.
      * A 400 would be an empty screen with no way forward, for a figure that is optional by design.
      * </p>
      */
-    static Map<UUID, BigDecimal> parseSections(String raw) {
+    static Map<UUID, BigDecimal> parsePerPosition(String raw) {
         if (raw == null || raw.isBlank()) {
             return Map.of();
         }
@@ -491,7 +662,11 @@ public class MaterialCalculatorService {
             try {
                 UUID id = UUID.fromString(entry.substring(0, colon).trim());
                 BigDecimal value = new BigDecimal(entry.substring(colon + 1).trim().replace(',', '.'));
-                if (value.signum() > 0) {
+                // Bounded for the same reason the PWA bounds its own field (B-18): the figure is
+                // multiplied into a quantity, so a stray extra digit is not a big answer, it is a
+                // shopping list nobody can read. Out of range is IGNORED, not rejected — the
+                // position then asks again, which is a screen the master can act on.
+                if (value.signum() > 0 && value.compareTo(MAX_PER_POSITION) <= 0) {
                     sections.put(id, value);
                 }
             } catch (IllegalArgumentException e) {

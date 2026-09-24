@@ -9,6 +9,7 @@ import com.lowagie.text.Phrase;
 import com.lowagie.text.pdf.PdfPCell;
 import com.lowagie.text.pdf.PdfPTable;
 import com.lowagie.text.pdf.PdfWriter;
+import com.majstr.backend.config.LocalizationConfig;
 import com.majstr.backend.dto.ShoppingListItemResponse;
 import com.majstr.backend.dto.ShoppingListResponse;
 import com.majstr.backend.entity.Project;
@@ -101,7 +102,7 @@ public class ShoppingListPdfService {
         if (notBlank(owner.getPhone())) {
             doc.add(new Paragraph("Телефон: " + owner.getPhone().trim(), fonts.regular(10)));
         }
-        doc.add(new Paragraph("Дата: " + LocalDate.now().format(DATE), fonts.regular(10)));
+        doc.add(new Paragraph("Дата: " + LocalDate.now(LocalizationConfig.ZONE).format(DATE), fonts.regular(10)));
     }
 
     private void addSection(Document doc, String title, List<ShoppingListItemResponse> items,

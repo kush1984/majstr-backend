@@ -89,6 +89,9 @@ public class MaterialNormService {
                 .material(base.getMaterial())
                 .qtyPerUnit(base.getQtyPerUnit())
                 .basis(base.getBasis())
+                // The question the norm asks travels with it: a THICKNESS fork that lost its
+                // suggestion would ask for millimetres over an empty field (V137).
+                .defaultParam(base.getDefaultParam())
                 .wastePercent(base.getWastePercent())
                 .sortOrder(base.getSortOrder())
                 .build());

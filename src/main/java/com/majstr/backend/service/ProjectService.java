@@ -15,18 +15,18 @@ import com.majstr.backend.feature.LimitService;
 import com.majstr.backend.repository.ProjectMessageRepository;
 import com.majstr.backend.repository.EstimateRepository;
 import com.majstr.backend.repository.ProjectPhotoRepository;
+import com.majstr.backend.repository.ProjectReceiptRepository;
 import com.majstr.backend.repository.ProjectRepository;
 import com.majstr.backend.repository.ShoppingListItemRepository;
 import com.majstr.backend.repository.ShoppingListRepository;
 import com.majstr.backend.repository.UserRepository;
-import com.majstr.backend.storage.StorageService;
+import com.majstr.backend.repository.WorkActReceiptRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.io.IOException;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.Instant;
@@ -35,6 +35,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.stream.Stream;
 
 @Slf4j
 @Service
@@ -48,7 +49,9 @@ public class ProjectService {
     private final ClientService clientService;
     private final LimitService limitService;
     private final ProjectPhotoRepository photoRepository;
-    private final StorageService storage;
+    private final ProjectReceiptRepository projectReceiptRepository;
+    private final WorkActReceiptRepository workActReceiptRepository;
+    private final StorageCleanup cleanup;
     private final ShoppingListRepository shoppingListRepository;
     /** Bulk queries only, like {@link ShoppingListRepository#updateArchivedAt}: this service must
      *  not depend on {@code ShoppingListService}, which depends on it back. */
@@ -161,8 +164,16 @@ public class ProjectService {
         // every project delete used to leak all its files on R2/local storage forever. That
         // is cost creep, and — since receipt photos are financial personal data — a deletion
         // that quietly keeps the data. Collect the keys BEFORE the rows disappear.
-        List<String> photoKeys = photoRepository.findByProjectIdOrderByCreatedAtDesc(id).stream()
-                .map(ProjectPhoto::getStorageKey)
+        // Three tables hold files, not one (B-26): the gallery, the object's own till receipts
+        // (V129) and the receipts frozen into this object's acts (V110). The last two are the ones
+        // that matter most — a photographed receipt is financial personal data, and it used to
+        // survive the object it belonged to.
+        List<String> blobKeys = Stream.of(
+                        photoRepository.findByProjectIdOrderByCreatedAtDesc(id).stream()
+                                .map(ProjectPhoto::getStorageKey),
+                        projectReceiptRepository.findStorageKeysByProjectId(id).stream(),
+                        workActReceiptRepository.findStorageKeysByProjectId(id).stream())
+                .flatMap(s -> s)
                 .filter(k -> k != null && !k.isBlank())
                 .toList();
 
@@ -175,16 +186,10 @@ public class ProjectService {
         projectRepository.delete(project);
         // Estimates and items are cascaded by the FK ON DELETE CASCADE.
 
-        // Fail-soft, same as the single-photo path: a storage hiccup must not roll back a
-        // delete the master already confirmed — a leftover object is recoverable, a
-        // half-deleted project is not.
-        for (String key : photoKeys) {
-            try {
-                storage.delete(key);
-            } catch (IOException e) {
-                log.warn("Could not delete stored photo {} of project {}: {}", key, id, e.getMessage());
-            }
-        }
+        // Fail-soft and AFTER the commit (B-25): a storage hiccup must not roll back a delete the
+        // master already confirmed — a leftover object is recoverable, a half-deleted project is
+        // not — and files must not go while the rows that point at them might still come back.
+        cleanup.afterCommit(blobKeys);
     }
 
     /** Load a project or throw — existence (404) + ownership (403). Public so

@@ -19,6 +19,7 @@ import com.majstr.backend.entity.TemplateTradeOverride;
 import com.majstr.backend.entity.Trade;
 import com.majstr.backend.entity.Unit;
 import com.majstr.backend.entity.User;
+import com.majstr.backend.entity.UserTrade;
 import com.majstr.backend.repository.CatalogItemRepository;
 import com.majstr.backend.repository.EstimateItemRepository;
 import com.majstr.backend.repository.EstimateRepository;
@@ -42,6 +43,7 @@ import java.math.BigDecimal;
 import java.util.LinkedHashSet;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
@@ -54,6 +56,7 @@ import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import org.springframework.security.access.AccessDeniedException;
 
 @ExtendWith(MockitoExtension.class)
@@ -72,6 +75,7 @@ class EstimateTemplateServiceTest {
     @Mock TemplateDefaultOverrideRepository defaultOverrideRepository;
     @Mock UserTradeRepository userTradeRepository;
     @Mock UserRepository userRepository;
+    @Mock CatalogFiling catalogFiling;
     @InjectMocks EstimateTemplateService service;
 
     private final UUID ownerId = UUID.randomUUID();
@@ -131,6 +135,106 @@ class EstimateTemplateServiceTest {
         assertThat(unmatched.getUnit()).isEqualTo(Unit.M2); // falls back to template unit
 
         verify(limitService).requireCanAddEstimate(ownerId, projectId);
+    }
+
+    /**
+     * A PAINTER bundle files its lines under PAINTER, even when the row that priced them is stored
+     * under another trade — `catalog_items` keeps ONE row per name (V118), under whichever trade
+     * claimed it first, and copying that verbatim is what grew DRYWALL and TILING category headers
+     * on a painting estimate: «якісь не зрозумілі категорії з плитки, гіпсокартону».
+     */
+    @Test
+    void applyToProject_filesLinesUnderTheBundlesOwnTrade_notTheRowThatPricedThem() {
+        UUID templateId = UUID.randomUUID();
+        UUID projectId = UUID.randomUUID();
+        UUID estimateId = UUID.randomUUID();
+
+        EstimateTemplate painting = EstimateTemplate.builder()
+                .id(templateId).isDefault(true).trade(Trade.PAINTER).build();
+        given(templateRepository.findById(templateId)).willReturn(Optional.of(painting));
+        Project project = Project.builder().id(projectId).build();
+        given(projectService.loadOwned(projectId, ownerId)).willReturn(project);
+
+        // Stored under DRYWALL with the drywall folder — the master's drywall catalog claimed the
+        // name first, and he has been buying that row's price ever since.
+        CatalogItem shared = CatalogItem.builder()
+                .name("Шпаклювання фінішне (2–4 рази)").category("Оздоблення під фарбування")
+                .type(ItemType.WORK).unit(Unit.M2).trade(Trade.DRYWALL)
+                .defaultPrice(new BigDecimal("180.00")).build();
+        CatalogItem painterOnly = CatalogItem.builder()
+                .name("Фарбування стін/стель (білий)").category("Фарбування")
+                .type(ItemType.WORK).unit(Unit.M2).trade(Trade.PAINTER)
+                .defaultPrice(new BigDecimal("120.00")).build();
+        given(catalogRepository.findByOwnerIdOrderByNameAsc(ownerId))
+                .willReturn(List.of(shared, painterOnly));
+        given(catalogFiling.categoriesUnder(Trade.PAINTER)).willReturn(Map.of(
+                CatalogFiling.key("Шпаклювання фінішне (2–4 рази)", ItemType.WORK, Unit.M2),
+                "Шпаклювання та шліфування",
+                CatalogFiling.key("Фарбування стін/стель (білий)", ItemType.WORK, Unit.M2),
+                "Фарбування"));
+
+        Estimate saved = Estimate.builder().id(estimateId).project(project).build();
+        given(estimateRepository.save(any())).willReturn(saved);
+        given(templateItemRepository.findByTemplateIdOrderBySortOrderAscIdAsc(templateId)).willReturn(List.of(
+                templateItem(painting, "Шпаклювання фінішне (2–4 рази)", Unit.M2, 0),
+                templateItem(painting, "Фарбування стін/стель (білий)", Unit.M2, 1),
+                templateItem(painting, "Заробка стиків серпянкою", Unit.M2, 2))); // in no catalog
+        given(estimateService.get(estimateId, ownerId)).willReturn(stubResponse(estimateId, projectId));
+
+        service.applyToProject(projectId, templateId, new EstimateCreateRequest(null, null, "Кімната"), ownerId);
+
+        ArgumentCaptor<List<EstimateItem>> captor = ArgumentCaptor.forClass(List.class);
+        verify(estimateItemRepository).saveAll(captor.capture());
+        List<EstimateItem> items = captor.getValue();
+
+        EstimateItem refiled = items.get(0);
+        assertThat(refiled.getTrade()).isEqualTo(Trade.PAINTER);
+        assertThat(refiled.getCategory()).isEqualTo("Шпаклювання та шліфування");
+        // Only the FILING moved — the price is still the master's own, off the drywall row.
+        assertThat(refiled.getUnitPrice()).isEqualByComparingTo("180.00");
+
+        assertThat(items.get(1).getTrade()).isEqualTo(Trade.PAINTER);
+        assertThat(items.get(1).getCategory()).isEqualTo("Фарбування");
+
+        // A name the library does not ship under this trade either: no catalog row, so no price —
+        // and nothing to file it by, so it stays where V125 leaves a line with no source.
+        assertThat(items.get(2).getTrade()).isNull();
+        assertThat(items.get(2).getCategory()).isNull();
+    }
+
+    /** A bundle of the master's own custom trade reads OTHER for storage reasons only (V91), and
+     *  the library ships nothing under OTHER — so re-filing could only clear a folder he chose. */
+    @Test
+    void applyToProject_neverRefilesFromACustomTradeBundle() {
+        UUID templateId = UUID.randomUUID();
+        UUID projectId = UUID.randomUUID();
+        UUID estimateId = UUID.randomUUID();
+
+        EstimateTemplate own = EstimateTemplate.builder().id(templateId).isDefault(false)
+                .owner(User.builder().id(ownerId).build())
+                .trade(Trade.OTHER)
+                .customTrade(UserTrade.builder().id(UUID.randomUUID()).name("Каміни").build())
+                .build();
+        given(templateRepository.findById(templateId)).willReturn(Optional.of(own));
+        given(projectService.loadOwned(projectId, ownerId))
+                .willReturn(Project.builder().id(projectId).build());
+        CatalogItem stored = CatalogItem.builder()
+                .name("Кладка каміна").category("Каміни").type(ItemType.WORK).unit(Unit.PIECE)
+                .trade(Trade.OTHER).defaultPrice(new BigDecimal("9000")).build();
+        given(catalogRepository.findByOwnerIdOrderByNameAsc(ownerId)).willReturn(List.of(stored));
+        Estimate saved = Estimate.builder().id(estimateId)
+                .project(Project.builder().id(projectId).build()).build();
+        given(estimateRepository.save(any())).willReturn(saved);
+        given(templateItemRepository.findByTemplateIdOrderBySortOrderAscIdAsc(templateId))
+                .willReturn(List.of(templateItem(own, "Кладка каміна", Unit.PIECE, 0)));
+        given(estimateService.get(estimateId, ownerId)).willReturn(stubResponse(estimateId, projectId));
+
+        service.applyToProject(projectId, templateId, new EstimateCreateRequest(null, null, "Дім"), ownerId);
+
+        verifyNoInteractions(catalogFiling);
+        ArgumentCaptor<List<EstimateItem>> captor = ArgumentCaptor.forClass(List.class);
+        verify(estimateItemRepository).saveAll(captor.capture());
+        assertThat(captor.getValue().get(0).getCategory()).isEqualTo("Каміни");
     }
 
     @Test

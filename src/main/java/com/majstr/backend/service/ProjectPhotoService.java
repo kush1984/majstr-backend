@@ -65,6 +65,7 @@ public class ProjectPhotoService {
     private final FeatureGuard featureGuard;
     private final LimitService limitService;
     private final StorageService storage;
+    private final StorageCleanup cleanup;
 
     /** The bytes + content type of a stored photo, for streaming responses. */
     public record PhotoFile(byte[] bytes, String contentType) {}
@@ -245,6 +246,10 @@ public class ProjectPhotoService {
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void saveReceiptCopy(UUID projectId, UUID ownerId, byte[] content, ImageKind kind,
                                 String caption) throws IOException {
+        // The same gate every other photo write goes through (B-29). Harmless today — FREE already
+        // has the feature — but this is the one door that wrote into the gallery without asking,
+        // and a plan change would have made it the one door that leaks it.
+        requirePhotos(projectId, ownerId);
         limitService.requireCanAddPhoto(ownerId, projectId, PhotoSource.RECEIPT);
         StoredObject stored = storage.store(
                 new ByteArrayInputStream(content), content.length,
@@ -277,8 +282,9 @@ public class ProjectPhotoService {
     public void delete(UUID projectId, UUID photoId, UUID ownerId) {
         requirePhotos(projectId, ownerId);
         ProjectPhoto photo = loadPhoto(projectId, photoId);
-        tryDelete(photo.getStorageKey());
         photoRepository.delete(photo);
+        // The file goes AFTER the row, never before it (B-25).
+        cleanup.afterCommit(photo.getStorageKey());
     }
 
     /** Read a photo for the authenticated owner (any visibility). */
@@ -333,14 +339,6 @@ public class ProjectPhotoService {
     private User loadUser(UUID ownerId) {
         return userRepository.findById(ownerId)
                 .orElseThrow(() -> new ResourceNotFoundException("User not found: " + ownerId));
-    }
-
-    private void tryDelete(String key) {
-        try {
-            storage.delete(key);
-        } catch (IOException e) {
-            log.warn("Could not delete stored photo {}: {}", key, e.getMessage());
-        }
     }
 
     private static String blankToNull(String s) {

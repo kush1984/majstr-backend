@@ -9,17 +9,20 @@ package com.majstr.backend.entity;
  * how many coats he paints) rather than of the object. A room's perimeter or ceiling height is a
  * property of the flat, has no meaningful default, and pre-filling it from the previous object
  * would announce someone else's number as this master's answer.</p>
+ *
+ * <p>V137 dropped three of V126's keys for failing that test. {@code TILE_SIZE} and
+ * {@code TILE_THICKNESS_MM} are properties of the WORK, and the catalog already names them
+ * («Укладання плитки 300х600», «Укладання плитки 1200х3200 мм»); {@code TILE_LAYOUT} is its own
+ * PERCENT position («по діагоналі», «ялинкою»). Worse, one answer per MASTER is silently wrong for
+ * an estimate mixing 300×300 floor tile with 600×1200 wall tile — which is most bathrooms.</p>
  */
 public enum MaterialPrefKey {
-    /** Tile format the master usually lays, e.g. {@code 600x600}. */
-    TILE_SIZE,
-    /** Joint width in millimetres. */
+    /**
+     * Joint width in millimetres. Grout scales linearly with it: the shipped norms assume
+     * {@code DEFAULT_TILE_JOINT_MM}, and his answer rescales them.
+     */
     TILE_JOINT_MM,
-    /** Tile thickness in millimetres — grout consumption depends on it. */
-    TILE_THICKNESS_MM,
-    /** Layout habit, e.g. straight or diagonal — drives the waste allowance. */
-    TILE_LAYOUT,
-    /** Litres of paint per m² per coat, as the master measures it. */
+    /** Square metres one litre of paint covers in ONE coat, as the master measures it. */
     PAINT_COVERAGE,
     /** How many coats he paints by default. */
     PAINT_COATS,

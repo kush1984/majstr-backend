@@ -78,6 +78,7 @@ class MaterialNormServiceTest {
     void theForkKeepsEverythingAboutTheNormExceptTheCoefficient() {
         MaterialNorm shipped = norm(null, "1.0");
         shipped.setBasis(NormBasis.PERIMETER);
+        shipped.setDefaultParam(new BigDecimal("15.0000"));
         shipped.setWastePercent(new BigDecimal("5.00"));
         shipped.setSortOrder(7);
         when(normRepository.findById(shipped.getId())).thenReturn(Optional.of(shipped));
@@ -91,6 +92,8 @@ class MaterialNormServiceTest {
         ArgumentCaptor<MaterialNorm> saved = ArgumentCaptor.captor();
         verify(normRepository).save(saved.capture());
         assertThat(saved.getValue().getBasis()).isEqualTo(NormBasis.PERIMETER);
+        // The suggestion is part of the QUESTION, not of the figure he corrected (V137).
+        assertThat(saved.getValue().getDefaultParam()).isEqualByComparingTo("15");
         assertThat(saved.getValue().getWastePercent()).isEqualByComparingTo("5.00");
         assertThat(saved.getValue().getSortOrder()).isEqualTo(7);
         assertThat(saved.getValue().getTrade()).isEqualTo(Trade.DRYWALL);

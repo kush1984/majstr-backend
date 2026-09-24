@@ -141,4 +141,6 @@ is precisely why this was invisible — the pair never got there.
 
 - **DECISION needed from the owner:** B-31b (refuse deleting a bought row with 409, or accept it as
   «his own action») and B-31d (derive «Чек №N» from a sequence, or accept possible duplicates).
+  *(B-31b was ruled on 2026-09-24 — neither: a settled row is HIDDEN. See
+  [iteration-shopping-list.md](iteration-shopping-list.md) §9.)*
 - Untouched: B-18, B-19, B-20, B-22, B-23, B-25, B-26, B-28, B-29, B-30, B-31f, B-31g, B-31h.

@@ -42,7 +42,9 @@ class ProjectServiceTest {
     // Needed since delete() also cleans up the project's stored photos — without these
     // @InjectMocks would leave them null and delete would NPE.
     @Mock com.majstr.backend.repository.ProjectPhotoRepository photoRepository;
-    @Mock com.majstr.backend.storage.StorageService storage;
+    @Mock com.majstr.backend.repository.ProjectReceiptRepository projectReceiptRepository;
+    @Mock com.majstr.backend.repository.WorkActReceiptRepository workActReceiptRepository;
+    @Mock StorageCleanup cleanup;
     // updateStatus archives/unarchives the object's shopping list, so this one must not be null.
     @Mock com.majstr.backend.repository.ShoppingListRepository shoppingListRepository;
     @Mock com.majstr.backend.repository.ShoppingListItemRepository shoppingListItemRepository;
@@ -290,10 +292,11 @@ class ProjectServiceTest {
     }
 
     @Test
-    void delete_alsoRemovesTheProjectsStoredPhotos() throws Exception {
-        // The photo ROWS cascade with the FK, but the objects in storage did not — every
-        // project delete leaked its files forever. Receipt photos are financial personal
-        // data, so "deleted" has to mean deleted.
+    void delete_alsoRemovesEveryStoredFileTheObjectHeld() {
+        // The ROWS cascade with the FK, but the objects in storage do not — every project delete
+        // leaked its files forever. THREE tables hold them, not one (review B-26): the gallery, the
+        // object's own till receipts (V129) and the receipts frozen into its acts (V110). The last
+        // two are financial personal data, and they used to outlive the object entirely.
         UUID projectId = UUID.randomUUID();
         Project project = Project.builder()
                 .id(projectId).owner(User.builder().id(ownerId).build())
@@ -302,6 +305,10 @@ class ProjectServiceTest {
         given(photoRepository.findByProjectIdOrderByCreatedAtDesc(projectId)).willReturn(List.of(
                 com.majstr.backend.entity.ProjectPhoto.builder().storageKey("photos/a.jpg").build(),
                 com.majstr.backend.entity.ProjectPhoto.builder().storageKey("photos/b.jpg").build()));
+        given(projectReceiptRepository.findStorageKeysByProjectId(projectId))
+                .willReturn(List.of("receipts/c.jpg"));
+        given(workActReceiptRepository.findStorageKeysByProjectId(projectId))
+                .willReturn(List.of("act-receipts/d.jpg"));
 
         projectService.delete(projectId, ownerId);
 
@@ -312,26 +319,9 @@ class ProjectServiceTest {
         var order = org.mockito.Mockito.inOrder(shoppingListItemRepository, projectRepository);
         order.verify(shoppingListItemRepository).deleteByProjectId(projectId);
         order.verify(projectRepository).delete(project);
-        org.mockito.Mockito.verify(storage).delete("photos/a.jpg");
-        org.mockito.Mockito.verify(storage).delete("photos/b.jpg");
-    }
-
-    @Test
-    void delete_survivesAStorageFailure() throws Exception {
-        // Fail-soft on purpose: the row deletion is already committed by then, so throwing
-        // here would leave a half-deleted project. A leftover object is recoverable.
-        UUID projectId = UUID.randomUUID();
-        Project project = Project.builder()
-                .id(projectId).owner(User.builder().id(ownerId).build())
-                .name("Обʼєкт").address("вул. 1").status(ProjectStatus.DRAFT).build();
-        given(projectRepository.findById(projectId)).willReturn(Optional.of(project));
-        given(photoRepository.findByProjectIdOrderByCreatedAtDesc(projectId)).willReturn(List.of(
-                com.majstr.backend.entity.ProjectPhoto.builder().storageKey("photos/a.jpg").build()));
-        org.mockito.BDDMockito.willThrow(new java.io.IOException("R2 down"))
-                .given(storage).delete("photos/a.jpg");
-
-        projectService.delete(projectId, ownerId); // must not throw
-
-        org.mockito.Mockito.verify(projectRepository).delete(project);
+        // Handed to the cleanup, which deletes AFTER the commit (B-25) — never inline, where a
+        // rollback would leave rows pointing at files already gone.
+        org.mockito.Mockito.verify(cleanup).afterCommit(List.of(
+                "photos/a.jpg", "photos/b.jpg", "receipts/c.jpg", "act-receipts/d.jpg"));
     }
 }

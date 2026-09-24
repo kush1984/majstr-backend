@@ -39,8 +39,11 @@ import java.util.UUID;
  * his own here, forked on write like {@code TemplateDefaultOverride} (V113) rather than through a
  * parallel "master coefficient" mechanism beside it. His row HIDES the default it was copied from,
  * matched on the natural key {@code ux_material_norm} already enforces — (owner, trade, name, unit,
- * material) — because a shipped norm is recreated by every catalog rebuild and a stored link to one
- * would not survive it.</p>
+ * material) — never on the shipped row's id. <b>Not because a norm is recreated</b>: no migration
+ * deletes and re-inserts the norms the way the catalog rebuilds do to the templates (review B-30
+ * corrected this comment). It is because the key is the only thing the two rows are guaranteed to
+ * share — a later round that re-seeds one family of norms, or a fork taken against a screen opened
+ * before the edit, both resolve through the key and neither through an id.</p>
  */
 @Entity
 @Table(name = "material_norm")
@@ -88,11 +91,23 @@ public class MaterialNorm {
     @Column(name = "qty_per_unit", precision = 15, scale = 4)
     private BigDecimal qtyPerUnit;
 
-    /** What {@link #qtyPerUnit} multiplies — the line's own quantity, or the room's perimeter. */
+    /** What {@link #qtyPerUnit} multiplies — the line's own quantity, or a figure we ask for. */
     @Builder.Default
     @Enumerated(EnumType.STRING)
     @Column(name = "basis", nullable = false, length = 20)
     private NormBasis basis = NormBasis.QUANTITY;
+
+    /**
+     * Suggested value for the figure this norm ASKS for, in that parameter's own unit — metres for
+     * a {@link NormBasis#SECTION}, millimetres for a {@link NormBasis#THICKNESS} (V137).
+     *
+     * <p>It rides the missing-parameter report so the app can pre-fill the input <b>visibly</b>:
+     * open-questions §15 asks for a default that is announced, never silently applied. Null means
+     * we have no honest suggestion — a короб's розгортка is anywhere between 0,2 m and 1,2 m, and
+     * pre-filling one would pass a guess off as our answer.</p>
+     */
+    @Column(name = "default_param", precision = 15, scale = 4)
+    private BigDecimal defaultParam;
 
     @Builder.Default
     @Column(name = "waste_percent", nullable = false, precision = 5, scale = 2)

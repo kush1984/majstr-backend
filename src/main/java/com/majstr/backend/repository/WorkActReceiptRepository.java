@@ -102,4 +102,12 @@ public interface WorkActReceiptRepository extends JpaRepository<WorkActReceipt, 
               AND r.itemized = false
             """, nativeQuery = true)
     BigDecimal sumSignedActReceipts(@Param("projectId") UUID projectId);
+
+    /** Every stored photo of this object's ACT receipts, for the same reason as the object ones
+     *  (B-26) — the act rows cascade through the project and take the keys with them. */
+    @Query("""
+            SELECT r.storageKey FROM WorkActReceipt r
+            WHERE r.workAct.project.id = :projectId
+            """)
+    List<String> findStorageKeysByProjectId(@Param("projectId") UUID projectId);
 }

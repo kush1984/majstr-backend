@@ -48,6 +48,7 @@ import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -71,6 +72,7 @@ class EstimateServiceTest {
     @Mock private ProjectService projectService;
     @Mock private ProjectRepository projectRepository;
     @Mock private CatalogService catalogService;
+    @Mock private CatalogFiling catalogFiling;
     @Mock private com.majstr.backend.repository.CatalogItemRepository catalogItemRepository;
     @Mock private LimitService limitService;
     @Mock private MeasurementService measurementService;
@@ -679,6 +681,56 @@ class EstimateServiceTest {
         assertThat(captor.getValue()).extracting(EstimateItem::getDescription)
                 .as("a position that needs no explaining carries none")
                 .containsExactly("Під матову фарбу, без бокового світла.", null);
+    }
+
+    /**
+     * The picker tree shows a shared position under EVERY trade that ships it, so the branch the
+     * master tapped in is the only evidence of which work the line is — the stored row was filed
+     * under whichever trade claimed the name first (V118).
+     */
+    @Test
+    void addItemFromCatalog_filesTheLineUnderTheBranchItWasTappedIn() {
+        Estimate estimate = ownedEstimate(ownerId);
+        UUID catalogId = UUID.randomUUID();
+        given(estimateRepository.findById(estimateId)).willReturn(Optional.of(estimate));
+        CatalogItem stored = catalogItem("Шпаклювання фінішне (2–4 рази)", ItemType.WORK, Unit.M2,
+                "180.00", "Оздоблення під фарбування");
+        stored.setTrade(Trade.DRYWALL);
+        given(catalogService.loadOwned(catalogId, ownerId)).willReturn(stored);
+        given(catalogFiling.categoriesUnder(Trade.PAINTER)).willReturn(Map.of(
+                CatalogFiling.key("Шпаклювання фінішне (2–4 рази)", ItemType.WORK, Unit.M2),
+                "Шпаклювання та шліфування"));
+        given(itemRepository.findByEstimateIdOrderBySortOrderAscIdAsc(estimateId)).willReturn(List.of());
+        given(itemRepository.save(any(EstimateItem.class))).willAnswer(inv -> inv.getArgument(0));
+
+        var resp = estimateService.addItemFromCatalog(estimateId, catalogId,
+                new EstimateItemFromCatalogRequest(new BigDecimal("12"), 0, Trade.PAINTER),
+                ownerId, null);
+
+        assertThat(resp.category()).isEqualTo("Шпаклювання та шліфування");
+        assertThat(resp.unitPrice()).isEqualByComparingTo("180.00"); // still the master's own price
+    }
+
+    /** The trade is a hint from a screen, never an instruction: a trade the shipped library does
+     *  not file this name under leaves the row's own filing exactly where it was. */
+    @Test
+    void addItemFromCatalog_ignoresATradeTheLibraryDoesNotShipThePositionUnder() {
+        Estimate estimate = ownedEstimate(ownerId);
+        UUID catalogId = UUID.randomUUID();
+        given(estimateRepository.findById(estimateId)).willReturn(Optional.of(estimate));
+        CatalogItem stored = catalogItem("Монтаж каркаса стелі", ItemType.WORK, Unit.M2,
+                "200.00", "Каркас і обшивка");
+        stored.setTrade(Trade.DRYWALL);
+        given(catalogService.loadOwned(catalogId, ownerId)).willReturn(stored);
+        given(catalogFiling.categoriesUnder(Trade.PLUMBING)).willReturn(Map.of());
+        given(itemRepository.findByEstimateIdOrderBySortOrderAscIdAsc(estimateId)).willReturn(List.of());
+        given(itemRepository.save(any(EstimateItem.class))).willAnswer(inv -> inv.getArgument(0));
+
+        var resp = estimateService.addItemFromCatalog(estimateId, catalogId,
+                new EstimateItemFromCatalogRequest(new BigDecimal("12"), 0, Trade.PLUMBING),
+                ownerId, null);
+
+        assertThat(resp.category()).isEqualTo("Каркас і обшивка");
     }
 
     @Test
