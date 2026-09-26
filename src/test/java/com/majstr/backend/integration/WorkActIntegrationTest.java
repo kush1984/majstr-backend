@@ -10,6 +10,7 @@ import com.majstr.backend.entity.EstimateItem;
 import com.majstr.backend.entity.EstimateKind;
 import com.majstr.backend.entity.EstimateStatus;
 import com.majstr.backend.entity.ItemType;
+import com.majstr.backend.entity.PercentBaseKind;
 import com.majstr.backend.entity.Plan;
 import com.majstr.backend.entity.Project;
 import com.majstr.backend.entity.ProjectStatus;
@@ -17,6 +18,7 @@ import com.majstr.backend.entity.Unit;
 import com.majstr.backend.entity.User;
 import com.majstr.backend.entity.WorkAct;
 import com.majstr.backend.entity.WorkActKind;
+import com.majstr.backend.entity.WorkActLineKind;
 import com.majstr.backend.entity.WorkActStatus;
 import com.majstr.backend.dto.ObjectEconomyResponse;
 import com.majstr.backend.exception.WorkActConflictException;
@@ -34,6 +36,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.dao.DataIntegrityViolationException;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
@@ -515,16 +518,171 @@ class WorkActIntegrationTest extends IntegrationTestBase {
     }
 
     @Test
-    void exceedsEstimateFlaggedWhenOverTheEstimateQuantity() {
+    void exceedsEstimateFlaggedWhenTheEstimateShrinksUnderASavedAct() {
+        // The write path refuses an over-quantity line outright since B-56, so the live flag is
+        // left with the one case that can still produce it: the master edited the кошторис DOWN
+        // after the act was saved. The act keeps its frozen quantity; the flag says why it no
+        // longer fits.
+        User owner = newOwner();
+        Project p = newProject(owner);
+        Estimate est = signedEstimateWithLine(p, "Робота", "100.000", "145.00");
+        EstimateItem line = estimateItemRepository
+                .findByEstimateIdOrderBySortOrderAscIdAsc(est.getId()).get(0);
+
+        WorkActResponse act = createInterim(p.getId(), owner.getId());
+        setSingleLine(act.id(), owner.getId(), est.getId(), line.getId(), "80.000", "145.00");
+        line.setQuantity(new BigDecimal("50.000"));
+        estimateItemRepository.saveAndFlush(line);
+
+        assertThat(workActService.get(act.id(), owner.getId()).items().get(0).exceedsEstimate()).isTrue();
+    }
+
+    @Test
+    void linkedLine_priceUnitAndNameTakenFromTheEstimate_notTheRequest() {
+        // B-56: an act line naming an estimate position is a copy OF that position. The request may
+        // choose the quantity and nothing else — anything else bills the client a figure he never
+        // signed while the line still claims to close his кошторис.
+        User owner = newOwner();
+        Project p = newProject(owner);
+        Estimate est = signedEstimateWithLine(p, "Шпаклювання стін", "100.000", "145.00");
+        UUID lineId = estimateItemRepository.findByEstimateIdOrderBySortOrderAscIdAsc(est.getId()).get(0).getId();
+        WorkActResponse act = createInterim(p.getId(), owner.getId());
+
+        WorkActResponse withItems = workActService.replaceItems(act.id(), new WorkActItemsRequest(List.of(
+                new WorkActItemsRequest.Line(lineId, null, ItemType.MATERIAL, "Зовсім інша робота",
+                        "Вигадана категорія", Unit.PIECE,
+                        new BigDecimal("900.00"), new BigDecimal("10.000")))), owner.getId());
+
+        assertThat(withItems.items()).singleElement().satisfies(i -> {
+            assertThat(i.name()).isEqualTo("Шпаклювання стін");
+            assertThat(i.type()).isEqualTo(ItemType.WORK);
+            assertThat(i.unit()).isEqualTo(Unit.M2);
+            assertThat(i.unitPrice()).isEqualByComparingTo("145.00");
+            assertThat(i.quantity()).isEqualByComparingTo("10.000"); // the one field he owns
+            assertThat(i.lineTotal()).isEqualByComparingTo("1450.00");
+        });
+    }
+
+    @Test
+    void linkedLine_overRemaining_refused() throws Exception {
+        // 100 м² in the кошторис, 40 already closed by a SIGNED act: 61 more would put «Прийнято
+        // актами» above «За договором». The excess belongs on an ADDITIONAL line, where the
+        // ADDENDUM absorbs it into the contract (the PWA offers exactly that).
         User owner = newOwner();
         Project p = newProject(owner);
         Estimate est = signedEstimateWithLine(p, "Робота", "100.000", "145.00");
         UUID lineId = estimateItemRepository.findByEstimateIdOrderBySortOrderAscIdAsc(est.getId()).get(0).getId();
+        WorkActResponse first = createInterim(p.getId(), owner.getId());
+        setSingleLine(first.id(), owner.getId(), est.getId(), lineId, "40.000", "145.00");
+        workActService.signOffline(first.id(), new WorkActSignOfflineRequest("Клієнт"), owner.getId());
 
+        WorkActResponse second = createInterim(p.getId(), owner.getId());
+        assertThatThrownBy(() ->
+                setSingleLine(second.id(), owner.getId(), est.getId(), lineId, "61.000", "145.00"))
+                .isInstanceOf(WorkActValidationException.class)
+                .extracting(e -> ((WorkActValidationException) e).getCode())
+                .isEqualTo("WORK_ACT_OVER_ESTIMATE");
+
+        // Exactly what remains still passes.
+        setSingleLine(second.id(), owner.getId(), est.getId(), lineId, "60.000", "145.00");
+    }
+
+    @Test
+    void linkedLine_splitAcrossTwoRowsOfOneRequest_isCappedTogether() {
+        // The cap is aggregated per estimate item: two 60 м² rows each pass alone and close 120
+        // between them.
+        User owner = newOwner();
+        Project p = newProject(owner);
+        Estimate est = signedEstimateWithLine(p, "Робота", "100.000", "145.00");
+        UUID lineId = estimateItemRepository.findByEstimateIdOrderBySortOrderAscIdAsc(est.getId()).get(0).getId();
         WorkActResponse act = createInterim(p.getId(), owner.getId());
-        WorkActResponse withItems = setSingleLine(act.id(), owner.getId(), est.getId(), lineId, "120.000", "145.00");
 
-        assertThat(withItems.items().get(0).exceedsEstimate()).isTrue();
+        assertThatThrownBy(() -> workActService.replaceItems(act.id(), new WorkActItemsRequest(List.of(
+                new WorkActItemsRequest.Line(lineId, est.getId(), ItemType.WORK, "Робота", null,
+                        Unit.M2, new BigDecimal("145.00"), new BigDecimal("60.000")),
+                new WorkActItemsRequest.Line(lineId, est.getId(), ItemType.WORK, "Робота", null,
+                        Unit.M2, new BigDecimal("145.00"), new BigDecimal("60.000")))), owner.getId()))
+                .isInstanceOf(WorkActValidationException.class)
+                .extracting(e -> ((WorkActValidationException) e).getCode())
+                .isEqualTo("WORK_ACT_OVER_ESTIMATE");
+    }
+
+    @Test
+    void linkedLine_toPercentOrAddendumItem_refused() throws Exception {
+        User owner = newOwner();
+        Project p = newProject(owner);
+        Estimate est = signedEstimateWithLine(p, "Робота", "100.000", "145.00");
+
+        // (a) a «%» position of a кошторис: it has no quantity to close, and the act would compute
+        //     unitPrice × quantity where the ADDENDUM rollup reads a percentage — a factor of 100.
+        EstimateItem percent = estimateItemRepository.save(EstimateItem.builder()
+                .estimate(est).type(ItemType.WORK).name("Транспортні").unit(Unit.PERCENT)
+                .quantity(new BigDecimal("10.000")).unitPrice(new BigDecimal("0.00"))
+                .lineTotal(new BigDecimal("1450.00")).sortOrder(1).build());
+        WorkActResponse act = createInterim(p.getId(), owner.getId());
+        assertThatThrownBy(() ->
+                setSingleLine(act.id(), owner.getId(), est.getId(), percent.getId(), "1.000", "145.00"))
+                .isInstanceOf(WorkActValidationException.class)
+                .extracting(e -> ((WorkActValidationException) e).getCode())
+                .isEqualTo("WORK_ACT_PERCENT_LINE");
+
+        // (b) the ADDENDUM a signed act just wrote: closing it with a second act bills it twice.
+        workActService.replaceItems(act.id(), new WorkActItemsRequest(List.of(
+                new WorkActItemsRequest.Line(null, null, ItemType.WORK, "Демонтаж", null,
+                        Unit.M2, new BigDecimal("500.00"), new BigDecimal("2.000")))), owner.getId());
+        WorkActResponse signed = workActService.signOffline(
+                act.id(), new WorkActSignOfflineRequest("Клієнт"), owner.getId());
+        UUID addendumLine = estimateItemRepository
+                .findByEstimateIdOrderBySortOrderAscIdAsc(signed.addendumEstimateId()).get(0).getId();
+
+        WorkActResponse next = createInterim(p.getId(), owner.getId());
+        assertThatThrownBy(() -> setSingleLine(
+                next.id(), owner.getId(), signed.addendumEstimateId(), addendumLine, "1.000", "500.00"))
+                .isInstanceOf(WorkActValidationException.class)
+                .extracting(e -> ((WorkActValidationException) e).getCode())
+                .isEqualTo("WORK_ACT_ADDENDUM_LINE");
+    }
+
+    @Test
+    void additionalLineInPercent_refused() {
+        // B-57. An off-estimate «%» line looks harmless in the act's own total and is rolled into
+        // the ADDENDUM as a PERCENT estimate item, where EstimateMath reads it as a share of a
+        // hand-typed sum — the rollup then lands at a hundredth of what the act billed, and
+        // «Прийнято актами» outgrows «За договором» by the difference.
+        User owner = newOwner();
+        Project p = newProject(owner);
+        signedEstimateWithLine(p, "Робота", "100.000", "145.00");
+        WorkActResponse act = createInterim(p.getId(), owner.getId());
+
+        assertThatThrownBy(() -> workActService.replaceItems(act.id(), new WorkActItemsRequest(List.of(
+                new WorkActItemsRequest.Line(null, null, ItemType.WORK, "Непередбачені", null,
+                        Unit.PERCENT, new BigDecimal("5000.00"), new BigDecimal("10.000")))), owner.getId()))
+                .isInstanceOf(WorkActValidationException.class)
+                .extracting(e -> ((WorkActValidationException) e).getCode())
+                .isEqualTo("WORK_ACT_PERCENT_LINE");
+    }
+
+    @Test
+    void signRefusesAnActWhoseEstimateWasReopenedUnderIt() {
+        // The structural half runs again at sign time (B-56): between the save and the signature the
+        // кошторис can be reopened, excluded from the economy or deleted, and an act closing a line
+        // that is no longer part of «За договором» is exactly the drift the acts chain forbids.
+        User owner = newOwner();
+        Project p = newProject(owner);
+        Estimate est = signedEstimateWithLine(p, "Робота", "100.000", "145.00");
+        UUID lineId = estimateItemRepository.findByEstimateIdOrderBySortOrderAscIdAsc(est.getId()).get(0).getId();
+        WorkActResponse act = createInterim(p.getId(), owner.getId());
+        setSingleLine(act.id(), owner.getId(), est.getId(), lineId, "50.000", "145.00");
+
+        Estimate stored = estimateRepository.findById(est.getId()).orElseThrow();
+        stored.setStatus(EstimateStatus.DRAFT);
+        estimateRepository.saveAndFlush(stored);
+
+        assertThatThrownBy(() -> workActService.signOffline(
+                act.id(), new WorkActSignOfflineRequest("Клієнт"), owner.getId()))
+                .isInstanceOf(WorkActValidationException.class)
+                .extracting(e -> ((WorkActValidationException) e).getCode())
+                .isEqualTo("WORK_ACT_ESTIMATE_EXCLUDED");
     }
 
     @Test
@@ -620,15 +778,43 @@ class WorkActIntegrationTest extends IntegrationTestBase {
     }
 
     @Test
-    void reopeningWithOnlyAnOpenAct_isStillAllowed() {
-        // A DRAFT/SENT act is editable, so it can absorb an estimate change — only SIGNED acts
-        // freeze the estimate (review fix keeps reopen available until the first signature).
+    void reopeningWithOnlyAnOpenAct_isAlsoRefused() {
+        // B-59 closed what looked like a safe exception. An open act is editable, yes — but the
+        // reopen does not edit the ACT, it takes the ESTIMATE out of «За договором», and no edit
+        // to a DRAFT act can put it back. Worse for a SENT one: it is already on the client's
+        // phone, so the signature can land a second after the reopen and «Прийнято актами» outgrows
+        // a contract of 0. The act has to be rejected or emptied first.
         User owner = newOwner();
         Project p = newProject(owner);
         Estimate est = signedEstimateWithLine(p, "Робота", "100.000", "145.00");
         UUID lineId = estimateItemRepository.findByEstimateIdOrderBySortOrderAscIdAsc(est.getId()).get(0).getId();
         WorkActResponse act = createInterim(p.getId(), owner.getId());
         setSingleLine(act.id(), owner.getId(), est.getId(), lineId, "60.000", "145.00");
+
+        assertThatThrownBy(() -> estimateService.reopen(est.getId(), owner.getId()))
+                .isInstanceOf(WorkActConflictException.class);
+
+        assertThat(estimateRepository.findById(est.getId()).orElseThrow().getStatus())
+                .isEqualTo(EstimateStatus.SIGNED);
+    }
+
+    @Test
+    void reopeningWithOnlyAREJECTEDact_isStillAllowed() {
+        // Dead paper holds nothing back: a REJECTED act bills nothing and can never be signed
+        // again without passing the guard afresh, so it must not wedge the estimate forever.
+        User owner = newOwner();
+        Project p = newProject(owner);
+        Estimate est = signedEstimateWithLine(p, "Робота", "100.000", "145.00");
+        UUID lineId = estimateItemRepository.findByEstimateIdOrderBySortOrderAscIdAsc(est.getId()).get(0).getId();
+        WorkActResponse act = createInterim(p.getId(), owner.getId());
+        setSingleLine(act.id(), owner.getId(), est.getId(), lineId, "60.000", "145.00");
+        // Straight to SENT: publishing goes through the share door, which wants a verified email,
+        // and this test is about the estimate guard, not about sharing.
+        WorkAct sent = workActRepository.findById(act.id()).orElseThrow();
+        sent.setStatus(WorkActStatus.SENT);
+        sent.setSentAt(java.time.Instant.now());
+        workActRepository.saveAndFlush(sent);
+        workActService.changeStatus(act.id(), WorkActStatus.REJECTED, owner.getId());
 
         estimateService.reopen(est.getId(), owner.getId());
 
@@ -659,9 +845,9 @@ class WorkActIntegrationTest extends IntegrationTestBase {
     }
 
     @Test
-    void duplicatingWithOnlyAnOpenAct_isStillAllowed() {
-        // Mirrors the reopen rule: an open DRAFT/SENT act is editable and can absorb the change —
-        // only a SIGNED act freezes the estimate.
+    void duplicatingWithOnlyAnOpenAct_isAlsoRefused() {
+        // Mirrors the reopen rule, and for the same B-59 reason: an open act can absorb an edit to
+        // the estimate, never the estimate leaving «За договором».
         User owner = newOwner();
         Project p = newProject(owner);
         Estimate est = signedEstimateWithLine(p, "Робота", "100.000", "145.00");
@@ -669,9 +855,28 @@ class WorkActIntegrationTest extends IntegrationTestBase {
         WorkActResponse act = createInterim(p.getId(), owner.getId());
         setSingleLine(act.id(), owner.getId(), est.getId(), lineId, "60.000", "145.00");
 
-        assertThat(estimateService.duplicate(est.getId(),
+        assertThatThrownBy(() -> estimateService.duplicate(est.getId(),
                 new com.majstr.backend.dto.EstimateDuplicateRequest(null, new BigDecimal("10"), false, null),
-                owner.getId())).isNotNull();
+                owner.getId()))
+                .isInstanceOf(WorkActConflictException.class);
+    }
+
+    @Test
+    void duplicatingASIGNEDestimate_leavesItCountingUntilTheCopyIsSignedToo() {
+        // B-63. The master prices a renegotiation; the client has agreed to nothing yet. Uncounting
+        // the source on the spot read «За договором 0» on a live job — and since the progress
+        // picker hides an uncounted estimate, no act could be written against the work underway.
+        User owner = newOwner();
+        Project p = newProject(owner);
+        Estimate est = signedEstimateWithLine(p, "Робота", "100.000", "145.00");
+
+        estimateService.duplicate(est.getId(),
+                new com.majstr.backend.dto.EstimateDuplicateRequest(null, new BigDecimal("5"), true, null),
+                owner.getId());
+
+        Estimate reloaded = estimateRepository.findById(est.getId()).orElseThrow();
+        assertThat(reloaded.isCountInEconomy()).isTrue();
+        assertThat(reloaded.getStatus()).isEqualTo(EstimateStatus.SIGNED);
     }
 
     @Test
@@ -1062,6 +1267,68 @@ class WorkActIntegrationTest extends IntegrationTestBase {
         assertThat(economy.materials().reimbursable()).isEqualByComparingTo("0.00");
     }
 
+    @Test
+    void actsCloseAnEstimateWithADiscountLine_acceptedEqualsContracted() throws Exception {
+        // B-55. The client signed 13 050, not 14 500 — the discount is part of the contract. But an
+        // act closes POSITIONS, and a percentage has no quantity to close, so acts billed the gross
+        // 14 500 and «Прийнято актами» passed «За договором» by the whole discount, in the direction
+        // that costs the client money.
+        User owner = newOwner();
+        Project p = newProject(owner);
+        Estimate est = estimateWithTotalPercent(p, "-10.000");
+        UUID line = estimateItemRepository.findByEstimateIdOrderBySortOrderAscIdAsc(est.getId())
+                .get(0).getId();
+
+        // Act 1 closes 40 of 100 м²: 40 % of the discount travels with it, never the whole 1 450.
+        WorkActResponse act1 = createInterim(p.getId(), owner.getId());
+        setSingleLine(act1.id(), owner.getId(), est.getId(), line, "40.000", "145.00");
+        WorkActResponse saved = workActService.get(act1.id(), owner.getId());
+        assertThat(saved.total()).isEqualByComparingTo("5220.00"); // 5 800 − 580
+        assertThat(saved.items()).anySatisfy(i -> {
+            assertThat(i.lineKind()).isEqualTo(WorkActLineKind.ADJUSTMENT);
+            assertThat(i.estimateItemId()).isNull();
+            assertThat(i.estimateId()).isEqualTo(est.getId());
+            assertThat(i.lineTotal()).isEqualByComparingTo("-580.00");
+        });
+        workActService.signOffline(act1.id(), new WorkActSignOfflineRequest("Клієнт"), owner.getId());
+
+        // Act 2 closes the remaining 60 — and the two together carry exactly the 1 450.
+        WorkActResponse act2 = createInterim(p.getId(), owner.getId());
+        setSingleLine(act2.id(), owner.getId(), est.getId(), line, "60.000", "145.00");
+        workActService.signOffline(act2.id(), new WorkActSignOfflineRequest("Клієнт"), owner.getId());
+
+        ObjectEconomyResponse economy = objectExpenseService.economy(p.getId(), owner.getId());
+        assertThat(economy.acts().contracted()).isEqualByComparingTo("13050.00");
+        assertThat(economy.acts().acceptedByActs()).isEqualByComparingTo("13050.00");
+        assertThat(economy.acts().acceptedByActs()).isLessThanOrEqualTo(economy.acts().contracted());
+        // And no ADDENDUM was invented along the way: an adjustment is not an additional work, and
+        // rolling it up would put the estimate's own discount into «За договором» a second time.
+        assertThat(estimateRepository.findByProjectIdOrderByCreatedAtDesc(p.getId()))
+                .noneMatch(e -> e.getKind() == EstimateKind.ADDENDUM);
+    }
+
+    @Test
+    void actsCloseAnEstimateWithASurchargeLine_acceptedEqualsContracted() throws Exception {
+        // The mirror failure: «Транспортні +10 %» could never be closed at all, so «Прийнято
+        // актами» stopped 1 450 short of a fully delivered contract and the master looked unpaid on
+        // his own screen. Billing it as an additional line would have counted it twice instead.
+        User owner = newOwner();
+        Project p = newProject(owner);
+        Estimate est = estimateWithTotalPercent(p, "10.000");
+        UUID line = estimateItemRepository.findByEstimateIdOrderBySortOrderAscIdAsc(est.getId())
+                .get(0).getId();
+
+        WorkActResponse act = createInterim(p.getId(), owner.getId());
+        setSingleLine(act.id(), owner.getId(), est.getId(), line, "100.000", "145.00");
+        assertThat(workActService.get(act.id(), owner.getId()).total())
+                .isEqualByComparingTo("15950.00"); // 14 500 + 1 450
+        workActService.signOffline(act.id(), new WorkActSignOfflineRequest("Клієнт"), owner.getId());
+
+        ObjectEconomyResponse economy = objectExpenseService.economy(p.getId(), owner.getId());
+        assertThat(economy.acts().contracted()).isEqualByComparingTo("15950.00");
+        assertThat(economy.acts().acceptedByActs()).isEqualByComparingTo("15950.00");
+    }
+
     // ---- fixtures ---------------------------------------------------------------
 
     private WorkActResponse createInterim(UUID projectId, UUID ownerId) {
@@ -1075,6 +1342,29 @@ class WorkActIntegrationTest extends IntegrationTestBase {
         return workActService.replaceItems(actId, new WorkActItemsRequest(List.of(
                 new WorkActItemsRequest.Line(estimateItemId, estimateId, ItemType.WORK, "Робота", null,
                         Unit.M2, new BigDecimal(price), new BigDecimal(qty)))), ownerId);
+    }
+
+    /**
+     * A signed estimate: one 100 м² × 145 ₴ work line plus one «% від кошторису» of {@code percent}
+     * (a minus is a discount). {@code lineTotal} is written by hand, as every fixture here does —
+     * these bypass the service, which is the only thing that writes it in production (V88).
+     */
+    private Estimate estimateWithTotalPercent(Project project, String percent) {
+        Estimate est = estimateRepository.save(Estimate.builder()
+                .project(project).status(EstimateStatus.SIGNED).countInEconomy(true).build());
+        estimateItemRepository.save(EstimateItem.builder()
+                .estimate(est).type(ItemType.WORK).name("Робота").unit(Unit.M2)
+                .quantity(new BigDecimal("100.000")).unitPrice(new BigDecimal("145.00"))
+                .lineTotal(new BigDecimal("14500.00")).sortOrder(0).build());
+        estimateItemRepository.save(EstimateItem.builder()
+                .estimate(est).type(ItemType.WORK)
+                .name(percent.startsWith("-") ? "Знижка" : "Транспортні")
+                .unit(Unit.PERCENT).percentBaseKind(PercentBaseKind.TOTAL)
+                .quantity(new BigDecimal(percent)).unitPrice(new BigDecimal("0.00"))
+                .lineTotal(new BigDecimal("14500.00").multiply(new BigDecimal(percent))
+                        .divide(new BigDecimal("100"), 2, RoundingMode.HALF_UP))
+                .sortOrder(1).build());
+        return est;
     }
 
     private User newOwner() {

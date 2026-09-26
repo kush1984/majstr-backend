@@ -389,6 +389,8 @@
         .paybar-fill { height: 100%; background-image: linear-gradient(to right, var(--amber), var(--success)); }
         .paybar-fill.complete { background-image: none; background-color: var(--success); }
         .paybar-label { font-size: 0.85rem; color: var(--muted); display: flex; align-items: center; gap: 6px; }
+        /* Why «Отримано» above is smaller than the receipts below it add up to (B-65). */
+        .paybar-note { font-size: 0.75rem; color: var(--muted); margin-top: 2px; }
         /* One curated (i)-explanation next to the payments header — mirrors the app's InfoPopover
            component (tap → panel, close on outside-tap/Esc/✕/scroll), reimplemented in plain JS
            since the portal has no build step to share a React component with. Rebuilt from
@@ -1086,16 +1088,25 @@
     function renderPaymentsBody(card) {
         const total = Number(card.contractedTotal || 0);
         const received = Number(card.received || 0);
+        // Money paid back for material bought at the till buys no WORK (B-65). Measured against the
+        // gross received, a 2 000 ₴ reimbursement moved this bar 2 000 ₴ closer to «Усе сплачено»
+        // while that much of the contract was still unpaid. The rows below still add up to the gross
+        // figure — it really did arrive — so the difference is spelled out under the label.
+        const refunded = Number(card.materialRefundApplied || 0);
+        const workPaid = received - refunded;
         // Uncapped for the LABEL: an overpayment is real money and must not read as «100 %».
-        const pct = total > 0 ? Math.round((received / total) * 100) : 0;
+        const pct = total > 0 ? Math.round((workPaid / total) * 100) : 0;
         const barWidth = Math.max(0, Math.min(100, pct));
         const groups = groupPayments(card);
         const count = groups.received.length + groups.upcoming.length;
+        // «Усе сплачено» is a claim about MONEY, so it is made against money — having no stage left
+        // scheduled is not the same as owing nothing (the same correction the master's own card got).
+        const allPaid = total > 0 && workPaid >= total;
 
         let body;
         if (count === 0) {
             body = '';
-        } else if (groups.upcoming.length === 0) {
+        } else if (groups.upcoming.length === 0 && allPaid) {
             // "Усе сплачено" is a headline, never a replacement for the breakdown — a receipt
             // survives its plan stage being deleted (kept as unplanned, by design) and one logged
             // before an estimate had a contracted total to compare against is real money too. Hiding
@@ -1103,7 +1114,7 @@
             // otherwise didn't obviously explain the received figure (reported 2026-08-14).
             body = `<p class="payment-all-done">Усе сплачено ✓</p>
                 <div class="payments-list">${renderReceivedSection(groups.received, receivedExpanded)}</div>`;
-        } else if (count <= 5) {
+        } else if (groups.upcoming.length === 0 || count <= 5) {
             body = `<div class="payments-list">
                 ${renderReceivedSection(groups.received, receivedExpanded)}
                 ${groups.upcoming.map(renderUpcomingRow).join('')}
@@ -1123,9 +1134,10 @@
 
         return `
             <p class="paybar-label">
-                Отримано ${amount(received)} з ${amount(total)} ₴ · ${pct}%
+                Отримано ${amount(workPaid)} з ${amount(total)} ₴ · ${pct}%
                 <button type="button" class="info-trigger" data-info="payments" aria-label="Пояснення">i</button>
             </p>
+            ${refunded > 0 ? `<p class="paybar-note">+ ${amount(refunded)} ₴ повернення за матеріал</p>` : ''}
             <div class="paybar">
                 <div class="paybar-fill${pct >= 100 ? ' complete' : ''}" style="width:${barWidth}%${pct >= 100 || barWidth === 0 ? '' : `;background-size:${(100 / barWidth) * 100}% 100%`}"></div>
             </div>
@@ -1288,7 +1300,7 @@
                 <section class="card">
                     ${signedBanner}
                     <div class="actions">
-                        ${isEconomy ? '' : `<button class="primary" data-sign="${escapeHtml(est.id ?? '')}" data-title="${escapeHtml(title)}" ${signed ? 'disabled' : ''}>Підписати</button>`}
+                        ${isEconomy ? '' : `<button class="primary" data-sign="${escapeHtml(est.id ?? '')}" data-version="${est.version ?? ''}" data-title="${escapeHtml(title)}" ${signed ? 'disabled' : ''}>Підписати</button>`}
                         <a class="btn" href="${api}/pdf">Завантажити PDF</a>
                         <button data-ask="${escapeHtml(est.id ?? '')}" data-title="${escapeHtml(title)}">Задати питання</button>
                     </div>
@@ -1345,6 +1357,9 @@
             if (b.disabled) return;
             b.addEventListener('click', () => {
                 dialogTarget = b.getAttribute('data-sign') || null;
+                // The version THIS section rendered with (B-61) — the signature says which
+                // document it is for, and the server refuses one that has moved since.
+                dialogVersion = Number(b.getAttribute('data-version'));
                 document.querySelector('#signDialog h3').textContent = 'Підписати: ' + b.getAttribute('data-title');
                 openDialog('signDialog');
             });
@@ -1361,6 +1376,7 @@
     // The estimate the currently-open dialog acts on (null in legacy mode,
     // where the token itself already names the one estimate).
     let dialogTarget = null;
+    let dialogVersion = null;
 
     function openDialog(id) { document.getElementById(id).showModal(); }
     function closeDialog(id) { document.getElementById(id).close(); }
@@ -1491,12 +1507,21 @@
                     const resp = await fetch(apiBase + '/sign', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ clientName, clientPhone })
+                        body: JSON.stringify({ clientName, clientPhone, version: a.version })
                     });
                     if (!resp.ok) {
                         btn.disabled = false;
                         btn.textContent = 'Підтвердити приймання робіт';
-                        alert(resp.status === 409 ? 'Акт уже підписано.' : 'Не вдалося підписати. Спробуйте ще раз.');
+                        if (resp.status === 409) {
+                            // Already signed, or the master changed the act while the client was
+                            // reading it (B-61). Either way what he is looking at is stale, so
+                            // re-fetch: the message says to review it again, and the reload is
+                            // what gives him something to review.
+                            alert(await apiMessage(resp) || 'Акт змінився або вже підписаний — перегляньте ще раз.');
+                            load();
+                            return;
+                        }
+                        alert('Не вдалося підписати. Спробуйте ще раз.');
                         return;
                     }
                     renderAct(await resp.json());
@@ -1539,7 +1564,7 @@
             resp = await fetch(sectionApi(dialogTarget) + '/sign', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ clientName, clientPhone })
+                body: JSON.stringify({ clientName, clientPhone, version: dialogVersion })
             });
         } catch (e) {
             alert('Немає з\'єднання. Перевірте інтернет і спробуйте ще раз.');
@@ -1549,9 +1574,11 @@
             closeDialog('signDialog');
             load();
         } else if (resp.status === 409) {
-            // Already signed (e.g. opened in two tabs) — reload to show the signature.
+            // Already signed (two tabs), or changed while he was reading it (B-61). Both get the
+            // same answer, and it is the one that was always right here: reload, so what he sees
+            // next is the estimate as it really stands — signature banner or new figures.
             closeDialog('signDialog');
-            alert(await apiMessage(resp) || 'Кошторис уже підписано.');
+            alert(await apiMessage(resp) || 'Кошторис змінився або вже підписаний — перегляньте ще раз.');
             load();
         } else {
             alert(await apiMessage(resp) || 'Не вдалося підписати. Спробуйте пізніше.');
@@ -1610,7 +1637,8 @@
                 discountAmount: data.discountAmount,
                 markupPercent: data.markupPercent,
                 discountPercent: data.discountPercent,
-                signature: data.signature
+                signature: data.signature,
+                version: data.version
             }]
         };
     }

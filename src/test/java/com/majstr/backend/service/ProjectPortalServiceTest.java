@@ -59,6 +59,7 @@ class ProjectPortalServiceTest {
     @Mock WorkActItemRepository workActItemRepository;
     @Mock WorkActReceiptRepository workActReceiptRepository;
     @Mock ActReceiptCompleteness receiptCompleteness;
+    @Mock ActLineBinder lineBinder;
     @InjectMocks ProjectPortalService portalService;
 
     private final UUID projectId = UUID.randomUUID();
@@ -335,7 +336,8 @@ class ProjectPortalServiceTest {
     void updateAct_flipsDraftToSent_andMintsTheActLink() {
         Project p = project(true, null);
         WorkAct a = act(p, WorkActStatus.DRAFT);
-        given(workActRepository.findByIdAndUserId(a.getId(), ownerId)).willReturn(Optional.of(a));
+        // Publishing takes the act FOR UPDATE (B-60) — a different query than the read paths use.
+        given(workActRepository.findByIdForUpdate(a.getId())).willReturn(Optional.of(a));
         given(workActItemRepository.existsByWorkActId(a.getId())).willReturn(true);
         given(linkRepository.findFirstByWorkActIdAndRevokedFalseOrderByCreatedAtDesc(a.getId()))
                 .willReturn(Optional.empty());
@@ -354,7 +356,8 @@ class ProjectPortalServiceTest {
     void updateAct_rejectedAct_cannotBeShared() {
         Project p = project(true, null);
         WorkAct a = act(p, WorkActStatus.REJECTED);
-        given(workActRepository.findByIdAndUserId(a.getId(), ownerId)).willReturn(Optional.of(a));
+        // Publishing takes the act FOR UPDATE (B-60) — a different query than the read paths use.
+        given(workActRepository.findByIdForUpdate(a.getId())).willReturn(Optional.of(a));
 
         assertThatThrownBy(() -> portalService.updateAct(a.getId(), ownerId))
                 .isInstanceOf(InvalidEstimateStatusException.class);
@@ -367,7 +370,8 @@ class ProjectPortalServiceTest {
         // a SIGNED act is immutable and undeletable — the object would carry permanent junk.
         Project p = project(true, null);
         WorkAct a = act(p, WorkActStatus.DRAFT);
-        given(workActRepository.findByIdAndUserId(a.getId(), ownerId)).willReturn(Optional.of(a));
+        // Publishing takes the act FOR UPDATE (B-60) — a different query than the read paths use.
+        given(workActRepository.findByIdForUpdate(a.getId())).willReturn(Optional.of(a));
         given(workActItemRepository.existsByWorkActId(a.getId())).willReturn(false);
         given(workActReceiptRepository.existsByWorkActId(a.getId())).willReturn(false);
 

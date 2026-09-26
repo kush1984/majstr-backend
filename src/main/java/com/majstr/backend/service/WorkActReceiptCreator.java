@@ -66,14 +66,25 @@ class WorkActReceiptCreator {
     /**
      * One create attempt in its own transaction. {@code saveAndFlush} so a duplicate primary key
      * surfaces HERE rather than on commit, where the caller could no longer tell it apart.
+     *
+     * <p>The act is loaded {@code FOR UPDATE} and re-checked here, not merely in {@link #prepare}
+     * (review B-60). Between the two lies the photo upload — seconds of it on a site connection —
+     * and «підписати» is exactly what the master or the client does next. Without the re-check a
+     * receipt landed on a SIGNED act: unpriceable afterwards, outside the {@code doc_hash} and
+     * the ADDENDUM, yet counted by {@code sumSignedActReceipts}. The lock is what makes the check
+     * hold: a signature in flight either waits for this insert or finds it already committed.
      */
     @Transactional
     public WorkActReceiptResponse attempt(UUID actId, UUID requestedId, String label,
                                          BigDecimal amount, LocalDate issuedAt, String storageKey,
                                          int sortOrder) {
+        WorkAct act = workActRepository.findByIdForUpdate(actId)
+                .orElseThrow(() -> new ResourceNotFoundException("Work act not found: " + actId));
+        WorkActService.requireNotSigned(act);
+        WorkActService.touch(act); // a receipt IS part of the document (B-61)
         WorkActReceipt receipt = WorkActReceipt.builder()
                 .id(requestedId)
-                .workAct(workActRepository.getReferenceById(actId))
+                .workAct(act)
                 .label(label)
                 .amount(amount)
                 .issuedAt(issuedAt)

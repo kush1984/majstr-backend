@@ -14,8 +14,21 @@ import java.util.List;
  */
 public record PaymentsSummaryResponse(
         BigDecimal contractedTotal,
+        /** Every hryvnia that arrived, refunds included — the itemized rows below add up to it. */
         BigDecimal received,
+        /** What is still owed for the WORK: {@code max(0, contracted − workPaid)} (review B-65). */
         BigDecimal remaining,
+        /** Σ of the receipts ticked «повернення за матеріал» — the gap between {@code received}
+         *  and {@code workPaid}, named so it is explained rather than mysterious. */
+        BigDecimal materialRefunds,
+        /** How much of that refund a till receivable actually absorbed: {@code min(refunds,
+         *  reimbursable)}. Anything above it had no material left to pay off and stays work money. */
+        BigDecimal refundApplied,
+        /** {@code received − refundApplied} — the only half «За договором» may be measured against. */
+        BigDecimal workPaid,
+        /** {@code max(0, workPaid − contracted)}. Shown rather than clamped away: the old
+         *  {@code remaining} floored at zero and an overpayment simply disappeared. */
+        BigDecimal overpaid,
         List<ProjectPaymentResponse> payments,
         /** Receipts with no matching plan stage ("Своє") — their own nodes on the timeline. */
         List<PaymentReceiptResponse> unplannedReceipts

@@ -11,6 +11,7 @@ import com.majstr.backend.entity.Project;
 import com.majstr.backend.entity.ProjectReceipt;
 import com.majstr.backend.entity.WorkAct;
 import com.majstr.backend.entity.WorkActReceipt;
+import com.majstr.backend.exception.ProjectReceiptBilledException;
 import com.majstr.backend.exception.ProjectReceiptValidationException;
 import com.majstr.backend.repository.ObjectExpenseRepository;
 import com.majstr.backend.repository.ProjectReceiptRepository;
@@ -350,6 +351,91 @@ class ProjectReceiptServiceTest {
         verify(expenseRepository, never()).save(any());
     }
 
+    /**
+     * Review B-32. A receipt an act has billed to the client is frozen on the MONEY axis: the
+     * signature already counts it, and with {@code receipts_to_expenses} off this row is the ONLY
+     * record of that cost — so «клієнт відшкодовує» here deletes it and overstates profit by the
+     * whole receipt (B-32a).
+     */
+    @Test
+    void aBilledReceiptRefusesTheFlipThatWouldDeleteItsCost() {
+        owned();
+        ProjectReceipt r = billed(receipt(UUID.randomUUID(), "Епіцентр", "2000.00"));
+        r.setReimbursable(false);
+        r.setExpenseId(UUID.randomUUID());
+        when(receiptRepository.findByIdAndProjectId(r.getId(), PROJECT)).thenReturn(Optional.of(r));
+
+        assertThatThrownBy(() -> service.update(PROJECT, r.getId(), OWNER,
+                new ProjectReceiptRequest("Епіцентр", new BigDecimal("2000.00"), null, true, null, null)))
+                .isInstanceOf(ProjectReceiptBilledException.class)
+                .hasMessage("error.project-receipt.billed-on-act");
+
+        verify(expenseRepository, never()).delete(any());
+    }
+
+    /** The mirror direction posts a SECOND cost beside the one the act already carries. */
+    @Test
+    void aBilledReceiptRefusesTheFlipToOwnCostToo() {
+        owned();
+        ProjectReceipt r = billed(receipt(UUID.randomUUID(), "Епіцентр", "2000.00"));
+        when(receiptRepository.findByIdAndProjectId(r.getId(), PROJECT)).thenReturn(Optional.of(r));
+
+        assertThatThrownBy(() -> service.update(PROJECT, r.getId(), OWNER,
+                new ProjectReceiptRequest("Епіцентр", new BigDecimal("2000.00"), null, false, null, null)))
+                .isInstanceOf(ProjectReceiptBilledException.class);
+
+        verify(expenseRepository, never()).save(any());
+    }
+
+    /** B-32c: the amount is what the client signed for. */
+    @Test
+    void aBilledReceiptRefusesARepricing() {
+        owned();
+        ProjectReceipt r = billed(receipt(UUID.randomUUID(), "Епіцентр", "2000.00"));
+        when(receiptRepository.findByIdAndProjectId(r.getId(), PROJECT)).thenReturn(Optional.of(r));
+
+        assertThatThrownBy(() -> service.update(PROJECT, r.getId(), OWNER,
+                new ProjectReceiptRequest("Епіцентр", new BigDecimal("2500.00"), null, null, null, null)))
+                .isInstanceOf(ProjectReceiptBilledException.class);
+
+        assertThat(r.getAmount()).isEqualByComparingTo("2000.00");
+    }
+
+    /** B-32b: the delete would take the object's cost record out from under the signature. */
+    @Test
+    void aBilledReceiptRefusesToBeDeleted() {
+        owned();
+        ProjectReceipt r = billed(receipt(UUID.randomUUID(), "Епіцентр", "2000.00"));
+        when(receiptRepository.findByIdAndProjectId(r.getId(), PROJECT)).thenReturn(Optional.of(r));
+
+        assertThatThrownBy(() -> service.delete(PROJECT, r.getId(), OWNER))
+                .isInstanceOf(ProjectReceiptBilledException.class);
+
+        verify(receiptRepository, never()).delete(any());
+        verifyNoInteractions(cleanup);
+    }
+
+    /**
+     * What the PAPER says is not money, and the master must still be able to write it down — the
+     * shop's name, the day he bought it, and the fiscal identity a QR read only produces later.
+     * Re-sending the `reimbursable` the row already holds is what an ordinary save from a screen
+     * that knows the answer looks like, so that is not a flip either.
+     */
+    @Test
+    void aBilledReceiptStillTakesALabelDateAndIdentity() {
+        owned();
+        ProjectReceipt r = billed(receipt(UUID.randomUUID(), "Чек №1", "2000.00"));
+        when(receiptRepository.findByIdAndProjectId(r.getId(), PROJECT)).thenReturn(Optional.of(r));
+
+        ProjectReceiptResponse updated = service.update(PROJECT, r.getId(), OWNER,
+                new ProjectReceiptRequest("Епіцентр", new BigDecimal("2000.00"),
+                        LocalDate.of(2026, 9, 8), true, "4000123456", "77"));
+
+        assertThat(updated.label()).isEqualTo("Епіцентр");
+        assertThat(updated.issuedAt()).isEqualTo(LocalDate.of(2026, 9, 8));
+        assertThat(r.getFiscalFn()).isEqualTo("4000123456");
+    }
+
     // ---- helpers ----------------------------------------------------------
 
     /** Let the creator's {@code attempt} write, answering the way the real one does — so label,
@@ -401,6 +487,12 @@ class ProjectReceiptServiceTest {
 
     private static MockMultipartFile file() {
         return new MockMultipartFile("file", "receipt.jpg", "image/jpeg", JPEG);
+    }
+
+    /** Stamped by {@code ActReceiptReconciler} when an act carrying the same paper was signed. */
+    private static ProjectReceipt billed(ProjectReceipt r) {
+        r.setBilledOnActId(UUID.randomUUID());
+        return r;
     }
 
     private static ProjectReceipt receipt(UUID id, String label, String amount) {

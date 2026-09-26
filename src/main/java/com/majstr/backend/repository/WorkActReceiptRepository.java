@@ -6,6 +6,8 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 import java.math.BigDecimal;
+import java.time.Instant;
+import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -102,6 +104,47 @@ public interface WorkActReceiptRepository extends JpaRepository<WorkActReceipt, 
               AND r.itemized = false
             """, nativeQuery = true)
     BigDecimal sumSignedActReceipts(@Param("projectId") UUID projectId);
+
+    /**
+     * Every act receipt in a period whose money left the MASTER's pocket and is recorded nowhere
+     * else (review B-33) — the act-side half of
+     * {@code ProjectReceiptRepository.findOutOfPocketByOwnerAndPeriod}.
+     *
+     * <p>Signed acts only: an unsigned act is a draft bill, and the money on it is re-billed paper
+     * the master may still delete. {@code receipts_to_expenses = false} is the whole point — with
+     * the flag ON, {@code ActAddendumCreator} already posted each receipt as an
+     * {@code object_expenses} row, which «Мої гроші» reads anyway; only with it OFF is this the sole
+     * record of the spend.</p>
+     *
+     * <p>The {@code NOT EXISTS} is the V134 twin check. A slip photographed at the till AND attached
+     * to an act is ONE payment, and {@code ActReceiptReconciler} stamped the object row with this
+     * act's id at sign time; without this clause the same money would be counted once here and once
+     * as an out-of-pocket object receipt. A row with no fiscal identity matches nothing and is
+     * therefore kept — «no identity» is not «a twin» (B-21).</p>
+     *
+     * <p>Itemized receipts (the legacy flag) are deliberately NOT filtered out: that flag decides how
+     * the CLIENT is billed, and this query asks what the master spent — the same reasoning
+     * {@code ActAddendumCreator.postReceiptExpenses} already follows. A fully returned receipt
+     * (V115) cost nothing and is skipped.</p>
+     */
+    @Query("""
+            SELECT r FROM WorkActReceipt r JOIN FETCH r.workAct wa JOIN FETCH wa.project
+            WHERE wa.userId = :ownerId
+              AND wa.status = com.majstr.backend.entity.WorkActStatus.SIGNED
+              AND wa.receiptsToExpenses = false
+              AND r.amount - r.returnedAmount > 0
+              AND NOT EXISTS (SELECT pr.id FROM ProjectReceipt pr
+                              WHERE pr.billedOnActId = wa.id
+                                AND pr.fiscalFn = r.fiscalFn AND pr.fiscalId = r.fiscalId)
+              AND ((r.issuedAt IS NOT NULL AND r.issuedAt BETWEEN :from AND :to)
+                OR (r.issuedAt IS NULL AND r.createdAt >= :fromTs AND r.createdAt < :toTs))
+            ORDER BY r.createdAt DESC
+            """)
+    List<WorkActReceipt> findOutOfPocketByOwnerAndPeriod(@Param("ownerId") UUID ownerId,
+                                                         @Param("from") LocalDate from,
+                                                         @Param("to") LocalDate to,
+                                                         @Param("fromTs") Instant fromTs,
+                                                         @Param("toTs") Instant toTs);
 
     /** Every stored photo of this object's ACT receipts, for the same reason as the object ones
      *  (B-26) — the act rows cascade through the project and take the keys with them. */

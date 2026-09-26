@@ -115,7 +115,9 @@ class WorkActReceiptGuardsTest {
                 .id(RECEIPT).workAct(act).label("Епіцентр")
                 .amount(new BigDecimal(amount)).returnedAmount(BigDecimal.ZERO)
                 .storageKey("act-receipts/x.jpg").build();
-        when(actService.loadOwned(ACT, OWNER)).thenReturn(act);
+        // FOR UPDATE, not a plain lookup (B-60): the receipt is money on a document the client
+        // can be signing at this second.
+        when(actService.loadOwnedForUpdate(ACT, OWNER)).thenReturn(act);
         when(receiptRepository.findByIdAndWorkActId(RECEIPT, ACT)).thenReturn(Optional.of(receipt));
         when(identityIndex.forProject(PROJECT, List.of()))
                 .thenReturn(new ReceiptIdentityIndex.Twins(List.of(), List.of(), Map.of()));

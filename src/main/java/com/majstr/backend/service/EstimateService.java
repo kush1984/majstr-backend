@@ -29,6 +29,8 @@ import com.majstr.backend.exception.EmailNotVerifiedException;
 import com.majstr.backend.exception.EstimateSignedException;
 import com.majstr.backend.exception.InvalidEstimateStatusException;
 import com.majstr.backend.exception.ResourceNotFoundException;
+import com.majstr.backend.entity.EstimateKind;
+import com.majstr.backend.entity.WorkActStatus;
 import com.majstr.backend.exception.WorkActConflictException;
 import com.majstr.backend.feature.LimitService;
 import com.majstr.backend.repository.CatalogItemRepository;
@@ -37,6 +39,7 @@ import com.majstr.backend.repository.EstimateRepository;
 import com.majstr.backend.repository.ProjectPhotoRepository;
 import com.majstr.backend.repository.ShoppingListItemRepository;
 import com.majstr.backend.repository.WorkActItemRepository;
+import com.majstr.backend.repository.WorkActRepository;
 import com.majstr.backend.repository.ProjectRepository;
 import com.majstr.backend.storage.StorageService;
 import lombok.RequiredArgsConstructor;
@@ -83,6 +86,7 @@ public class EstimateService {
     private final EstimateRepository estimateRepository;
     private final EstimateItemRepository itemRepository;
     private final WorkActItemRepository workActItemRepository;
+    private final WorkActRepository workActRepository;
     private final ProjectService projectService;
     private final ProjectRepository projectRepository;
     private final CatalogService catalogService;
@@ -223,9 +227,8 @@ public class EstimateService {
         // silently drop those accepted works from «Прийнято актами» — and the copy's lines are new
         // ids with done=0, so the progress picker forgets them and the same work could be acted
         // twice. 409; new positions belong in a NEW estimate, not a re-quote of an acted one.
-        if (workActItemRepository.existsSignedLineForEstimate(estimateId)) {
-            throw new WorkActConflictException("error.estimate.duplicate-has-acts", "ESTIMATE_HAS_SIGNED_ACTS");
-        }
+        requireNotAddendum(source);
+        requireNoActs(estimateId, "error.estimate.duplicate-has-acts");
 
         List<EstimateItem> sourceItems = itemRepository.findByEstimateIdOrderBySortOrderAscIdAsc(estimateId);
         Set<UUID> toMarkUp = req.itemIds() == null
@@ -312,15 +315,38 @@ public class EstimateService {
                 c.setBaseDetached(c.isBaseDetached() || inCopy == null);
             }
         }
-        source.setCountInEconomy(false);
+        // A SIGNED source is a LIVE DEAL, and it stays one until the copy is signed too (B-63).
+        // Uncounting it here read «За договором 0» on a 50 000 job with 20 000 already paid, and
+        // the progress picker hides an uncounted estimate, so no act could be written against work
+        // that was underway — all because the master priced a renegotiation that may never be
+        // agreed. Signing the copy is what supersedes the parent (PublicEstimateService#doSign);
+        // an unsigned source is only a draft variant, so there today's behaviour is right.
+        if (source.getStatus() != EstimateStatus.SIGNED) {
+            source.setCountInEconomy(false);
+        }
 
         return recalculatedResponse(copy);
     }
 
-    /** Whole hryvnia. The client sees round numbers, and the economy reads the prices as stored,
-     *  so nothing is lost to the rounding — it becomes part of the margin either way. */
+    /**
+     * Apply the markup to one price — at the scale money is STORED at, never at whole hryvnia
+     * (review B-47).
+     *
+     * <p>Rounding to the hryvnia looked tidy on a 850 ₴ position and was a catastrophe on a cheap
+     * one bought by the thousand: 0,40 ₴ +20 % came out at <b>0,00</b>, so 2 000 pcs were billed
+     * nothing at all, and 1,20 ₴ +15 % came out BELOW its own cost. The error is per LINE and
+     * multiplies by the quantity, which is exactly where it is least visible.</p>
+     *
+     * <p>The floor is the second half: a position that costs money may never come out free. Scale 2
+     * alone cannot produce that from a stored price (0,01 ₴ is the smallest there is), but a deep
+     * discount copy can, and a 0,00 ₴ line in a signed document is not a rounding error — it is a
+     * promise to work for nothing.</p>
+     */
     private static BigDecimal markedUp(BigDecimal price, BigDecimal factor) {
-        return price.multiply(factor).setScale(0, RoundingMode.HALF_UP);
+        BigDecimal marked = price.multiply(factor).setScale(MONEY_SCALE, MONEY_ROUNDING);
+        return price.signum() > 0 && marked.signum() <= 0
+                ? BigDecimal.ONE.movePointLeft(MONEY_SCALE)
+                : marked;
     }
 
     /**
@@ -501,6 +527,7 @@ public class EstimateService {
     @Transactional
     public EstimateResponse update(UUID estimateId, EstimateUpdateRequest req, UUID ownerId) {
         Estimate estimate = loadOwned(estimateId, ownerId);
+        requireNotAddendum(estimate);
         requireNotSigned(estimate);
         if (req.status() == EstimateStatus.SIGNED) {
             // Message is a bundle key, resolved by GlobalExceptionHandler.
@@ -512,6 +539,9 @@ public class EstimateService {
         // REJECTED, and leaving the flag set would show a ticked "count in economy" box
         // for an estimate that is not, in fact, counted.
         if (req.status() == EstimateStatus.REJECTED) {
+            // Rejecting is an uncount, and an uncount is refused while acts stand on the estimate
+            // (B-64) — «клієнт відмовився» cannot erase work he has already accepted.
+            requireNoActs(estimateId, "error.estimate.uncount-has-acts");
             estimate.setCountInEconomy(false);
         }
         estimate.setName(normalize(req.name()));
@@ -544,6 +574,10 @@ public class EstimateService {
         if (estimate.getStatus() == EstimateStatus.SIGNED) {
             throw new EstimateSignedException();
         }
+        requireNotAddendum(estimate);
+        // Deleting it takes the act's lines with it (ON DELETE SET NULL), and an id-less line reads
+        // as an off-estimate work with no ADDENDUM behind it (B-59).
+        requireNoActs(estimateId, "error.estimate.delete-has-acts");
         UUID projectId = estimate.getProject().getId();
         // Detach the shopping rows this estimate produced BEFORE it goes: the FK is ON DELETE SET
         // NULL, Postgres runs a SET NULL as an UPDATE, and a CALCULATOR row without an estimate
@@ -574,9 +608,8 @@ public class EstimateService {
         // from «За договором» (SIGNED-only) while the act's frozen lines keep counting in «Прийнято
         // актами» — and a reopened DRAFT becomes editable and deletable, making the drift permanent.
         // 409, same family as the delete-a-SIGNED-estimate refusal.
-        if (workActItemRepository.existsSignedLineForEstimate(estimateId)) {
-            throw new WorkActConflictException("error.estimate.reopen-has-acts", "ESTIMATE_HAS_SIGNED_ACTS");
-        }
+        requireNotAddendum(estimate);
+        requireNoActs(estimateId, "error.estimate.reopen-has-acts");
         applyReopen(estimate, ownerId);
         List<EstimateItem> items = itemRepository.findByEstimateIdOrderBySortOrderAscIdAsc(estimateId);
         return toResponse(estimate, items);
@@ -609,8 +642,14 @@ public class EstimateService {
     @Transactional
     public EstimateResponse setCountInEconomy(UUID estimateId, boolean value, UUID ownerId) {
         Estimate estimate = loadOwned(estimateId, ownerId);
-        if (estimate.getKind() == com.majstr.backend.entity.EstimateKind.ADDENDUM) {
+        if (estimate.getKind() == EstimateKind.ADDENDUM) {
             throw new WorkActConflictException("error.estimate.addendum-locked", "ESTIMATE_ADDENDUM_LOCKED");
+        }
+        if (!value) {
+            // Unticking it takes the estimate out of «За договором» while the act's frozen lines go
+            // on counting in «Прийнято актами» (B-64): accepted 20 000 against a contract of 0,
+            // with the payments still sitting there. Ticking it back ON is always allowed.
+            requireNoActs(estimateId, "error.estimate.uncount-has-acts");
         }
         estimate.setCountInEconomy(value);
         return recalculatedResponse(estimate);
@@ -1176,6 +1215,40 @@ public class EstimateService {
      * agreed to. Deleting the whole estimate stays allowed — that removes the
      * record instead of corrupting it. To revise the deal, create a new estimate.
      */
+    /**
+     * An ADDENDUM is not a document the master wrote — it is the rollup «Додаткові роботи до акта
+     * № N» that signing an act created, and it exists to keep the act's off-estimate works and
+     * re-billed receipts inside «За договором» (B-58). The act's frozen lines go on counting in
+     * «Прийнято актами» whatever happens to it, so reopening, duplicating, editing, deleting or
+     * sharing it can only break the invariant in one direction: contracted 0, accepted 5 000.
+     *
+     * <p>Nothing guarded it until now, and the «has signed acts» guard could not: an act line
+     * points at the estimate it CLOSES, never at the addendum it FEEDS, so that question always
+     * answered «no acts» for a rollup. The addendum reference on the act itself is the other half,
+     * asked in {@link #requireNoActs}.</p>
+     */
+    private static void requireNotAddendum(Estimate estimate) {
+        if (estimate.getKind() == EstimateKind.ADDENDUM) {
+            throw new WorkActConflictException("error.estimate.addendum-readonly", "ESTIMATE_ADDENDUM_LOCKED");
+        }
+    }
+
+    /**
+     * Refuses while any act that is not REJECTED still stands on this estimate — one holding its
+     * lines, or the SIGNED one that created it as its ADDENDUM (B-58/B-59/B-64).
+     *
+     * <p>The SIGNED half is the old guard: the act's lines are frozen and keep counting, so taking
+     * the estimate out of «За договором» leaves «Прийнято актами» standing above a contract of 0.
+     * The DRAFT/SENT half is B-59: an open act cannot absorb the estimate LEAVING the economy —
+     * a SENT act is already on the client's phone, and the drift lands the second he taps.</p>
+     */
+    private void requireNoActs(UUID estimateId, String messageKey) {
+        if (workActItemRepository.existsLiveActLineForEstimate(estimateId)
+                || workActRepository.existsByAddendumEstimateIdAndStatus(estimateId, WorkActStatus.SIGNED)) {
+            throw new WorkActConflictException(messageKey, "ESTIMATE_HAS_SIGNED_ACTS");
+        }
+    }
+
     private static Estimate requireNotSigned(Estimate estimate) {
         if (estimate.getStatus() == EstimateStatus.SIGNED) {
             throw new EstimateSignedException();

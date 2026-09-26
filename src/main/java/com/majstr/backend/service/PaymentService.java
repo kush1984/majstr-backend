@@ -81,6 +81,7 @@ public class PaymentService {
     private final ProjectPaymentRepository paymentRepository;
     private final PaymentReceiptRepository receiptRepository;
     private final EstimateRepository estimateRepository;
+    private final MaterialRefundCalculator refundCalculator;
     private final ProjectService projectService;
     private final UserRepository userRepository;
     private final FeatureGuard featureGuard;
@@ -132,8 +133,17 @@ public class PaymentService {
             payments.add(ProjectPaymentResponse.from(p, today, received, receipts));
         }
 
-        BigDecimal remaining = contracted.subtract(totalReceived).max(BigDecimal.ZERO);
-        return new PaymentsSummaryResponse(contracted, totalReceived, remaining, payments, unplanned);
+        // A refund pays off MATERIAL, never work (B-65). Measuring «За договором» against the gross
+        // received let a 2 000 ₴ reimbursement close 2 000 ₴ of unpaid work and announce «Усе
+        // сплачено» over it, while the materials card went on asking for the money it had just been
+        // handed. The cap is what keeps the two axes adding up; the surplus above it has no
+        // receivable to settle and is therefore work money like any other.
+        MaterialRefundSplit split = refundCalculator.forObject(objectId);
+        BigDecimal workPaid = split.workPaid(totalReceived);
+        BigDecimal remaining = contracted.subtract(workPaid).max(BigDecimal.ZERO);
+        BigDecimal overpaid = workPaid.subtract(contracted).max(BigDecimal.ZERO);
+        return new PaymentsSummaryResponse(contracted, totalReceived, remaining, split.refunds(),
+                split.applied(), workPaid, overpaid, payments, unplanned);
     }
 
     @Transactional

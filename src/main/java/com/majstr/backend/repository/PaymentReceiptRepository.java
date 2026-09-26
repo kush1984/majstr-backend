@@ -52,4 +52,13 @@ public interface PaymentReceiptRepository extends JpaRepository<PaymentReceipt, 
      *  without going through the PRO-gated {@code PaymentsSummaryResponse}. */
     @Query("SELECT COALESCE(SUM(r.amount), 0) FROM PaymentReceipt r WHERE r.project.id = :projectId")
     BigDecimal sumByProjectId(@Param("projectId") UUID projectId);
+
+    /** Σ of the object's receipts ticked «повернення за матеріал» (review B-65). Deliberately NOT
+     *  subtracted from {@link #sumByProjectId}: «Отримано» means money that arrived, the refund
+     *  included. What a refund may not do is pay off WORK — see {@code MaterialRefundSplit}. */
+    @Query("""
+            SELECT COALESCE(SUM(r.amount), 0) FROM PaymentReceipt r
+            WHERE r.project.id = :projectId AND r.materialRefund = true
+            """)
+    BigDecimal sumMaterialRefunds(@Param("projectId") UUID projectId);
 }

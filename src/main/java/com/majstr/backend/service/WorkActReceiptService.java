@@ -156,6 +156,12 @@ public class WorkActReceiptService {
             saved = creator.attempt(actId, requestedId, resolvedLabel,
                     amount.setScale(MONEY_SCALE, RoundingMode.HALF_UP), issuedAt, storageKey,
                     sortOrder);
+        } catch (WorkActSignedException e) {
+            // The act was signed while this photo was uploading (B-60) — the re-check inside the
+            // locked transaction is what caught it. Nothing was written, so the stored photo is an
+            // orphan: drop it rather than leave a blob no row will ever point at.
+            tryDelete(storageKey);
+            throw e;
         } catch (DataIntegrityViolationException e) {
             // Two uploads of one queued receipt in flight at once: the loser's insert violates the
             // primary key, and the row the winner wrote IS the answer — so the photo this attempt
@@ -306,8 +312,11 @@ public class WorkActReceiptService {
      */
     @Transactional
     public WorkActReceiptResponse update(UUID actId, UUID receiptId, UUID ownerId, WorkActReceiptRequest req) {
-        WorkAct act = actService.loadOwned(actId, ownerId);
+        // FOR UPDATE (B-60): re-pricing a receipt while the client signs would change «До сплати»
+        // under a document already frozen into the doc_hash and the ADDENDUM.
+        WorkAct act = actService.loadOwnedForUpdate(actId, ownerId);
         WorkActService.requireNotSigned(act);
+        WorkActService.touch(act);
         WorkActReceipt receipt = load(actId, receiptId);
         BigDecimal amount = req.amount().setScale(MONEY_SCALE, RoundingMode.HALF_UP);
         requirePricedWhileSent(act, amount);
@@ -334,7 +343,9 @@ public class WorkActReceiptService {
 
     @Transactional
     public void delete(UUID actId, UUID receiptId, UUID ownerId) {
-        WorkActService.requireNotSigned(actService.loadOwned(actId, ownerId));
+        WorkAct act = actService.loadOwnedForUpdate(actId, ownerId);
+        WorkActService.requireNotSigned(act);
+        WorkActService.touch(act);
         WorkActReceipt receipt = load(actId, receiptId);
         receiptRepository.delete(receipt);
         // The paper goes AFTER the row, never before it (B-25): a rollback here used to leave the

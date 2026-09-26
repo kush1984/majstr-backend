@@ -20,8 +20,10 @@ import com.majstr.backend.entity.ProjectStatus;
 import com.majstr.backend.entity.Trade;
 import com.majstr.backend.entity.Unit;
 import com.majstr.backend.entity.User;
+import com.majstr.backend.exception.DocumentChangedException;
 import com.majstr.backend.exception.EstimateSignedException;
 import com.majstr.backend.exception.ResourceNotFoundException;
+import com.majstr.backend.exception.WorkActConflictException;
 import com.majstr.backend.feature.FeatureGuard;
 import com.majstr.backend.push.PushService;
 import com.majstr.backend.repository.EstimateItemRepository;
@@ -31,6 +33,7 @@ import com.majstr.backend.repository.EstimateShareLinkRepository;
 import com.majstr.backend.repository.PaymentReceiptRepository;
 import com.majstr.backend.repository.ProjectPaymentRepository;
 import com.majstr.backend.repository.ProjectShareLinkRepository;
+import com.majstr.backend.repository.WorkActItemRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -68,10 +71,13 @@ class PublicEstimateServiceTest {
     @Mock private ProjectPhotoService projectPhotoService;
     @Mock private FeatureGuard featureGuard;
     @Mock private PushService pushService;
+    @Mock private WorkActItemRepository workActItemRepository;
 
     private PublicEstimateService publicService;
 
     private final String token = "valid-token-xyz-1234567890";
+
+    @Mock MaterialRefundCalculator refundCalculator;
 
     @BeforeEach
     void setUp() {
@@ -82,7 +88,8 @@ class PublicEstimateServiceTest {
         messages.setFallbackToSystemLocale(false);
         publicService = new PublicEstimateService(shareLinkRepository, projectShareLinkRepository,
                 projectPaymentRepository, paymentReceiptRepository, estimateRepository, itemRepository,
-                messageRepository, estimateService, projectPhotoService, featureGuard, pushService, messages);
+                messageRepository, estimateService, projectPhotoService, featureGuard, pushService,
+                workActItemRepository, refundCalculator, messages);
     }
 
     @Test
@@ -224,7 +231,7 @@ class PublicEstimateServiceTest {
         given(itemRepository.findByEstimateIdOrderBySortOrderAscIdAsc(estimate.getId()))
                 .willReturn(List.of(workItem(estimate)));
 
-        SignRequest req = new SignRequest("Олена Іваненко", "+380671234567");
+        SignRequest req = new SignRequest("Олена Іваненко", "+380671234567", 0L);
 
         PublicEstimateView view = publicService.sign(token, req, "203.0.113.42");
 
@@ -255,9 +262,27 @@ class PublicEstimateServiceTest {
         given(shareLinkRepository.findByToken(token)).willReturn(Optional.of(usableLink(estimate)));
 
         assertThatThrownBy(() -> publicService.sign(
-                token, new SignRequest("Друга Особа", "+380670000000"), "203.0.113.43"))
+                token, new SignRequest("Друга Особа", "+380670000000", 0L), "203.0.113.43"))
                 .isInstanceOf(EstimateSignedException.class);
         // The original signature is untouched.
+        assertThat(estimate.getSignerName()).isNull();
+    }
+
+    @Test
+    void portalSign_withStaleVersion_409() {
+        // B-61, the estimate half: an unsigned estimate is fully editable, so a price the client
+        // read can be retyped while he reads it. The signature names the version he saw; anything
+        // else is a signature on figures nobody showed him.
+        Estimate estimate = sampleEstimate();
+        estimate.setVersion(2);
+        given(shareLinkRepository.findByToken(token)).willReturn(Optional.of(usableLink(estimate)));
+
+        assertThatThrownBy(() -> publicService.sign(
+                token, new SignRequest("Олена", "+380671234567", 1L), "203.0.113.42"))
+                .isInstanceOf(DocumentChangedException.class)
+                .extracting(e -> ((DocumentChangedException) e).getCode())
+                .isEqualTo("ESTIMATE_CHANGED");
+        assertThat(estimate.getStatus()).isEqualTo(EstimateStatus.DRAFT);
         assertThat(estimate.getSignerName()).isNull();
     }
 
@@ -269,7 +294,7 @@ class PublicEstimateServiceTest {
         given(itemRepository.findByEstimateIdOrderBySortOrderAscIdAsc(estimate.getId()))
                 .willReturn(List.of());
 
-        publicService.sign(token, new SignRequest("Олена", "+380671234567"), "203.0.113.42");
+        publicService.sign(token, new SignRequest("Олена", "+380671234567", 0L), "203.0.113.42");
 
         assertThat(estimate.getStatus()).isEqualTo(EstimateStatus.SIGNED);
         assertThat(estimate.getProject().getStatus()).isEqualTo(ProjectStatus.COMPLETED);
@@ -300,7 +325,7 @@ class PublicEstimateServiceTest {
                 .willReturn(List.of(workItem(duplicate)));
         given(estimateRepository.findById(parent.getId())).willReturn(Optional.of(parent));
 
-        publicService.sign(token, new SignRequest("Марія Петренко", "+380671234567"), "203.0.113.42");
+        publicService.sign(token, new SignRequest("Марія Петренко", "+380671234567", 0L), "203.0.113.42");
 
         assertThat(duplicate.getStatus()).isEqualTo(EstimateStatus.SIGNED);
         // The parent keeps its signature and status — nothing rewritten.
@@ -311,6 +336,41 @@ class PublicEstimateServiceTest {
         // …but it stops counting in the economy, and records which duplicate replaced it.
         assertThat(parent.isCountInEconomy()).isFalse();
         assertThat(parent.getSupersededByEstimateId()).isEqualTo(duplicate.getId());
+    }
+
+    @Test
+    void sign_ofADuplicateWhoseParentIsAlreadyClosedByActs_is409_andChangesNothing() {
+        // B-64. The supersede above is only safe while the parent is paper: uncounting an estimate
+        // that acts have already closed work against takes 20 000 of ACCEPTED work out of «За
+        // договором» while the acts go on counting it, and the copy's positions are new ids with
+        // done = 0, so the same wall can be acted a second time. Nothing here can decide what the
+        // two documents mean together, so the client is told to call the master instead of being
+        // handed a signature that quietly breaks the object's money.
+        Estimate parent = sampleEstimate();
+        parent.setStatus(EstimateStatus.SIGNED);
+        parent.setSignedAt(Instant.now());
+        parent.setCountInEconomy(true);
+        Estimate duplicate = Estimate.builder()
+                .id(UUID.randomUUID())
+                .project(parent.getProject())
+                .status(EstimateStatus.DRAFT)
+                .duplicatedFromId(parent.getId())
+                .createdAt(Instant.now())
+                .updatedAt(Instant.now())
+                .build();
+        given(shareLinkRepository.findByToken(token)).willReturn(Optional.of(usableLink(duplicate)));
+        given(estimateRepository.findById(parent.getId())).willReturn(Optional.of(parent));
+        given(workActItemRepository.existsSignedLineForEstimate(parent.getId())).willReturn(true);
+
+        assertThatThrownBy(() -> publicService.sign(token,
+                new SignRequest("Марія Петренко", "+380671234567", 0L), "203.0.113.42"))
+                .isInstanceOf(WorkActConflictException.class)
+                .extracting(e -> ((WorkActConflictException) e).getCode())
+                .isEqualTo("ESTIMATE_HAS_SIGNED_ACTS");
+
+        assertThat(duplicate.getStatus()).isEqualTo(EstimateStatus.DRAFT);
+        assertThat(parent.isCountInEconomy()).isTrue();
+        assertThat(parent.getSupersededByEstimateId()).isNull();
     }
 
     @Test
@@ -332,7 +392,7 @@ class PublicEstimateServiceTest {
                 .willReturn(List.of(workItem(duplicate)));
         given(estimateRepository.findById(parent.getId())).willReturn(Optional.of(parent));
 
-        publicService.sign(token, new SignRequest("Олена Іваненко", "+380671234567"), "203.0.113.42");
+        publicService.sign(token, new SignRequest("Олена Іваненко", "+380671234567", 0L), "203.0.113.42");
 
         verify(estimateService, never()).applyReopen(any(), any());
         assertThat(parent.getSupersededByEstimateId()).isNull();
@@ -500,6 +560,7 @@ class PublicEstimateServiceTest {
                 .willReturn(List.of(workItem(shared)));
         given(projectPaymentRepository.findByProjectIdOrderBySortOrderAscIdAsc(shared.getProject().getId()))
                 .willReturn(List.of(stage));
+        noRefunds(shared.getProject().getId());
         given(paymentReceiptRepository.findByProjectIdOrderByReceivedAtAscCreatedAtAsc(shared.getProject().getId()))
                 .willReturn(List.of(com.majstr.backend.entity.PaymentReceipt.builder()
                         .id(UUID.randomUUID()).project(shared.getProject()).planPayment(stage)
@@ -534,6 +595,7 @@ class PublicEstimateServiceTest {
                 .willReturn(List.of(workItem(shared)));
         given(projectPaymentRepository.findByProjectIdOrderBySortOrderAscIdAsc(shared.getProject().getId()))
                 .willReturn(List.of());
+        noRefunds(shared.getProject().getId());
         given(paymentReceiptRepository.findByProjectIdOrderByReceivedAtAscCreatedAtAsc(shared.getProject().getId()))
                 .willReturn(List.of(com.majstr.backend.entity.PaymentReceipt.builder()
                         .id(UUID.randomUUID()).project(shared.getProject())
@@ -545,6 +607,39 @@ class PublicEstimateServiceTest {
         assertThat(view.payments().unplannedReceipts()).hasSize(1);
         assertThat(view.payments().unplannedReceipts().get(0).label()).isEqualTo("Частково за матеріали");
         assertThat(view.payments().unplannedReceipts().get(0).amount()).isEqualByComparingTo("2700.00");
+    }
+
+    @Test
+    void viewEconomyPortal_aRefundedReceiptDoesNotPayForWork() {
+        // B-65 on the CLIENT's screen. He handed back 2 000 ₴ for material the master had bought,
+        // and the portal counted it against the contract — so the card said «залишилось 1 590»
+        // for work worth 3 590. The client is the one person who cannot check this figure.
+        Estimate shared = economyEstimate();
+        ProjectShareLink link = ProjectShareLink.builder()
+                .id(UUID.randomUUID()).project(shared.getProject()).token(token)
+                .createdAt(Instant.now()).revoked(false).paymentsVisible(true).build();
+        given(projectShareLinkRepository.findByTokenAndKind(token, ShareLinkKind.ECONOMY))
+                .willReturn(Optional.of(link));
+        given(estimateRepository.findByProjectIdAndEconomyVisibleTrueOrderByCreatedAtAsc(shared.getProject().getId()))
+                .willReturn(List.of(shared));
+        given(itemRepository.findByEstimateIdOrderBySortOrderAscIdAsc(shared.getId()))
+                .willReturn(List.of(workItem(shared)));
+        given(projectPaymentRepository.findByProjectIdOrderBySortOrderAscIdAsc(shared.getProject().getId()))
+                .willReturn(List.of());
+        given(paymentReceiptRepository.findByProjectIdOrderByReceivedAtAscCreatedAtAsc(shared.getProject().getId()))
+                .willReturn(List.of(com.majstr.backend.entity.PaymentReceipt.builder()
+                        .id(UUID.randomUUID()).project(shared.getProject())
+                        .amount(new BigDecimal("2000.00")).receivedAt(java.time.LocalDate.now())
+                        .label("Повернення за матеріал").build()));
+        given(refundCalculator.forObject(shared.getProject().getId())).willReturn(
+                MaterialRefundSplit.of(new BigDecimal("2000.00"), new BigDecimal("2000.00")));
+
+        PublicPortalView view = publicService.viewEconomyPortal(token);
+
+        // «Прийшло» still says what really arrived — the client wrote that transfer himself.
+        assertThat(view.payments().received()).isEqualByComparingTo("2000.00");
+        assertThat(view.payments().materialRefundApplied()).isEqualByComparingTo("2000.00");
+        assertThat(view.payments().remaining()).isEqualByComparingTo("4590.00"); // the whole contract
     }
 
     @Test
@@ -593,7 +688,7 @@ class PublicEstimateServiceTest {
         given(estimateRepository.findById(estimate.getId())).willReturn(Optional.of(estimate));
 
         assertThatThrownBy(() -> publicService.signPortal(
-                token, estimate.getId(), new SignRequest("Олена", "+380671234567"), "203.0.113.42"))
+                token, estimate.getId(), new SignRequest("Олена", "+380671234567", 0L), "203.0.113.42"))
                 .isInstanceOf(ResourceNotFoundException.class);
         assertThat(estimate.getStatus()).isEqualTo(EstimateStatus.DRAFT);
     }
@@ -608,7 +703,7 @@ class PublicEstimateServiceTest {
         given(estimateRepository.findById(foreign.getId())).willReturn(Optional.of(foreign));
 
         assertThatThrownBy(() -> publicService.signPortal(
-                token, foreign.getId(), new SignRequest("Олена", "+380671234567"), "203.0.113.42"))
+                token, foreign.getId(), new SignRequest("Олена", "+380671234567", 0L), "203.0.113.42"))
                 .isInstanceOf(ResourceNotFoundException.class);
     }
 
@@ -625,7 +720,7 @@ class PublicEstimateServiceTest {
                 .willReturn(List.of(workItem(estimate)));
 
         PublicPortalView view = publicService.signPortal(
-                token, estimate.getId(), new SignRequest("Олена Іваненко", "+380671234567"), "203.0.113.42");
+                token, estimate.getId(), new SignRequest("Олена Іваненко", "+380671234567", 0L), "203.0.113.42");
 
         assertThat(estimate.getStatus()).isEqualTo(EstimateStatus.SIGNED);
         assertThat(view.estimates().get(0).signature().signerName()).isEqualTo("Олена Іваненко");
@@ -727,6 +822,11 @@ class PublicEstimateServiceTest {
                 .createdAt(Instant.now())
                 .updatedAt(Instant.now())
                 .build();
+    }
+
+    private void noRefunds(UUID objectId) {
+        given(refundCalculator.forObject(objectId))
+                .willReturn(MaterialRefundSplit.of(BigDecimal.ZERO, BigDecimal.ZERO));
     }
 
     private EstimateItem workItem(Estimate estimate) {

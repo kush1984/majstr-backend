@@ -7,17 +7,23 @@ import com.majstr.backend.dto.CashFlowResponse;
 import com.majstr.backend.dto.CashSummaryResponse;
 import com.majstr.backend.dto.ExpenseRequest;
 import com.majstr.backend.dto.PaymentReceiptEditRequest;
+import com.majstr.backend.dto.ProjectReceiptRequest;
 import com.majstr.backend.entity.CashCategory;
 import com.majstr.backend.entity.CashDirection;
 import com.majstr.backend.entity.CashEntry;
 import com.majstr.backend.entity.ObjectExpense;
 import com.majstr.backend.entity.PaymentReceipt;
 import com.majstr.backend.entity.Project;
+import com.majstr.backend.entity.ProjectReceipt;
+import com.majstr.backend.entity.WorkActReceipt;
 import com.majstr.backend.exception.ResourceNotFoundException;
+import com.majstr.backend.exception.WorkActSignedException;
 import com.majstr.backend.repository.CashEntryRepository;
 import com.majstr.backend.repository.ObjectExpenseRepository;
 import com.majstr.backend.repository.PaymentReceiptRepository;
+import com.majstr.backend.repository.ProjectReceiptRepository;
 import com.majstr.backend.repository.ProjectRepository;
+import com.majstr.backend.repository.WorkActReceiptRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -27,6 +33,7 @@ import java.math.RoundingMode;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -56,11 +63,17 @@ import java.util.UUID;
  *       deleting an object's row from this screen goes through that object's OWN service — a second
  *       door to one record, never a second copy — so its rules still hold, including the refusal to
  *       touch an expense a V129 till receipt owns.</li>
- *   <li><b>A reimbursable till receipt never appears.</b> The expense side reads
- *       {@code object_expenses}, where V129's ruling already lives — a receipt the client pays back
- *       is a receivable, not a cost. {@code project_receipt} is never read here.</li>
- *   <li><b>«Заробив» excludes material refunds</b>, «Прийшло» does not: the money really arrived,
- *       it just is not earnings.</li>
+ *   <li><b>«Заробив» = «Прийшло» − «Витрати», one subtraction.</b> Which means every hryvnia
+ *       that left his pocket has to be ON the expense side, including the material he bought at
+ *       the till and has not been paid back for yet (review B-33): V129's «a reimbursable receipt
+ *       is a receivable, not a cost» governs the OBJECT's economy, and is still true there — but
+ *       on THIS screen the money is gone until the client hands it back, and the reverse reading
+ *       charged him for the same material twice, once as the refund subtracted from earnings and
+ *       once, silently, by never crediting the purchase at all. The two
+ *       {@code findOutOfPocketByOwnerAndPeriod} queries are written to be disjoint from
+ *       {@code object_expenses}, so nothing is counted twice.</li>
+ *   <li><b>«Повернення за матеріал» is an INFO line</b>, subtracted from nothing. It says which
+ *       part of «Прийшло» was not payment for work; the netting is done by the purchase.</li>
  *   <li><b>Period boundaries are {@code Europe/Kyiv}</b>, never the server's UTC idea of today —
  *       on the 1st at 01:00 that would open «цей місяць» on the previous one.</li>
  * </ul>
@@ -83,9 +96,12 @@ public class CashFlowService {
     private final CashEntryRepository cashRepository;
     private final PaymentReceiptRepository receiptRepository;
     private final ObjectExpenseRepository expenseRepository;
+    private final ProjectReceiptRepository projectReceiptRepository;
+    private final WorkActReceiptRepository actReceiptRepository;
     private final ProjectRepository projectRepository;
     private final PaymentService paymentService;
     private final ObjectExpenseService expenseService;
+    private final ProjectReceiptService projectReceiptService;
 
     // ---- reads ------------------------------------------------------------
 
@@ -110,7 +126,11 @@ public class CashFlowService {
         BigDecimal income = sum(all, e -> e.direction() == CashDirection.INCOME);
         BigDecimal expense = sum(all, e -> e.direction() == CashDirection.EXPENSE);
         BigDecimal refunds = sum(all, CashFlowResponse.Entry::materialRefund);
-        BigDecimal earned = income.subtract(refunds).subtract(expense);
+        // NOT `income − refunds − expense` (B-33). The refund repays material that is itself an
+        // expense row now, so subtracting it as well charged the master for the same purchase
+        // twice — and in the far commoner month where he had bought but not been paid back, the
+        // 8 000 he was out of pocket read as pure profit.
+        BigDecimal earned = income.subtract(expense);
 
         List<CashFlowResponse.Entry> entries = monthly
                 ? List.of()
@@ -210,6 +230,23 @@ public class CashFlowService {
                         amount, category.toExpenseCategory(), trimToNull(req.note()), day, null));
                 yield fromExpense(ownedExpense(ownerId, id), projectName(expense.getObjectId()));
             }
+            case OBJECT_RECEIPT -> {
+                ProjectReceipt receipt = ownedTillReceipt(ownerId, id);
+                // `reimbursable` rides as null on purpose — the three-valued flag means «leave it
+                // alone», and «хто за це платить» is a decision that belongs to the object's own
+                // receipts screen, in front of the photo. A month's feed must not flip it in
+                // passing, least of all by omission.
+                String note = trimToNull(req.note());
+                projectReceiptService.update(receipt.getProjectId(), id, ownerId,
+                        new ProjectReceiptRequest(note != null ? note : receipt.getLabel(),
+                                amount, day, null, null, null));
+                yield fromTillReceipt(ownedTillReceipt(ownerId, id),
+                        projectName(receipt.getProjectId()));
+            }
+            // Frozen inside a signed act's `doc_hash`: correcting the figure here would either
+            // contradict the paper the client holds or invalidate its hash. 409 rather than a
+            // silent no-op, so an old client that offers the edit says why it failed.
+            case ACT_RECEIPT -> throw new WorkActSignedException();
             case PERSONAL -> {
                 CashEntry entry = load(ownerId, id);
                 entry.setDirection(req.direction());
@@ -235,6 +272,9 @@ public class CashFlowService {
                     paymentService.deleteReceipt(r.getProject().getId(), id, ownerId));
             case OBJECT_EXPENSE -> expenseRepository.findById(id).ifPresent(e ->
                     expenseService.delete(e.getObjectId(), id, ownerId));
+            case OBJECT_RECEIPT -> projectReceiptRepository.findById(id).ifPresent(r ->
+                    projectReceiptService.delete(r.getProjectId(), id, ownerId));
+            case ACT_RECEIPT -> throw new WorkActSignedException();
             case PERSONAL -> cashRepository.findByIdAndOwnerId(id, ownerId)
                     .ifPresent(cashRepository::delete);
         }
@@ -243,15 +283,29 @@ public class CashFlowService {
     // ---- the feed ---------------------------------------------------------
 
     private List<CashFlowResponse.Entry> collect(UUID ownerId, LocalDate from, LocalDate to) {
+        // A day is a day in Kyiv, so the instant bounds for the rows dated by `created_at` are
+        // resolved there too — a receipt photographed at 00:30 on the 1st belongs to the 1st.
+        Instant fromTs = from.atStartOfDay(LocalizationConfig.ZONE).toInstant();
+        Instant toTs = to.plusDays(1).atStartOfDay(LocalizationConfig.ZONE).toInstant();
+
         List<PaymentReceipt> receipts = receiptRepository.findByOwnerAndPeriod(ownerId, from, to);
         List<ObjectExpense> expenses = expenseRepository.findByOwnerAndPeriod(ownerId, from, to);
         List<CashEntry> own = cashRepository.findByOwnerAndPeriod(ownerId, from, to);
+        List<ProjectReceipt> tillReceipts = projectReceiptRepository
+                .findOutOfPocketByOwnerAndPeriod(ownerId, from, to, fromTs, toTs);
+        List<WorkActReceipt> actReceipts = actReceiptRepository
+                .findOutOfPocketByOwnerAndPeriod(ownerId, from, to, fromTs, toTs);
 
-        // `ObjectExpense` carries a bare objectId and no association, so the names come in one
-        // lookup over exactly the objects this period touched — not over every object he owns.
-        Map<UUID, String> names = projectNames(expenses);
+        // `ObjectExpense` and `ProjectReceipt` carry a bare objectId and no association, so the
+        // names come in one lookup over exactly the objects this period touched — not over every
+        // object he owns. Act receipts fetch their project along the way and need none.
+        Set<UUID> objectIds = new HashSet<>();
+        expenses.forEach(e -> objectIds.add(e.getObjectId()));
+        tillReceipts.forEach(r -> objectIds.add(r.getProjectId()));
+        Map<UUID, String> names = projectNames(objectIds);
 
-        List<CashFlowResponse.Entry> all = new ArrayList<>(receipts.size() + expenses.size() + own.size());
+        List<CashFlowResponse.Entry> all = new ArrayList<>(receipts.size() + expenses.size()
+                + own.size() + tillReceipts.size() + actReceipts.size());
         for (PaymentReceipt r : receipts) {
             all.add(fromReceipt(r));
         }
@@ -260,6 +314,12 @@ public class CashFlowService {
         }
         for (CashEntry c : own) {
             all.add(toEntry(c));
+        }
+        for (ProjectReceipt r : tillReceipts) {
+            all.add(fromTillReceipt(r, names.get(r.getProjectId())));
+        }
+        for (WorkActReceipt r : actReceipts) {
+            all.add(fromActReceipt(r));
         }
         // The day first, then the time INSIDE it — and object rows carry no time at all, so they
         // fall to the end of their own day rather than to midnight of it. `createdAt` is not
@@ -272,11 +332,7 @@ public class CashFlowService {
         return all;
     }
 
-    private Map<UUID, String> projectNames(List<ObjectExpense> expenses) {
-        Set<UUID> ids = new HashSet<>();
-        for (ObjectExpense e : expenses) {
-            ids.add(e.getObjectId());
-        }
+    private Map<UUID, String> projectNames(Collection<UUID> ids) {
         if (ids.isEmpty()) {
             return Map.of();
         }
@@ -303,14 +359,53 @@ public class CashFlowService {
                 null, // an object payment has no category of its own — never invent one
                 planned ? r.getPlanPayment().getPurpose() : r.getLabel(),
                 r.getReceivedAt(), null,
-                project.getId(), project.getName(), r.isMaterialRefund(), planned);
+                project.getId(), project.getName(), r.isMaterialRefund(), planned, false);
     }
 
     private static CashFlowResponse.Entry fromExpense(ObjectExpense e, String projectName) {
         return new CashFlowResponse.Entry(
                 e.getId(), CashEntryKind.OBJECT_EXPENSE, CashDirection.EXPENSE, e.getAmount(),
                 fromExpenseCategory(e), e.getNote(), e.getSpentAt(), null,
-                e.getObjectId(), projectName, false, false);
+                e.getObjectId(), projectName, false, false, false);
+    }
+
+    /**
+     * Material bought at the till that the client has not paid back yet (review B-33).
+     *
+     * <p>It reads as MATERIALS spending, because that is what it was. The row stays editable — one
+     * door to one record, as everywhere here — except once an act has billed it: from that moment
+     * the paper is inside a document the client holds, and what may still be corrected about it
+     * belongs on the object's receipts screen, not in a month's feed.</p>
+     */
+    private static CashFlowResponse.Entry fromTillReceipt(ProjectReceipt r, String projectName) {
+        boolean billed = r.getBilledOnActId() != null;
+        return new CashFlowResponse.Entry(
+                r.getId(), CashEntryKind.OBJECT_RECEIPT, CashDirection.EXPENSE, r.getAmount(),
+                CashCategory.MATERIALS, r.getLabel(),
+                r.getIssuedAt() != null ? r.getIssuedAt() : dayOf(r.getCreatedAt()), null,
+                r.getProjectId(), projectName, false, billed, billed);
+    }
+
+    /**
+     * A receipt re-billed on a SIGNED act that does not post its receipts to expenses — the master
+     * paid for that material and this row is the only record of it (review B-33).
+     *
+     * <p>Read-only on purpose: the figure is frozen inside the act's {@code doc_hash}, so an edit
+     * here could only either lie about the client's document or invalidate it. The amount is
+     * {@link WorkActReceipt#billedAmount()} — material handed back to the shop cost nothing.</p>
+     */
+    private static CashFlowResponse.Entry fromActReceipt(WorkActReceipt r) {
+        Project project = r.getWorkAct().getProject();
+        return new CashFlowResponse.Entry(
+                r.getId(), CashEntryKind.ACT_RECEIPT, CashDirection.EXPENSE, r.billedAmount(),
+                CashCategory.MATERIALS,
+                "Чек до акта № " + r.getWorkAct().getNumber() + ": " + r.getLabel(),
+                r.getIssuedAt() != null ? r.getIssuedAt() : dayOf(r.getCreatedAt()), null,
+                project.getId(), project.getName(), false, true, true);
+    }
+
+    private static LocalDate dayOf(Instant moment) {
+        return moment == null ? today() : LocalDate.ofInstant(moment, LocalizationConfig.ZONE);
     }
 
     /** The object's three buckets, read back into the wider personal set. */
@@ -327,12 +422,9 @@ public class CashFlowService {
         for (CashFlowResponse.Entry e : all) {
             LocalDate key = e.happenedOn().withDayOfMonth(1);
             BigDecimal[] acc = byMonth.computeIfAbsent(key,
-                    k -> new BigDecimal[]{BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO});
+                    k -> new BigDecimal[]{BigDecimal.ZERO, BigDecimal.ZERO});
             if (e.direction() == CashDirection.INCOME) {
                 acc[0] = acc[0].add(e.amount());
-                if (e.materialRefund()) {
-                    acc[2] = acc[2].add(e.amount());
-                }
             } else {
                 acc[1] = acc[1].add(e.amount());
             }
@@ -343,7 +435,9 @@ public class CashFlowService {
                         en.getKey(),
                         scale(en.getValue()[0]),
                         scale(en.getValue()[1]),
-                        scale(en.getValue()[0].subtract(en.getValue()[2]).subtract(en.getValue()[1]))))
+                        // The same one subtraction as the period total (B-33) — a month whose
+                        // «Заробив» disagreed with the week's arithmetic is a screen nobody trusts.
+                        scale(en.getValue()[0].subtract(en.getValue()[1]))))
                 .toList();
     }
 
@@ -371,6 +465,15 @@ public class CashFlowService {
         return expense;
     }
 
+    private ProjectReceipt ownedTillReceipt(UUID ownerId, UUID id) {
+        ProjectReceipt receipt = projectReceiptRepository.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException("Cash entry not found: " + id));
+        projectRepository.findById(receipt.getProjectId())
+                .filter(p -> p.getOwner().getId().equals(ownerId))
+                .orElseThrow(() -> new ResourceNotFoundException("Cash entry not found: " + id));
+        return receipt;
+    }
+
     /** An edit body with no kind is a personal row — the only thing a create can ever be. */
     private static CashEntryKind kindOf(CashEntryRequest req) {
         return req.kind() == null ? CashEntryKind.PERSONAL : req.kind();
@@ -390,7 +493,8 @@ public class CashFlowService {
     private static CashFlowResponse.Entry toEntry(CashEntry c) {
         return new CashFlowResponse.Entry(
                 c.getId(), CashEntryKind.PERSONAL, c.getDirection(), c.getAmount(), c.getCategory(),
-                c.getNote(), c.getHappenedOn(), c.getHappenedAt(), null, null, c.isMaterialRefund(), false);
+                c.getNote(), c.getHappenedOn(), c.getHappenedAt(), null, null, c.isMaterialRefund(),
+                false, false);
     }
 
     private static BigDecimal sum(List<CashFlowResponse.Entry> all,

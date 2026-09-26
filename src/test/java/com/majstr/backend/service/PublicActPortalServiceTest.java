@@ -13,6 +13,7 @@ import com.majstr.backend.entity.WorkAct;
 import com.majstr.backend.entity.WorkActItem;
 import com.majstr.backend.entity.WorkActKind;
 import com.majstr.backend.entity.WorkActStatus;
+import com.majstr.backend.exception.DocumentChangedException;
 import com.majstr.backend.exception.ResourceNotFoundException;
 import com.majstr.backend.exception.WorkActSignedException;
 import com.majstr.backend.exception.WorkActValidationException;
@@ -60,6 +61,7 @@ class PublicActPortalServiceTest {
     @Mock PushService pushService;
     @Mock org.springframework.context.MessageSource messages;
     @Mock ActReceiptCompleteness receiptCompleteness;
+    @Mock ActLineBinder lineBinder;
     @InjectMocks PublicActPortalService service;
 
     private static final String TOKEN = "tok-123";
@@ -88,11 +90,22 @@ class PublicActPortalServiceTest {
                 .storageKey(withPhoto ? "act-receipts/x.jpg" : null).sortOrder(0).build();
     }
 
-    private void stubToken(WorkAct a) {
+    private void stubLink(WorkAct a) {
         ProjectShareLink link = ProjectShareLink.builder()
                 .token(TOKEN).kind(ShareLinkKind.ACT).workAct(a).revoked(false).build();
         given(linkRepository.findByTokenAndKind(TOKEN, ShareLinkKind.ACT)).willReturn(Optional.of(link));
+    }
+
+    /** The read paths resolve the act with a plain lookup. */
+    private void stubToken(WorkAct a) {
+        stubLink(a);
         given(actRepository.findById(a.getId())).willReturn(Optional.of(a));
+    }
+
+    /** Signing takes the row FOR UPDATE instead (B-60) — a different query, so a different stub. */
+    private void stubSignToken(WorkAct a) {
+        stubLink(a);
+        given(actRepository.findByIdForUpdate(a.getId())).willReturn(Optional.of(a));
     }
 
     @Test
@@ -164,12 +177,12 @@ class PublicActPortalServiceTest {
     @Test
     void sign_setsSigned_computesDocHash_andPushesTheMaster() throws Exception {
         WorkAct a = act(WorkActStatus.SENT);
-        stubToken(a);
+        stubSignToken(a);
         given(itemRepository.findByWorkActIdOrderBySortOrderAscIdAsc(a.getId())).willReturn(List.of(item(a)));
         given(signedCopy.computeDocHash(any(), any(), any())).willReturn("a".repeat(64));
         given(messages.getMessage(anyString(), any(), any())).willReturn("підписано");
 
-        PublicActView view = service.sign(TOKEN, new SignRequest("Олена", "+380671112233"), "1.2.3.4", "UA");
+        PublicActView view = service.sign(TOKEN, new SignRequest("Олена", "+380671112233", 0L), "1.2.3.4", "UA");
 
         assertThat(a.getStatus()).isEqualTo(WorkActStatus.SIGNED);
         assertThat(a.getSignerName()).isEqualTo("Олена");
@@ -190,10 +203,27 @@ class PublicActPortalServiceTest {
     @Test
     void sign_alreadySignedAct_is409() {
         WorkAct a = act(WorkActStatus.SIGNED);
-        stubToken(a);
+        stubSignToken(a);
 
-        assertThatThrownBy(() -> service.sign(TOKEN, new SignRequest("Олена", "+380671112233"), "1.2.3.4", "UA"))
+        assertThatThrownBy(() -> service.sign(TOKEN, new SignRequest("Олена", "+380671112233", 0L), "1.2.3.4", "UA"))
                 .isInstanceOf(WorkActSignedException.class);
+    }
+
+    @Test
+    void portalSign_withStaleVersion_409() {
+        // B-61: a SENT act stays editable, so between the client opening it and tapping the master
+        // can add a line or a 1 800 ₴ receipt. Signing whatever it says at the tap puts the
+        // client's name, phone, IP and a doc_hash on a document he never read.
+        WorkAct a = act(WorkActStatus.SENT);
+        a.setVersion(4);
+        stubSignToken(a);
+
+        assertThatThrownBy(() -> service.sign(TOKEN, new SignRequest("Олена", "+380671112233", 3L),
+                "1.2.3.4", "UA"))
+                .isInstanceOf(DocumentChangedException.class)
+                .extracting(e -> ((DocumentChangedException) e).getCode())
+                .isEqualTo("WORK_ACT_CHANGED");
+        assertThat(a.getStatus()).isEqualTo(WorkActStatus.SENT);
     }
 
     @Test
@@ -201,10 +231,10 @@ class PublicActPortalServiceTest {
         // Belt-and-braces (review fix): share and offline-sign already refuse an empty act, but the
         // owner can still empty a SENT act via PUT /items — that emptiness must never become SIGNED.
         WorkAct a = act(WorkActStatus.SENT);
-        stubToken(a);
+        stubSignToken(a);
         given(itemRepository.findByWorkActIdOrderBySortOrderAscIdAsc(a.getId())).willReturn(List.of());
 
-        assertThatThrownBy(() -> service.sign(TOKEN, new SignRequest("Олена", "+380671112233"), "1.2.3.4", "UA"))
+        assertThatThrownBy(() -> service.sign(TOKEN, new SignRequest("Олена", "+380671112233", 0L), "1.2.3.4", "UA"))
                 .isInstanceOf(WorkActValidationException.class);
         assertThat(a.getStatus()).isEqualTo(WorkActStatus.SENT);
     }

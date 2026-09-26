@@ -5,11 +5,13 @@ import com.majstr.backend.dto.ShareLinkResponse;
 import com.majstr.backend.email.EmailService;
 import com.majstr.backend.entity.Client;
 import com.majstr.backend.entity.Estimate;
+import com.majstr.backend.entity.EstimateKind;
 import com.majstr.backend.entity.EstimateShareLink;
 import com.majstr.backend.entity.EstimateStatus;
 import com.majstr.backend.entity.User;
 import com.majstr.backend.exception.ClientEmailMissingException;
 import com.majstr.backend.exception.EmailNotVerifiedException;
+import com.majstr.backend.exception.WorkActConflictException;
 import com.majstr.backend.exception.ResourceNotFoundException;
 import com.majstr.backend.feature.Feature;
 import com.majstr.backend.feature.FeatureGuard;
@@ -116,6 +118,12 @@ public class ShareLinkService {
 
     /** Plan feature + verified-email preconditions for any client-facing share (checked before mutating). */
     private void requireSharable(Estimate estimate) {
+        // Never the ADDENDUM (B-58): «Додаткові роботи до акта № 3» is a rollup the server writes
+        // when an act is signed, not an offer — the client has already accepted that work ON the
+        // act, and sending it to him as an estimate asks him to agree to it a second time.
+        if (estimate.getKind() == EstimateKind.ADDENDUM) {
+            throw new WorkActConflictException("error.estimate.addendum-readonly", "ESTIMATE_ADDENDUM_LOCKED");
+        }
         User owner = estimate.getProject().getOwner();
         featureGuard.requireFeature(owner, Feature.CLIENT_PORTAL);
         if (!owner.isEmailVerified()) {

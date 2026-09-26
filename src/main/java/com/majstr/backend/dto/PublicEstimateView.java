@@ -39,7 +39,10 @@ public record PublicEstimateView(
         /** Same rule for {@link #discountAmount}. */
         BigDecimal discountPercent,
         Signature signature,
-        List<SharedPhoto> sharedPhotos
+        List<SharedPhoto> sharedPhotos,
+        /** The estimate's {@code @Version} at render time, echoed back with the signature so a
+         *  document edited while the client was reading it cannot be signed unseen (B-61). */
+        long version
 ) {
     public record Contractor(
             String companyName,

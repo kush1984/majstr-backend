@@ -81,7 +81,8 @@ class SupersedeOnSignIntegrationTest extends IntegrationTestBase {
                 .token("tok-" + UUID.randomUUID())
                 .build());
 
-        publicService.sign(link.getToken(), new SignRequest("Марія Петренко", "+380672222222"), "203.0.113.42");
+        publicService.sign(link.getToken(), new SignRequest("Марія Петренко", "+380672222222",
+                        estimateRepository.findById(duplicate.getId()).orElseThrow().getVersion()), "203.0.113.42");
 
         Estimate reloadedParent = estimateRepository.findById(parent.getId()).orElseThrow();
         Estimate reloadedDuplicate = estimateRepository.findById(duplicate.getId()).orElseThrow();

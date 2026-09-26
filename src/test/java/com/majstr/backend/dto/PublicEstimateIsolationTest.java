@@ -85,7 +85,10 @@ class PublicEstimateIsolationTest {
         collect(PublicPortalView.PaymentsCard.class, names, 0);
         // "received" appears twice (PaymentsCard's own aggregate + each PaymentRow's); "amount"
         // appears twice too (PaymentRow's + UnplannedReceiptRow's).
-        assertThat(names).containsExactlyInAnyOrder("contractedTotal", "received", "remaining", "payments",
+        // materialRefundApplied is the client's OWN money coming back for material (B-65) — it is
+        // what makes `remaining` add up on his screen, and it tells him nothing he did not pay.
+        assertThat(names).containsExactlyInAnyOrder("contractedTotal", "received", "remaining",
+                "materialRefundApplied", "payments",
                 "purpose", "amount", "received", "lastReceivedAt", "dueDate", "nextStage", "status",
                 "unplannedReceipts", "label", "amount", "receivedAt");
     }

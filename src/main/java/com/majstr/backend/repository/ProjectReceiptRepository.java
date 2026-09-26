@@ -6,6 +6,8 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 import java.math.BigDecimal;
+import java.time.Instant;
+import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -84,6 +86,44 @@ public interface ProjectReceiptRepository extends JpaRepository<ProjectReceipt, 
             WHERE r.projectId = :projectId AND r.amount <= 0
             """)
     long countUnpriced(@Param("projectId") UUID projectId);
+
+    /**
+     * Every till receipt across ALL of one master's objects in a period that came out of HIS OWN
+     * pocket and is recorded nowhere else (review B-33) — «Мої гроші» reads this beside
+     * {@code object_expenses} and {@code cash_entry}.
+     *
+     * <p>The object economy says a reimbursable receipt is a RECEIVABLE, not a cost, and that ruling
+     * is untouched — but the CASH screen answers a different question. The money did leave his
+     * pocket at the till, so a month in which he bought 8 000 ₴ of material and has not been paid
+     * back yet is not a month in which he earned the whole contract. Until this existed «Заробив»
+     * counted it as pure profit and the reimbursement, when it arrived, was subtracted a second
+     * time — the master saw 8 000 of his own money read first as earnings and then as a loss.</p>
+     *
+     * <p>Only the rows nothing else records: an own-cost receipt ({@code reimbursable = false}) is
+     * already an {@code object_expenses} row, and a receipt billed on an act that posts its receipts
+     * to expenses is that act's expense — counting either here would double the cost. What is left
+     * is the reimbursable paper, billed on a {@code receipts_to_expenses = false} act or on no act
+     * at all.</p>
+     *
+     * <p>{@code issuedAt} is the day the money was spent; a receipt whose date has not been read off
+     * the paper yet falls back to the day it was photographed, which is the same day in practice —
+     * hence the {@code createdAt} bounds, resolved in {@code Europe/Kyiv} by the caller.</p>
+     */
+    @Query("""
+            SELECT r FROM ProjectReceipt r
+            WHERE r.reimbursable = true AND r.amount > 0
+              AND r.projectId IN (SELECT p.id FROM Project p WHERE p.owner.id = :ownerId)
+              AND (r.billedOnActId IS NULL OR r.billedOnActId IN
+                   (SELECT a.id FROM WorkAct a WHERE a.receiptsToExpenses = false))
+              AND ((r.issuedAt IS NOT NULL AND r.issuedAt BETWEEN :from AND :to)
+                OR (r.issuedAt IS NULL AND r.createdAt >= :fromTs AND r.createdAt < :toTs))
+            ORDER BY r.createdAt DESC
+            """)
+    List<ProjectReceipt> findOutOfPocketByOwnerAndPeriod(@Param("ownerId") UUID ownerId,
+                                                         @Param("from") LocalDate from,
+                                                         @Param("to") LocalDate to,
+                                                         @Param("fromTs") Instant fromTs,
+                                                         @Param("toTs") Instant toTs);
 
     /** Every stored photo of this object's receipts, for the delete that takes the rows with it
      *  (B-26): the cascade removes the only pointer to the file, so the keys are read BEFORE it. */

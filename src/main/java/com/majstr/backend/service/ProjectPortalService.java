@@ -68,6 +68,7 @@ public class ProjectPortalService {
     private final WorkActItemRepository workActItemRepository;
     private final WorkActReceiptRepository workActReceiptRepository;
     private final ActReceiptCompleteness receiptCompleteness;
+    private final ActLineBinder lineBinder;
     private final ProjectService projectService;
     private final FeatureGuard featureGuard;
     private final PortalProperties portalProperties;
@@ -187,7 +188,9 @@ public class ProjectPortalService {
      */
     @Transactional
     public ActShareStateResponse updateAct(UUID actId, UUID ownerId) {
-        WorkAct act = loadOwnedAct(actId, ownerId);
+        // FOR UPDATE (B-60): DRAFT→SENT is the moment the act becomes signable, and the guards
+        // below read the lines and receipts it is being published with.
+        WorkAct act = loadOwnedActForUpdate(actId, ownerId);
         requireSharable(act.getProject().getOwner());
         if (act.getStatus() == WorkActStatus.REJECTED) {
             throw new InvalidEstimateStatusException("error.work-act.not-shareable");
@@ -203,6 +206,10 @@ public class ProjectPortalService {
             // and signing freezes the receipts block into the doc_hash and the ADDENDUM estimate
             // (receipts-batch — a photo is now saved before it is priced).
             receiptCompleteness.requireAllPriced(actId);
+            // The estimate behind a linked line must still be closeable, and the act must not be
+            // closing more than remains (B-56). Publishing is the door the MASTER controls, so it
+            // is the one place he can still be told about it and act on it.
+            lineBinder.requireStillValid(act);
             act.setStatus(WorkActStatus.SENT);
             act.setSentAt(Instant.now());
         }
@@ -223,6 +230,17 @@ public class ProjectPortalService {
     private WorkAct loadOwnedAct(UUID actId, UUID ownerId) {
         return workActRepository.findByIdAndUserId(actId, ownerId)
                 .orElseThrow(() -> new ResourceNotFoundException("Work act not found: " + actId));
+    }
+
+    /** As above with the act row locked — the ownership check is by hand because the lock query is
+     *  by id alone; a foreign act stays a 404, exactly as the unlocked load answers. */
+    private WorkAct loadOwnedActForUpdate(UUID actId, UUID ownerId) {
+        WorkAct act = workActRepository.findByIdForUpdate(actId)
+                .orElseThrow(() -> new ResourceNotFoundException("Work act not found: " + actId));
+        if (!act.getUserId().equals(ownerId)) {
+            throw new ResourceNotFoundException("Work act not found: " + actId);
+        }
+        return act;
     }
 
     private Optional<ProjectShareLink> actLink(UUID actId) {

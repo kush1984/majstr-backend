@@ -42,6 +42,13 @@ public record PublicPortalView(
             BigDecimal contractedTotal,
             BigDecimal received,
             BigDecimal remaining,
+            /** Of {@code received}, how much was the client paying the master back for material
+             *  (review B-65) — the APPLIED part, capped by what there was to reimburse, because
+             *  that is exactly the gap between «Отримано» and what bought work. It is money that
+             *  arrived, so it stays inside {@code received} and the itemized rows still add up; it
+             *  bought no work, so {@code remaining} does not shrink by it. Named here so the client
+             *  is told why, instead of being handed two figures that look like a slip. */
+            BigDecimal materialRefundApplied,
             List<PaymentRow> payments,
             /** Receipts with no matching plan stage ("Своє") — {@code received} above already
              *  includes them, so without this list the client sees a total that the itemized
@@ -97,6 +104,9 @@ public record PublicPortalView(
             BigDecimal markupPercent,
             /** Mirrors {@link PublicEstimateView#discountPercent()}. */
             BigDecimal discountPercent,
-            PublicEstimateView.Signature signature
+            PublicEstimateView.Signature signature,
+            /** Mirrors {@link PublicEstimateView#version()} — the portal signs a SECTION, so the
+             *  version must travel per section, not per page (B-61). */
+            long version
     ) {}
 }

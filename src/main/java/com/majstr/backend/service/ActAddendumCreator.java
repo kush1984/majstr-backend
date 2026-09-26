@@ -11,6 +11,7 @@ import com.majstr.backend.entity.ObjectExpense;
 import com.majstr.backend.entity.Unit;
 import com.majstr.backend.entity.WorkAct;
 import com.majstr.backend.entity.WorkActItem;
+import com.majstr.backend.entity.WorkActLineKind;
 import com.majstr.backend.entity.WorkActReceipt;
 import com.majstr.backend.repository.EstimateItemRepository;
 import com.majstr.backend.repository.EstimateRepository;
@@ -61,7 +62,10 @@ class ActAddendumCreator {
      *  per-row immutability guard, but keeping it pre-SIGNED matches the offline path's ordering). */
     void createIfNeeded(WorkAct act) {
         List<WorkActItem> additional = itemRepository.findByWorkActIdOrderBySortOrderAscIdAsc(act.getId())
-                .stream().filter(i -> i.getEstimateItemId() == null).toList();
+                // ADDITIONAL, never «no estimate item» (B-55): an ADJUSTMENT line carries no item
+                // id either, and its money is an estimate's own discount — already inside «За
+                // договором» once, so rolling it up here would count it a second time.
+                .stream().filter(i -> i.getLineKind() == WorkActLineKind.ADDITIONAL).toList();
         List<WorkActReceipt> allReceipts = receiptRepository
                 .findByWorkActIdNewestFirst(act.getId());
         // ITEMIZED receipts (round 2) are already inside the act as its own lines — rolling them up

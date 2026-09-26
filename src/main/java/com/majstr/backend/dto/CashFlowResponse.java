@@ -16,11 +16,15 @@ import java.util.UUID;
  * @param to       inclusive last day
  * @param income   everything that came in, refunds included — it really did arrive
  * @param expense  everything that went out
- * @param earned   {@code income − materialRefunds − expense}. The figure that answers «скільки я
- *                 заробив»: material the client merely paid back is not earnings, and counting it
- *                 would inflate a month by exactly that material
- * @param refunds  Σ of the income marked «повернення за матеріал» — shown so the gap between
- *                 «Прийшло» and «Заробив» is explained rather than mysterious
+ * @param earned   {@code income − expense}. The figure that answers «скільки я заробив», and since
+ *                 review B-33 it is one subtraction, not two: the material the client pays back is
+ *                 netted by its own COST being in {@code expense} — the till receipt he is owed for
+ *                 is now a feed row. Subtracting the refund on top of that (the V135 formula)
+ *                 charged the master for the same material twice, and in a month where he had
+ *                 bought but not yet been paid back it read the 8 000 ₴ he was out of pocket as
+ *                 pure profit
+ * @param refunds  Σ of the income marked «повернення за матеріал» — an INFO line now, subtracted
+ *                 from nothing: it explains which part of «Прийшло» was not payment for work
  * @param entries  newest day first; empty for a YEAR period, which returns {@code months} instead —
  *                 two thousand rows on a phone is not a screen anyone reads
  * @param months    per-month totals, filled only for a YEAR period (newest first)
@@ -50,11 +54,15 @@ public record CashFlowResponse(
      * @param happenedAt     time within the day, or null for object rows, which carry a bare date.
      *                       Ordering already accounts for that; this is here so a client can show it
      * @param projectId      the object this money belongs to, or null for an off-object row
-     * @param materialRefund income the client paid back for material — in the movement, out of
-     *                       «Заробив»
+     * @param materialRefund income the client paid back for material. Since B-33 it labels the row
+     *                       and nothing more: the material it repays is itself a feed row now, so
+     *                       «Заробив» nets out on its own
      * @param noteLocked     the text belongs to something else and an edit would be a silent no-op:
      *                       a PLANNED receipt's name is its stage's purpose, and {@code editReceipt}
      *                       deliberately leaves it alone
+     * @param readOnly       the row may be shown but not changed from here — an {@code ACT_RECEIPT}
+     *                       is frozen inside a signed act's {@code doc_hash}. The client hides the
+     *                       edit affordance rather than offering a tap that can only 409
      */
     public record Entry(
             UUID id,
@@ -68,7 +76,8 @@ public record CashFlowResponse(
             UUID projectId,
             String projectName,
             boolean materialRefund,
-            boolean noteLocked
+            boolean noteLocked,
+            boolean readOnly
     ) {}
 
     /** One month of a YEAR view. {@code month} is its first day, so the client can re-query it. */

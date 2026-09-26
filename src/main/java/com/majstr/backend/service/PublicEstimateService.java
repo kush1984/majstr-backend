@@ -22,8 +22,10 @@ import com.majstr.backend.entity.ProjectStatus;
 import com.majstr.backend.entity.Unit;
 import com.majstr.backend.config.LocalizationConfig;
 import com.majstr.backend.entity.User;
+import com.majstr.backend.exception.DocumentChangedException;
 import com.majstr.backend.exception.EstimateSignedException;
 import com.majstr.backend.exception.ResourceNotFoundException;
+import com.majstr.backend.exception.WorkActConflictException;
 import com.majstr.backend.feature.Feature;
 import com.majstr.backend.feature.FeatureGuard;
 import com.majstr.backend.push.PushService;
@@ -36,6 +38,7 @@ import com.majstr.backend.repository.EstimateShareLinkRepository;
 import com.majstr.backend.repository.PaymentReceiptRepository;
 import com.majstr.backend.repository.ProjectPaymentRepository;
 import com.majstr.backend.repository.ProjectShareLinkRepository;
+import com.majstr.backend.repository.WorkActItemRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.MessageSource;
 import org.springframework.stereotype.Service;
@@ -80,7 +83,35 @@ public class PublicEstimateService {
     private final ProjectPhotoService projectPhotoService;
     private final FeatureGuard featureGuard;
     private final PushService pushService;
+    private final WorkActItemRepository workActItemRepository;
+    private final MaterialRefundCalculator refundCalculator;
     private final MessageSource messages;
+
+    /**
+     * The SIGNED estimate this one replaces, or {@code null} when nothing is superseded — and a 409
+     * when superseding it would break the object's money (B-64).
+     *
+     * <p>Acts that have already closed work against the parent are the case nothing here can
+     * resolve: uncounting it takes that accepted work out of «За договором» while the acts go on
+     * counting it, and the copy's positions are new ids with {@code done = 0}, so the same metre of
+     * wall can be acted a second time. The client is told to call the master rather than handed a
+     * signature that quietly breaks the figures — which is why this runs BEFORE the document is
+     * stamped.</p>
+     */
+    private Estimate supersededParent(Estimate estimate) {
+        if (estimate.getDuplicatedFromId() == null) {
+            return null;
+        }
+        Estimate parent = estimateRepository.findById(estimate.getDuplicatedFromId()).orElse(null);
+        if (parent == null || parent.getStatus() != EstimateStatus.SIGNED) {
+            return null;
+        }
+        if (workActItemRepository.existsSignedLineForEstimate(parent.getId())) {
+            throw new WorkActConflictException("error.estimate.parent-has-acts",
+                    "ESTIMATE_HAS_SIGNED_ACTS");
+        }
+        return parent;
+    }
 
     // ---- legacy per-estimate token (?t=) ----------------------------------
 
@@ -269,7 +300,12 @@ public class PublicEstimateService {
             }
         }
 
-        BigDecimal remaining = contracted.subtract(received).max(BigDecimal.ZERO);
+        // The client was shown the same wrong remaining the master was (B-65): a payment ticked
+        // «повернення за матеріал» paid off work it never bought, so the portal said the object was
+        // settled while part of the contract was still unpaid. The refund is capped by what there
+        // is to reimburse, exactly as on the master's side.
+        MaterialRefundSplit split = refundCalculator.forObject(objectId);
+        BigDecimal remaining = contracted.subtract(split.workPaid(received)).max(BigDecimal.ZERO);
         LocalDate today = LocalDate.now(LocalizationConfig.ZONE);
         List<PublicPortalView.PaymentRow> paymentRows = rows.stream()
                 .map(p -> {
@@ -284,7 +320,8 @@ public class PublicEstimateService {
                             p.getDueDate(), p.getNextStage(), p.status(today, stageReceived));
                 })
                 .toList();
-        return new PublicPortalView.PaymentsCard(contracted, received, remaining, paymentRows, unplannedRows);
+        return new PublicPortalView.PaymentsCard(contracted, received, remaining, split.applied(),
+                paymentRows, unplannedRows);
     }
 
     // ---- shared core ------------------------------------------------------
@@ -297,6 +334,20 @@ public class PublicEstimateService {
             // contractor-side guard, localized for the portal client.
             throw new EstimateSignedException();
         }
+        // …and this must still be the estimate he was reading (B-61). An unsigned estimate stays
+        // fully editable, so the master can retype a price, add a position or apply a discount
+        // between the page load and the tap — and the signature would land on figures the client
+        // never saw, under his own name and phone. The @Version the page rendered is what says
+        // «this document»; a mismatch is not an error he caused, so the message is «перегляньте
+        // ще раз», not a refusal.
+        if (req.version() == null || estimate.getVersion() != req.version()) {
+            throw new DocumentChangedException("error.estimate.changed", "ESTIMATE_CHANGED");
+        }
+        // The supersede below can refuse this signature (B-64), and it has to refuse it BEFORE the
+        // document is stamped: the client is being told to go and talk to the master, so nothing
+        // he did may leave a mark.
+        Estimate supersededParent = supersededParent(estimate);
+
         estimate.setStatus(EstimateStatus.SIGNED);
         estimate.setSignedAt(Instant.now());
         estimate.setSignerName(req.clientName().trim());
@@ -313,13 +364,9 @@ public class PublicEstimateService {
         // and the master can flip it back if we guessed wrong. The parent keeps its signature, its
         // signed date, its signer, its place in the Економіка tab — just uncounted in the summary.
         // supersededByEstimateId still records which duplicate replaced it (drives the banner).
-        if (estimate.getDuplicatedFromId() != null) {
-            estimateRepository.findById(estimate.getDuplicatedFromId()).ifPresent(parent -> {
-                if (parent.getStatus() == EstimateStatus.SIGNED) {
-                    parent.setCountInEconomy(false);
-                    parent.setSupersededByEstimateId(estimate.getId());
-                }
-            });
+        if (supersededParent != null) {
+            supersededParent.setCountInEconomy(false);
+            supersededParent.setSupersededByEstimateId(estimate.getId());
         }
         // A signed estimate means work begins. object-status-unification made the DISPLAYED stage
         // fully derived (a SIGNED estimate alone now drives IN_PROGRESS — see ObjectStage.derive),
@@ -531,7 +578,8 @@ public class PublicEstimateService {
                 t.discount(),
                 t.markupPercent(),
                 t.discountPercent(),
-                signatureOf(estimate));
+                signatureOf(estimate),
+                estimate.getVersion());
     }
 
     private PublicEstimateView buildView(Estimate estimate) {
@@ -565,7 +613,8 @@ public class PublicEstimateService {
                 t.markupPercent(),
                 t.discountPercent(),
                 signatureOf(estimate),
-                sharedPhotos
+                sharedPhotos,
+                estimate.getVersion()
         );
     }
 

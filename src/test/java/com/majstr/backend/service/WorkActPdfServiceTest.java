@@ -9,6 +9,7 @@ import com.majstr.backend.entity.Unit;
 import com.majstr.backend.entity.User;
 import com.majstr.backend.entity.WorkAct;
 import com.majstr.backend.entity.WorkActItem;
+import com.majstr.backend.entity.WorkActLineKind;
 import com.majstr.backend.entity.WorkActKind;
 import com.majstr.backend.entity.WorkActStatus;
 import com.majstr.backend.feature.Feature;
@@ -203,7 +204,8 @@ class WorkActPdfServiceTest {
                 .quantity(new BigDecimal("100.000")).lineTotal(new BigDecimal("14500.00"))
                 .cumulativeBefore(new BigDecimal("0.000")).sortOrder(0).build();
         WorkActItem additional = WorkActItem.builder()
-                .workAct(act).estimateItemId(null).estimateId(null).type(ItemType.WORK)
+                .workAct(act).lineKind(WorkActLineKind.ADDITIONAL)
+                .estimateItemId(null).estimateId(null).type(ItemType.WORK)
                 .name("Демонтаж перегородки").unit(Unit.M2).unitPrice(new BigDecimal("500.00"))
                 .quantity(new BigDecimal("3.000")).lineTotal(new BigDecimal("1500.00"))
                 .cumulativeBefore(new BigDecimal("0.000")).sortOrder(1).build();

@@ -15,12 +15,16 @@ public record PaymentReceiptResponse(
          *  else a generic fallback (a plan stage deleted after this receipt was recorded). */
         String displayLabel,
         BigDecimal amount,
-        LocalDate receivedAt
+        LocalDate receivedAt,
+        /** «Повернення за матеріал»: the client handing back money the master laid out at the till,
+         *  not payment for work (review B-65). Shown so the tick can be seen and corrected on the
+         *  object's own screen — it decides how far the contract is really paid. */
+        boolean materialRefund
 ) {
     public static PaymentReceiptResponse from(PaymentReceipt r) {
         String display = r.getLabel() != null ? r.getLabel()
                 : r.getPlanPayment() != null ? r.getPlanPayment().getPurpose() : "Оплата";
         UUID planId = r.getPlanPayment() != null ? r.getPlanPayment().getId() : null;
-        return new PaymentReceiptResponse(r.getId(), planId, r.getLabel(), display, r.getAmount(), r.getReceivedAt());
+        return new PaymentReceiptResponse(r.getId(), planId, r.getLabel(), display, r.getAmount(), r.getReceivedAt(), r.isMaterialRefund());
     }
 }

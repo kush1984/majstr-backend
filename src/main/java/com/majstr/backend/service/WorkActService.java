@@ -15,6 +15,7 @@ import com.majstr.backend.entity.Project;
 import com.majstr.backend.entity.Unit;
 import com.majstr.backend.entity.WorkAct;
 import com.majstr.backend.entity.WorkActItem;
+import com.majstr.backend.entity.WorkActLineKind;
 import com.majstr.backend.entity.WorkActStatus;
 import com.majstr.backend.exception.ResourceNotFoundException;
 import com.majstr.backend.exception.WorkActConflictException;
@@ -73,6 +74,8 @@ public class WorkActService {
     private final ActAddendumCreator addendumCreator;
     private final ActSignedCopyService signedCopy;
     private final ActReceiptCompleteness receiptCompleteness;
+    private final ActLineBinder lineBinder;
+    private final ActAdjustmentCalculator adjustmentCalculator;
     private final ActReceiptReconciler receiptReconciler;
     private final ReceiptIdentityIndex identityIndex;
     private final ProjectService projectService;
@@ -123,7 +126,7 @@ public class WorkActService {
     @Transactional(readOnly = true)
     public ActProgressResponse progress(UUID projectId, UUID ownerId) {
         projectService.loadOwned(projectId, ownerId);
-        Map<UUID, BigDecimal> done = signedDoneByEstimateItem(projectId);
+        Map<UUID, BigDecimal> done = lineBinder.signedDone(projectId);
         List<ActProgressResponse.Line> lines = new ArrayList<>();
         for (Estimate e : estimateRepository.findByProjectIdOrderByCreatedAtDesc(projectId)) {
             // Only SIGNED, non-ADDENDUM, and IN the economy: a kosторис the master excluded from the
@@ -174,7 +177,7 @@ public class WorkActService {
 
     @Transactional
     public WorkActResponse updateHeader(UUID id, WorkActUpdateRequest req, UUID ownerId) {
-        WorkAct act = requireNotSigned(loadOwned(id, ownerId));
+        WorkAct act = requireNotSigned(loadOwnedForUpdate(id, ownerId));
         act.setKind(req.kind());
         act.setTitle(trim(req.title()));
         act.setIssuedAt(req.issuedAt());
@@ -214,31 +217,39 @@ public class WorkActService {
      */
     @Transactional
     public WorkActResponse replaceItems(UUID id, WorkActItemsRequest req, UUID ownerId) {
-        WorkAct act = requireNotSigned(loadOwned(id, ownerId));
-        Map<UUID, EstimateItem> linked = requireCountedEstimateLines(req.items(), act.getProject().getId());
+        WorkAct act = requireNotSigned(loadOwnedForUpdate(id, ownerId));
+        touch(act); // the lines ARE the document (B-60/B-61)
+        ActLineBinder.Bound bound = lineBinder.bind(req.items(), act.getProject().getId());
         itemRepository.deleteByWorkActId(id);
         itemRepository.flush(); // clear before re-inserting so nothing collides
-        Map<UUID, BigDecimal> done = signedDoneByEstimateItem(act.getProject().getId());
+        Map<UUID, BigDecimal> done = bound.done();
         List<WorkActItem> items = new ArrayList<>();
         int sort = 0;
         for (WorkActItemsRequest.Line line : req.items()) {
+            // A linked line copies the ESTIMATE, not the request (B-56): the client signed those
+            // words at that price, and an act is the document that says how much of them is done.
+            // Only the quantity is the master's — which is all the act editor ever offers him.
+            EstimateItem source = line.estimateItemId() == null
+                    ? null : bound.linked().get(line.estimateItemId());
             BigDecimal quantity = line.quantity().setScale(QUANTITY_SCALE, ROUNDING);
-            BigDecimal unitPrice = line.unitPrice().setScale(MONEY_SCALE, ROUNDING);
-            BigDecimal cumulativeBefore = line.estimateItemId() == null
+            BigDecimal unitPrice = (source == null ? line.unitPrice() : source.getUnitPrice())
+                    .setScale(MONEY_SCALE, ROUNDING);
+            BigDecimal cumulativeBefore = source == null
                     ? quantityZero()
                     : done.getOrDefault(line.estimateItemId(), quantityZero());
             items.add(WorkActItem.builder()
                     .workAct(act)
+                    .lineKind(source == null ? WorkActLineKind.ADDITIONAL : WorkActLineKind.ESTIMATE)
                     .estimateItemId(line.estimateItemId())
                     // Derived from the item, never trusted from the request (review fix): a null or
                     // mismatched estimateId would land the line in the «IS NULL» branch of
                     // sumSignedActLineTotals and mis-group the PDF.
-                    .estimateId(line.estimateItemId() == null
-                            ? null : linked.get(line.estimateItemId()).getEstimate().getId())
-                    .type(line.type())
-                    .name(line.name().trim())
-                    .category(CatalogService.normalizeCategory(line.category()))
-                    .unit(line.unit())
+                    .estimateId(source == null ? null : source.getEstimate().getId())
+                    .type(source == null ? line.type() : source.getType())
+                    .name(source == null ? line.name().trim() : source.getName().trim())
+                    .category(CatalogService.normalizeCategory(
+                            source == null ? line.category() : source.getCategory()))
+                    .unit(source == null ? line.unit() : source.getUnit())
                     .unitPrice(unitPrice)
                     .quantity(quantity)
                     .lineTotal(unitPrice.multiply(quantity).setScale(MONEY_SCALE, ROUNDING))
@@ -246,13 +257,17 @@ public class WorkActService {
                     .sortOrder(sort++)
                     .build());
         }
+        // The estimate's own discounts and surcharges, prorated by what this act closes (B-55).
+        // Written here rather than at sign time so the client sees the discount on the page he is
+        // about to sign, not only afterwards.
+        items.addAll(adjustmentCalculator.adjustmentsFor(act, items, sort));
         itemRepository.saveAll(items);
         return responseFactory.build(act);
     }
 
     @Transactional
     public void delete(UUID id, UUID ownerId) {
-        WorkAct act = loadOwned(id, ownerId);
+        WorkAct act = loadOwnedForUpdate(id, ownerId);
         if (act.getStatus() != WorkActStatus.DRAFT && act.getStatus() != WorkActStatus.REJECTED) {
             throw new WorkActConflictException("error.work-act.not-deletable", "WORK_ACT_NOT_DELETABLE");
         }
@@ -270,9 +285,15 @@ public class WorkActService {
     @Transactional
     public WorkActResponse signOffline(UUID id, WorkActSignOfflineRequest req, UUID ownerId)
             throws IOException, DocumentException {
-        WorkAct act = requireNotSigned(loadOwned(id, ownerId));
+        // FOR UPDATE, and before anything else (B-60): a receipt or a line landing between this
+        // read and the commit would be billed by «Прийнято актами» while sitting outside the
+        // document the client signed. Every writer takes the same lock, so one of the two waits.
+        WorkAct act = requireNotSigned(loadOwnedForUpdate(id, ownerId));
         requireItems(id); // a signed act is immutable and undeletable — never let an empty one in
         receiptCompleteness.requireAllPriced(id); // …nor one whose receipts are not priced yet
+        // …nor one whose estimate moved under it since the save (B-56): reopened, uncounted or
+        // already closed by another act. Structure only — the prices stay the frozen copy.
+        lineBinder.requireStillValid(act);
         addendumCreator.createIfNeeded(act);
         // …and settle the object receipts that are THE SAME PAPER as one of this act's (B-04). Must
         // follow the ADDENDUM: it is that estimate moving the money into «За договором» that takes
@@ -302,7 +323,7 @@ public class WorkActService {
      */
     @Transactional
     public WorkActResponse changeStatus(UUID id, WorkActStatus target, UUID ownerId) {
-        WorkAct act = loadOwned(id, ownerId);
+        WorkAct act = loadOwnedForUpdate(id, ownerId);
         WorkActStatus from = act.getStatus();
         boolean allowed =
                 (from == WorkActStatus.SENT
@@ -327,37 +348,6 @@ public class WorkActService {
     // ---- helpers ----------------------------------------------------------
 
     /**
-     * Defense-in-depth for the write path: an act line that references an estimate position must
-     * belong to a SIGNED, economy-counted kosторис — the same set the picker offers — and that
-     * estimate must belong to THIS act's project (review fix: without the project pin, any
-     * SIGNED+counted item UUID passed, even another user's). The picker is UI; the contract holds
-     * here (acts-fix). Off-estimate lines (null estimateItemId) are exempt.
-     *
-     * @return the verified items by id, so the caller can derive each line's estimateId server-side.
-     */
-    private Map<UUID, EstimateItem> requireCountedEstimateLines(
-            List<WorkActItemsRequest.Line> lines, UUID projectId) {
-        List<UUID> ids = lines.stream()
-                .map(WorkActItemsRequest.Line::estimateItemId)
-                .filter(Objects::nonNull).distinct().toList();
-        Map<UUID, EstimateItem> byId = new HashMap<>();
-        if (ids.isEmpty()) {
-            return byId;
-        }
-        estimateItemRepository.findAllById(ids).forEach(it -> byId.put(it.getId(), it));
-        for (UUID itemId : ids) {
-            EstimateItem item = byId.get(itemId);
-            Estimate e = item == null ? null : item.getEstimate();
-            if (e == null || e.getStatus() != EstimateStatus.SIGNED || !e.isCountInEconomy()
-                    || !e.getProject().getId().equals(projectId)) {
-                throw new WorkActValidationException(
-                        "error.work-act.estimate-excluded", "WORK_ACT_ESTIMATE_EXCLUDED");
-            }
-        }
-        return byId;
-    }
-
-    /**
      * An act must carry at least one line to leave the DRAFT stage (review fix). Without this, an
      * empty act could be sent and signed — and a SIGNED act is immutable and undeletable, so an
      * empty FINAL act would permanently block the object from ever having a real act.
@@ -378,7 +368,20 @@ public class WorkActService {
     }
 
     WorkAct loadOwned(UUID id, UUID ownerId) {
-        WorkAct act = workActRepository.findById(id)
+        return requireOwned(workActRepository.findById(id), id, ownerId);
+    }
+
+    /**
+     * {@link #loadOwned} with the act row locked {@code FOR UPDATE} — what every write path uses
+     * (B-60). The lock is the act's, not the line's or the receipt's, because what must not
+     * interleave is a child write and the SIGNATURE, and the act row is the only row both touch.
+     */
+    WorkAct loadOwnedForUpdate(UUID id, UUID ownerId) {
+        return requireOwned(workActRepository.findByIdForUpdate(id), id, ownerId);
+    }
+
+    private static WorkAct requireOwned(java.util.Optional<WorkAct> found, UUID id, UUID ownerId) {
+        WorkAct act = found
                 .orElseThrow(() -> new ResourceNotFoundException("Work act not found: " + id));
         if (!act.getProject().getOwner().getId().equals(ownerId)) {
             throw new AccessDeniedException("Work act does not belong to the current user");
@@ -386,18 +389,25 @@ public class WorkActService {
         return act;
     }
 
+    /**
+     * Mark the act itself modified when a CHILD row changed — a line, a receipt.
+     *
+     * <p>{@code @Version} only moves when the act row is written, so adding a 1 800 ₴ receipt left
+     * it untouched: the version the client's portal page is holding would still look current while
+     * «До сплати» had changed under him (B-61 hangs on this). Dirtying {@code updatedAt} is the
+     * deterministic way to say it — it goes through the ordinary optimistic-lock UPDATE, unlike
+     * {@code EntityManager.lock(act, OPTIMISTIC_FORCE_INCREMENT)}, which Hibernate may drop as a
+     * downgrade on a row already held {@code PESSIMISTIC_WRITE} — and {@code updated_at} moving
+     * when the document changes is true anyway.
+     */
+    static void touch(WorkAct act) {
+        act.setUpdatedAt(Instant.now());
+    }
+
     List<WorkActPdfService.ReceiptRow> receiptRows(UUID actId) {
         return receiptRepository.findByWorkActIdNewestFirst(actId).stream()
                 .map(WorkActPdfService.ReceiptRow::from)
                 .toList();
-    }
-
-    private Map<UUID, BigDecimal> signedDoneByEstimateItem(UUID projectId) {
-        Map<UUID, BigDecimal> map = new HashMap<>();
-        for (Object[] row : itemRepository.sumSignedQuantitiesByEstimateItem(projectId)) {
-            map.put((UUID) row[0], ((BigDecimal) row[1]).setScale(QUANTITY_SCALE, ROUNDING));
-        }
-        return map;
     }
 
     private static BigDecimal quantityZero() {

@@ -17,8 +17,9 @@ public record PaymentReceiptEditRequest(
         /**
          * Money the client paid BACK for material (V135). Carried here as well as on the create so
          * the flag has ONE door in and out — «Мої гроші» edits object payments in place, and a
-         * second write path just for this boolean would be the thing that drifts. Reads nothing in
-         * the object economy; only the cash screen takes it out of «Заробив».
+         * second write path just for this boolean would be the thing that drifts. Since review B-65
+         * the object economy reads it as well — a refund settles the materials axis instead of the
+         * contract — so a wrong tick is corrected from either screen.
          *
          * <p>Three-valued on purpose, like V129's {@code reimbursable}: null = leave it alone. The
          * object economy's edit sheet has no refund switch and sends no such field, and this one

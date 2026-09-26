@@ -16,6 +16,7 @@ import com.majstr.backend.entity.Project;
 import com.majstr.backend.entity.User;
 import com.majstr.backend.entity.WorkAct;
 import com.majstr.backend.entity.WorkActItem;
+import com.majstr.backend.entity.WorkActLineKind;
 import com.majstr.backend.entity.WorkActKind;
 import com.majstr.backend.feature.Feature;
 import com.majstr.backend.feature.FeatureGuard;
@@ -222,8 +223,12 @@ public class WorkActPdfService {
     /** The priced table, grouped estimate → category (additional works in their own «ІІ» section).
      *  @return the act's grand total. */
     private BigDecimal addItemsTable(Document doc, PdfModel model) throws DocumentException {
-        List<WorkActItem> main = model.items().stream().filter(i -> i.getEstimateItemId() != null).toList();
-        List<WorkActItem> additional = model.items().stream().filter(i -> i.getEstimateItemId() == null).toList();
+        // Partition on what a line IS, not on its ids (B-55): an ADJUSTMENT carries no estimate item
+        // either, and printing an estimate's own discount under «додаткові роботи» would tell the
+        // client he agreed to it on this act.
+        List<WorkActItem> main = byKind(model, WorkActLineKind.ESTIMATE);
+        List<WorkActItem> adjustments = byKind(model, WorkActLineKind.ADJUSTMENT);
+        List<WorkActItem> additional = byKind(model, WorkActLineKind.ADDITIONAL);
 
         Paragraph heading = new Paragraph("І. ВИКОНАНІ РОБОТИ", fonts.bold(12));
         heading.setSpacingBefore(10);
@@ -239,6 +244,13 @@ public class WorkActPdfService {
         for (WorkActItem item : main) {
             byEstimate.computeIfAbsent(item.getEstimateId(), k -> new ArrayList<>()).add(item);
         }
+        // An adjustment closes its own estimate's percentages, so it belongs at the end of that
+        // estimate's block — where the client reads it against the positions it was measured from.
+        Map<UUID, List<WorkActItem>> adjustmentsByEstimate = new LinkedHashMap<>();
+        for (WorkActItem item : adjustments) {
+            adjustmentsByEstimate.computeIfAbsent(item.getEstimateId(), k -> new ArrayList<>()).add(item);
+            byEstimate.computeIfAbsent(item.getEstimateId(), k -> new ArrayList<>());
+        }
         boolean multiEstimate = byEstimate.size() > 1;
         for (Map.Entry<UUID, List<WorkActItem>> group : byEstimate.entrySet()) {
             if (multiEstimate) {
@@ -246,6 +258,10 @@ public class WorkActPdfService {
                 addSpanRow(table, "Кошторис: " + name, SECTION_BG, fonts.bold(10));
             }
             total = total.add(addCategoryGrouped(table, group.getValue(), n));
+            List<WorkActItem> groupAdjustments = adjustmentsByEstimate.get(group.getKey());
+            if (groupAdjustments != null) {
+                total = total.add(addCategoryGrouped(table, groupAdjustments, n));
+            }
         }
 
         if (!additional.isEmpty()) {
@@ -254,6 +270,10 @@ public class WorkActPdfService {
         }
         doc.add(table);
         return total;
+    }
+
+    private static List<WorkActItem> byKind(PdfModel model, WorkActLineKind kind) {
+        return model.items().stream().filter(i -> i.getLineKind() == kind).toList();
     }
 
     private BigDecimal addCategoryGrouped(PdfPTable table, List<WorkActItem> items, int[] n) {
@@ -299,7 +319,7 @@ public class WorkActPdfService {
         if (receipts.isEmpty()) {
             return BigDecimal.ZERO.setScale(MONEY_SCALE, MONEY_ROUNDING);
         }
-        boolean hasAdditional = model.items().stream().anyMatch(i -> i.getEstimateItemId() == null);
+        boolean hasAdditional = model.items().stream().anyMatch(i -> i.getLineKind() == WorkActLineKind.ADDITIONAL);
         Paragraph heading = new Paragraph((hasAdditional ? "ІІІ" : "ІІ") + ". ЧЕКИ ТА РАХУНКИ",
                 fonts.bold(12));
         heading.setSpacingBefore(12);
@@ -471,7 +491,7 @@ public class WorkActPdfService {
     }
 
     private void addStatements(Document doc, PdfModel model) throws DocumentException {
-        boolean hasAdditional = model.items().stream().anyMatch(i -> i.getEstimateItemId() == null);
+        boolean hasAdditional = model.items().stream().anyMatch(i -> i.getLineKind() == WorkActLineKind.ADDITIONAL);
         if (hasAdditional) {
             Paragraph agree = new Paragraph("Сторони підтверджують, що зазначені додаткові роботи "
                     + "погоджені Замовником та виконані за його згодою. Підписанням цього Акта Замовник "

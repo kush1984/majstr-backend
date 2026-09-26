@@ -28,9 +28,10 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  *
  * <p>Three of them matter. The feed is the FIRST owner-wide money query in this codebase (everything
  * else reads {@code WHERE object_id = ?}), so the join through {@code projects.owner_id} is only
- * proved here. The object router really has to land a row in the object's own journal. And the
- * V129 ruling — a receipt the client pays back is a receivable, not a cost — has to survive into
- * this screen without anyone restating it.</p>
+ * proved here. The object router really has to land a row in the object's own journal. And the five
+ * sources have to be DISJOINT (review B-33): the same material must not be able to reach the
+ * expense side both as an {@code object_expenses} row and as the receipt that created it — which
+ * is decided by two {@code @Query} strings no Mockito test can see.</p>
  */
 class CashFlowIntegrationTest extends IntegrationTestBase {
 
@@ -40,6 +41,7 @@ class CashFlowIntegrationTest extends IntegrationTestBase {
 
     private UUID ownerId;
     private UUID projectId;
+    private int actNumber = 1;
 
     @BeforeEach
     void seed() {
@@ -179,42 +181,135 @@ class CashFlowIntegrationTest extends IntegrationTestBase {
     }
 
     /**
-     * V129 ruled a till receipt the client pays back is a receivable, not a cost — so it writes no
-     * {@code object_expenses} row. This screen inherits that for free by reading that table and
-     * never {@code project_receipt}; flip the receipt to «моя витрата» and the cost appears.
+     * The V129 ruling — a till receipt the client pays back is a RECEIVABLE, not a cost — governs
+     * the OBJECT's economy and is untouched. On THIS screen the same paper is 2 000 ₴ that left his
+     * pocket (review B-33), so it is spending either way; what may never happen is it counting
+     * TWICE when he flips it to «моя витрата» and the flip writes an {@code object_expenses} row.
+     *
+     * <p>That disjointness lives entirely in the {@code reimbursable = true} filter of
+     * {@code findOutOfPocketByOwnerAndPeriod}, which is exactly what a real database proves.</p>
      */
     @Test
-    void aReceiptTheClientPaysBackIsNotASpend_untilTheMasterSaysItIsHis() {
+    void aTillReceiptIsSpendingWhoeverPaysForIt_andNeverTwice() {
         LocalDate day = LocalDate.now();
         UUID receiptId = UUID.randomUUID();
-        jdbc.update("""
-                INSERT INTO project_receipt (id, project_id, label, amount, storage_key, sort_order)
-                VALUES (?, ?, 'Епіцентр', 2000.00, 'object-receipts/x.jpg', 0)
-                """, receiptId, projectId);
+        insertTillReceipt(receiptId, "2000.00");
 
-        assertThat(flow(day).expense()).isEqualByComparingTo("0.00");
+        CashFlowResponse asReceivable = flow(day);
+        assertThat(asReceivable.expense()).isEqualByComparingTo("2000.00");
+        assertThat(asReceivable.entries()).extracting(CashFlowResponse.Entry::kind)
+                .containsExactly(CashEntryKind.OBJECT_RECEIPT);
+        assertThat(count("SELECT count(*) FROM object_expenses WHERE object_id = ?", projectId))
+                .isZero();
 
         projectReceiptService.update(projectId, receiptId, ownerId, new ProjectReceiptRequest(
                 "Епіцентр", new BigDecimal("2000.00"), day, false, null, null));
 
-        assertThat(flow(day).expense()).isEqualByComparingTo("2000.00");
+        CashFlowResponse asOwnCost = flow(day);
+        assertThat(asOwnCost.expense()).isEqualByComparingTo("2000.00");
+        assertThat(asOwnCost.entries()).extracting(CashFlowResponse.Entry::kind)
+                .containsExactly(CashEntryKind.OBJECT_EXPENSE);
     }
 
     /**
-     * «Прийшло» counts the reimbursement — it really arrived. «Заробив» does not, or the month is
-     * inflated by exactly the material the client paid back.
+     * Signing an act with {@code receipts_to_expenses} ON posts the receipt as an
+     * {@code object_expenses} row and stamps the object's twin {@code billed_on_act_id}. Both rows
+     * describe ONE purchase, so the feed must show one — and the one it shows is the expense,
+     * because that is the record every other screen already reads.
+     */
+    @Test
+    void aTillReceiptBilledOnAnActThatPostsExpensesIsCountedOnce() {
+        LocalDate day = LocalDate.now();
+        UUID receiptId = UUID.randomUUID();
+        UUID actId = insertSignedAct(true);
+        insertTillReceipt(receiptId, "2000.00");
+        jdbc.update("UPDATE project_receipt SET billed_on_act_id = ? WHERE id = ?", actId, receiptId);
+        insertActReceipt(actId, "2000.00", "0.00");
+        insertExpense("2000.00", day);
+
+        CashFlowResponse flow = flow(day);
+
+        assertThat(flow.expense()).isEqualByComparingTo("2000.00");
+        assertThat(flow.entries()).extracting(CashFlowResponse.Entry::kind)
+                .containsExactly(CashEntryKind.OBJECT_EXPENSE);
+    }
+
+    /**
+     * With {@code receipts_to_expenses} OFF nothing posts an expense, so the act's own receipt is
+     * the ONLY record that the master paid for that material — and the client's payment for it is
+     * already sitting in «Прийшло» as part of the act. Miss it and the month reads 2 000 ₴ richer
+     * than the till did.
+     */
+    @Test
+    void anActReceiptIsTheOnlyRecordWhenTheActDoesNotPostExpenses() {
+        LocalDate day = LocalDate.now();
+        UUID actId = insertSignedAct(false);
+        insertActReceipt(actId, "2000.00", "500.00");
+
+        CashFlowResponse flow = flow(day);
+
+        // 2 000 paid at the till, 500 handed back to the shop: he is out 1 500 (V115).
+        assertThat(flow.expense()).isEqualByComparingTo("1500.00");
+        assertThat(flow.entries()).extracting(CashFlowResponse.Entry::kind)
+                .containsExactly(CashEntryKind.ACT_RECEIPT);
+        // Frozen inside the act's `doc_hash` — the feed shows it and refuses to rewrite it.
+        assertThat(flow.entries().getFirst().readOnly()).isTrue();
+    }
+
+    /**
+     * The same paper in both tables (V134): the object receipt was reconciled onto the act, so the
+     * act's copy and the object's copy are one purchase. The NOT EXISTS twin check is what keeps
+     * the feed from billing the master for it twice.
+     */
+    @Test
+    void aReconciledPairOfReceiptsIsOnePurchase() {
+        LocalDate day = LocalDate.now();
+        UUID actId = insertSignedAct(false);
+        UUID receiptId = UUID.randomUUID();
+        insertTillReceipt(receiptId, "2000.00");
+        jdbc.update("""
+                UPDATE project_receipt SET billed_on_act_id = ?, fiscal_fn = '4000', fiscal_id = '77'
+                WHERE id = ?
+                """, actId, receiptId);
+        jdbc.update("""
+                INSERT INTO work_act_receipt (id, work_act_id, label, amount, returned_amount,
+                                              issued_at, fiscal_fn, fiscal_id, sort_order, created_at)
+                VALUES (?, ?, 'Епіцентр', 2000.00, 0.00, CURRENT_DATE, '4000', '77', 0, now())
+                """, UUID.randomUUID(), actId);
+
+        CashFlowResponse flow = flow(day);
+
+        assertThat(flow.expense()).isEqualByComparingTo("2000.00");
+        assertThat(flow.entries()).extracting(CashFlowResponse.Entry::kind)
+                .containsExactly(CashEntryKind.OBJECT_RECEIPT);
+    }
+
+    /** A DRAFT act bills nobody yet; its receipts belong to the act editor, not to a month's cash. */
+    @Test
+    void anUnsignedActsReceiptsAreNotCashYet() {
+        UUID actId = insertAct("DRAFT", false);
+        insertActReceipt(actId, "2000.00", "0.00");
+
+        assertThat(flow(LocalDate.now()).expense()).isEqualByComparingTo("0.00");
+    }
+
+    /**
+     * The refund tick LABELS income, and since B-33 it subtracts nothing: the purchase it repays is
+     * on the expense side itself, and taking both charged the master for the same material twice.
      *
      * <p>The flag is set by TICKING an object's payment from this screen, which is the only way it
      * can be set on one — so this also proves the edit door carries it into {@code payment_receipt}
      * and back out into the feed.</p>
      */
     @Test
-    void tickingAnObjectPaymentAsARefundTakesItOutOfEarningsOnly() {
-        LocalDate day = LocalDate.of(2026, 9, 14);
+    void tickingAnObjectPaymentAsARefundLabelsItAndNothingMore() {
+        LocalDate day = LocalDate.now();
         insertReceipt("12000.00", day, false);
         insertReceipt("3000.00", day, false);
+        insertTillReceipt(UUID.randomUUID(), "3000.00");
         CashFlowResponse.Entry refund = flow(day).entries().stream()
-                .filter(e -> e.amount().compareTo(new BigDecimal("3000.00")) == 0)
+                .filter(e -> e.amount().compareTo(new BigDecimal("3000.00")) == 0
+                        && e.kind() == CashEntryKind.OBJECT_PAYMENT)
                 .findFirst().orElseThrow();
 
         cashService.update(ownerId, refund.id(), new CashEntryRequest(CashDirection.INCOME,
@@ -224,6 +319,7 @@ class CashFlowIntegrationTest extends IntegrationTestBase {
         CashFlowResponse flow = flow(day);
         assertThat(flow.income()).isEqualByComparingTo("15000.00");
         assertThat(flow.refunds()).isEqualByComparingTo("3000.00");
+        // The 3 000 came back and the 3 000 went out: 12 000 of work is what he earned.
         assertThat(flow.earned()).isEqualByComparingTo("12000.00");
         // …and the OBJECT's own «Отримано» is untouched by the flag — the standing constraint that
         // existing clients' figures must not shift under them.
@@ -301,6 +397,38 @@ class CashFlowIntegrationTest extends IntegrationTestBase {
                 INSERT INTO payment_receipt (id, project_id, amount, received_at, label, material_refund)
                 VALUES (?, ?, ?::numeric, ?, 'Оплата', ?)
                 """, UUID.randomUUID(), projectId, amount, day, refund);
+    }
+
+    private void insertTillReceipt(UUID id, String amount) {
+        jdbc.update("""
+                INSERT INTO project_receipt (id, project_id, label, amount, issued_at, storage_key,
+                                             sort_order)
+                VALUES (?, ?, 'Епіцентр', ?::numeric, CURRENT_DATE, 'object-receipts/x.jpg', 0)
+                """, id, projectId, amount);
+    }
+
+    private UUID insertSignedAct(boolean receiptsToExpenses) {
+        return insertAct("SIGNED", receiptsToExpenses);
+    }
+
+    private UUID insertAct(String status, boolean receiptsToExpenses) {
+        UUID id = UUID.randomUUID();
+        jdbc.update("""
+                INSERT INTO work_act (id, user_id, project_id, number, kind, status, issued_at,
+                                      period_from, period_to, receipts_to_expenses,
+                                      created_at, updated_at)
+                VALUES (?, ?, ?, ?, 'INTERIM', ?, CURRENT_DATE, CURRENT_DATE, CURRENT_DATE, ?,
+                        now(), now())
+                """, id, ownerId, projectId, "A" + actNumber++, status, receiptsToExpenses);
+        return id;
+    }
+
+    private void insertActReceipt(UUID actId, String amount, String returned) {
+        jdbc.update("""
+                INSERT INTO work_act_receipt (id, work_act_id, label, amount, returned_amount,
+                                              issued_at, sort_order, created_at)
+                VALUES (?, ?, 'Епіцентр', ?::numeric, ?::numeric, CURRENT_DATE, 0, now())
+                """, UUID.randomUUID(), actId, amount, returned);
     }
 
     private void insertExpense(String amount, LocalDate day) {

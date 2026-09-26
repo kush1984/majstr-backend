@@ -16,6 +16,7 @@ import com.majstr.backend.entity.WorkAct;
 import com.majstr.backend.entity.WorkActItem;
 import com.majstr.backend.entity.WorkActReceipt;
 import com.majstr.backend.entity.WorkActStatus;
+import com.majstr.backend.exception.DocumentChangedException;
 import com.majstr.backend.exception.ResourceNotFoundException;
 import com.majstr.backend.exception.WorkActSignedException;
 import com.majstr.backend.exception.WorkActValidationException;
@@ -67,6 +68,7 @@ public class PublicActPortalService {
     private final ActReceiptReconciler receiptReconciler;
     private final ActSignedCopyService signedCopy;
     private final ActReceiptCompleteness receiptCompleteness;
+    private final ActLineBinder lineBinder;
     private final WorkActReceiptService receiptService;
     private final PushService pushService;
     private final MessageSource messages;
@@ -86,12 +88,25 @@ public class PublicActPortalService {
     @Transactional
     public PublicActView sign(String token, SignRequest req, String clientIp, String userAgent)
             throws IOException, DocumentException {
-        WorkAct act = resolveActByToken(token);
+        // FOR UPDATE, before every guard below (B-60): a receipt or a line landing between this
+        // read and the commit would be counted by «Прийнято актами» while sitting outside the
+        // doc_hash and the ADDENDUM. Every act writer takes the same lock, so one of the two waits.
+        WorkAct act = actRepository.findByIdForUpdate(actIdByToken(token))
+                .orElseThrow(() -> new ResourceNotFoundException("Act not found"));
         if (act.getStatus() == WorkActStatus.SIGNED) {
             throw new WorkActSignedException(); // 409 — already accepted, cannot sign twice
         }
         if (act.getStatus() != WorkActStatus.SENT) {
             throw new ResourceNotFoundException("Act not available");
+        }
+        // …and it must still be the act he was reading (B-61). A SENT act stays editable: the
+        // master can add a line or a 1 800 ₴ receipt while the client is on the page, and the tap
+        // would sign a «До сплати» the client never saw — with his name, phone, IP and a doc_hash
+        // over it. The @Version the page rendered is what identifies the document; B-60's touch()
+        // is what makes a line or receipt move it. Checked under the same lock as everything
+        // below, so nothing can slip in between the check and the freeze.
+        if (req.version() == null || act.getVersion() != req.version()) {
+            throw new DocumentChangedException("error.work-act.changed", "WORK_ACT_CHANGED");
         }
         // Belt-and-braces (review fix): share and offline-sign already refuse an empty act, but the
         // owner can still empty a SENT act via PUT /items — never let that emptiness become SIGNED
@@ -104,6 +119,10 @@ public class PublicActPortalService {
         // already refused one, but a SENT act can still gain receipts — the not-signed rule, not the
         // not-sent rule, is what governs receipt writes.
         receiptCompleteness.requireAllPriced(act.getId());
+        // Nor one whose estimate moved under it after it was sent (B-56) — reopened, uncounted, or
+        // closed to the last unit by another act. Structure only: the prices the client is looking
+        // at are the frozen copy and must stay exactly what he agreed to.
+        lineBinder.requireStillValid(act, items);
         // Roll any additional (off-estimate) works into a SIGNED ADDENDUM estimate FIRST — so «За
         // договором» absorbs them and «Прийнято актами» can never exceed it (acts-fix; the portal
         // path used to skip this, unlike the offline path).
@@ -171,8 +190,8 @@ public class PublicActPortalService {
 
     // ---- token resolution -------------------------------------------------
 
-    /** ACT token → the act, or a neutral 404 on every failure (unknown/revoked/expired token). */
-    private WorkAct resolveActByToken(String token) {
+    /** ACT token → the act's id, or a neutral 404 on every failure (unknown/revoked/expired). */
+    private UUID actIdByToken(String token) {
         if (token == null || token.isBlank()) {
             throw new ResourceNotFoundException("Share link not found");
         }
@@ -180,7 +199,12 @@ public class PublicActPortalService {
         if (link == null || !link.isUsable(Instant.now()) || link.getWorkAct() == null) {
             throw new ResourceNotFoundException("Share link not found");
         }
-        return actRepository.findById(link.getWorkAct().getId())
+        return link.getWorkAct().getId();
+    }
+
+    /** ACT token → the act itself, for the read paths. */
+    private WorkAct resolveActByToken(String token) {
+        return actRepository.findById(actIdByToken(token))
                 .orElseThrow(() -> new ResourceNotFoundException("Act not found"));
     }
 
@@ -237,7 +261,7 @@ public class PublicActPortalService {
                 contractorName(owner), clientName(client),
                 itemViews, receiptViews, total, receiptsTotal, act.getAdvanceOffset(), payable,
                 HryvniaInWords.format(payable),
-                act.getSignedAt(), act.getSignerName());
+                act.getSignedAt(), act.getSignerName(), act.getVersion());
     }
 
     private Map<UUID, String> estimateNames(List<WorkActItem> items) {

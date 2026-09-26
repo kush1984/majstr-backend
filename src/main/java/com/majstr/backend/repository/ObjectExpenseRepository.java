@@ -28,10 +28,15 @@ public interface ObjectExpenseRepository extends JpaRepository<ObjectExpense, UU
      * a subquery over the master's projects rather than a join. Bounds are INCLUSIVE — «вересень»
      * ends on the 30th.</p>
      *
-     * <p><b>A reimbursable till receipt is absent from this, and that is the point.</b> V129 ruled
-     * that a receipt the client pays back is a receivable, not a cost, so it writes no row here —
-     * which means the cash screen inherits that ruling for free by reading this and never
-     * {@code project_receipt}. One definition of «витрата» in the whole app.</p>
+     * <p><b>A reimbursable till receipt is absent from this, and that is still correct — but it is no
+     * longer the whole answer.</b> V129 ruled that a receipt the client pays back is a receivable,
+     * not a cost, so it writes no row here, and that ruling governs the OBJECT's economy unchanged.
+     * The CASH screen asks a different question — what left his pocket this month — so since review
+     * B-33 it reads {@code ProjectReceiptRepository.findOutOfPocketByOwnerAndPeriod} and
+     * {@code WorkActReceiptRepository.findOutOfPocketByOwnerAndPeriod} BESIDE this one. Those two
+     * are written to be disjoint from this table: a receipt that posted an {@code object_expenses}
+     * row (own-cost, or re-billed on a {@code receipts_to_expenses} act) is excluded there, so
+     * nothing is counted twice.</p>
      */
     @Query("""
             SELECT e FROM ObjectExpense e

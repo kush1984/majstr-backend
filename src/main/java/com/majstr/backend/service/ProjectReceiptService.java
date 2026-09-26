@@ -9,6 +9,7 @@ import com.majstr.backend.entity.ExpenseSource;
 import com.majstr.backend.entity.ObjectExpense;
 import com.majstr.backend.entity.ProjectReceipt;
 import com.majstr.backend.exception.AiExtractionException;
+import com.majstr.backend.exception.ProjectReceiptBilledException;
 import com.majstr.backend.exception.ProjectReceiptValidationException;
 import com.majstr.backend.exception.ResourceNotFoundException;
 import com.majstr.backend.repository.ObjectExpenseRepository;
@@ -157,6 +158,9 @@ public class ProjectReceiptService {
      * posts a MATERIALS/RECEIPT {@link ObjectExpense} and remembers its id; flipping back deletes
      * that row. While it stays {@code false}, an edited amount, label or date is mirrored onto the
      * expense — the two are the same fact and must never drift.</p>
+     *
+     * <p>Once an act has billed the paper, that question is answered for good — see
+     * {@link #requireBillingUntouched}.</p>
      */
     @Transactional
     public ProjectReceiptResponse update(UUID projectId, UUID receiptId, UUID ownerId,
@@ -165,6 +169,7 @@ public class ProjectReceiptService {
         ProjectReceipt receipt = load(projectId, receiptId);
         BigDecimal amount = req.amount().setScale(MONEY_SCALE, RoundingMode.HALF_UP);
         requireValidFields(req.label(), amount);
+        requireBillingUntouched(receipt, amount, req.reimbursable());
         receipt.setLabel(req.label().trim());
         receipt.setAmount(amount);
         receipt.setIssuedAt(req.issuedAt());
@@ -185,10 +190,17 @@ public class ProjectReceiptService {
                 twins.actNumber(receipt.getBilledOnActId()));
     }
 
+    /**
+     * Remove a receipt — unless an act has already billed it (review B-32b): that delete would take
+     * the object's own cost record with it while the client's signature still counts the money.
+     */
     @Transactional
     public void delete(UUID projectId, UUID receiptId, UUID ownerId) {
         projectService.loadOwned(projectId, ownerId);
         ProjectReceipt receipt = load(projectId, receiptId);
+        if (receipt.getBilledOnActId() != null) {
+            throw new ProjectReceiptBilledException();
+        }
         dropExpense(receipt);
         receiptRepository.delete(receipt);
         // The paper goes AFTER the row, never before it (B-25).
@@ -291,6 +303,33 @@ public class ProjectReceiptService {
                     twins.actNumber(r.getBilledOnActId())));
         }
         return new ProjectReceiptsResponse(items, reimbursable, own, unpriced);
+    }
+
+    /**
+     * Refuse a money-bearing edit to a receipt a SIGNED act has already billed (review B-32).
+     *
+     * <p>The stamp means the paper's money now lives in the act: its ADDENDUM put it into «За
+     * договором», and with {@code receipts_to_expenses} off the object receipt's own expense is the
+     * only cost record there is. So a flip in EITHER direction rewrites history — one way it
+     * deletes that cost and overstates profit by the whole receipt (B-32a), the other way it posts
+     * a second cost beside the act's own — and a re-priced receipt moves a figure already signed
+     * for (B-32c).</p>
+     *
+     * <p>Label, date, photo and a QR identity arriving late are NOT money and stay editable: the
+     * master must still be able to write down what the paper actually says.</p>
+     */
+    private static void requireBillingUntouched(ProjectReceipt receipt, BigDecimal amount,
+                                                Boolean reimbursable) {
+        if (receipt.getBilledOnActId() == null) {
+            return;
+        }
+        // `reimbursable` is three-valued, so re-sending the value it already holds is not a flip —
+        // that is what an ordinary «I corrected the label» save from a screen that knows the answer
+        // looks like, and refusing it would make the receipt uneditable for no gain.
+        boolean flips = reimbursable != null && reimbursable != receipt.isReimbursable();
+        if (flips || receipt.getAmount().compareTo(amount) != 0) {
+            throw new ProjectReceiptBilledException();
+        }
     }
 
     private void applyReimbursable(ProjectReceipt receipt, Boolean requested) {

@@ -6,6 +6,7 @@ import com.majstr.backend.dto.ProjectReceiptsResponse;
 import com.majstr.backend.dto.ReceiptRecognizeResponse;
 import com.majstr.backend.entity.Role;
 import com.majstr.backend.exception.GlobalExceptionHandler;
+import com.majstr.backend.exception.ProjectReceiptBilledException;
 import com.majstr.backend.exception.ProjectReceiptValidationException;
 import com.majstr.backend.security.UserPrincipal;
 import com.majstr.backend.service.ProjectReceiptService;
@@ -143,6 +144,24 @@ class ProjectReceiptControllerTest {
                                 false, null, null))))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.reimbursable").value(false));
+    }
+
+    /**
+     * Review B-32. The refusal has to reach the client as a TYPED 409, not a 500: the PWA hides the
+     * money controls on a billed receipt, so anything that still arrives here is an offline op
+     * replayed hours later, and the queue decides what to do from the code.
+     */
+    @Test
+    void update_onAReceiptAlreadyBilledIsATyped409() throws Exception {
+        willThrow(new ProjectReceiptBilledException())
+                .given(receiptService).update(any(), any(), any(), any());
+
+        mockMvc.perform(patch("/api/projects/{id}/receipts/{receiptId}", projectId, receiptId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(new ProjectReceiptRequest(
+                                "Епіцентр", new BigDecimal("2500.00"), null, null, null, null))))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("PROJECT_RECEIPT_BILLED_ON_ACT"));
     }
 
     /**

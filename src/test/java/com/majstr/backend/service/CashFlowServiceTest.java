@@ -8,7 +8,9 @@ import com.majstr.backend.dto.CashSummaryResponse;
 import com.majstr.backend.dto.ExpenseRequest;
 import com.majstr.backend.dto.ExpenseResponse;
 import com.majstr.backend.exception.ResourceNotFoundException;
+import com.majstr.backend.exception.WorkActSignedException;
 import com.majstr.backend.dto.PaymentReceiptEditRequest;
+import com.majstr.backend.dto.ProjectReceiptRequest;
 import com.majstr.backend.entity.CashCategory;
 import com.majstr.backend.entity.CashDirection;
 import com.majstr.backend.entity.CashEntry;
@@ -17,11 +19,19 @@ import com.majstr.backend.entity.ExpenseSource;
 import com.majstr.backend.entity.ObjectExpense;
 import com.majstr.backend.entity.PaymentReceipt;
 import com.majstr.backend.entity.Project;
+import com.majstr.backend.entity.ProjectReceipt;
+import com.majstr.backend.entity.WorkAct;
+import com.majstr.backend.entity.WorkActReceipt;
 import com.majstr.backend.repository.CashEntryRepository;
 import com.majstr.backend.repository.ObjectExpenseRepository;
 import com.majstr.backend.repository.PaymentReceiptRepository;
+import com.majstr.backend.repository.ProjectReceiptRepository;
 import com.majstr.backend.repository.ProjectRepository;
+import com.majstr.backend.repository.WorkActReceiptRepository;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.MethodSource;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
@@ -34,6 +44,7 @@ import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.List;
+import java.util.stream.Stream;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -64,9 +75,12 @@ class CashFlowServiceTest {
     @Mock private CashEntryRepository cashRepository;
     @Mock private PaymentReceiptRepository receiptRepository;
     @Mock private ObjectExpenseRepository expenseRepository;
+    @Mock private ProjectReceiptRepository projectReceiptRepository;
+    @Mock private WorkActReceiptRepository actReceiptRepository;
     @Mock private ProjectRepository projectRepository;
     @Mock private PaymentService paymentService;
     @Mock private ObjectExpenseService expenseService;
+    @Mock private ProjectReceiptService projectReceiptService;
 
     @InjectMocks private CashFlowService service;
 
@@ -187,22 +201,169 @@ class CashFlowServiceTest {
     // ---- the three numbers ------------------------------------------------
 
     /**
-     * «Прийшло» counts a reimbursement — the money really arrived. «Заробив» does not, or a month is
-     * inflated by exactly the material the client paid back.
+     * The six ways a master can record «work 10 000, material 2 000» (review B-33), each of which
+     * used to answer a different «Заробив» — 8 000, 10 000 or 12 000 — for the same month.
+     *
+     * <p>The rule that makes them agree is <b>one subtraction</b>: {@code income - expense}. Which
+     * only works if every hryvnia that left his pocket is ON the expense side, material bought at
+     * the till included. V129's «a reimbursable receipt is a receivable, not a cost» still governs
+     * the OBJECT's economy — but here the money is gone until the client hands it back, and the
+     * refund tick is then just a LABEL on the income it comes back as.</p>
      */
-    @Test
-    void earnedExcludesWhatTheClientMerelyPaidBack() {
-        seedFeed(
-                List.of(receipt("20000.00", false), receipt("8000.00", true)),
-                List.of(expense("3000.00")),
-                List.of());
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("theSixWaysOfRecordingOneJob")
+    void earnedIsIncomeMinusOutlays(String name, List<PaymentReceipt> receipts,
+                                    List<ObjectExpense> expenses, List<CashEntry> own,
+                                    List<ProjectReceipt> till, List<WorkActReceipt> actReceipts,
+                                    String earned) {
+        seedFeed(receipts, expenses, own, till, actReceipts);
 
         CashFlowResponse flow = service.flow(OWNER, DAY.withDayOfMonth(1), DAY.withDayOfMonth(30), false);
 
-        assertThat(flow.income()).isEqualByComparingTo("28000.00");
-        assertThat(flow.refunds()).isEqualByComparingTo("8000.00");
-        assertThat(flow.expense()).isEqualByComparingTo("3000.00");
-        assertThat(flow.earned()).isEqualByComparingTo("17000.00"); // 28 000 − 8 000 − 3 000
+        assertThat(flow.earned()).isEqualByComparingTo(earned);
+    }
+
+    private static Stream<Arguments> theSixWaysOfRecordingOneJob() {
+        List<PaymentReceipt> workOnly = List.of(receipt("10000.00", false));
+        List<PaymentReceipt> workAndRefund =
+                List.of(receipt("10000.00", false), receipt("2000.00", true));
+        return Stream.of(
+                // 1. He bought at the till, the client paid it back. The purchase and the refund
+                //    cancel; only the work is earnings.
+                Arguments.of("reimbursable till receipt, refund arrived",
+                        workAndRefund, List.of(), List.of(), List.of(tillReceipt("2000.00")),
+                        List.of(), "10000.00"),
+                // 2. The far commoner month: he is 2 000 out of pocket and waiting. Cash is cash.
+                Arguments.of("reimbursable till receipt, refund not yet arrived",
+                        workOnly, List.of(), List.of(), List.of(tillReceipt("2000.00")),
+                        List.of(), "8000.00"),
+                // 3. «Це моя витрата» writes an `object_expenses` row and the receipt leaves the
+                //    receivable — so the purchase is counted there and nowhere else.
+                Arguments.of("till receipt marked «моя витрата», payment ticked as a refund",
+                        workAndRefund, List.of(expense("2000.00")), List.of(), List.of(),
+                        List.of(), "10000.00"),
+                // 4. `receipts_to_expenses` ON: signing posted the act receipt as an expense, so the
+                //    query that feeds ACT_RECEIPT rows deliberately skips it.
+                Arguments.of("act receipt posted as an expense, refund ticked",
+                        workAndRefund, List.of(expense("2000.00")), List.of(), List.of(),
+                        List.of(), "10000.00"),
+                // 5. He typed the purchase here himself instead of photographing it.
+                Arguments.of("personal MATERIALS row, refund ticked",
+                        workAndRefund, List.of(), List.of(personal(CashDirection.EXPENSE, "2000.00")),
+                        List.of(), List.of(), "10000.00"),
+                // 6. `receipts_to_expenses` OFF: the client paid 12 000 on the act and nothing else
+                //    records the 2 000, which is exactly what the ACT_RECEIPT row is for.
+                Arguments.of("act with receipts_to_expenses off",
+                        List.of(receipt("12000.00", false)), List.of(), List.of(), List.of(),
+                        List.of(actReceipt("2000.00", "0.00")), "10000.00"));
+    }
+
+    /** The refund tick still SAYS which part of «Прийшло» was not payment for work. */
+    @Test
+    void aRefundIsReportedAndSubtractedFromNothing() {
+        seedFeed(List.of(receipt("10000.00", false), receipt("2000.00", true)),
+                List.of(), List.of(), List.of(tillReceipt("2000.00")), List.of());
+
+        CashFlowResponse flow = service.flow(OWNER, DAY.withDayOfMonth(1), DAY.withDayOfMonth(30), false);
+
+        assertThat(flow.income()).isEqualByComparingTo("12000.00");
+        assertThat(flow.refunds()).isEqualByComparingTo("2000.00");
+        assertThat(flow.expense()).isEqualByComparingTo("2000.00");
+    }
+
+    /** A month's figures and the year view's must be the same arithmetic, or one of them is a lie. */
+    @Test
+    void aMonthTotalSubtractsExactlyWhatThePeriodTotalDoes() {
+        seedFeed(List.of(receipt("10000.00", false), receipt("2000.00", true)),
+                List.of(), List.of(), List.of(tillReceipt("2000.00")), List.of());
+
+        CashFlowResponse flow = service.flow(OWNER, LocalDate.of(2026, 1, 1),
+                LocalDate.of(2026, 12, 31), true);
+
+        assertThat(flow.months()).singleElement()
+                .satisfies(m -> assertThat(m.earned()).isEqualByComparingTo("10000.00"));
+        assertThat(flow.earned()).isEqualByComparingTo("10000.00");
+    }
+
+    /** A part of the material handed back to the shop cost him nothing (V115). */
+    @Test
+    void anActReceiptCountsWhatWasActuallyKept() {
+        seedFeed(List.of(), List.of(), List.of(), List.of(),
+                List.of(actReceipt("2000.00", "500.00")));
+
+        CashFlowResponse flow = service.flow(OWNER, DAY.withDayOfMonth(1), DAY.withDayOfMonth(30), false);
+
+        assertThat(flow.expense()).isEqualByComparingTo("1500.00");
+    }
+
+    // ---- the two rows a signed document owns ------------------------------
+
+    /** One door to one record here too: the till receipt is written by the OBJECT's own service. */
+    @Test
+    void editingATillReceiptWritesThroughTheObjectsOwnService() {
+        ProjectReceipt till = tillReceipt("2000.00");
+        when(projectReceiptRepository.findById(till.getId())).thenReturn(Optional.of(till));
+        when(projectRepository.findById(PROJECT)).thenReturn(Optional.of(project()));
+
+        service.update(OWNER, till.getId(), new CashEntryRequest(
+                CashDirection.EXPENSE, new BigDecimal("2100.00"), CashCategory.MATERIALS,
+                "Клей", DAY, false, CashEntryKind.OBJECT_RECEIPT));
+
+        ArgumentCaptor<ProjectReceiptRequest> req =
+                ArgumentCaptor.forClass(ProjectReceiptRequest.class);
+        verify(projectReceiptService).update(eq(PROJECT), eq(till.getId()), eq(OWNER), req.capture());
+        assertThat(req.getValue().amount()).isEqualByComparingTo("2100.00");
+        assertThat(req.getValue().label()).isEqualTo("Клей");
+        // «Хто за це платить» belongs to the object's receipts screen, in front of the photo — a
+        // month's feed must not flip it in passing, least of all by omission.
+        assertThat(req.getValue().reimbursable()).isNull();
+    }
+
+    @Test
+    void deletingATillReceiptGoesThroughTheSameDoor() {
+        ProjectReceipt till = tillReceipt("2000.00");
+        when(projectReceiptRepository.findById(till.getId())).thenReturn(Optional.of(till));
+
+        service.delete(OWNER, till.getId(), CashEntryKind.OBJECT_RECEIPT);
+
+        verify(projectReceiptService).delete(PROJECT, till.getId(), OWNER);
+    }
+
+    /**
+     * Once an act has billed the paper it is inside a document the client holds, so the feed marks
+     * the row read-only rather than offering an edit that the object's screen would refuse.
+     */
+    @Test
+    void aTillReceiptAlreadyBilledOnAnActIsReadOnly() {
+        ProjectReceipt billed = tillReceipt("2000.00");
+        billed.setBilledOnActId(UUID.randomUUID());
+        seedFeed(List.of(), List.of(), List.of(), List.of(billed), List.of());
+
+        CashFlowResponse flow = service.flow(OWNER, DAY.withDayOfMonth(1), DAY.withDayOfMonth(30), false);
+
+        assertThat(flow.entries()).singleElement()
+                .satisfies(e -> {
+                    assertThat(e.readOnly()).isTrue();
+                    assertThat(e.noteLocked()).isTrue();
+                });
+    }
+
+    /**
+     * An act receipt's figure is frozen inside the signed act's {@code doc_hash}: editing it could
+     * only either lie about the client's document or invalidate it. 409, never a silent no-op.
+     */
+    @Test
+    void anActReceiptCannotBeEditedOrDeletedFromTheFeed() {
+        UUID id = UUID.randomUUID();
+
+        assertThatThrownBy(() -> service.update(OWNER, id, new CashEntryRequest(
+                CashDirection.EXPENSE, BigDecimal.TEN, CashCategory.MATERIALS, null, DAY, false,
+                CashEntryKind.ACT_RECEIPT)))
+                .isInstanceOf(WorkActSignedException.class);
+        assertThatThrownBy(() -> service.delete(OWNER, id, CashEntryKind.ACT_RECEIPT))
+                .isInstanceOf(WorkActSignedException.class);
+
+        verifyNoInteractions(projectReceiptService);
     }
 
     @Test
@@ -299,9 +460,19 @@ class CashFlowServiceTest {
 
     private void seedFeed(List<PaymentReceipt> receipts, List<ObjectExpense> expenses,
                           List<CashEntry> own) {
+        seedFeed(receipts, expenses, own, List.of(), List.of());
+    }
+
+    private void seedFeed(List<PaymentReceipt> receipts, List<ObjectExpense> expenses,
+                          List<CashEntry> own, List<ProjectReceipt> till,
+                          List<WorkActReceipt> actReceipts) {
         when(receiptRepository.findByOwnerAndPeriod(eq(OWNER), any(), any())).thenReturn(receipts);
         when(expenseRepository.findByOwnerAndPeriod(eq(OWNER), any(), any())).thenReturn(expenses);
         when(cashRepository.findByOwnerAndPeriod(eq(OWNER), any(), any())).thenReturn(own);
+        when(projectReceiptRepository.findOutOfPocketByOwnerAndPeriod(eq(OWNER), any(), any(), any(),
+                any())).thenReturn(till);
+        when(actReceiptRepository.findOutOfPocketByOwnerAndPeriod(eq(OWNER), any(), any(), any(),
+                any())).thenReturn(actReceipts);
         when(projectRepository.findAllById(any())).thenReturn(List.of(project()));
     }
 
@@ -324,6 +495,23 @@ class CashFlowServiceTest {
         return ObjectExpense.builder()
                 .id(UUID.randomUUID()).objectId(PROJECT).amount(new BigDecimal(amount))
                 .category(ExpenseCategory.MATERIALS).source(ExpenseSource.MANUAL).spentAt(DAY)
+                .build();
+    }
+
+    private static ProjectReceipt tillReceipt(String amount) {
+        return ProjectReceipt.builder()
+                .id(UUID.randomUUID()).projectId(PROJECT).label("Клей").amount(new BigDecimal(amount))
+                .issuedAt(DAY).reimbursable(true)
+                .build();
+    }
+
+    private static WorkActReceipt actReceipt(String amount, String returned) {
+        WorkAct act = WorkAct.builder()
+                .id(UUID.randomUUID()).userId(OWNER).project(project()).number("7")
+                .build();
+        return WorkActReceipt.builder()
+                .id(UUID.randomUUID()).workAct(act).label("Плитка").amount(new BigDecimal(amount))
+                .returnedAmount(new BigDecimal(returned)).issuedAt(DAY)
                 .build();
     }
 

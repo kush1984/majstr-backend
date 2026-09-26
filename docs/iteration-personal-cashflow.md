@@ -359,3 +359,26 @@ today. Proven by reverting `fail-on-null-for-primitives` and watching 4 of 6 tes
 
 Still open: the payload is copied by a human, not captured from the running PWA. A true end-to-end
 contract test would need the two repos to share a build, which they do not.
+
+## Round 8 — a refund is subtracted from the axis it belongs to (review B-65 + B-33)
+
+`material_refund` was invented here: a reimbursement stays in the movement and out of «Заробив», and
+it moves no object figure. Round 3 of the money audit found the other half — the OBJECT side was
+subtracting refunds from the WORK axis (or from nothing at all, depending on the screen), so a
+master who returned 3 000 ₴ of tiles read as still owed 3 000 ₴ for labour.
+
+The owner's formula, now shared by all three surfaces through `MaterialRefundCalculator` →
+`MaterialRefundSplit`:
+
+```
+refundApplied        = min(Σ refunds, reimbursable)
+workPaid             = received − refundApplied
+remaining            = max(0, contracted − workPaid)
+materialsOutstanding = reimbursable − refundApplied
+```
+
+«Усе сплачено» appears only when **both** `remaining` and `materialsOutstanding` are 0, and an
+overpayment is shown as an overpayment instead of being clamped. This screen is unchanged:
+«Заробив» stays `income − outlays` and a refund is still the info line beside it — the fix was that
+the object had no such reader at all. Full round:
+[iteration-money-audit-3.md](iteration-money-audit-3.md).

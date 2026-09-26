@@ -26,10 +26,10 @@ public record PaymentReceiptRequest(
         /**
          * Money the client paid BACK for material the master laid out (V135) — not payment for work.
          *
-         * <p>It changes nothing about this object: «Отримано», the summary and every stage's status
-         * count the receipt exactly as before. The ONE reader is the personal cash screen, which
-         * keeps it in the movement and takes it out of «Заробив». Defaults false, so no existing
-         * caller means anything different by omitting it.</p>
+         * <p>«Отримано» still counts every hryvnia that arrived, but since review B-65 this tick is
+         * load-bearing on the OBJECT too: a refund settles the materials axis and pays for no work,
+         * so it never moves «Залишилось». Defaults false, so no existing caller means anything
+         * different by omitting it.</p>
          */
         boolean materialRefund
 ) {}

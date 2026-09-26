@@ -2637,6 +2637,43 @@ one-line summary — keep the item in the file as a record.
   12 з 19 позицій») — so a lost norm shows up as a coverage drop rather than as silence. (b) + (c)
   together is the honest answer; (c) alone is the cheap safety net that must exist regardless.
 
+### A calculator parameter is remembered on the DEVICE, not on the estimate
+- **Status:** OPEN
+- **Since:** 2026-09-26, master's own report (screenshot of «Матеріали — орієнтовно» on a tiling
+  estimate): «коли я натискаю порахувати — воно рахує на основі того що введено, і наступний раз як
+  я відкриваю діалог, знову просить порахувати, хоча на головній матеріали вже є купити… треба
+  зробити так, якщо вже майстер натиснув розрахувати, то воно це діло запамʼятовує автоматично».
+- **Context:** The calculation stores nothing by design (V127 — the GET recomputes, the two POSTs
+  carry what the master left on the screen), so the three figures it cannot derive — the room's
+  PERIMETER, a короб's SECTION (V131), a layer's THICKNESS (V137) — lived in React state and died
+  with the screen. He typed 5 mm, tapped «Порахувати», sent the list, came back and the same card
+  asked the same question with our `default_param` in it, while the shopping list already held the
+  answer. **Shipped now (PWA, no backend change): `features/materials/useMaterialParams.ts`** keeps
+  the raw strings he typed in `localStorage` under `materials:<estimateId>:params`, written on the
+  tap of «Порахувати» (not on keystroke — that would store the «1» of «15»), read into the INITIAL
+  state so the first request already carries them and the card never re-asks. Same round: the card
+  no longer disappears once answered (an answered position is read back off `sources`, which carry
+  `basis` + `param`), because a figure remembered forever with nowhere to correct it is a worse trap
+  than being re-asked; and the unit moved into the field's LABEL — it sat only in the placeholder,
+  which is never on screen, since every one of these fields opens pre-filled.
+- **Notes / options:** What is deferred is the STORAGE, not the behaviour. `localStorage` is
+  per-device and per-browser: the same estimate opened on the master's laptop asks again, and a
+  cleared site / reinstalled PWA forgets. Options, none chosen: (a) leave it — the calculator is a
+  scratchpad, the cost of a miss is one re-entry and never a wrong list, which is the same trade
+  `useCollapsedCategories` already makes; (b) a column on `estimate_items` (`material_param
+  numeric`, one per position, plus the estimate's perimeter somewhere) — it survives everything and
+  syncs, but it needs a PATCH door of its own, because writing it from the GET would break V127's
+  «nothing is stored» and put a write on a read path; (c) a small per-estimate JSON blob beside the
+  estimate, which is (b) without a schema for something that is not a document field. The honest
+  question behind the choice: **is a thickness a fact about the WORK (then it belongs on the line,
+  and an act or a PDF could one day quote it) or a scratch input to one calculation (then the device
+  is the right place)?** V137 answers half of it already — the thickness is asked per POSITION
+  exactly because «штукатурка до 2 см» is a bound and not a thickness, i.e. it IS a fact about that
+  line — which argues for (b). Related: «A consumption norm must survive a position RENAME» (the
+  same key-by-position problem from the other side) and «A personal consumption norm» (RESOLVED —
+  a HABIT of the master went to the server, `master_material_pref`; this is the same shape one level
+  down, an answer about one line rather than about the master).
+
 ### Calculate materials for a WHOLE OBJECT from Заміри
 - **Status:** OPEN
 - **Since:** Material-calculator planning (2026-09-07), master's own framing
@@ -2919,6 +2956,94 @@ one-line summary — keep the item in the file as a record.
   is chips**, because a page's filter is load-bearing beyond navigation. Note the templates page
   cannot reuse the catalog's chips even if this is ever unified — a template with no trade is
   `GENERAL`, a catalog row is `OTHER`.
+
+### Review round 3 (the money audit) — what §0 answered, and what it deliberately did not
+- **Status:** IN_PROGRESS — §0 built and green (uncommitted); §1-§4 untouched.
+- **Since:** 2026-09-25, `C:\Work\prompts\FIXES-3.md` (backend `170a419`, PWA `cd43bec`).
+- **Context:** the owner took the whole §0 «fix these first» list, both repos — the ten items where
+  money is wrong or lost today. Written up in
+  [iteration-money-audit-3.md](iteration-money-audit-3.md); schema change is **V141**
+  (`work_act_item.line_kind`).
+- **Decisions the owner gave, recorded here because the code cannot show a road not taken:**
+  - **B-55** — an estimate's discounts reach an act as an **automatic ADJUSTMENT line** (option a),
+    not as a total-level percentage on the act and not by re-pricing the positions. So an act stays
+    a document about POSITIONS, and the discount is visible on the paper the client signs.
+  - **B-65 + B-33** — the cash view: `refundApplied = min(Σ refunds, reimbursable)`,
+    `workPaid = received − refundApplied`, `remaining = max(0, contracted − workPaid)`,
+    `materialsOutstanding = reimbursable − refundApplied`; «Усе сплачено» only when BOTH are zero,
+    and an overpayment is **shown**, never clamped. «Заробив» stays `income − outlays` and a refund
+    is an info line beside it.
+  - **B-70** — deleting an object that carries signed documents or money is **409 + «Архівувати»**,
+    not a soft delete. Decided, **not built** (see its own item below).
+
+### An object holding signed money can still be deleted (B-70)
+- **Status:** OPEN — the answer is settled, the code is not written.
+- **Since:** review round 3 (2026-09-25).
+- **Context:** `ProjectService.delete` cascades SIGNED estimates, signed acts, their ADDENDUMs,
+  payments and expenses. A SIGNED estimate cannot be deleted on its own
+  (`EstimateService.requireNotSigned`) — the object delete walks straight past that rule. «Мої
+  гроші» is a LENS over those same rows, so deleting an object silently rewrites the master's
+  closed months.
+- **Resolution (owner, 2026-09-25):** refuse with 409 when signed documents or money exist and offer
+  **«Архівувати»** instead. Not a soft delete: the master asked for an object that leaves the list
+  and keeps its papers, which is what archiving says and what «видалено, але насправді ні» does not.
+- **Notes:** the FREE cap counts LIFETIME creations (V107), so archiving costs the master nothing he
+  was not already charged for, and nothing about the cap needs to change.
+
+### «%» lines added to a crew copy afterwards, and the accepted margin (B-72)
+- **Status:** OPEN — **DECISION, not yet put to the owner.**
+- **Since:** review round 3 (2026-09-25).
+- **Context:** crew 10 000, client +20 % = 12 000, the master then adds «Знижка −10 %» (client
+  10 800). The code says the margin is 1 800, the documented rule («a line with no crew price
+  contributes zero») says 2 000, and the economics say 800 — the crew does not share his discount.
+  Separately, «з прийнятого актами» (`WorkActItemRepository`) sums `(act price − crew price) × qty`
+  at GROSS prices, so a full act reports 4 000 accepted margin against a 3 600 margin.
+- **Notes / options:** the review recommends freezing an unpriced line at its client amount in the
+  crew view (a negative unpriced line → 0, as the master's concession), and prorating «%» lines into
+  the accepted margin exactly the way **B-55** now prorates them into the act. Both halves change the
+  crew-margin parity fixture, which is asserted on BOTH sides (`CrewMarginCalculator` ↔
+  `features/estimate/crewMargin.ts`) — so this is one change to two repos, and it needs the answer
+  first.
+
+### REJECTED→DRAFT ignores a SIGNED FINAL act (B-62)
+- **Status:** OPEN — §1 of round 3, out of the day's scope.
+- **Since:** review round 3 (2026-09-25).
+- **Context:** `WorkActService`'s status move checks only for an OPEN act. Act 3 (60 m²) is REJECTED,
+  act 4 is FINAL and signed (60 m²), act 3 goes back to DRAFT and is signed → 120 m² closed on a
+  100 m² position, and an act dated after the FINAL one.
+- **Notes / options:** refuse the move while a FINAL act is SIGNED on the object; on a legitimate
+  reopen, recompute `cumulative_before` and re-apply the B-56 cap (which now exists — `ActLineBinder`
+  — so the second half is small).
+
+### The PWA still rounds money two different ways (P-39)
+- **Status:** OPEN — partially closed by round 3.
+- **Since:** review round 3 (2026-09-25).
+- **Context:** `roundMoney` now exists in `src/lib/decimal.ts` (the HALF_UP string detour that agrees
+  with the server over 658 364 brute-forced cases) and act money goes through it, but
+  `useEstimate.ts` and `crewMargin.ts` still carry their own `round2 = n => Math.round(n * 100) / 100`
+  — ties toward +∞ plus float error. Measured: negative «%» lines differ in 5.89 % of cases
+  (12 345,50 at −5 % → −617,27 vs the server's −617,28), q×p in 0.25 %.
+- **Notes / options:** mechanical, but it lands on the two files the offline editor computes from, so
+  it wants its own pass and its own parity fixture rather than riding along with a money fix. Note
+  `crewMargin.ts` is one half of a **mirrored pair** — the fixture is asserted on both sides.
+
+### The offline JOURNEY spec has rotted, and its last step may be a real bug
+- **Status:** OPEN — found 2026-09-25 while running the round-3 gate.
+- **Context:** `npm run test:e2e:offline` runs two specs and **CI only runs `shell.spec`** (green).
+  `journey.spec` needs a backend on :8080 and had drifted from the app in three places: the privacy
+  consent checkbox it never ticked (the form simply refused to submit), the new-object button
+  renamed «Створити кошторис» → «Створити», and — after both were fixed — a projects list
+  that renders «Ще немає обʼєктів» for an object the server HAS.
+- **The part that is not just a stale selector:** for the failing run's user the row exists
+  (`projects` = 1) and `GET /api/projects` with that user's token returns it, yet after
+  `page.goto('/projects')` — a hard navigation, production build, SW controlling — the list shows
+  «Усі · 0» for the full 120 s timeout. The SW caches **nothing** under `/api/` (`NavigationRoute`
+  denylists it), so the empty list can only come from the persisted TanStack cache not being
+  replaced by the refetch. Worth reproducing by hand before believing the test.
+- **Notes:** `e2e/contractor-journey.spec.ts` and `e2e/smoke.spec.ts` carry the SAME stale button
+  label and are presumably red for the same first reason; only the consent tick was repaired there,
+  because nothing in this round runs the dev-server suite and a selector fixed blind is worse than a
+  red test. Unrelated to the round-3 money work: nothing it touched is on the projects-list path.
 
 ---
 

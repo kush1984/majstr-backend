@@ -72,6 +72,7 @@ public class ObjectExpenseService {
     private final WorkActReceiptRepository workActReceiptRepository;
     private final PaymentReceiptRepository paymentReceiptRepository;
     private final ProjectReceiptRepository projectReceiptRepository;
+    private final MaterialRefundCalculator refundCalculator;
 
     @Transactional
     public ExpenseResponse add(UUID objectId, UUID ownerId, ExpenseRequest req) {
@@ -204,10 +205,18 @@ public class ObjectExpenseService {
      *
      *  <p>Deliberately its own axis and NOT part of {@code contracted}/{@code acceptedByActs}:
      *  those two count one estimate set and «Прийнято актами» must stay a subset of «За
-     *  договором». A receipt joins the contract only when an act picks it up.</p> */
+     *  договором». A receipt joins the contract only when an act picks it up.</p>
+     *
+     *  <p>What the client has already handed back comes off it (B-65) — the same
+     *  {@link MaterialRefundSplit} the payments summary uses, so the two halves of one refund can
+     *  never be counted on both axes at once. The gross figure stays beside it: the card opens the
+     *  very receipts it sums, and they still add up to {@code reimbursable}.</p> */
     private ObjectEconomyMaterialsResponse materialsAxis(UUID objectId) {
+        MaterialRefundSplit split = refundCalculator.forObject(objectId);
         return new ObjectEconomyMaterialsResponse(
-                projectReceiptRepository.sumReimbursable(objectId),
+                split.reimbursable(),
+                split.applied(),
+                split.materialsOutstanding(),
                 projectReceiptRepository.countReimbursable(objectId),
                 projectReceiptRepository.countUnpriced(objectId));
     }

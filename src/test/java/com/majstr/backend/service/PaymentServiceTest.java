@@ -52,14 +52,15 @@ class PaymentServiceTest {
     @Mock EstimateRepository estimateRepository;
     @Mock ProjectService projectService;
     @Mock UserRepository userRepository;
+    @Mock MaterialRefundCalculator refundCalculator;
 
     // The REAL gate (backed by PlanConfig), same pattern ObjectExpenseServiceTest uses — the
     // PRO/FREE decision is genuinely exercised, not mocked away.
     private final DefaultFeatureGuard featureGuard = new DefaultFeatureGuard();
 
     private PaymentService service() {
-        return new PaymentService(paymentRepository, receiptRepository, estimateRepository, projectService,
-                userRepository, featureGuard);
+        return new PaymentService(paymentRepository, receiptRepository, estimateRepository,
+                refundCalculator, projectService, userRepository, featureGuard);
     }
 
     private final UUID ownerId = UUID.randomUUID();
@@ -215,19 +216,79 @@ class PaymentServiceTest {
 
     @Test
     void summaryUnchecked_computesRemainingAsContractedMinusReceived_clampedAtZero() {
-        given(estimateRepository.sumIncomeCounted(objectId)).willReturn(new BigDecimal("1000.00"));
-        given(paymentRepository.findByProjectIdOrderBySortOrderAscIdAsc(objectId)).willReturn(List.of());
-        given(receiptRepository.findByProjectIdOrderByReceivedAtAscCreatedAtAsc(objectId)).willReturn(List.of(
-                PaymentReceipt.builder().id(UUID.randomUUID()).project(object())
-                        .amount(new BigDecimal("1500.00")).receivedAt(LocalDate.now()).label("Своє").build()
-        ));
+        contracted("1000.00");
+        refunds("0", "0");
+        received("1500.00");
 
         PaymentsSummaryResponse summary = service().summaryUnchecked(objectId);
 
         assertThat(summary.contractedTotal()).isEqualByComparingTo("1000.00");
         assertThat(summary.received()).isEqualByComparingTo("1500.00");
         assertThat(summary.remaining()).isEqualByComparingTo("0.00"); // clamped, not negative
+        assertThat(summary.overpaid()).isEqualByComparingTo("500.00"); // and SAID, not swallowed
         assertThat(summary.unplannedReceipts()).hasSize(1);
+    }
+
+    // ---- B-65: a refund pays off MATERIAL, never work ------------------------
+
+    /**
+     * The reproduction from the review: contract 11 800, work paid 5 000, and a 2 000 ₴ refund for a
+     * 2 000 ₴ till receipt. Measuring «За договором» against the GROSS 7 000 read «залишилось 4 800»
+     * and, after 4 800 more, «Усе сплачено ✓» with 2 000 ₴ of work never paid for.
+     */
+    @Test
+    void aRefundSettlesTheMaterialsAxisAndLeavesTheWorkOutstanding() {
+        contracted("11800.00");
+        refunds("2000.00", "2000.00");
+        received("5000.00", "2000.00");
+
+        PaymentsSummaryResponse summary = service().summaryUnchecked(objectId);
+
+        assertThat(summary.received()).isEqualByComparingTo("7000.00"); // the till really saw it
+        assertThat(summary.refundApplied()).isEqualByComparingTo("2000.00");
+        assertThat(summary.workPaid()).isEqualByComparingTo("5000.00");
+        assertThat(summary.remaining()).isEqualByComparingTo("6800.00");
+        assertThat(summary.overpaid()).isEqualByComparingTo("0.00");
+    }
+
+    /**
+     * The cap is the other half of the rule. A refund above what the object is owed has no
+     * receivable left to settle, so it is work money like any other — otherwise a mistyped
+     * reimbursement would quietly re-open a contract that really is paid.
+     */
+    @Test
+    void aRefundBeyondTheReceivableIsWorkMoney() {
+        contracted("10000.00");
+        refunds("3000.00", "1000.00");
+        received("10000.00", "3000.00");
+
+        PaymentsSummaryResponse summary = service().summaryUnchecked(objectId);
+
+        assertThat(summary.materialRefunds()).isEqualByComparingTo("3000.00");
+        assertThat(summary.refundApplied()).isEqualByComparingTo("1000.00");
+        assertThat(summary.workPaid()).isEqualByComparingTo("12000.00");
+        assertThat(summary.remaining()).isEqualByComparingTo("0.00");
+        assertThat(summary.overpaid()).isEqualByComparingTo("2000.00");
+    }
+
+    private void contracted(String amount) {
+        given(estimateRepository.sumIncomeCounted(objectId)).willReturn(new BigDecimal(amount));
+        given(paymentRepository.findByProjectIdOrderBySortOrderAscIdAsc(objectId)).willReturn(List.of());
+    }
+
+    private void refunds(String paid, String reimbursable) {
+        given(refundCalculator.forObject(objectId)).willReturn(
+                MaterialRefundSplit.of(new BigDecimal(paid), new BigDecimal(reimbursable)));
+    }
+
+    private void received(String... amounts) {
+        List<PaymentReceipt> receipts = new ArrayList<>();
+        for (String amount : amounts) {
+            receipts.add(PaymentReceipt.builder().id(UUID.randomUUID()).project(object())
+                    .amount(new BigDecimal(amount)).receivedAt(LocalDate.now()).label("Своє").build());
+        }
+        given(receiptRepository.findByProjectIdOrderByReceivedAtAscCreatedAtAsc(objectId))
+                .willReturn(receipts);
     }
 
     // ---- economy-polish: mutations required PRO — TEMPORARILY open to FREE too, see the
@@ -318,6 +379,8 @@ class PaymentServiceTest {
         given(projectService.loadOwned(objectId, ownerId)).willReturn(object());
         given(paymentRepository.findByProjectIdOrderBySortOrderAscIdAsc(objectId)).willReturn(List.of());
         given(estimateRepository.sumIncomeCounted(objectId)).willReturn(BigDecimal.ZERO);
+        given(refundCalculator.forObject(objectId))
+                .willReturn(MaterialRefundSplit.of(BigDecimal.ZERO, BigDecimal.ZERO));
         given(receiptRepository.findByProjectIdOrderByReceivedAtAscCreatedAtAsc(objectId)).willReturn(List.of());
 
         assertThat(service().list(objectId, ownerId)).isEmpty();

@@ -12,8 +12,11 @@ import com.majstr.backend.dto.EstimateItemResponse;
 import com.majstr.backend.entity.CatalogItem;
 import com.majstr.backend.entity.Estimate;
 import com.majstr.backend.exception.EstimateSignedException;
+import com.majstr.backend.entity.WorkActStatus;
 import com.majstr.backend.exception.InvalidEstimateStatusException;
+import com.majstr.backend.exception.WorkActConflictException;
 import com.majstr.backend.entity.EstimateItem;
+import com.majstr.backend.entity.EstimateKind;
 import com.majstr.backend.entity.EstimateStatus;
 import com.majstr.backend.entity.ItemType;
 import com.majstr.backend.entity.PercentBaseKind;
@@ -34,6 +37,7 @@ import com.majstr.backend.repository.EstimateRepository;
 import com.majstr.backend.repository.ProjectPhotoRepository;
 import com.majstr.backend.repository.ProjectRepository;
 import com.majstr.backend.repository.WorkActItemRepository;
+import com.majstr.backend.repository.WorkActRepository;
 import com.majstr.backend.storage.StorageService;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -80,6 +84,7 @@ class EstimateServiceTest {
     @Mock private ProjectPhotoRepository photoRepository;
     @Mock private StorageService storage;
     @Mock private WorkActItemRepository workActItemRepository;
+    @Mock private WorkActRepository workActRepository;
     @Mock private com.majstr.backend.repository.ShoppingListItemRepository shoppingListItemRepository;
 
     @InjectMocks private EstimateService estimateService;
@@ -1553,6 +1558,104 @@ class EstimateServiceTest {
                 .toList());
     }
 
+    // ---- an estimate acts stand on is frozen in «За договором» (B-58/B-59/B-63/B-64) ------------
+
+    /**
+     * Every door that could take an estimate out of «За договором» asks the same question, so
+     * the guard is asserted once per door rather than once per repository call. The failure is
+     * always the same shape: the act's frozen lines go on counting in «Прийнято актами»
+     * while the contract behind them reads 0, which breaks the one invariant the acts chain exists
+     * to keep.
+     */
+    private void givenAnActStandsOnTheEstimate() {
+        given(workActItemRepository.existsLiveActLineForEstimate(estimateId)).willReturn(true);
+    }
+
+    @Test
+    void reopen_isRefusedWhileAnyLiveActStandsOnTheEstimate() {
+        // B-59: DRAFT and SENT count too. A SENT act is already on the client's phone, and the
+        // master reopening the estimate underneath it is exactly how the two papers stop agreeing.
+        Estimate signed = signedEstimate();
+        given(estimateRepository.findById(estimateId)).willReturn(Optional.of(signed));
+        givenAnActStandsOnTheEstimate();
+
+        assertThatThrownBy(() -> estimateService.reopen(estimateId, ownerId))
+                .isInstanceOf(WorkActConflictException.class)
+                .extracting(e -> ((WorkActConflictException) e).getCode())
+                .isEqualTo("ESTIMATE_HAS_SIGNED_ACTS");
+        assertThat(signed.getStatus()).isEqualTo(EstimateStatus.SIGNED);
+    }
+
+    @Test
+    void delete_isRefusedWhileAnActStandsOnTheEstimate() {
+        // The FK is ON DELETE SET NULL, so deleting it leaves the act's lines id-less — and an
+        // id-less line reads as an off-estimate work with no ADDENDUM behind it (B-59).
+        Estimate draft = ownedEstimate(ownerId);
+        given(estimateRepository.findById(estimateId)).willReturn(Optional.of(draft));
+        givenAnActStandsOnTheEstimate();
+
+        assertThatThrownBy(() -> estimateService.delete(estimateId, ownerId))
+                .isInstanceOf(WorkActConflictException.class);
+        verify(estimateRepository, never()).delete(any(Estimate.class));
+    }
+
+    @Test
+    void update_toREJECTED_isRefusedWhileAnActStandsOnTheEstimate() {
+        // «Клієнт відмовився» cannot erase work he has already accepted: REJECTED clears
+        // countInEconomy, which is an uncount by another name (B-64).
+        Estimate draft = ownedEstimate(ownerId);
+        given(estimateRepository.findById(estimateId)).willReturn(Optional.of(draft));
+        givenAnActStandsOnTheEstimate();
+
+        assertThatThrownBy(() -> estimateService.update(estimateId,
+                new EstimateUpdateRequest(EstimateStatus.REJECTED, null, null, null), ownerId))
+                .isInstanceOf(WorkActConflictException.class);
+        assertThat(draft.isCountInEconomy()).isTrue();
+    }
+
+    @Test
+    void setCountInEconomy_offIsRefusedWhileAnActStands_butBackOnIsAlwaysAllowed() {
+        Estimate signed = signedEstimate();
+        given(estimateRepository.findById(estimateId)).willReturn(Optional.of(signed));
+        givenAnActStandsOnTheEstimate();
+
+        assertThatThrownBy(() -> estimateService.setCountInEconomy(estimateId, false, ownerId))
+                .isInstanceOf(WorkActConflictException.class);
+        assertThat(signed.isCountInEconomy()).isTrue();
+    }
+
+    @Test
+    void setCountInEconomy_isRefusedWhenTheSIGNEDactThatAUTHOREDtheROLLUPisTheOnlyLinkBack() {
+        // An act line points at the estimate it CLOSES, never at the ADDENDUM it FEEDS, so asking
+        // work_act_item about a rollup answers «no acts» however many acts built it. Unticking it
+        // would drop every off-estimate work and act receipt out of «За договором» while the
+        // acts keep billing them — the ⊆ invariant broken from the other side.
+        Estimate rollup = signedEstimate();
+        given(estimateRepository.findById(estimateId)).willReturn(Optional.of(rollup));
+        given(workActRepository.existsByAddendumEstimateIdAndStatus(estimateId, WorkActStatus.SIGNED))
+                .willReturn(true);
+
+        assertThatThrownBy(() -> estimateService.setCountInEconomy(estimateId, false, ownerId))
+                .isInstanceOf(WorkActConflictException.class);
+        assertThat(rollup.isCountInEconomy()).isTrue();
+    }
+
+    @Test
+    void anADDENDUMisReadOnly_soItCannotBeReopenedIntoAnEditableDRAFT() {
+        // The rollup is a document the SERVER writes on every signature; a master editing it by
+        // hand would be rewriting what the client already accepted. It has always been locked
+        // against unticking (ESTIMATE_ADDENDUM_LOCKED); B-58 closes the other five doors.
+        Estimate addendum = signedEstimate();
+        addendum.setKind(EstimateKind.ADDENDUM);
+        given(estimateRepository.findById(estimateId)).willReturn(Optional.of(addendum));
+
+        assertThatThrownBy(() -> estimateService.reopen(estimateId, ownerId))
+                .isInstanceOf(WorkActConflictException.class)
+                .extracting(e -> ((WorkActConflictException) e).getCode())
+                .isEqualTo("ESTIMATE_ADDENDUM_LOCKED");
+        assertThat(addendum.getStatus()).isEqualTo(EstimateStatus.SIGNED);
+    }
+
     // ---- duplicate with a markup (the бригадир's two prices) -------------------------------------
 
     @Test
@@ -1572,14 +1675,51 @@ class EstimateServiceTest {
         ArgumentCaptor<List<EstimateItem>> saved = ArgumentCaptor.forClass(List.class);
         verify(itemRepository).saveAll(saved.capture());
         List<EstimateItem> copies = saved.getValue();
-        // 350 × 1.15 = 402.5 → whole hryvnia, because that is what a client is quoted.
-        assertThat(copies.get(0).getUnitPrice()).isEqualByComparingTo("403");
+        // 350 × 1.15 = 402.50, kept at the scale money is STORED at (review B-47).
+        assertThat(copies.get(0).getUnitPrice()).isEqualByComparingTo("402.50");
         assertThat(copies.get(1).getUnitPrice()).as("матеріал лишається за собівартістю")
                 .isEqualByComparingTo("400");
         // EVERY line records what it cost, marked up or not: a passthrough line earns nothing today,
         // and if the master raises it by hand later that difference is real margin.
         assertThat(copies.get(0).getSourceUnitPrice()).isEqualByComparingTo("350");
         assertThat(copies.get(1).getSourceUnitPrice()).isEqualByComparingTo("400");
+    }
+
+    @Test
+    void duplicate_ofASIGNEDsource_keepsItCountingUntilTheCopyIsSignedToo() {
+        // B-63. Pricing a renegotiation is not agreeing to one. Uncounting the source here read
+        // «За договором 0» on a 50 000 job with 20 000 already paid, and since the progress picker
+        // hides an uncounted estimate, no act could be written against work that was underway —
+        // all for a copy the client may never sign. Signing the copy is what supersedes the parent.
+        Estimate source = signedEstimate();
+        source.setCountInEconomy(true);
+        given(estimateRepository.findById(estimateId)).willReturn(Optional.of(source));
+        given(itemRepository.findByEstimateIdOrderBySortOrderAscIdAsc(estimateId))
+                .willReturn(new ArrayList<>(List.of(item(ItemType.WORK, "Шпаклювання", "10", "145"))));
+        given(estimateRepository.save(any(Estimate.class))).willAnswer(inv -> inv.getArgument(0));
+
+        estimateService.duplicate(estimateId,
+                new EstimateDuplicateRequest(null, new BigDecimal("15"), true, null), ownerId);
+
+        assertThat(source.isCountInEconomy()).isTrue();
+        assertThat(source.getStatus()).isEqualTo(EstimateStatus.SIGNED);
+    }
+
+    @Test
+    void duplicate_ofAnUNSIGNEDsource_stillStopsCountingIt() {
+        // The everyday «duplicate a draft, quote it up» flow: two live variants of the same deal
+        // would double «За договором», and neither is agreed, so the source steps aside.
+        Estimate source = ownedEstimate(ownerId); // DRAFT
+        source.setCountInEconomy(true);
+        given(estimateRepository.findById(estimateId)).willReturn(Optional.of(source));
+        given(itemRepository.findByEstimateIdOrderBySortOrderAscIdAsc(estimateId))
+                .willReturn(new ArrayList<>(List.of(item(ItemType.WORK, "Шпаклювання", "10", "145"))));
+        given(estimateRepository.save(any(Estimate.class))).willAnswer(inv -> inv.getArgument(0));
+
+        estimateService.duplicate(estimateId,
+                new EstimateDuplicateRequest(null, new BigDecimal("15"), true, null), ownerId);
+
+        assertThat(source.isCountInEconomy()).isFalse();
     }
 
     @Test
@@ -1655,8 +1795,8 @@ class EstimateServiceTest {
         ArgumentCaptor<List<EstimateItem>> saved = ArgumentCaptor.forClass(List.class);
         verify(itemRepository).saveAll(saved.capture());
         List<EstimateItem> copies = saved.getValue();
-        // 350 × 0.85 = 297.5 → 298 whole hryvnia; the material stays at cost.
-        assertThat(copies.get(0).getUnitPrice()).isEqualByComparingTo("298");
+        // 350 × 0.85 = 297.50; the material stays at cost.
+        assertThat(copies.get(0).getUnitPrice()).isEqualByComparingTo("297.50");
         assertThat(copies.get(1).getUnitPrice()).as("матеріал лишається за собівартістю")
                 .isEqualByComparingTo("400");
         // Source price recorded on every line, exactly as for a markup.
@@ -1756,9 +1896,9 @@ class EstimateServiceTest {
     }
 
     @Test
-    void markItemsUp_roundsToWholeHryvnia() {
-        // 333 × 1.15 = 382.95. The client reads round numbers and the fraction lands in the margin
-        // either way, so the same HALF_UP the duplicate uses.
+    void markItemsUp_roundsAtTheSCALEmoneyIsSTOREDat() {
+        // Review B-47. 333 × 1.15 = 382.95 and it STAYS 382.95: rounding to the hryvnia looked
+        // tidy here and was a catastrophe on a cheap position bought by the thousand.
         EstimateItem line = ownedLine("Шпаклювання", "333");
         givenOwnedEstimate();
         given(itemRepository.findAllById(List.of(line.getId()))).willReturn(List.of(line));
@@ -1766,7 +1906,37 @@ class EstimateServiceTest {
         estimateService.markItemsUp(estimateId, List.of(line.getId()),
                 new BigDecimal("15"), false, ownerId);
 
-        assertThat(line.getUnitPrice()).isEqualByComparingTo("383");
+        assertThat(line.getUnitPrice()).isEqualByComparingTo("382.95");
+    }
+
+    @Test
+    void markItemsUp_neverRoundsACHEAPpositionDownToNOTHING() {
+        // The bug B-47 names: 0,40 ₴ +20 % came out at 0,00 under whole-hryvnia rounding, so
+        // 2 000 pcs were billed NOTHING instead of 960 ₴. The error is per LINE and multiplies by
+        // the quantity, which is exactly where it is least visible.
+        EstimateItem line = ownedLine("Саморіз для ГКЛ", "0.40");
+        givenOwnedEstimate();
+        given(itemRepository.findAllById(List.of(line.getId()))).willReturn(List.of(line));
+
+        estimateService.markItemsUp(estimateId, List.of(line.getId()),
+                new BigDecimal("20"), false, ownerId);
+
+        assertThat(line.getUnitPrice()).isEqualByComparingTo("0.48");
+    }
+
+    @Test
+    void markItemsUp_leavesAPOSITIONthatCOSTSmoneyWorthSOMETHING() {
+        // The floor, and the only way scale 2 can still reach zero from a stored price: a deep
+        // discount. A 0,00 ₴ line in a signed document is not a rounding error — it is a promise
+        // to work for nothing.
+        EstimateItem line = ownedLine("Дрібний кріпеж", "0.01");
+        givenOwnedEstimate();
+        given(itemRepository.findAllById(List.of(line.getId()))).willReturn(List.of(line));
+
+        estimateService.markItemsUp(estimateId, List.of(line.getId()),
+                new BigDecimal("90"), true, ownerId);
+
+        assertThat(line.getUnitPrice()).isEqualByComparingTo("0.01");
     }
 
     @Test

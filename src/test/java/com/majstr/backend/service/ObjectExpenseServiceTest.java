@@ -2,6 +2,7 @@ package com.majstr.backend.service;
 
 import com.majstr.backend.dto.ExpenseRequest;
 import com.majstr.backend.dto.ExpenseResponse;
+import com.majstr.backend.dto.ObjectEconomyMaterialsResponse;
 import com.majstr.backend.dto.ObjectEconomyResponse;
 import com.majstr.backend.dto.PaymentsSummaryResponse;
 import com.majstr.backend.entity.ExpenseCategory;
@@ -52,6 +53,7 @@ class ObjectExpenseServiceTest {
     @Mock WorkActReceiptRepository workActReceiptRepository;
     @Mock PaymentReceiptRepository paymentReceiptRepository;
     @Mock ProjectReceiptRepository projectReceiptRepository;
+    @Mock MaterialRefundCalculator refundCalculator;
 
     // The REAL gate (backed by PlanConfig) so the PRO/FREE decision is genuinely tested.
     private final DefaultFeatureGuard featureGuard = new DefaultFeatureGuard();
@@ -59,7 +61,7 @@ class ObjectExpenseServiceTest {
     private ObjectExpenseService service() {
         return new ObjectExpenseService(expenseRepository, estimateRepository, estimateItemRepository, projectService,
                 userRepository, featureGuard, paymentService, workActItemRepository, workActReceiptRepository,
-                paymentReceiptRepository, projectReceiptRepository);
+                paymentReceiptRepository, projectReceiptRepository, refundCalculator);
     }
 
     /** The works axis sums two queries (act lines + act receipts) and adds them — both are
@@ -70,9 +72,11 @@ class ObjectExpenseServiceTest {
     }
 
     /** The materials axis (V129) is FREE-visible and computed unconditionally, so every economy
-     *  test walks through it; its sum is COALESCE'd in SQL and must never mock to null. */
+     *  test walks through it. Since B-65 the two sums it needs come from one calculator, so that is
+     *  what a test stubs — the split it hands back is never null. */
     private void materialsAxisZero(UUID object) {
-        given(projectReceiptRepository.sumReimbursable(object)).willReturn(BigDecimal.ZERO);
+        given(refundCalculator.forObject(object))
+                .willReturn(MaterialRefundSplit.of(BigDecimal.ZERO, BigDecimal.ZERO));
     }
 
     private void user(UUID id, Plan plan) {
@@ -86,11 +90,37 @@ class ObjectExpenseServiceTest {
     }
 
     private static PaymentsSummaryResponse payments(BigDecimal received) {
-        return new PaymentsSummaryResponse(BigDecimal.ZERO, received, BigDecimal.ZERO, List.of(), List.of());
+        return payments(BigDecimal.ZERO, received);
     }
 
     private static PaymentsSummaryResponse payments(BigDecimal contractedTotal, BigDecimal received) {
-        return new PaymentsSummaryResponse(contractedTotal, received, BigDecimal.ZERO, List.of(), List.of());
+        return new PaymentsSummaryResponse(contractedTotal, received, BigDecimal.ZERO, BigDecimal.ZERO,
+                BigDecimal.ZERO, received, BigDecimal.ZERO, List.of(), List.of());
+    }
+
+    /**
+     * The materials card asks for what is still OWED, not for what was spent (review B-65). It used
+     * to show the gross receivable, so a client who had already handed the 2 000 ₴ back was asked
+     * for it again on the very screen that had just counted his payment.
+     */
+    @Test
+    void theMaterialsAxisAsksForWhatIsStillOwed() {
+        UUID owner = UUID.randomUUID();
+        UUID object = UUID.randomUUID();
+        user(owner, Plan.PRO);
+        given(projectService.loadOwned(object, owner)).willReturn(object(ProjectStatus.IN_PROGRESS));
+        actsAxisZero(object);
+        given(refundCalculator.forObject(object)).willReturn(
+                MaterialRefundSplit.of(new BigDecimal("800.00"), new BigDecimal("2000.00")));
+        given(paymentService.summaryUnchecked(object)).willReturn(payments(BigDecimal.ZERO));
+        given(expenseRepository.sumAll(object)).willReturn(BigDecimal.ZERO);
+
+        ObjectEconomyMaterialsResponse materials = service().economy(object, owner).materials();
+
+        // The receipts themselves are unchanged — it is the ASK that moves.
+        assertThat(materials.reimbursable()).isEqualByComparingTo("2000.00");
+        assertThat(materials.refundApplied()).isEqualByComparingTo("800.00");
+        assertThat(materials.outstanding()).isEqualByComparingTo("1200.00");
     }
 
     // ---- FREE/PRO split on economy() ---------------------------------------

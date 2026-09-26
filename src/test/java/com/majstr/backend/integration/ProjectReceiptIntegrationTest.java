@@ -2,6 +2,7 @@ package com.majstr.backend.integration;
 
 import com.majstr.backend.dto.ProjectReceiptRequest;
 import com.majstr.backend.dto.ProjectReceiptsResponse;
+import com.majstr.backend.exception.ProjectReceiptBilledException;
 import com.majstr.backend.repository.ProjectReceiptRepository;
 import com.majstr.backend.service.ProjectReceiptService;
 import org.junit.jupiter.api.BeforeEach;
@@ -100,6 +101,36 @@ class ProjectReceiptIntegrationTest extends IntegrationTestBase {
                 .isEqualByComparingTo("483.50");
     }
 
+    /**
+     * Review B-32a — the worst of the family, and the one only a real database shows end to end.
+     * The act does NOT post its receipts as expenses, so this object receipt, flipped to «моя
+     * витрата» before the act was signed, is the ONLY record of that 2 000 ₴. Flipping it back to
+     * «клієнт відшкодовує» would delete that row while the signature still counts the money, and
+     * the master's profit would read 2 000 ₴ higher than it is.
+     */
+    @Test
+    void aReceiptBilledOnASignedActKeepsItsCostWhateverTheScreenSends() {
+        UUID receiptId = insertReceipt("Епіцентр", "2000.00");
+        receiptService.update(projectId, receiptId, ownerId, new ProjectReceiptRequest(
+                "Епіцентр", new BigDecimal("2000.00"), LocalDate.of(2026, 9, 8), false, null, null));
+        assertThat(expenseCount()).isEqualTo(1);
+        stampBilled(receiptId, insertSignedAct());
+
+        assertThatThrownBy(() -> receiptService.update(projectId, receiptId, ownerId,
+                new ProjectReceiptRequest("Епіцентр", new BigDecimal("2000.00"),
+                        LocalDate.of(2026, 9, 8), true, null, null)))
+                .isInstanceOf(ProjectReceiptBilledException.class);
+        assertThatThrownBy(() -> receiptService.delete(projectId, receiptId, ownerId))
+                .isInstanceOf(ProjectReceiptBilledException.class);
+
+        assertThat(expenseCount()).isEqualTo(1);
+        assertThat(receipts.findById(receiptId)).isPresent();
+        // And the label he mistyped at the till is still correctable — that is not money.
+        receiptService.update(projectId, receiptId, ownerId, new ProjectReceiptRequest(
+                "Нова Лінія", new BigDecimal("2000.00"), LocalDate.of(2026, 9, 8), null, null, null));
+        assertThat(receipts.findById(receiptId).orElseThrow().getLabel()).isEqualTo("Нова Лінія");
+    }
+
     @Test
     void deletingTheObjectTakesItsReceiptsWithIt() {
         insertReceipt("Епіцентр", "483.50");
@@ -153,6 +184,24 @@ class ProjectReceiptIntegrationTest extends IntegrationTestBase {
                 VALUES (?, ?, ?, ?::numeric, 'object-receipts/x.jpg', 0)
                 """, id, projectId, label, amount);
         return id;
+    }
+
+    /** The act whose signature froze the money. {@code receipts_to_expenses} is off on purpose:
+     *  that is the configuration in which the object receipt is the only cost record there is. */
+    private UUID insertSignedAct() {
+        UUID id = UUID.randomUUID();
+        jdbc.update("""
+                INSERT INTO work_act (id, user_id, project_id, number, kind, status, issued_at,
+                                      period_from, period_to, receipts_to_expenses,
+                                      created_at, updated_at)
+                VALUES (?, ?, ?, '1', 'INTERIM', 'SIGNED', CURRENT_DATE, CURRENT_DATE, CURRENT_DATE,
+                        FALSE, now(), now())
+                """, id, ownerId, projectId);
+        return id;
+    }
+
+    private void stampBilled(UUID receiptId, UUID actId) {
+        jdbc.update("UPDATE project_receipt SET billed_on_act_id = ? WHERE id = ?", actId, receiptId);
     }
 
     private UUID insertExpense(String amount) {

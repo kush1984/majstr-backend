@@ -354,3 +354,23 @@ client-facing portal sign — and no bookkeeping tidy-up may cost a master a sig
   guessing from a label and an amount that two different papers are one.
 * Duplicates are never blocked, on either side. A shop can legitimately reprint a slip, and only the
   master is holding the paper.
+
+---
+
+## 13. A billed receipt is frozen for MONEY — review item B-32 (round 3)
+
+V134 stamps `project_receipt.billed_on_act_id` when a slip photographed at the till turns out to be
+the same paper an act bills. Nothing then stopped the master from editing that receipt's amount,
+flipping «чия це витрата», or deleting it — and the act is signed, its `doc_hash` computed over the
+figure as it was. The three doors now refuse with 409 `PROJECT_RECEIPT_BILLED_ON_ACT`
+(`ProjectReceiptBilledException`), in **both** directions for the flip: making a billed receipt
+«моя витрата» would post an `ObjectExpense` for money the client has already accepted, and flipping
+it back would delete an expense that belongs to a different story.
+
+What the paper *says* — label, date, photo — stays editable, because that is not money. The PWA
+disables exactly those three controls and says «Врахований в акті №N» rather than letting the tap
+fail. Full round: [iteration-money-audit-3.md](iteration-money-audit-3.md).
+
+Same round, §5's axis gained a reader: `MaterialRefundCalculator` → `MaterialRefundSplit` is now the
+one place `reimbursable` meets `material_refund`, so the materials axis, the master's payments
+summary and the client portal card stop each doing their own subtraction.

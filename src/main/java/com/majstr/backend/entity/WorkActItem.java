@@ -46,6 +46,14 @@ public class WorkActItem {
     @JoinColumn(name = "work_act_id", nullable = false, updatable = false)
     private WorkAct workAct;
 
+    /** What this line IS (B-55). Read it rather than inferring from the two ids below: an
+     *  ADJUSTMENT also carries no {@code estimateItemId}, and treating it as an ADDITIONAL work
+     *  would roll an estimate's own discount into the ADDENDUM and bill it twice. */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "line_kind", nullable = false, length = 20)
+    @Builder.Default
+    private WorkActLineKind lineKind = WorkActLineKind.ESTIMATE;
+
     /** The estimate line this closes work against, or {@code null} for an ADDITIONAL work not in any
      *  estimate. {@code ON DELETE SET NULL} — the frozen line survives the estimate line's deletion. */
     @Column(name = "estimate_item_id")
