@@ -86,6 +86,7 @@ class EstimateServiceTest {
     @Mock private WorkActItemRepository workActItemRepository;
     @Mock private WorkActRepository workActRepository;
     @Mock private com.majstr.backend.repository.ShoppingListItemRepository shoppingListItemRepository;
+    @Mock private MaterialParamService materialParamService;
 
     @InjectMocks private EstimateService estimateService;
 

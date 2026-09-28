@@ -3,7 +3,9 @@ package com.majstr.backend.controller;
 import com.majstr.backend.dto.MaterialApplyRequest;
 import com.majstr.backend.dto.MaterialAvailabilityResponse;
 import com.majstr.backend.dto.MaterialCalculationResponse;
+import com.majstr.backend.dto.MaterialParamsRequest;
 import com.majstr.backend.dto.ShoppingListResponse;
+import com.majstr.backend.dto.StoredMaterialParams;
 import com.majstr.backend.security.UserPrincipal;
 import com.majstr.backend.service.MaterialCalculatorService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -15,6 +17,7 @@ import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -35,7 +38,17 @@ import java.util.UUID;
  * it carries the numbers HE left on the screen — every one of them is editable there, so the
  * server does not re-derive what it already showed him.</p>
  *
- * <p>The three figures the estimate cannot carry ride the query string for that reason. {@code
+ * <p>The three figures the estimate cannot carry are the exception to «stores nothing» — they are
+ * ANSWERS, derived from nothing at all, and since V142 they are kept on the estimate rather than in
+ * the browser that asked: he answered 5 mm on his phone, opened the same estimate on his laptop and
+ * the card asked again with our suggestion back in the field, so one estimate had two shopping
+ * lists. {@code PUT …/params} is the one door they are written through, and it is a PATCH: each card
+ * on the screen owns its own «Порахувати» and sends only what that button answers.</p>
+ *
+ * <p>They still ride the query string on the GET, and that is not a second source of truth: the
+ * query string is what the SCREEN is holding right now and wins per question, the stored set fills
+ * every question the request is silent about, and {@code answers} comes back so the fields can open
+ * with his own figures on a device that has never seen this estimate. {@code
  * perimeter} is one number for the whole estimate; {@code sections} (a короб's розгортка, in
  * metres) and {@code thicknesses} (a layer's thickness, in MILLIMETRES — V137) are per POSITION and
  * each arrives as one compact scalar — «uuid:0,4,uuid:0,55» — rather than a repeated parameter or a
@@ -68,6 +81,15 @@ public class MaterialCalculatorController {
             @AuthenticationPrincipal UserPrincipal principal) {
         return calculatorService.calculate(
                 estimateId, principal.id(), wastePercent, perimeter, sections, thicknesses);
+    }
+
+    @PutMapping("/params")
+    @Operation(summary = "Remember one of the three figures the calculation has to ask for — a PATCH: "
+            + "an omitted question is left alone, a zero forgets the answer")
+    public StoredMaterialParams saveParams(@PathVariable UUID estimateId,
+                                           @Valid @RequestBody MaterialParamsRequest req,
+                                           @AuthenticationPrincipal UserPrincipal principal) {
+        return calculatorService.saveParams(estimateId, principal.id(), req);
     }
 
     @GetMapping("/availability")

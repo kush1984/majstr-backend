@@ -1830,3 +1830,104 @@ the 19 this file wrote, and no metre row asks for nothing or asks with nothing t
 PWA gate, CI's `verify` job mirrored in order: `npm run lint` ✓, `npx tsc -b` ✓,
 `npm run typecheck:tests` ✓, `npx vitest run` — **1175 tests in 133 files, all passing** — and
 `npx vite build` ✓. No service-worker or offline change, so `test:e2e:offline` is not owed.
+
+## 29. An answer follows the master, not the browser — V142 (2026-09-27)
+
+**His report, with a screenshot of «Матеріали — орієнтовно» on the phone:** *«я оце зробив
+порахувати і воно порахувало і тепер пише перерахувати на телефоні, відкриваю на компютері і дальше
+так як було, чому воно не синхронізоване між девайсами?»*
+
+§23 and §27 gave the calculator three questions it cannot derive an answer to — a room's
+**PERIMETER**, a короб's or a baguette's **розгортка** (`SECTION`) and a layer's **THICKNESS** in
+millimetres. The previous round remembered them, correctly identifying that a figure typed once and
+forgotten is the same bug as never asking; it remembered them in **`localStorage`**, which is the
+browser's and not the master's. So the phone showed «Перерахувати» over his own 25 mm and the laptop
+showed «Потрібна товщина шару» with our 15 mm pre-filled — **one estimate with two shopping lists,
+and nothing on either screen saying they disagreed.** The open-question entry had already named this
+as the deferred half («What is deferred is the STORAGE, not the behaviour») and asked the question
+that decides it: is a thickness a fact about the WORK or a scratch input to one calculation? V137
+had already answered it — a thickness is asked **per POSITION** precisely because «штукатурка стін
+(до 2 см)» names a bound and not a thickness, i.e. it is a fact about that line.
+
+### Its own table, and why not a column
+
+`estimate_material_param` (`estimate_id`, nullable `estimate_item_id`, `basis`, `value`). Three
+reasons it is not a column on `estimate_items`:
+
+1. **One position can be asked BOTH questions** — that is V137's own rule, the reason `sections` and
+   `thicknesses` are two query parameters and never one map. A single `material_param` column could
+   not hold both and would answer one question with the other's number: 0,4 mm of plaster, or a
+   короб 15 m deep, neither of which looks wrong on screen.
+2. **`estimates` carries `@Version`, and V141 sends it into the portal render and back on the
+   client's sign request** (409 `ESTIMATE_CHANGED`). A master answering a thickness on his own
+   calculator may not invalidate a signature the client is in the middle of giving. A side table
+   touches nothing the document has a version of — which is also why there is **no
+   `requireNotSigned`**: what he still has to buy in order to deliver a signed estimate is not part
+   of the document the client agreed to, and most of it is bought after the signature.
+3. A fifth `NormBasis` then costs no migration on the two hottest tables in the schema.
+
+**The perimeter has no position**, so its row carries `estimate_item_id IS NULL` — one room, one
+perimeter (§23) — and a CHECK pairs the basis with the presence of a line, so nothing can file a
+thickness without a position or the estimate's perimeter against one. Two **partial** unique indexes
+rather than one over a `COALESCE`: they state the two rules in the two sentences they actually are.
+Both FKs are `ON DELETE CASCADE`, so a deleted line takes its answers with it without a line of Java
+knowing.
+
+**Zero is not an answer.** `value > 0`, and a cleared field DELETES the row: the calculation already
+reads a non-positive parameter as «not answered» and asks again, so storing a 0 would be a second
+spelling of one state. The upper bound is the same 1000 the service and the PWA's field guard use —
+it is a stray extra digit it looks for, not a rule of building.
+
+### The write is a PATCH, and the read is a merge
+
+`PUT /api/estimates/{id}/materials/params` with `{perimeter?, sections?, thicknesses?}`. **One card
+at a time**: each parameter card on the screen owns its own «Порахувати», and sending all three would
+store the THICKNESS suggestions still sitting pre-filled and unconfirmed in their fields (§15 —
+pre-filled visibly, never applied silently) the moment he answered the perimeter. An omitted question
+is left alone; a **0 forgets** the answer. It replies with the whole resulting set rather than an
+echo of the request, because a cleared field is a row that is gone and a request cannot express that.
+
+The GET keeps its query parameters and they are **not a second source of truth**: the query string is
+what the SCREEN is holding right now and wins **per question**, the stored set fills every question
+the request is silent about, and `MaterialCalculationResponse.answers` rides back so the fields can
+open with his own figures on a device that has never seen this estimate. That is what makes the FIRST
+request on the laptop already carry his 25 mm — the fix is worthless if the card has to ask once
+before it stops asking. `answers.perimeter` sits **beside** the existing `perimeter` on purpose:
+that one is the figure this calculation USED, which may be one the screen is holding and has not
+saved yet.
+
+**Ownership is checked in `MaterialCalculatorService.saveParams`, not in `MaterialParamService`** —
+that one may hold repositories only, because `EstimateService` depends on IT (the duplicate carry
+below) and the pair would be a constructor cycle. The param service's javadoc says so, and this is
+the round that made it true.
+
+### A duplicate carries the answers; a consolidation asks
+
+`duplicate()` is the same walls at another price, so re-asking a короб's розгортка on a copy the
+master made with one tap would be this table's own bug one level up. The carry rides
+`copyBySourceId`, the map built **after** `saveAll` — a copy has no id before the flush, the same
+ordering trap the percent re-pointing beside it already lives with. A **consolidation is
+deliberately not covered**: a rollup merges several estimates and there is no honest answer to «whose
+perimeter», so the merged draft asks.
+
+### The PWA
+
+`features/materials/useMaterialParams.ts` is **deleted** — its whole job was the `localStorage`
+keying. The page's three query-param states now start EMPTY (the first answer was already computed
+against the stored set, so sending them back would be a request for what we just received) and the
+FIELDS are seeded from `answers`, once, with a field he has already touched winning: the answer can
+arrive late on a slow connection and overwriting what he is typing would be worse than not seeding.
+A blank per-position field is sent as **0** rather than omitted — `encoded()` correctly omits it for
+the calculation, but omitting it from the PATCH would leave last week's figure stored while the field
+is empty, and he would go on buying against a розгортка he deleted. The save is fire-and-forget with
+no error toast: the calculation itself is a server GET, so a screen that cannot reach the server has
+no figures on it to remember. Its success invalidates the calculation, because a 0 deletes a row
+while the query key stops carrying that question.
+
+One bug fell out of the move. **The perimeter card read its answered/unanswered state off the LOCAL
+state**, which is now empty on a device that has not answered here — so a remembered perimeter was
+greeted with «Потрібен периметр» and «Порахувати» over a field already holding his own figure.
+`perimeterAnswered` reads the answer as well, which is what the section and thickness cards have
+always done (they take it off `sources`). Nothing was queued into the outbox: the whole screen is a
+server GET, so an offline outbox entity would replay an answer to a question the master could not
+have been asked.

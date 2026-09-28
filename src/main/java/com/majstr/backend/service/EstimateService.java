@@ -102,6 +102,10 @@ public class EstimateService {
      *  the service there would close a dependency cycle), and both delete paths must behave the
      *  same way. */
     private final ShoppingListItemRepository shoppingListItemRepository;
+    /** The calculator's own answers, carried into a duplicate (V142). Safe to depend on: it holds
+     *  repositories only, which is also why the ownership check for its endpoint lives in
+     *  {@code MaterialCalculatorService} and not there. */
+    private final MaterialParamService materialParamService;
 
     // ---- estimates ---------------------------------------------------------
 
@@ -315,6 +319,11 @@ public class EstimateService {
                 c.setBaseDetached(c.isBaseDetached() || inCopy == null);
             }
         }
+        // The same walls, so the calculator's own answers come along — re-asking a короб's розгортка
+        // on a copy the master made with one tap would be V142's bug one level up. See
+        // MaterialParamService#copyToDuplicate for why a consolidation deliberately does NOT.
+        materialParamService.copyToDuplicate(estimateId, copy.getId(), copyBySourceId);
+
         // A SIGNED source is a LIVE DEAL, and it stays one until the copy is signed too (B-63).
         // Uncounting it here read «За договором 0» on a 50 000 job with 20 000 already paid, and
         // the progress picker hides an uncounted estimate, so no act could be written against work

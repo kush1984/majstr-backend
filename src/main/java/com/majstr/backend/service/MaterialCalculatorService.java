@@ -7,9 +7,11 @@ import com.majstr.backend.dto.MaterialAvailabilityResponse;
 import com.majstr.backend.dto.MaterialCalculationResponse;
 import com.majstr.backend.dto.MaterialCoverage;
 import com.majstr.backend.dto.MaterialLineRequest;
+import com.majstr.backend.dto.MaterialParamsRequest;
 import com.majstr.backend.dto.MaterialSourceLine;
 import com.majstr.backend.dto.MissingParameter;
 import com.majstr.backend.dto.ShoppingListResponse;
+import com.majstr.backend.dto.StoredMaterialParams;
 import com.majstr.backend.entity.Estimate;
 import com.majstr.backend.entity.EstimateItem;
 import com.majstr.backend.entity.EstimateStatus;
@@ -82,7 +84,9 @@ import java.util.UUID;
  * same reason and answered the same way (V137) — plaster, screed and levelling compound are sold
  * per m² per mm, so the millimetres ARE the bill. Unlike a розгортка a thickness has an honest
  * suggestion, which rides the ask as {@link MissingParameter#suggested()} to be PRE-FILLED and
- * still visible; nothing is ever applied on the master's behalf.</p>
+ * still visible; nothing is ever applied on the master's behalf. All three are REMEMBERED, on the
+ * estimate and not on the device — {@code MaterialParamService}, V142 — so the second device he
+ * opens the same estimate on knows them; this read path merges them under the request's own.</p>
  *
  * <p><b>Two habits rescale a shipped coefficient</b> — {@code PAINT_COVERAGE} × {@code PAINT_COATS}
  * for paint and {@code TILE_JOINT_MM} for grout (see {@link #coefficient}). Both are properties of
@@ -148,15 +152,24 @@ public class MaterialCalculatorService {
     private final MaterialRepository materialRepository;
     private final MasterMaterialPrefRepository prefRepository;
     private final ShoppingListService shoppingListService;
+    private final MaterialParamService paramService;
 
     @Transactional(readOnly = true)
     public MaterialCalculationResponse calculate(UUID estimateId, UUID ownerId,
                                                  BigDecimal wastePercent, BigDecimal perimeter,
                                                  String sections, String thicknesses) {
-        Map<UUID, BigDecimal> section = parsePerPosition(sections);
-        Map<UUID, BigDecimal> thickness = parsePerPosition(thicknesses);
         Habits habits = new Habits(ownerId);
         Estimate estimate = estimateService.loadOwned(estimateId, ownerId);
+        // What he answered before, on whatever device he answered it on (V142). The query string is
+        // the SCREEN's current state and wins per question; the stored set fills every question the
+        // request is silent about, so arriving on a second device already carries his figures —
+        // asking again with our default in the field is the bug this exists for.
+        StoredMaterialParams stored = paramService.load(estimateId);
+        if (perimeter == null) {
+            perimeter = stored.perimeter();
+        }
+        Map<UUID, BigDecimal> section = merged(stored.sections(), sections);
+        Map<UUID, BigDecimal> thickness = merged(stored.thicknesses(), thicknesses);
         List<EstimateItem> buyable = buyableLines(itemRepository
                 .findByEstimateIdOrderBySortOrderAscIdAsc(estimateId));
         List<EstimateItem> works = priced(buyable);
@@ -254,7 +267,27 @@ public class MaterialCalculatorService {
                 effectiveWaste,
                 havePerimeter ? scaled(perimeter) : null,
                 estimate.getStatus() == EstimateStatus.SIGNED,
-                quantitiesMissing);
+                quantitiesMissing,
+                stored);
+    }
+
+    /**
+     * Store one of the three figures the calculation has to ask for (V142).
+     *
+     * <p>Here rather than on {@code MaterialParamService} because ownership is checked with
+     * {@link EstimateService#loadOwned}, and the param service may not depend on EstimateService —
+     * that one writes params of its own when an estimate is duplicated, and the pair would be a
+     * constructor cycle.</p>
+     *
+     * <p>No {@code requireNotSigned}: what the master still has to buy in order to deliver a signed
+     * estimate is not part of the document the client agreed to, and most of it is bought after the
+     * signature. The table is untouched by the estimate's {@code @Version} for the same reason
+     * (V141) — answering a thickness may not collide with a signature being given.</p>
+     */
+    @Transactional
+    public StoredMaterialParams saveParams(UUID estimateId, UUID ownerId, MaterialParamsRequest req) {
+        estimateService.loadOwned(estimateId, ownerId);
+        return paramService.save(estimateId, req);
     }
 
     /**
@@ -649,6 +682,19 @@ public class MaterialCalculatorService {
      * A 400 would be an empty screen with no way forward, for a figure that is optional by design.
      * </p>
      */
+    /**
+     * The stored answers, overlaid with the ones this request carries (V142).
+     *
+     * <p>Per question and not per request: a screen that has just been given a розгортка for one
+     * короб sends that one, and the other box's answer from last week must not fall out of the
+     * calculation because it was not in the query string.</p>
+     */
+    private Map<UUID, BigDecimal> merged(Map<UUID, BigDecimal> stored, String raw) {
+        Map<UUID, BigDecimal> merged = new LinkedHashMap<>(stored);
+        merged.putAll(parsePerPosition(raw));
+        return merged;
+    }
+
     static Map<UUID, BigDecimal> parsePerPosition(String raw) {
         if (raw == null || raw.isBlank()) {
             return Map.of();

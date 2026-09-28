@@ -29,6 +29,11 @@ import java.util.List;
  *                      asks him for numbers, and «we know no norms for this work», which is the
  *                      screen admitting a gap. Saying the second when the first is true reads as
  *                      the feature being broken
+ * @param answers       the three figures the master has ANSWERED on this estimate, as they are
+ *                      stored (V142) — so the fields open with his own numbers on a device that has
+ *                      never seen this estimate. Deliberately beside {@code perimeter} rather than
+ *                      folded into it: that one is the figure this calculation USED, which may be
+ *                      one the screen is holding and has not saved yet
  */
 public record MaterialCalculationResponse(
         List<CalculatedMaterialLine> materials,
@@ -37,5 +42,6 @@ public record MaterialCalculationResponse(
         BigDecimal wastePercent,
         BigDecimal perimeter,
         boolean estimateSigned,
-        boolean quantitiesMissing
+        boolean quantitiesMissing,
+        StoredMaterialParams answers
 ) {}

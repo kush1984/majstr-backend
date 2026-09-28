@@ -2638,7 +2638,14 @@ one-line summary — keep the item in the file as a record.
   together is the honest answer; (c) alone is the cheap safety net that must exist regardless.
 
 ### A calculator parameter is remembered on the DEVICE, not on the estimate
-- **Status:** OPEN
+- **Status:** RESOLVED — V142 (2026-09-27): its own table `estimate_material_param`, option (b) in
+  the shape the notes below argue for, but keyed on the POSITION rather than as a column (one line
+  can be asked both a SECTION and a THICKNESS). `PUT …/materials/params` is a PATCH, one card at a
+  time; a 0 forgets an answer; the GET merges the stored set under the query string's own and returns
+  `answers` so the FIRST request on the second device already carries his figures. No
+  `requireNotSigned` and nothing touches the estimate's `@Version` — answering a thickness is not an
+  edit of the document. A duplicate carries the answers; a consolidation still asks. `localStorage`
+  is gone. See [docs/iteration-material-calculator.md](iteration-material-calculator.md) §29.
 - **Since:** 2026-09-26, master's own report (screenshot of «Матеріали — орієнтовно» on a tiling
   estimate): «коли я натискаю порахувати — воно рахує на основі того що введено, і наступний раз як
   я відкриваю діалог, знову просить порахувати, хоча на головній матеріали вже є купити… треба
@@ -2673,6 +2680,13 @@ one-line summary — keep the item in the file as a record.
   same key-by-position problem from the other side) and «A personal consumption norm» (RESOLVED —
   a HABIT of the master went to the server, `master_material_pref`; this is the same shape one level
   down, an answer about one line rather than about the master).
+- **What actually settled it (2026-09-27):** the master reported the other half himself — *«я оце
+  зробив порахувати і воно порахувало і тепер пише перерахувати на телефоні, відкриваю на компютері і
+  дальше так як було, чому воно не синхронізоване між девайсами?»* Option (a) «leave it» died on
+  that sentence: the cost of a miss is not one re-entry, it is two shopping lists off one estimate
+  with nothing on either screen saying they disagree. The deferred question above («fact about the
+  WORK or scratch input?») was answered by V137 before it was asked — a thickness is asked per
+  POSITION exactly because the position name gives a bound and not a thickness.
 
 ### Calculate materials for a WHOLE OBJECT from Заміри
 - **Status:** OPEN

@@ -5,6 +5,7 @@ import com.majstr.backend.dto.CalculatedMaterialRow;
 import com.majstr.backend.dto.MaterialApplyRequest;
 import com.majstr.backend.dto.MaterialCalculationResponse;
 import com.majstr.backend.dto.MaterialLineRequest;
+import com.majstr.backend.dto.StoredMaterialParams;
 import com.majstr.backend.entity.Estimate;
 import com.majstr.backend.entity.EstimateItem;
 import com.majstr.backend.entity.EstimateStatus;
@@ -34,6 +35,7 @@ import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -71,6 +73,7 @@ class MaterialCalculatorServiceTest {
     @Mock MasterMaterialPrefRepository prefRepository;
     @Mock CatalogItemRepository catalogItemRepository;
     @Mock ShoppingListService shoppingListService;
+    @Mock MaterialParamService paramService;
 
     @InjectMocks MaterialCalculatorService service;
 
@@ -677,6 +680,76 @@ class MaterialCalculatorServiceTest {
                 .satisfies(p -> assertThat(p.parameter()).isEqualTo("THICKNESS"));
     }
 
+    // --- the answers are remembered on the ESTIMATE, not on the device (V142) -----------------
+
+    /**
+     * The bug V142 exists for, from the read side: he answered the thickness on his phone, opened
+     * the same estimate on his laptop, and the card asked again with our suggestion back in the
+     * field — one estimate, two shopping lists. A request carrying NO parameter is exactly that
+     * second device, and the stored answer has to be the one that counts.
+     */
+    @Test
+    void aStoredAnswerIsUsedWhenTheRequestCarriesNoneAndComesBackWithTheCalculation() {
+        Material plaster = material("PLASTER_GYPSUM", "Штукатурка гіпсова", Unit.KG, null, null);
+        EstimateItem walls = item("Штукатурка стін (до 2 см)", Unit.M2, "20", Trade.PAINTER);
+        given(walls, thicknessNorm(Trade.PAINTER, "штукатурка стін (до 2 см)",
+                Unit.M2, plaster, "0.95", "15"));
+        StoredMaterialParams stored = new StoredMaterialParams(
+                null, Map.of(), Map.of(walls.getId(), new BigDecimal("10")));
+
+        MaterialCalculationResponse result = calculate(stored, NO_WASTE, null, null, null);
+
+        assertThat(result.parameters()).isEmpty();
+        assertThat(only(result).baseQuantity()).isEqualByComparingTo("190"); // 20 × 10 × 0,95
+        // And it rides back, so the field opens with HIS figure on a device that has never asked.
+        assertThat(result.answers().thicknesses()).containsEntry(walls.getId(), new BigDecimal("10"));
+    }
+
+    /**
+     * The query string is what the SCREEN is holding, so it wins — and only for the question it
+     * answers: the other box's розгортка from last week may not fall out of the calculation just
+     * because this tap was about a different card.
+     */
+    @Test
+    void aRequestParameterOverridesTheStoredAnswerForThatPositionAlone() {
+        Material sheet = material("GKL_SHEET", "Лист ГКЛ", Unit.M2, null, null);
+        EstimateItem straight = item("Монтаж короба (прямого)", Unit.LINEAR_METER, "10", Trade.DRYWALL);
+        EstimateItem round = item("Монтаж короба (радіусного)", Unit.LINEAR_METER, "10", Trade.DRYWALL);
+        given(List.of(straight, round),
+                List.of(sectionNorm(Trade.DRYWALL, "монтаж короба (прямого)",
+                                Unit.LINEAR_METER, sheet, "1.0"),
+                        sectionNorm(Trade.DRYWALL, "монтаж короба (радіусного)",
+                                Unit.LINEAR_METER, sheet, "1.0")));
+        StoredMaterialParams stored = new StoredMaterialParams(null,
+                Map.of(straight.getId(), new BigDecimal("0.5"),
+                        round.getId(), new BigDecimal("0.8")),
+                Map.of());
+
+        CalculatedMaterialLine line = calculate(stored, NO_WASTE, null,
+                straight.getId() + ":1.2", null).materials().get(0);
+
+        // 10 × 1,2 (the tap) + 10 × 0,8 (last week) — not 12, and not 20.
+        assertThat(line.baseQuantity()).isEqualByComparingTo("20");
+        assertThat(line.sources()).extracting(src -> src.param().stripTrailingZeros())
+                .containsExactlyInAnyOrder(new BigDecimal("1.2"), new BigDecimal("0.8"));
+    }
+
+    /** A perimeter is one number for the estimate, and it is remembered the same way. */
+    @Test
+    void aStoredPerimeterAnswersTheEstimateWideQuestion() {
+        Material track = material("PROFILE_UD", "Профіль UD 27×28", Unit.LINEAR_METER, null, null);
+        given(item("Монтаж на стелю", Unit.M2, "20", Trade.DRYWALL),
+                perimeterNorm(Trade.DRYWALL, "монтаж на стелю", Unit.M2, track, "1.05"));
+        StoredMaterialParams stored =
+                new StoredMaterialParams(new BigDecimal("20"), Map.of(), Map.of());
+
+        MaterialCalculationResponse result = calculate(stored, NO_WASTE, null, null, null);
+
+        assertThat(result.parameters()).isEmpty();
+        assertThat(result.perimeter()).isEqualByComparingTo("20");
+        assertThat(only(result).baseQuantity()).isEqualByComparingTo("21");
+    }
+
     // --- habits that rescale a shipped coefficient (V137) -------------------------------------
 
     /**
@@ -903,6 +976,15 @@ class MaterialCalculatorServiceTest {
 
     private MaterialCalculationResponse calculate(BigDecimal waste, BigDecimal perimeter,
                                                   String sections, String thicknesses) {
+        return calculate(StoredMaterialParams.EMPTY, waste, perimeter, sections, thicknesses);
+    }
+
+    /** The stub lives here rather than in a {@code @BeforeEach}: strict stubs would report it
+     *  unnecessary for the tests that never reach the read path. */
+    private MaterialCalculationResponse calculate(StoredMaterialParams stored, BigDecimal waste,
+                                                  BigDecimal perimeter, String sections,
+                                                  String thicknesses) {
+        when(paramService.load(ESTIMATE)).thenReturn(stored);
         return service.calculate(ESTIMATE, OWNER, waste, perimeter, sections, thicknesses);
     }
 
