@@ -227,6 +227,29 @@ screen's own opening request is now asserted on the exact call against a fixed c
   snapshot is restored today, and `cancelQueries` closes the race that actually bit — a GET already
   in flight landing after the patch. Undoing one row out of a list whose OTHER rows may have moved
   meanwhile is a different and larger change, and nothing has reported it.
+
+---
+
+## The follow-up: `cancelQueries` everywhere, not only where the review pointed
+
+P-31 named the shopping list, so the first pass fixed the shopping list and «Мої гроші». Asked
+afterwards whether the same shape existed elsewhere, it did — in **nine** more hooks: the estimate
+editor (10 sites), own templates (7), the catalog (4), objects (4), payments and receipts (6),
+measurements (6), notes (3), clients (2).
+
+Every one of them patches the cache inside `offlineMutate`'s `optimistic` callback, which made that
+the seam: it takes an optional **`cancel`** and awaits it immediately before the patch. Each call
+site names the keys it actually writes — the estimate's create cancels the detail AND the object's
+estimate list, `useUpdateEstimate` the detail and every `project-estimates`, the rest one key each.
+The markup is the one patch outside `offlineMutate` (it queues absolute prices, P-41) and cancels by
+hand.
+
+**`src/lib/outbox/cancelCoverage.test.ts` is why this is the real fix.** A missing `cancel` is
+invisible: the code type-checks, lints, and works on every fast connection and in every test,
+because the race needs a slow request to lose to. So the test reads the source and asks that every
+`offlineMutate` whose `optimistic` touches the cache carries one; an op that patches nothing is
+exempt by saying so (`optimistic: () => undefined`). Verified red by deleting one `cancel` — it
+names the file and line.
 - **`touch.test.ts` asserting CSS as text** (P-32's last bullet). It is a trade the test's own
   docstring states: there is nothing to render that would prove a base-layer rule is shipped, and the
   failure mode of losing one is invisible. A reformat breaking it is the price.
