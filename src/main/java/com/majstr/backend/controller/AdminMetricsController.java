@@ -16,6 +16,7 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import java.util.Locale;
 
 @RestController
 @RequestMapping("/api/admin/metrics")
@@ -66,7 +67,7 @@ public class AdminMetricsController {
     /** Accepts shapes like "30d", "7d", "90d". Falls back to 30. */
     private int parsePeriodDays(String period) {
         if (period == null || period.isBlank()) return 30;
-        String trimmed = period.trim().toLowerCase();
+        String trimmed = period.trim().toLowerCase(Locale.ROOT);
         if (trimmed.endsWith("d")) {
             trimmed = trimmed.substring(0, trimmed.length() - 1);
         }

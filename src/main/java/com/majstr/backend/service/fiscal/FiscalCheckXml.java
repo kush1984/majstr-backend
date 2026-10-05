@@ -63,7 +63,9 @@ final class FiscalCheckXml {
                 text(root, "ORGNM", "SELLER", "ORGNAME"),
                 issuedAt(root),
                 total(root),
-                lines(root));
+                lines(root),
+                // The tax service answered, so these ARE its lines — even if there are none of them.
+                FiscalReceipt.PositionSource.LOOKUP);
     }
 
     // ---- structure ------------------------------------------------------------

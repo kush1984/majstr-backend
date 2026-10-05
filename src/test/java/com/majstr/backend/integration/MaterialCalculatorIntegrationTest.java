@@ -170,8 +170,10 @@ class MaterialCalculatorIntegrationTest extends IntegrationTestBase {
     @Test
     void theShippedPaintNormAgreesWithTheDefaultsItIsRescaledAgainst() {
         // The INTERIOR pair only. V138's `PAINT_FACADE` is rescaled by the same habit (the ratio
-        // travels, not the absolute) but it was written against its OWN basis — 6,5 м²/л on a
-        // rendered wall, not 9 — so it is no part of this statement-made-twice.
+        // travels, not the absolute) but it was written against its OWN basis — 0,35 л/м² over the
+        // two coats every manufacturer specifies, i.e. ≈5,7 м²/л per coat on a rendered wall, not 9
+        // (review B-49 corrected «6,5», which was in neither the migration nor the arithmetic) — so
+        // it is no part of this statement-made-twice.
         List<BigDecimal> coefficients = jdbc.queryForList("""
                 SELECT DISTINCT n.qty_per_unit FROM material_norm n
                   JOIN material m ON m.id = n.material_id
@@ -434,10 +436,13 @@ class MaterialCalculatorIntegrationTest extends IntegrationTestBase {
                 estimateId, ownerId, BigDecimal.ZERO, null, itemId + ":0.10", null);
 
         assertThat(answered.parameters()).isEmpty();
-        // 30 м.п. × 0,10 м = 3 м² of розгортка; × 0,22 л/м² = 0,66 л, × 0,15 = 0,45 л.
+        // 30 м.п. × 0,10 м = 3 м² of розгортка; × 0,22 л/м² = 0,66 л of paint.
         assertThat(line(answered, "Фарба інтер").baseQuantity()).isEqualByComparingTo("0.66");
-        assertThat(line(answered, "Ґрунтовка глибокого").baseQuantity())
-                .isEqualByComparingTo("0.45");
+        // …and NO primer: nobody primes a foam or PU baguette, which is the reason V139 itself left
+        // primer off an ordinary door and then put it on the mouldings (review §3, row 11, V145).
+        assertThat(answered.materials())
+                .as("a moulding is not primed")
+                .allSatisfy(m -> assertThat(m.name()).doesNotStartWith("Ґрунтовка глибокого"));
     }
 
     /**

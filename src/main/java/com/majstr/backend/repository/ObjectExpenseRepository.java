@@ -71,4 +71,7 @@ public interface ObjectExpenseRepository extends JpaRepository<ObjectExpense, UU
         ExpenseCategory getCategory();
         java.math.BigDecimal getTotal();
     }
+
+    /** Whether the object carries any recorded cost — the delete guard (review B-70). */
+    boolean existsByObjectId(UUID objectId);
 }

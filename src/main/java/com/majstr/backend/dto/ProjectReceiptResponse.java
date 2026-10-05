@@ -14,6 +14,10 @@ import java.util.UUID;
  * carries the same printed fiscal identity, so this is very probably the same paper filed twice. It
  * names WHERE the twin is, because since B-04 it can be in the other table — a receipt attached to
  * an act. Nothing is blocked; the master decides.</p>
+ *
+ * <p><b>It goes silent once {@code billedOnActId} is set</b> (review B-53). The reconciler has
+ * already answered the question the warning asks, and the row now says «врахований в акті № N» —
+ * two messages about one fact, one of them stale, is worse than either alone.</p>
  */
 public record ProjectReceiptResponse(
         UUID id,
@@ -48,7 +52,13 @@ public record ProjectReceiptResponse(
     public static ProjectReceiptResponse from(ProjectReceipt r, ReceiptDuplicateRef duplicateOf,
                                               String billedOnActNumber) {
         return new ProjectReceiptResponse(r.getId(), r.getLabel(), r.getAmount(), r.getIssuedAt(),
-                r.getStorageKey() != null, r.isReimbursable(), r.getExpenseId() != null, duplicateOf,
+                r.getStorageKey() != null, r.isReimbursable(), r.getExpenseId() != null,
+                // ONCE SETTLED, the duplicate warning is replaced by the fact (review B-53): a
+                // receipt an act has billed keeps its twin forever, and «схоже, це той самий чек»
+                // over a question already answered reads as a problem the master has to go and fix.
+                // `billedOnActId` + `billedOnActNumber` say «врахований в акті № N» instead, which
+                // is what the twin WAS warning about.
+                r.getBilledOnActId() != null ? null : duplicateOf,
                 r.getBilledOnActId(), billedOnActNumber, r.getSortOrder());
     }
 }

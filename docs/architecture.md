@@ -187,6 +187,29 @@ so two concurrent portal sign requests can't both win — the loser gets 409 via
 the `OptimisticLockingFailureException` handler. Estimates also have an optional
 `name` (V25) to tell variants apart (econom/premium), editable while not signed.
 
+### `doc_hash` is tamper EVIDENCE, and it is not reproducible today
+
+Signing a work act stores `work_act.doc_hash` — SHA-256 of the canonical (unstamped, no
+«ДОВІДКОВО») PDF, computed by `ActSignedCopyService.computeDocHash` on both sign paths. It is a
+cheap stamp printed in the footer, and nothing in the product re-verifies it.
+
+**Nothing CAN re-verify it, either** (review B-76), and that is worth knowing before anyone builds
+a verifier on top:
+
+- OpenPDF writes a time-based `/ID` and `CreationDate` into every document, so two renders of the
+  same act a second apart hash differently.
+- The canonical render reads LIVE data — the contractor's requisites, IBAN and logo, the client's
+  and the project's and the estimates' names. A master who corrects his IBAN changes the render of
+  every act he has ever signed.
+- The PDF's own layout is part of the bytes, so any change to `WorkActPdfService` does too. One such
+  change has already happened: the receipts caption prints `billedAmount()` since review B-31d, so
+  re-rendering an old SIGNED act that carries a partial return cannot reproduce its stored hash.
+
+The honest fix is a canonical JSON snapshot of every printed value, hashed instead of the bytes and
+rendered from on the way back — recorded as an open question rather than half-built. Until then:
+treat a stored hash as evidence that a document was signed, never as something to compare against a
+fresh render.
+
 ### Spring Security 7 wiring
 
 `SecurityConfig.filterChain` uses the lambda DSL only (Spring 7 removed

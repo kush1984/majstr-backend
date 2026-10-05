@@ -1,6 +1,5 @@
 package com.majstr.backend.service.importer;
 
-import com.majstr.backend.config.FiscalQrProperties;
 import com.majstr.backend.dto.EstimateImportParseResponse;
 import com.majstr.backend.dto.EstimateResponse;
 import com.majstr.backend.dto.ReceiptItemsCommitRequest;
@@ -14,6 +13,7 @@ import com.majstr.backend.feature.FeatureGuard;
 import com.majstr.backend.dto.EstimateImportParseResponse.ParsedItem;
 import com.majstr.backend.repository.UserRepository;
 import com.majstr.backend.service.fiscal.FiscalQrService;
+import com.majstr.backend.service.fiscal.FiscalReceipt;
 import com.majstr.backend.service.EstimateService;
 import com.majstr.backend.service.EstimateService.ImportEstimateData.ImportItem;
 import lombok.RequiredArgsConstructor;
@@ -42,7 +42,6 @@ public class ReceiptImportService {
     private final EstimateExtractor extractor;
     private final EstimateService estimateService;
     private final FiscalQrService fiscalQr;
-    private final FiscalQrProperties fiscalQrProps;
 
     /** Parse a receipt photo into a review proposal. Nothing is written; the bytes are discarded. */
     public EstimateImportParseResponse parse(UUID ownerId, UUID estimateId,
@@ -73,16 +72,18 @@ public class ReceiptImportService {
         if (estimateService.get(estimateId, ownerId).status() == EstimateStatus.SIGNED) {
             throw new EstimateSignedException();
         }
-        List<ParsedItem> items = fiscalQr.read(payload)
-                .map(r -> ReceiptLines.toParsedItems(r.items()))
+        FiscalReceipt read = fiscalQr.read(payload)
                 .orElseThrow(() -> new CatalogImportException("error.fiscal-qr.unreadable"));
+        List<ParsedItem> items = ReceiptLines.toParsedItems(read.items());
         if (items.isEmpty()) {
-            // With the lookup switched off the QR carries a total and a date and NO positions, so
-            // «позицій у чеку немає» blames the paper for our configuration (B-23). Distinct code,
-            // because the master's next move differs: retry with a photo, not with another QR.
-            throw new CatalogImportException(fiscalQrProps.enabled()
-                    ? "error.fiscal-qr.no-items"
-                    : "error.fiscal-qr.lookup-disabled");
+            // Three different reasons, three different next moves (B-23 and its B-54 remainder).
+            // «позицій у чеку немає» used to be shown for all of them, which blames the paper for
+            // our configuration or for the tax service's outage.
+            throw new CatalogImportException(switch (read.positionSource()) {
+                case DISABLED, NOT_ASKED -> "error.fiscal-qr.lookup-disabled";
+                case UNAVAILABLE -> "error.fiscal-qr.lookup-unavailable";
+                case LOOKUP -> "error.fiscal-qr.no-items";
+            });
         }
         return new EstimateImportParseResponse(items, null);
     }

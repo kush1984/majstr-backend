@@ -22,12 +22,14 @@ import java.util.UUID;
  * the card asks again, rather than storing a second spelling of «unanswered». That is also why the
  * perimeter needs no three-valued dance: null leaves it, 0 forgets it, a figure sets it.</p>
  *
- * <p>Bounds are the service's own {@code MAX_PER_POSITION}: it is a stray extra digit they catch,
- * not a rule of building. A key naming a position that is not in this estimate is IGNORED, never
- * refused — a line deleted between the tap and the request is the ordinary way that happens.</p>
+ * <p>Bounds are the service's own, and there is one PER QUESTION since review B-49: a розгортка is
+ * metres and a thickness is MILLIMETRES, so a shared 1000 bounded neither — a screed typed as 400
+ * instead of 40 passed and put 800 kg/m² of dry mix on the shopping list. A key naming a position
+ * that is not in this estimate is IGNORED, never refused — a line deleted between the tap and the
+ * request is the ordinary way that happens.</p>
  */
 public record MaterialParamsRequest(
         @DecimalMin("0") @DecimalMax("1000") BigDecimal perimeter,
-        Map<UUID, @NotNull @DecimalMin("0") @DecimalMax("1000") BigDecimal> sections,
-        Map<UUID, @NotNull @DecimalMin("0") @DecimalMax("1000") BigDecimal> thicknesses
+        Map<UUID, @NotNull @DecimalMin("0") @DecimalMax("5") BigDecimal> sections,
+        Map<UUID, @NotNull @DecimalMin("0") @DecimalMax("150") BigDecimal> thicknesses
 ) {}

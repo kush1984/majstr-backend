@@ -130,6 +130,33 @@ class ActLineBinder {
         requireStillValid(act, itemRepository.findByWorkActIdOrderBySortOrderAscIdAsc(act.getId()));
     }
 
+    /**
+     * Re-freeze {@code cumulative_before} from what the object's SIGNED acts close TODAY (B-62).
+     *
+     * <p>The freeze at save time is stable while an act stays open, because the one-open-act rule
+     * means no other act can be signed beside it. A REJECTED act breaks that: it is not «open», so
+     * the master can create, sign and be paid for further acts while it sits there — and when he
+     * brings it back to DRAFT, every «виконано раніше» on it is the figure from before those acts
+     * existed. Left alone, the act editor, the PDF and the «ДОВІДКОВО» block would all quote it.</p>
+     *
+     * <p>Deliberately NOT a refusal when the refreshed figure no longer leaves room for the act's
+     * own quantity: DRAFT is exactly where the master corrects it, {@code exceedsEstimate} now
+     * tells him which line, and {@link #requireStillValid} refuses at publish and at both
+     * signatures. Refusing the reopen instead would leave him a rejected act he can neither fix nor
+     * delete.</p>
+     */
+    void refreshCumulativeBefore(WorkAct act) {
+        List<WorkActItem> items = itemRepository.findByWorkActIdOrderBySortOrderAscIdAsc(act.getId());
+        Map<UUID, BigDecimal> done = signedDone(act.getProject().getId());
+        BigDecimal zero = BigDecimal.ZERO.setScale(QUANTITY_SCALE);
+        for (WorkActItem item : items) {
+            if (item.getEstimateItemId() == null) {
+                continue; // an additional work or an adjustment closes nothing, so it accrues nothing
+            }
+            item.setCumulativeBefore(done.getOrDefault(item.getEstimateItemId(), zero));
+        }
+    }
+
     /** How much of each estimate line the object's SIGNED acts have already closed. */
     Map<UUID, BigDecimal> signedDone(UUID projectId) {
         Map<UUID, BigDecimal> map = new HashMap<>();

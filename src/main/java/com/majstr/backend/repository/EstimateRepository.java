@@ -32,6 +32,9 @@ public interface EstimateRepository extends JpaRepository<Estimate, UUID> {
      *  per-project estimate limit (deleting one frees a slot). */
     long countByProjectId(UUID projectId);
 
+    /** Whether the object carries a signed document at all — the delete guard (review B-70). */
+    boolean existsByProjectIdAndStatus(UUID projectId, EstimateStatus status);
+
     /**
      * How many of these estimates are not settled yet — the shopping list says out loud that its
      * quantities can still move. A hint on a screen, never a gate.
@@ -111,47 +114,82 @@ public interface EstimateRepository extends JpaRepository<Estimate, UUID> {
     List<com.majstr.backend.dto.SourceCount> countOwnersByStatusAndUtmSource(@Param("status") EstimateStatus status);
 
     /**
-     * For each given project, the latest estimate (by createdAt) with its status
-     * and total. The total sums each line rounded to kopiykas (HALF_UP, matching
-     * EstimateService), so subtotals always add up. Projects without an estimate
-     * are simply absent from the result. One query for the whole list — no N+1.
+     * The headline figure of each given project's card: <b>Σ SIGNED ∧ counted</b> when the object
+     * has any, otherwise its latest non-ADDENDUM estimate's status and total. The total sums each
+     * line rounded to kopiykas (HALF_UP, matching EstimateService), so subtotals always add up.
+     * Projects without an estimate are simply absent from the result. One query for the whole list
+     * — no N+1.
+     *
+     * <p>It used to be «the latest estimate by createdAt, whatever it is» (review B-67), and
+     * «whatever it is» became a problem the day work acts started WRITING estimates: signing an act
+     * with additional works creates a SIGNED ADDENDUM, which is now the newest row, so an object
+     * with an 10 800 ₴ contract and 1 000 ₴ of extras showed «SIGNED · 1 000 ₴» on its card. The
+     * object-economy tab meanwhile said 11 800, because it sums {@link #sumIncomeCounted}. Two
+     * screens, one object, two contract figures.</p>
+     *
+     * <p>So the sum branch is deliberately the SAME definition as {@code sumIncomeCounted}
+     * (SIGNED ∧ {@code count_in_economy}, ADDENDUMs included — an addendum IS part of the
+     * contract), and the fallback exists only for an object with nothing signed yet, where the
+     * latest draft is genuinely the best answer to «how big is this job». The ADDENDUM is excluded
+     * from the fallback because an object can hold one with no signed parent left counting, and
+     * «SIGNED 1 000 ₴» is exactly the misread we are removing.</p>
      *
      * <p>Returns rows of {@code [project_id (UUID), status (String), total (BigDecimal)]}.
      * Postgres-specific (DISTINCT ON); callers must pass a non-empty collection.</p>
      */
     @Query(value = """
-            SELECT le.project_id, le.status,
-                   COALESCE(SUM(i.line_total), 0) AS total
-            FROM (
-                SELECT DISTINCT ON (e.project_id) e.id, e.project_id, e.status
-                FROM estimates e
+            WITH counted AS (
+                SELECT e.project_id, SUM(i.line_total) AS total
+                FROM estimates e JOIN estimate_items i ON i.estimate_id = e.id
                 WHERE e.project_id IN (:projectIds)
-                ORDER BY e.project_id, e.created_at DESC, e.id DESC
-            ) le
-            LEFT JOIN estimate_items i ON i.estimate_id = le.id
-            GROUP BY le.project_id, le.status
+                  AND e.status = 'SIGNED' AND e.count_in_economy = true
+                GROUP BY e.project_id
+            ), latest AS (
+                SELECT le.project_id, le.status, COALESCE(SUM(i.line_total), 0) AS total
+                FROM (
+                    SELECT DISTINCT ON (e.project_id) e.id, e.project_id, e.status
+                    FROM estimates e
+                    WHERE e.project_id IN (:projectIds) AND e.kind <> 'ADDENDUM'
+                    ORDER BY e.project_id, e.created_at DESC, e.id DESC
+                ) le
+                LEFT JOIN estimate_items i ON i.estimate_id = le.id
+                GROUP BY le.project_id, le.status
+            )
+            SELECT COALESCE(c.project_id, l.project_id) AS project_id,
+                   CASE WHEN c.project_id IS NOT NULL THEN 'SIGNED' ELSE l.status END AS status,
+                   CASE WHEN c.project_id IS NOT NULL THEN c.total ELSE l.total END AS total
+            FROM counted c FULL OUTER JOIN latest l ON l.project_id = c.project_id
             """, nativeQuery = true)
     List<Object[]> findLatestEstimateSummaries(@Param("projectIds") Collection<UUID> projectIds);
 
     /**
-     * Sum of the latest-estimate totals of the owner's projects completed since
-     * {@code monthStart}. Completed projects without an estimate contribute 0.
+     * Sum of the contract figures of the owner's projects completed since {@code monthStart} —
+     * «завершено цього місяця» on the dashboard. Same per-object definition as
+     * {@link #findLatestEstimateSummaries} (B-67), so the dashboard cannot disagree with the cards
+     * it links to. Completed projects without an estimate contribute 0.
+     *
+     * <p>Correlated subqueries rather than one grouped pass: a master's completed-this-month list
+     * is a handful of objects, and the alternative reads as two joins that happen to mean
+     * «unless».</p>
      */
     @Query(value = """
             SELECT COALESCE(SUM(t.total), 0) FROM (
-                SELECT le.project_id,
-                       COALESCE(SUM(i.line_total), 0) AS total
-                FROM (
-                    SELECT DISTINCT ON (e.project_id) e.id, e.project_id
-                    FROM estimates e
-                    JOIN projects p ON p.id = e.project_id
-                    WHERE p.owner_id = :ownerId
-                      AND p.status = 'COMPLETED'
-                      AND p.completed_at >= :monthStart
-                    ORDER BY e.project_id, e.created_at DESC, e.id DESC
-                ) le
-                LEFT JOIN estimate_items i ON i.estimate_id = le.id
-                GROUP BY le.project_id
+                SELECT COALESCE(
+                    (SELECT SUM(i.line_total)
+                     FROM estimates e JOIN estimate_items i ON i.estimate_id = e.id
+                     WHERE e.project_id = p.id
+                       AND e.status = 'SIGNED' AND e.count_in_economy = true),
+                    (SELECT COALESCE(SUM(i.line_total), 0)
+                     FROM estimate_items i
+                     WHERE i.estimate_id = (
+                         SELECT e2.id FROM estimates e2
+                         WHERE e2.project_id = p.id AND e2.kind <> 'ADDENDUM'
+                         ORDER BY e2.created_at DESC, e2.id DESC LIMIT 1)),
+                    0) AS total
+                FROM projects p
+                WHERE p.owner_id = :ownerId
+                  AND p.status = 'COMPLETED'
+                  AND p.completed_at >= :monthStart
             ) t
             """, nativeQuery = true)
     BigDecimal sumLatestEstimateTotalForCompletedSince(@Param("ownerId") UUID ownerId,
@@ -200,6 +238,24 @@ public interface EstimateRepository extends JpaRepository<Estimate, UUID> {
             """, nativeQuery = true)
     BigDecimal sumIncomeCounted(@Param("projectId") UUID projectId);
 
+    /**
+     * «За договором» <b>as it stood at a moment in time</b> — the contract an act that was signed
+     * back then was measured against (review B-77).
+     *
+     * <p>Re-downloading act 3 after act 4 was signed printed act 3's «ДОВІДКОВО» block against
+     * today's contract and today's accepted total, so a document the client already holds said
+     * something different every time it was rendered. An estimate signed AFTER this act was not
+     * part of the deal the act closed.</p>
+     */
+    @Query(value = """
+            SELECT COALESCE(SUM(i.line_total), 0)
+            FROM estimates e JOIN estimate_items i ON i.estimate_id = e.id
+            WHERE e.project_id = :projectId AND e.count_in_economy = true AND e.status = 'SIGNED'
+              AND e.signed_at <= :asOf
+            """, nativeQuery = true)
+    BigDecimal sumIncomeCountedAsOf(@Param("projectId") UUID projectId,
+                                    @Param("asOf") java.time.Instant asOf);
+
     /** Sum of deposits (завдаток) across the object's counted SIGNED estimates — the
      *  "received from client" cash-flow figure. Legacy: superseded by {@code
      *  PaymentReceiptRepository.sumByProjectId} (payments-economy-portal iteration, then V100's
@@ -236,8 +292,13 @@ public interface EstimateRepository extends JpaRepository<Estimate, UUID> {
      * com.majstr.backend.service.ObjectExpenseService#signedEstimatePanels}.</p>
      *
      * <p><b>The RATE columns</b> ({@code markup_rate}/{@code discount_rate}) carry the percent each
-     * adjustment was actually written at, and NULL when several «% від кошторису» lines disagree —
-     * one figure would then be a number nobody's estimate carries. They are sent rather than derived
+     * adjustment was actually written at, and NULL unless there is EXACTLY ONE «% від кошторису»
+     * line of that direction and no FROZEN one — one figure would otherwise be a number nobody's
+     * estimate carries. That is the portal's rule verbatim (review B-75): this query used to accept
+     * several lines as long as they happened to share a rate, and to read a rate off a frozen
+     * consolidated line, whose stored percent was measured against a sum that is not on this sheet.
+     * The master's panel and the client's portal print the SAME adjustment, so they may not disagree
+     * about whether it has a rate. They are sent rather than derived
      * on the client because such a line is measured against its OWN TYPE's subtotal: dividing the
      * amount by works+materials is what made the panel print «14,776%» for a discount the master had
      * typed as 15. (Note for whoever edits the SQL below: an apostrophe inside a {@code --} comment
@@ -264,17 +325,23 @@ public interface EstimateRepository extends JpaRepository<Estimate, UUID> {
                    COALESCE(SUM(CASE WHEN i.unit = 'PERCENT' AND i.line_total < 0
                                        AND (i.percent_base_kind = 'TOTAL' OR i.base_origin_label IS NOT NULL)
                                   THEN i.line_total ELSE 0 END), 0) AS discount,
-                   CASE WHEN COUNT(DISTINCT CASE WHEN i.unit = 'PERCENT' AND i.line_total > 0
-                                                   AND (i.percent_base_kind = 'TOTAL' OR i.base_origin_label IS NOT NULL)
-                                              THEN i.quantity END) = 1
+                   CASE WHEN COUNT(CASE WHEN i.unit = 'PERCENT' AND i.line_total > 0
+                                          AND i.percent_base_kind = 'TOTAL'
+                                     THEN 1 END) = 1
+                             AND COUNT(CASE WHEN i.unit = 'PERCENT' AND i.line_total > 0
+                                              AND i.base_origin_label IS NOT NULL
+                                         THEN 1 END) = 0
                         THEN MIN(CASE WHEN i.unit = 'PERCENT' AND i.line_total > 0
-                                        AND (i.percent_base_kind = 'TOTAL' OR i.base_origin_label IS NOT NULL)
+                                        AND i.percent_base_kind = 'TOTAL'
                                    THEN i.quantity END) END AS markup_rate,
-                   CASE WHEN COUNT(DISTINCT CASE WHEN i.unit = 'PERCENT' AND i.line_total < 0
-                                                   AND (i.percent_base_kind = 'TOTAL' OR i.base_origin_label IS NOT NULL)
-                                              THEN i.quantity END) = 1
+                   CASE WHEN COUNT(CASE WHEN i.unit = 'PERCENT' AND i.line_total < 0
+                                          AND i.percent_base_kind = 'TOTAL'
+                                     THEN 1 END) = 1
+                             AND COUNT(CASE WHEN i.unit = 'PERCENT' AND i.line_total < 0
+                                              AND i.base_origin_label IS NOT NULL
+                                         THEN 1 END) = 0
                         THEN MIN(CASE WHEN i.unit = 'PERCENT' AND i.line_total < 0
-                                        AND (i.percent_base_kind = 'TOTAL' OR i.base_origin_label IS NOT NULL)
+                                        AND i.percent_base_kind = 'TOTAL'
                                    THEN i.quantity END) END AS discount_rate,
                    e.kind
             FROM estimates e
@@ -287,11 +354,16 @@ public interface EstimateRepository extends JpaRepository<Estimate, UUID> {
 
     /** The object's SIGNED copies made with a MARKUP — the only estimates that can report a crew
      *  margin. A DISCOUNT duplicate is excluded at the query, not later: it is a cheaper offer to
-     *  the client, not a crew sheet. */
+     *  the client, not a crew sheet.
+     *
+     *  <p>{@code count_in_economy} is part of the condition (review B-75): a copy SUPERSEDED by a
+     *  later renegotiation is SIGNED forever, and its panel went on reporting «Твоя націнка» on a
+     *  deal that no longer counts anywhere else on the tab — a margin the master will never see.</p> */
     @Query("""
             SELECT e FROM Estimate e
             WHERE e.project.id = :projectId
               AND e.status = com.majstr.backend.entity.EstimateStatus.SIGNED
+              AND e.countInEconomy = true
               AND e.markupPercent > 0
             """)
     List<Estimate> findSignedMarkupDuplicates(@Param("projectId") UUID projectId);

@@ -60,6 +60,9 @@ class ProjectPortalServiceTest {
     @Mock WorkActReceiptRepository workActReceiptRepository;
     @Mock ActReceiptCompleteness receiptCompleteness;
     @Mock ActLineBinder lineBinder;
+    @Mock ActFinalGuard finalGuard;
+    @Mock ActAdvanceGuard advanceGuard;
+    @Mock ActReceiptDuplicateGuard receiptDuplicateGuard;
     @InjectMocks ProjectPortalService portalService;
 
     private final UUID projectId = UUID.randomUUID();
@@ -234,6 +237,24 @@ class ProjectPortalServiceTest {
         assertThatThrownBy(() -> portalService.updateEconomy(
                 projectId, List.of(draft.getId()), false, ownerId))
                 .isInstanceOf(InvalidEstimateStatusException.class);
+    }
+
+    @Test
+    void updateEconomy_refusesASupersededEstimate_soTheClientNeverSeesOneJobTwice() {
+        // B-66: a SUPERSEDED parent is SIGNED forever and merely uncounted, so the SIGNED-only guard
+        // let the master share both halves of a renegotiation — the client saw 50 000 + 47 500 for
+        // one job, and the payments card measured his «Залишок» against the pair.
+        Project p = project(true, null);
+        Estimate superseded = economyEstimate(p, EstimateStatus.SIGNED, false);
+        superseded.setCountInEconomy(false);
+        given(projectService.loadOwned(projectId, ownerId)).willReturn(p);
+        given(estimateRepository.findByProjectIdOrderByCreatedAtDesc(projectId))
+                .willReturn(List.of(superseded));
+
+        assertThatThrownBy(() -> portalService.updateEconomy(
+                projectId, List.of(superseded.getId()), false, ownerId))
+                .isInstanceOf(InvalidEstimateStatusException.class);
+        assertThat(superseded.isEconomyVisible()).isFalse();
     }
 
     @Test

@@ -300,8 +300,10 @@ one-line summary — keep the item in the file as a record.
   the "I typed it wrong" case for free (live FK, no bulk op needed).
 
 ### Metric month boundary is UTC, not the contractor's local month
-- **Status:** OPEN — narrowed, not in progress (label corrected 2026-09-24: the cash-flow half
-  shipped, nobody is working on the rest). Promoted 2026-09-17 (personal-cashflow iteration). Period filters
+- **Status:** OPEN — **narrowed again 2026-10-01 to the ADMIN `MetricsService` alone.** The
+  cash-flow half shipped 2026-09-17; `DashboardService` moved to `LocalizationConfig.ZONE` with
+  review B-67. What is left is admin-facing, where a couple of hours at a month boundary costs
+  nobody money. Promoted 2026-09-17 (personal-cashflow iteration). Period filters
   (тиждень / місяць / рік) are the whole point of «Мої гроші», so a UTC boundary is no longer a
   couple-of-hours curiosity: on the 1st at 01:00 Kyiv «цей місяць» would open on the previous one.
   `LocalizationConfig.ZONE` (`Europe/Kyiv`) already exists and is what the new default ranges use.
@@ -2972,7 +2974,16 @@ one-line summary — keep the item in the file as a record.
   `GENERAL`, a catalog row is `OTHER`.
 
 ### Review round 3 (the money audit) — what §0 answered, and what it deliberately did not
-- **Status:** IN_PROGRESS — §0 built and green (uncommitted); §1-§4 untouched.
+- **Status:** RESOLVED (2026-10-05) — every section of this round is built. §0 committed
+  (`35e314c`); **§1, §2, §3 and §4 closed 2026-10-01** (§1's only remaining item was B-62; §2's were
+  B-66…B-70; §3 is the crew margin B-71…B-75 and §4 the money should-fixes B-76…B-85, written up in
+  [iteration-money-audit-3-crew-and-should-fix.md](iteration-money-audit-3-crew-and-should-fix.md));
+  **§5-§6 (PWA, P-33…P-52) closed 2026-10-05**, written up in
+  [iteration-review-pwa.md](iteration-review-pwa.md) — P-33/34/35 had shipped with §0 and P-39's two
+  estimate-side call sites with §3, the rest in that pass.
+  **What the round deliberately did NOT do keeps its own items below** — B-76, B-73's `crew_priced`,
+  B-78's cross-act advance rule, B-84's `ExpenseRequest.source`, the shared parity fixture, and
+  P-31's per-item shopping undo (named in the PWA iteration doc).
 - **Since:** 2026-09-25, `C:\Work\prompts\FIXES-3.md` (backend `170a419`, PWA `cd43bec`).
 - **Context:** the owner took the whole §0 «fix these first» list, both repos — the ten items where
   money is wrong or lost today. Written up in
@@ -2989,9 +3000,121 @@ one-line summary — keep the item in the file as a record.
     is an info line beside it.
   - **B-70** — deleting an object that carries signed documents or money is **409 + «Архівувати»**,
     not a soft delete. Decided, **not built** (see its own item below).
+  - **B-72** (asked 2026-10-01) — a «%» line added to a crew copy AFTERWARDS is **frozen at its
+    client amount** in the crew view, and a NEGATIVE one at zero: a discount the master decides to
+    give comes out of his own margin, not the crew's pay. Built, both repos.
+  - **B-74** (asked 2026-10-01) — a markup copy's default name carries **no percent**, and every
+    public surface **strips** a trailing rate from the names already stored. Built, both repos.
+  - **B-42** (asked 2026-10-01) — V140's 50/50 ties are **left as they are**: the re-filing is
+    applied, V140 recorded nothing about which rows it touched, and an undo would also move the ones
+    it guessed right. The rule for any future re-run is corrected in V144's header.
+  - **B-51** (asked 2026-10-01) — primer belongs to the **standalone «Грунтування» position only**
+    (option a); the per-work `PRIMER_DEEP` rows come off. Decided, **not built** — it is a data
+    migration over the shipped norms and has its own item below.
+
+### Review round 2 (`FIXES-2.md`) — §1 done, §2-§5 open
+- **Status:** RESOLVED (2026-10-05) — all five sections built. §1 green 2026-10-01 (V143); §2
+  (B-41…B-54) and §3 (the norm data, V145) 2026-10-04, written up in
+  [iteration-money-audit-2-should-fix.md](iteration-money-audit-2-should-fix.md); **§4-§5 (PWA,
+  P-18…P-32) 2026-10-05**, in [iteration-review-pwa.md](iteration-review-pwa.md). Two of §2's asks
+  are deliberately NOT done and say so in the code: B-46's validation annotations and
+  primitive/wrapper rendering (the snapshot is read by a hand-written parser in the other repo, and
+  the rule that matters is already in CLAUDE.md), and the markup's silent skip of a «%» line (the
+  editor's picker cannot produce it). §5 has two deliberate non-fixes of its own, both named in the
+  PWA doc: a per-item undo for the shopping list's optimistic patch, and `touch.test.ts` asserting
+  CSS as text.
+- **Since:** 2026-09-24, `C:\Work\prompts\FIXES-2.md` (backend `8726a82`, PWA `bd9bc09`).
+- **Context:** round 2 was reviewed BEFORE round 3 and worked after it, so B-32 (+a/b/c), B-33, B-39
+  and B-47 were already closed by round 3's §0. §1's own items were B-34, B-35, B-36, B-37, B-38,
+  B-40 and B-19 — written up in [iteration-money-audit-2.md](iteration-money-audit-2.md).
+- **Notes:** the review asked for one migration **V141**; V141 and V142 have shipped, so round 2's
+  schema is **V143**. Two rules came out of it and are in the architecture index: a migration that
+  re-files a shipped norm re-files the FORKS in the same statement, and a boolean that reverses the
+  sign of money is an `@NotNull` wrapper, never a primitive.
+
+### `doc_hash` cannot be reproduced, so nothing can verify it (B-76)
+- **Status:** OPEN — the analysis is settled, the fix is an iteration of its own (2026-10-01).
+- **Since:** review round 3 §4.
+- **Context:** the stamp is SHA-256 of the canonical PDF BYTES, and two identical renders 1,1 s apart
+  differ: OpenPDF writes a time-based `/ID` and `CreationDate`. The canonical render also reads LIVE
+  data — the contractor's requisites, IBAN, logo, the client's and the project's names — so a master
+  who corrects his IBAN invalidates every act he ever signed. Nothing re-verifies a hash today, which
+  is the only reason this has cost nobody anything.
+- **Notes / options:** the coherent answer is to store a canonical JSON snapshot of every printed
+  value at sign time, hash the JSON, and render a SIGNED act (and a signed estimate) FROM the
+  snapshot, keeping the stamped PDF in storage. That is a new column, a second render path for two
+  document types, and a decision about the hashes already stored — and a partial version would leave
+  two notions of what the hash certifies. Deliberately not half-built with the §4 should-fixes.
+
+### The crew margin cannot tell a crew sheet from a premium variant (B-73 remainder)
+- **Status:** OPEN — needs a question on a screen, not a column (2026-10-01).
+- **Context:** the review asked for an explicit `crew_priced boolean` set only by
+  duplicate-with-markup, instead of gating on `markup_percent > 0`. But `markup_percent` is written
+  by `duplicate()` and nothing else, so the two conditions are the same condition — a new column with
+  identical semantics. The real gap is that a solo master duplicating his own sheet at +20 % as a
+  premium variant gets «Бригаді / Твоя націнка» over a crew that does not exist.
+- **Notes / options:** the only honest source is the master. The duplicate sheet could ask («це ціни
+  для бригади?»), which is one more tap on a flow he uses often; or the panel's wording could stop
+  naming a crew. Not worth guessing while nobody has complained.
+
+### An advance offset is document-only, and the review wants it reconciled (B-78 remainder)
+- **Status:** OPEN — in tension with a shipped decision (2026-10-01).
+- **Context:** B-78's second half asks that Σ advances over an object's SIGNED acts not exceed the
+  work-only money received. V115 settled the opposite: `advance_offset` is a DOCUMENT-ONLY figure
+  nothing in the economy reads or reconciles, and the editor only SUGGESTS it from «Мої гроші»,
+  non-blocking. The per-act cap (advance ≤ what THIS act bills) is built; the cross-act one would
+  make a save fail over a payment recorded, or not recorded, somewhere else entirely.
+- **Notes:** the honest version of this is probably a WARNING on the act editor rather than a
+  refusal, and it needs the owner's word on whether an un-recorded payment should block a document.
+
+### `ExpenseRequest.source` is client-settable (B-84 remainder)
+- **Status:** OPEN — low harm, and the fix costs an endpoint (2026-10-01).
+- **Context:** a hand-entered expense can claim `source = RECEIPT`. There IS a legitimate client
+  caller — the estimate-side receipt import offers to save the receipt total as an expense, where
+  RECEIPT is the truth — so making the field server-only needs a second door for that flow. A lying
+  client only mislabels its own row: `requireNotOwnedByAReceipt` keys on the back-link from
+  `project_receipt`, never on this field, so no money rule reads it.
+
+### The crew-margin parity fixture is still two fixtures (B-75 remainder)
+- **Status:** OPEN — cosmetic, and the risk it covers is real (2026-10-01).
+- **Context:** `CrewMarginIntegrationTest` and the PWA's `crewMargin.test.ts` assert the same
+  scenarios to the same figures, written out twice in two languages. Both now cover the B-72 cases and
+  both name the other as the reason to change it, but nothing MAKES them agree: a change to one that
+  the author forgets to mirror reddens nothing. The review asks for one JSON file read by both suites.
+
+### Primer is bought several times over one estimate (B-51)
+- **Status:** RESOLVED (2026-10-04) — V145, the owner's option (a). The rule is DATA-DRIVEN rather
+  than a list of names: an m² position keeps a primer norm only when primer is the ONLY thing it
+  consumes. Its bound is the ruling itself — the standalone «Грунтування» step is priced per m², so a
+  hidden-mount door priced per LEAF keeps its primer, while a foam/PU moulding loses it on PRODUCT
+  grounds (§3 row 11). Forks go with their defaults (the B-35 rule).
+- **Since:** review round 2 §2.
+- **Context:** laying, painting, putty, waterproofing and self-levelling positions each carry their
+  own `PRIMER_DEEP` norm row, and the shipped bundles ALSO contain a standalone «Грунтування»
+  position. «Підлога плиткою» buys primer on 4 lines, «Санвузол під ключ» on 5, «Малярні роботи» on
+  3. The master over-buys primer on every job the calculator answers.
+- **Resolution (owner):** primer belongs to the standalone «Грунтування» position ONLY — «майстер і
+  так окремо прайсить Грунтування як етап». The per-work rows come off.
+- **Notes:** it is a migration over `material_norm` for `owner_id IS NULL`, and by the B-35 rule it
+  must re-file the masters' FORKS in the same statement. The catalog-coverage guard
+  (`everyShippedNormFindsItsPositionInTheShippedCatalog`) and the per-trade norm counts in V137's
+  self-checks have to move with it.
+
+### Two message bundles, and nothing read both
+- **Status:** RESOLVED (2026-10-01) — `LocalizationBundleParityTest` compares the key sets of
+  `messages.properties` and `messages_en.properties` in both directions. Six keys were
+  Ukrainian-only (three act ones from round 3's §0, three material ones), so an English-locale master
+  silently fell back to Ukrainian — a failure with no error, no log and nothing wrong on screen. The
+  test says nothing about the wording: a translation is a human judgement, a missing key is not.
 
 ### An object holding signed money can still be deleted (B-70)
-- **Status:** OPEN — the answer is settled, the code is not written.
+- **Status:** RESOLVED (2026-10-01) — `ProjectDeleteGuard` refuses with 409
+  `PROJECT_HAS_SIGNED_MONEY` when the object carries a SIGNED estimate, a SIGNED act, any
+  `payment_receipt` or any `object_expenses` row. Nothing new had to be built to offer the
+  alternative: a terminal object is already hidden behind the archived reveal and the permanent
+  delete is offered only on a terminal object, so the refusal lands on an object that is already out
+  of the way. A reimbursable `project_receipt` is deliberately NOT in the set (it writes no expense,
+  so it moves no month); an own-cost one is, through the `ObjectExpense` it posts.
 - **Since:** review round 3 (2026-09-25).
 - **Context:** `ProjectService.delete` cascades SIGNED estimates, signed acts, their ADDENDUMs,
   payments and expenses. A SIGNED estimate cannot be deleted on its own
@@ -3004,8 +3127,28 @@ one-line summary — keep the item in the file as a record.
 - **Notes:** the FREE cap counts LIFETIME creations (V107), so archiving costs the master nothing he
   was not already charged for, and nothing about the cap needs to change.
 
+### A signed rollup over a MIX of signed and unsigned sources is under-counted (B-68 remainder)
+- **Status:** OPEN — found while building B-68 (2026-10-01).
+- **Context:** signing a consolidated rollup now counts it and uncounts its sources, but only when
+  NO source is already SIGNED ∧ counted. With a mix — one signed 10 000 ₴ source rolled up together
+  with an unsigned 5 000 ₴ one, the 15 000 ₴ rollup signed — «За договором» stays 10 000: the signed
+  source is the contract and counting the rollup beside it would double it.
+- **Notes / options:** the coherent answer is probably that a signed rollup SUPERSEDES its sources
+  the way a signed duplicate supersedes its parent (`countInEconomy = false` +
+  `supersededByEstimateId`, guarded by `requireNoActs`) — but that turns a tidy-up into a contract
+  replacement, and it needs the owner's word rather than a guess. Deliberately not answered in
+  §2. Nothing is double-counted today; the gap is only the unsigned part.
+
 ### «%» lines added to a crew copy afterwards, and the accepted margin (B-72)
-- **Status:** OPEN — **DECISION, not yet put to the owner.**
+- **Status:** RESOLVED (2026-10-01) — the owner was asked and answered: an unpriced «%» line is
+  FROZEN at its client amount in the crew view and a NEGATIVE one counts ZERO (a discount he gives
+  comes out of his own margin). Built on both sides with V144 — the freeze rides `baseDetached`,
+  `EstimateMath` honours it on both percent passes like its PWA mirror always did, and
+  `sumSignedActAdjustments` prorates «%» into the accepted half. Details:
+  [iteration-money-audit-3-crew-and-should-fix.md](iteration-money-audit-3-crew-and-should-fix.md).
+  The status line below was left behind by that round — the decision is also recorded under the
+  round-3 item above.
+- **Status (historic):** OPEN — **DECISION, not yet put to the owner.**
 - **Since:** review round 3 (2026-09-25).
 - **Context:** crew 10 000, client +20 % = 12 000, the master then adds «Знижка −10 %» (client
   10 800). The code says the margin is 1 800, the documented rule («a line with no crew price
@@ -3020,17 +3163,29 @@ one-line summary — keep the item in the file as a record.
   first.
 
 ### REJECTED→DRAFT ignores a SIGNED FINAL act (B-62)
-- **Status:** OPEN — §1 of round 3, out of the day's scope.
+- **Status:** RESOLVED (2026-10-01) — both halves built, and with it §1 of round 3 is closed.
 - **Since:** review round 3 (2026-09-25).
 - **Context:** `WorkActService`'s status move checks only for an OPEN act. Act 3 (60 m²) is REJECTED,
   act 4 is FINAL and signed (60 m²), act 3 goes back to DRAFT and is signed → 120 m² closed on a
   100 m² position, and an act dated after the FINAL one.
-- **Notes / options:** refuse the move while a FINAL act is SIGNED on the object; on a legitimate
-  reopen, recompute `cumulative_before` and re-apply the B-56 cap (which now exists — `ActLineBinder`
-  — so the second half is small).
+- **Resolution:** `ActFinalGuard` refuses when a SIGNED FINAL act other than this one closed the
+  object (409 `WORK_ACT_FINAL_SIGNED`), on all three doors that can still produce a signature — the
+  move to DRAFT, the publish to SENT, and `signOffline`, **which never asked about the status at
+  all** and would have signed the rejected act without ever going through `changeStatus`. Only
+  SIGNED counts, so a FINAL act sitting in DRAFT/REJECTED stays reopenable.
+  `ActLineBinder.refreshCumulativeBefore` re-freezes «виконано раніше» on every move to DRAFT; that
+  half is deliberately NOT a refusal — DRAFT is where the master fixes the quantity,
+  `exceedsEstimate` names the line, and the B-56 cap still refuses at publish and at both signatures.
+  Details: [iteration-money-audit-3.md](iteration-money-audit-3.md).
 
 ### The PWA still rounds money two different ways (P-39)
-- **Status:** OPEN — partially closed by round 3.
+- **Status:** RESOLVED (2026-10-05) — `useEstimate.ts` and `crewMargin.ts` both delegate to
+  `roundMoney` (as `round2`), and the last three sites went with the PWA review pass:
+  `catalogItemSchema.parsePrice`, the catalog import's own parse and the receipt import's total.
+  `roundQuantity` was added beside it for the one place a quantity SUBTRACTION reaches a document.
+  Same round made `formatMoney` show kopecks when there are kopecks, so the figure on screen is the
+  figure on the paper (P-43/P-46).
+- **Status (historic):** OPEN — partially closed by round 3.
 - **Since:** review round 3 (2026-09-25).
 - **Context:** `roundMoney` now exists in `src/lib/decimal.ts` (the HALF_UP string detour that agrees
   with the server over 658 364 brute-forced cases) and act money goes through it, but

@@ -2,6 +2,7 @@ package com.majstr.backend.integration;
 
 import com.majstr.backend.entity.Estimate;
 import com.majstr.backend.entity.EstimateItem;
+import com.majstr.backend.entity.EstimateKind;
 import com.majstr.backend.entity.EstimateStatus;
 import com.majstr.backend.entity.ExpenseCategory;
 import com.majstr.backend.entity.ExpenseSource;
@@ -24,6 +25,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.util.List;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -182,6 +184,70 @@ class ObjectEconomyQueriesIntegrationTest extends IntegrationTestBase {
         // The caller (ObjectExpenseService.signedEstimatePanels) reconstitutes the real signed
         // total from these four — verify that reconciliation lands on the actual contracted amount.
         assertThat(works.add(materials).add(markup).add(discount)).isEqualByComparingTo("22100.00");
+    }
+
+    @Test
+    void cardTotal_isTheSumOfSignedCountedEstimates_notTheNewestRow() {
+        // B-67. Signing an act with additional works WRITES a SIGNED ADDENDUM, so «the latest
+        // estimate» became the extras: a 10 800 ₴ contract with 1 000 ₴ of extras showed
+        // «SIGNED · 1 000 ₴» on the card while the economy tab, which sums the same set as
+        // sumIncomeCounted, said 11 800. Two screens, one object, two contract figures.
+        estimateWith(EstimateStatus.SIGNED, true, ItemType.WORK, "10800.00");
+        Estimate addendum = estimateWith(EstimateStatus.SIGNED, true, ItemType.WORK, "1000.00");
+        addendum.setKind(EstimateKind.ADDENDUM);
+        estimateRepository.saveAndFlush(addendum);
+
+        Object[] row = summaryRow();
+        assertThat(row[1]).isEqualTo("SIGNED");
+        assertThat(toAmount(row[2])).isEqualByComparingTo("11800.00");
+        // …and it is the SAME definition the economy tab reads, which is the point.
+        assertThat(toAmount(row[2])).isEqualByComparingTo(estimateRepository.sumIncomeCounted(projectId));
+    }
+
+    @Test
+    void cardTotal_fallsBackToTheLatestNonAddendumEstimate_whenNothingIsSigned() {
+        estimateWith(EstimateStatus.DRAFT, true, ItemType.WORK, "4000.00");
+        Object[] row = summaryRow();
+        assertThat(row[1]).isEqualTo("DRAFT");
+        assertThat(toAmount(row[2])).isEqualByComparingTo("4000.00");
+    }
+
+    @Test
+    void cardTotal_neverFallsBackToAnAddendum() {
+        // An object can hold an ADDENDUM with no signed parent left counting (the master excluded
+        // it, or reopened it) — and «SIGNED 1 000 ₴» is exactly the misread B-67 is about.
+        Estimate parent = estimateWith(EstimateStatus.DRAFT, true, ItemType.WORK, "9000.00");
+        Estimate addendum = estimateWith(EstimateStatus.SIGNED, false, ItemType.WORK, "1000.00");
+        addendum.setKind(EstimateKind.ADDENDUM);
+        estimateRepository.saveAndFlush(addendum);
+
+        Object[] row = summaryRow();
+        assertThat(row[1]).isEqualTo("DRAFT");
+        assertThat(toAmount(row[2])).isEqualByComparingTo("9000.00");
+        assertThat(parent.getId()).isNotNull();
+    }
+
+    @Test
+    void cardTotal_anObjectWithOnlyASignedAddendum_stillReportsIt() {
+        // The FULL OUTER JOIN half: nothing to fall back to, but the money is real.
+        Estimate addendum = estimateWith(EstimateStatus.SIGNED, true, ItemType.WORK, "1000.00");
+        addendum.setKind(EstimateKind.ADDENDUM);
+        estimateRepository.saveAndFlush(addendum);
+
+        Object[] row = summaryRow();
+        assertThat(row[1]).isEqualTo("SIGNED");
+        assertThat(toAmount(row[2])).isEqualByComparingTo("1000.00");
+    }
+
+    /** The one row of {@code findLatestEstimateSummaries} for this test's object. */
+    private Object[] summaryRow() {
+        List<Object[]> rows = estimateRepository.findLatestEstimateSummaries(List.of(projectId));
+        assertThat(rows).hasSize(1);
+        return rows.get(0);
+    }
+
+    private static BigDecimal toAmount(Object raw) {
+        return raw instanceof BigDecimal bd ? bd : new BigDecimal(raw.toString());
     }
 
     // ---- helpers ----------------------------------------------------------------

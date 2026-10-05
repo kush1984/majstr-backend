@@ -70,6 +70,14 @@ public interface WorkActRepository extends JpaRepository<WorkAct, UUID> {
     boolean existsByProjectIdAndStatusAndIdNot(UUID projectId, WorkActStatus status, UUID id);
 
     /**
+     * Whether a SIGNED FINAL act other than this one already closed the object (review B-62). Only
+     * SIGNED counts: a FINAL act still sitting in DRAFT or REJECTED closes nothing, and a REJECTED
+     * one must stay reopenable — it is the very act the master is coming back to.
+     */
+    boolean existsByProjectIdAndKindAndStatusAndIdNot(
+            UUID projectId, WorkActKind kind, WorkActStatus status, UUID id);
+
+    /**
      * The highest running number this master has used so far (0 if none) — numbering is CONTINUOUS
      * per master, never reset per year, so the display string stays unique under UNIQUE(user_id,
      * number) for both PLAIN («7») and WITH_YEAR («7/2026») formats. The leading integer is parsed

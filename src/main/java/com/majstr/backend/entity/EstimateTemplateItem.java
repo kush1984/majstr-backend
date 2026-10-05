@@ -57,6 +57,23 @@ public class EstimateTemplateItem {
     @Column(name = "sort_order", nullable = false)
     private int sortOrder;
 
+    /**
+     * The SYSTEM DEFAULT position this row was copied from when the bundle was forked on write
+     * (V113), or {@code null} for an ordinary own position (review B-34).
+     *
+     * <p>It exists so a LATER request can be translated too. V113 hands the forking request a
+     * default-id → copy-id map built at the moment of the copy, but the PWA's outbox replays every
+     * queued op addressing the DEFAULT's ids: op 1 forked and landed, ops 2..n found the fork already
+     * there, were handed an EMPTY map, matched nothing, and were answered as SUCCESS. An offline batch
+     * lost everything but its first op, and the editor — which re-seeds its baseline from the answer —
+     * showed a bundle that looked saved.</p>
+     *
+     * <p>{@code ON DELETE SET NULL}: a shipped position can be deleted by a later catalog rebuild
+     * (V116, V121 and V122 all do), and losing the pointer must not take the master's copy with it.</p>
+     */
+    @Column(name = "forked_from_item_id")
+    private UUID forkedFromItemId;
+
     @PrePersist
     void onCreate() {
         if (id == null) {

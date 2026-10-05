@@ -226,6 +226,25 @@ public class MetricsService {
     }
 
     /**
+     * How many masters leave a бригадир's footprint — the duplicate-with-markup.
+     *
+     * <p>Answers a question that has been decided by assumption until now («більшість працюють
+     * самі»), and answers it as a FLOOR: a бригадир who prices the client's sheet by hand, or uses
+     * the in-place markup, makes no duplicate and is not here. Same three aggregate queries shape
+     * as the funnel above, same {@code role = USER} filter, same denominator as its first step so
+     * the two can be read side by side.</p>
+     */
+    @Transactional(readOnly = true)
+    public CrewUsageResponse crewUsage() {
+        Instant thirtyDaysAgo = Instant.now().minus(30, ChronoUnit.DAYS);
+        return new CrewUsageResponse(
+                estimateRepository.countMastersWithMarkupCopy(Instant.EPOCH, false),
+                estimateRepository.countMastersWithMarkupCopy(thirtyDaysAgo, false),
+                estimateRepository.countMastersWithMarkupCopy(Instant.EPOCH, true),
+                userRepository.countByRole(Role.USER));
+    }
+
+    /**
      * Masters who ever put a document in front of a client, over BOTH link tables.
      *
      * <p><b>Why both.</b> This step used to read {@code EstimateShareLink} alone — the per-estimate
@@ -247,25 +266,6 @@ public class MetricsService {
      * "published on the object portal OR opened the estimate share sheet". Fixing that is a PWA
      * change (mint lazily) and is deliberately out of scope here.</p>
      */
-    /**
-     * How many masters leave a бригадир's footprint — the duplicate-with-markup.
-     *
-     * <p>Answers a question that has been decided by assumption until now («більшість працюють
-     * самі»), and answers it as a FLOOR: a бригадир who prices the client's sheet by hand, or uses
-     * the in-place markup, makes no duplicate and is not here. Same three aggregate queries shape
-     * as the funnel above, same {@code role = USER} filter, same denominator as its first step so
-     * the two can be read side by side.</p>
-     */
-    @Transactional(readOnly = true)
-    public CrewUsageResponse crewUsage() {
-        Instant thirtyDaysAgo = Instant.now().minus(30, ChronoUnit.DAYS);
-        return new CrewUsageResponse(
-                estimateRepository.countMastersWithMarkupCopy(Instant.EPOCH, false),
-                estimateRepository.countMastersWithMarkupCopy(thirtyDaysAgo, false),
-                estimateRepository.countMastersWithMarkupCopy(Instant.EPOCH, true),
-                userRepository.countByRole(Role.USER));
-    }
-
     private Map<UUID, String> sharedOwnerSources() {
         Map<UUID, String> owners = new HashMap<>();
         for (OwnerSource row : shareLinkRepository.findSharedOwners()) {

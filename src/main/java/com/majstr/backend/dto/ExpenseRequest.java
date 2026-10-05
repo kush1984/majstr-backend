@@ -4,6 +4,7 @@ import com.majstr.backend.entity.ExpenseCategory;
 import com.majstr.backend.entity.ExpenseSource;
 import jakarta.validation.constraints.DecimalMax;
 import jakarta.validation.constraints.DecimalMin;
+import jakarta.validation.constraints.Digits;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
 
@@ -17,7 +18,8 @@ import java.time.LocalDate;
  * flow; a hand-entered expense leaves it null → MANUAL (unforeseen).
  */
 public record ExpenseRequest(
-        @NotNull @DecimalMin(value = "0.0", inclusive = false) @DecimalMax("100000000") BigDecimal amount,
+        @NotNull @DecimalMin("0.01") @DecimalMax("100000000")
+        @Digits(integer = 13, fraction = 2) BigDecimal amount,
         @NotNull ExpenseCategory category,
         @Size(max = 500) String note,
         LocalDate spentAt,

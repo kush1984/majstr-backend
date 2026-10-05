@@ -105,29 +105,69 @@ class DrywallNormCorrectionsIntegrationTest extends IntegrationTestBase {
      * A norm's unit is the POSITION's unit and nothing is converted (V127 decision 2): the primer is
      * a LITRE material answering a M2 position, so 0,15 means 0,15 litres per square metre. Reading
      * it as litres per litre is the v1 bug this rule exists to prevent.
+     *
+     * <p>Read off «ґрунтівка поверхні», the standalone priming step, because since V145 that is the
+     * only KIND of position that carries a primer norm at all (review B-51).</p>
      */
     @Test
-    void glueingBoardToAWallPrimesTheWallFirst() {
-        assertThat(qty("монтаж гіпсокартону на клей", "PRIMER_DEEP")).isEqualByComparingTo("0.15");
+    void aPrimerNormIsLitresPerSquareMetreOfPosition() {
+        assertThat(qty("ґрунтівка поверхні", "PRIMER_DEEP")).isEqualByComparingTo("0.15");
 
         String unit = jdbc.queryForObject("""
                 SELECT n.unit FROM material_norm n JOIN material m ON m.id = n.material_id
-                 WHERE n.owner_id IS NULL AND n.name_key = 'монтаж гіпсокартону на клей'
+                 WHERE n.owner_id IS NULL AND n.name_key = 'ґрунтівка поверхні'
                    AND m.code = 'PRIMER_DEEP'
                 """, String.class);
         assertThat(unit).isEqualTo("M2");
     }
 
-    /** V131's box норми are SECTION-based, and they take a ceiling's rate per m² of board. */
+
+    /**
+     * V131's box норми are SECTION-based, and they take a ceiling's rate per m² of board — 20 for a
+     * straight box and a niche, 28 for a radius one, whose bent face is screwed denser.
+     *
+     * <p>Asserted PER POSITION. The first version counted rows whose figure was {@code NOT IN
+     * (20, 28)}, which passes just as happily with the two values swapped — a radius box at 20 and a
+     * straight one at 28 is a real mistake and the guard could not see it (review §3).</p>
+     */
     @Test
     void theBoxPositionsTookTheCeilingRate() {
-        Integer stale = jdbc.queryForObject("""
-                SELECT count(*) FROM material_norm n JOIN material m ON m.id = n.material_id
-                 WHERE n.owner_id IS NULL AND m.code = 'SCREW_TN25' AND n.basis = 'SECTION'
-                   AND n.qty_per_unit NOT IN (20, 28)
-                """, Integer.class);
+        assertThat(qty("монтаж короба (прямого) із гіпсокартону по периметру стелі", "SCREW_TN25"))
+                .isEqualByComparingTo("20");
+        assertThat(qty("монтаж ніші під прихований карниз короб під комунікації", "SCREW_TN25"))
+                .isEqualByComparingTo("20");
+        assertThat(qty("монтаж короба (радіусного) із гіпсокартону по периметру стелі", "SCREW_TN25"))
+                .as("a bent face is screwed denser, and that is the only reason it differs")
+                .isEqualByComparingTo("28");
+    }
 
-        assertThat(stale).isZero();
+    /**
+     * The sheathing figures the first version of this test left unpinned (review §3): a sloped
+     * ceiling, both partition builds, and the two-layer WALL — the one whose 7/14 pair nothing read.
+     */
+    @Test
+    void everySheathingFigureIsPinned_notJustTheThreeMostObvious() {
+        assertThat(qty("монтаж гіпсокартону на стелю зі скосами", "SCREW_TN25"))
+                .as("a sloped ceiling is still a ceiling").isEqualByComparingTo("20");
+        assertThat(qty("монтаж конструкцій (перегородки 2 сторони) із гіпсокартону в 2 шари", "SCREW_TN25"))
+                .as("the inner layer of a two-layer partition is only tacked").isEqualByComparingTo("5");
+        assertThat(qty("монтаж конструкцій (перегородки 2 сторони) із гіпсокартону в 2 шари", "SCREW_TN35"))
+                .isEqualByComparingTo("12");
+        assertThat(qty("каркасна звукоізоляція (гкл в два слоя) стін", "SCREW_TN25"))
+                .isEqualByComparingTo("7");
+        assertThat(qty("каркасна звукоізоляція (гкл в два слоя) стін", "SCREW_TN35"))
+                .isEqualByComparingTo("14");
+    }
+
+    /**
+     * V133 took the joint filler from 0,4 to 0,3 kg per m² of board (Rigips 0,18, Siniat UA 0,25,
+     * ready-mixed pastes 0,36 — 0,3 is the middle of the published band), and review §3 asked again
+     * for the same figure from the Uniflott/Siniat/Rigips sheets. Nothing read it until now.
+     */
+    @Test
+    void theJointFillerIsTheMiddleOfThePublishedBand() {
+        assertThat(qty("шпаклювання швів гкл та шурупів зі шліфуванням", "PUTTY_JOINT"))
+                .isEqualByComparingTo("0.3");
     }
 
     private BigDecimal qty(String nameKey, String code) {

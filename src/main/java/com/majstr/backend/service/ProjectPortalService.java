@@ -69,6 +69,9 @@ public class ProjectPortalService {
     private final WorkActReceiptRepository workActReceiptRepository;
     private final ActReceiptCompleteness receiptCompleteness;
     private final ActLineBinder lineBinder;
+    private final ActFinalGuard finalGuard;
+    private final ActAdvanceGuard advanceGuard;
+    private final ActReceiptDuplicateGuard receiptDuplicateGuard;
     private final ProjectService projectService;
     private final FeatureGuard featureGuard;
     private final PortalProperties portalProperties;
@@ -155,6 +158,13 @@ public class ProjectPortalService {
             if (visible && estimate.getStatus() != EstimateStatus.SIGNED) {
                 throw new InvalidEstimateStatusException("error.estimate.not-signed-economy");
             }
+            // …and it must still be part of the deal (B-66). A SUPERSEDED parent is SIGNED and
+            // uncounted: the master renegotiated, the copy is the contract. Sharing both showed the
+            // client 50 000 + 47 500 = 97 500 ₴ for one job, and the payments card measured his
+            // «Залишок» against that total.
+            if (visible && !estimate.isCountInEconomy()) {
+                throw new InvalidEstimateStatusException("error.estimate.not-counted-economy");
+            }
             estimate.setEconomyVisible(visible);
         });
 
@@ -210,6 +220,14 @@ public class ProjectPortalService {
             // closing more than remains (B-56). Publishing is the door the MASTER controls, so it
             // is the one place he can still be told about it and act on it.
             lineBinder.requireStillValid(act);
+            // And the object must not already be closed by a signed підсумковий акт (B-62).
+            finalGuard.requireObjectNotClosed(act);
+            // …and the advance may not exceed what the act bills (B-78): the PDF clamps «До сплати»
+            // at zero, so a bigger offset tells the client he owes nothing at all.
+            advanceGuard.requireAdvanceWithinAct(act);
+            // …and no receipt a SIGNED act already billed (B-79): the same slip on two acts bills
+            // the client twice, and only the master can decide which act should keep it.
+            receiptDuplicateGuard.requireNoReceiptBilledElsewhere(act);
             act.setStatus(WorkActStatus.SENT);
             act.setSentAt(Instant.now());
         }

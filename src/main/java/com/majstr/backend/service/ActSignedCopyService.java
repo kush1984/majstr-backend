@@ -20,14 +20,14 @@ import java.util.Objects;
 import java.util.UUID;
 
 /**
- * What a signature leaves behind, shared by BOTH sign paths â the public portal and the offline
+ * What a signature leaves behind, shared by BOTH sign paths — the public portal and the offline
  * one (review fix: offline signing used to produce neither, so an offline-signed act had no tamper
  * stamp and the client no independent copy):
  *
  * <ul>
- *   <li>{@link #computeDocHash} â SHA-256 of the CANONICAL PDF (no doc-hash footer, no live
- *       Â«ÐÐÐÐÐÐÐÐÐÂ» block, so a later signing on the object never invalidates this act's stamp);</li>
- *   <li>{@link #emailClientCopy} â the stamped PDF mailed to the client, fail-soft: the signature
+ *   <li>{@link #computeDocHash} — SHA-256 of the CANONICAL PDF (no doc-hash footer, no live
+ *       «ДОВІДКОВО» block, so a later signing on the object never invalidates this act's stamp);</li>
+ *   <li>{@link #emailClientCopy} — the stamped PDF mailed to the client, fail-soft: the signature
  *       already landed, the emailed copy is a bonus evidence trail.</li>
  * </ul>
  */
@@ -39,8 +39,9 @@ class ActSignedCopyService {
     private final ActCumulativeCalculator cumulativeCalculator;
     private final EstimateRepository estimateRepository;
     private final EmailService emailService;
+    private final AfterCommit afterCommit;
 
-    /** Must be called AFTER the signer fields are set â they are part of what the hash certifies. */
+    /** Must be called AFTER the signer fields are set — they are part of what the hash certifies. */
     String computeDocHash(WorkAct act, java.util.List<WorkActItem> items,
                           java.util.List<WorkActPdfService.ReceiptRow> receipts)
             throws IOException, DocumentException {
@@ -48,20 +49,43 @@ class ActSignedCopyService {
         return sha256Hex(canonical);
     }
 
+    /**
+     * The stamped copy for the client: RENDERED now, MAILED after the commit (review B-81).
+     *
+     * <p>The split is the whole point. Rendering needs the entities and the live «ДОВІДКОВО»
+     * figures, so it has to happen inside the signing transaction; sending is irreversible, so it
+     * must not happen until that transaction has actually committed. It used to send from inside,
+     * which meant a signature that lost its optimistic lock — two clients tapping at once, a
+     * receipt landing mid-sign — still put a «signed» PDF in the client's inbox. Everything the
+     * send needs is copied out to locals first: afterwards the entities are detached.</p>
+     *
+     * <p>Fail-soft on both halves: the signature has landed either way and the emailed copy is a
+     * bonus evidence trail.</p>
+     */
     void emailClientCopy(WorkAct act, java.util.List<WorkActItem> items,
                          java.util.List<WorkActPdfService.ReceiptRow> receipts) {
         Client client = act.getProject().getClient();
         if (client == null || client.getEmail() == null || client.getEmail().isBlank()) {
             return;
         }
+        String email = client.getEmail();
+        String clientName = client.getFullName();
+        String contractor = contractorName(act.getProject().getOwner());
+        String number = act.getNumber();
+        byte[] stamped;
         try {
-            byte[] stamped = pdfService.render(model(act, items, receipts, act.getDocHash(),
+            stamped = pdfService.render(model(act, items, receipts, act.getDocHash(),
                     cumulativeCalculator.forDownload(act, items, receiptsTotal(receipts))));
-            emailService.sendSignedActCopyEmail(client.getEmail(), client.getFullName(),
-                    contractorName(act.getProject().getOwner()), act.getNumber(), stamped);
         } catch (Exception e) {
-            // Fail-soft: the signature already landed; the emailed copy is a bonus trail.
+            return; // nothing to send; the signature itself is unaffected
         }
+        afterCommit.run(() -> {
+            try {
+                emailService.sendSignedActCopyEmail(email, clientName, contractor, number, stamped);
+            } catch (RuntimeException e) {
+                // Fail-soft: see the javadoc.
+            }
+        });
     }
 
     private WorkActPdfService.PdfModel model(WorkAct act, java.util.List<WorkActItem> items,
@@ -71,7 +95,7 @@ class ActSignedCopyService {
         Map<UUID, String> names = new HashMap<>();
         items.stream().map(WorkActItem::getEstimateId).filter(Objects::nonNull).distinct().forEach(id ->
                 estimateRepository.findById(id).ifPresent(e ->
-                        names.put(id, e.getName() == null || e.getName().isBlank() ? "ÐÐ¾ÑÑÐ¾ÑÐ¸Ñ" : e.getName().trim())));
+                        names.put(id, e.getName() == null || e.getName().isBlank() ? "Кошторис" : e.getName().trim())));
         return new WorkActPdfService.PdfModel(
                 project.getOwner(), project, project.getClient(), act, items, receipts, names, docHash,
                 cumulative);

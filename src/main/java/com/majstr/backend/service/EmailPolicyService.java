@@ -16,6 +16,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.HashSet;
 import java.util.Hashtable;
 import java.util.Set;
+import java.util.Locale;
 
 /**
  * Anti-abuse email policy applied at registration and unverified-email change.
@@ -64,7 +65,7 @@ public class EmailPolicyService {
      * domain normalized to {@code gmail.com}.
      */
     public String canonicalize(String rawEmail) {
-        String email = rawEmail == null ? "" : rawEmail.toLowerCase().trim();
+        String email = rawEmail == null ? "" : rawEmail.toLowerCase(Locale.ROOT).trim();
         int at = email.lastIndexOf('@');
         if (at <= 0 || at == email.length() - 1) {
             return email; // not a well-formed address — leave as-is (format is validated elsewhere)
@@ -91,7 +92,7 @@ public class EmailPolicyService {
      * transaction — the MX lookup is bounded (2s) and fail-open.
      */
     public void assertAcceptable(String rawEmail) {
-        String email = rawEmail == null ? "" : rawEmail.toLowerCase().trim();
+        String email = rawEmail == null ? "" : rawEmail.toLowerCase(Locale.ROOT).trim();
         int at = email.lastIndexOf('@');
         if (at <= 0 || at == email.length() - 1) {
             return; // malformed — let the format validator own it
@@ -138,7 +139,7 @@ public class EmailPolicyService {
                 new ClassPathResource(BLOCKLIST_RESOURCE).getInputStream(), StandardCharsets.UTF_8))) {
             String line;
             while ((line = reader.readLine()) != null) {
-                String d = line.trim().toLowerCase();
+                String d = line.trim().toLowerCase(Locale.ROOT);
                 if (!d.isEmpty() && !d.startsWith("#")) {
                     domains.add(d);
                 }

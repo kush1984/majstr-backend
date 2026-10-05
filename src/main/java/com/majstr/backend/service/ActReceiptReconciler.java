@@ -5,6 +5,7 @@ import com.majstr.backend.entity.ObjectExpense;
 import com.majstr.backend.entity.ProjectReceipt;
 import com.majstr.backend.entity.WorkAct;
 import com.majstr.backend.entity.WorkActReceipt;
+import com.majstr.backend.entity.WorkActStatus;
 import com.majstr.backend.repository.ObjectExpenseRepository;
 import com.majstr.backend.repository.ProjectReceiptRepository;
 import com.majstr.backend.repository.WorkActReceiptRepository;
@@ -48,8 +49,17 @@ import java.util.UUID;
  * client-facing portal sign — and no bookkeeping tidy-up may cost a master a signature. A receipt
  * that cannot be settled simply stays as it was, and the read path still warns about it.</p>
  *
- * <p>Already-signed acts are deliberately NOT re-scanned: their history is frozen, and silently
- * restating a master's past profit is worse than leaving the gap visible.</p>
+ * <p><b>The other direction, added by review B-53:</b> the identity usually arrives on the OBJECT
+ * receipt later than the act's — the QR is read when the master finally gets round to the paper —
+ * and then the act was already signed and nothing reconciled anything. The row stayed in the
+ * receivable AND in «За договором», with only the read-path warning to show it.
+ * {@link #settleAgainstSignedActs} closes that from the receipt's side the moment it learns its
+ * own identity.</p>
+ *
+ * <p>Already-signed acts are still never RE-SCANNED as a batch: their history is frozen, and
+ * silently restating a master's past profit over rows nobody touched is worse than leaving the gap
+ * visible. The receipt-side settle is a different thing — it fires on a row the master is editing
+ * right now, for the paper in his hand.</p>
  */
 @Slf4j
 @Component
@@ -100,6 +110,55 @@ class ActReceiptReconciler {
             log.info("Act {} billed {} object receipt(s) already filed on object {}",
                     act.getId(), settled.size(), projectId);
         }
+    }
+
+    /**
+     * The mirror image, run when an OBJECT receipt learns its own fiscal identity (review B-53).
+     *
+     * <p>The identity usually arrives on this side LAST: the act is built and signed on site, and
+     * the till receipts are photographed in a batch and read later. By then {@link #reconcile} has
+     * run and matched nothing, so the paper stayed in the «клієнт відшкодовує» receivable while the
+     * act's own copy had already moved the same money into «За договором» — the double B-04 exists
+     * to remove, arriving by the other door.</p>
+     *
+     * <p>Same two halves and the same conditions as {@link #reconcile}: the stamp is unconditional,
+     * dropping the object's expense happens only when the act posts its receipts as expenses. The
+     * EARLIEST signed act wins, which is the same rule {@code ReceiptIdentityIndex} reads the twin
+     * by — the act that actually billed the client first. Nothing throws here either.</p>
+     *
+     * @return the act that billed this paper, or null when nothing matched
+     */
+    WorkAct settleAgainstSignedActs(ProjectReceipt receipt) {
+        if (receipt.getBilledOnActId() != null) {
+            return null; // already settled on an earlier act
+        }
+        String key = keyOf(receipt.getFiscalFn(), receipt.getFiscalId());
+        if (key == null) {
+            return null;
+        }
+        WorkAct winner = null;
+        for (WorkActReceipt other : actReceipts.findIdentifiedByProjectId(receipt.getProjectId())) {
+            if (other.getWorkAct().getStatus() != WorkActStatus.SIGNED
+                    || other.billedAmount().signum() <= 0
+                    || !key.equals(keyOf(other.getFiscalFn(), other.getFiscalId()))) {
+                continue;
+            }
+            WorkAct act = other.getWorkAct();
+            if (winner == null || act.getSignedAt() == null
+                    || (winner.getSignedAt() != null && act.getSignedAt().isBefore(winner.getSignedAt()))) {
+                winner = act;
+            }
+        }
+        if (winner == null) {
+            return null;
+        }
+        receipt.setBilledOnActId(winner.getId());
+        if (winner.isReceiptsToExpenses() && !receipt.isReimbursable()) {
+            dropExpense(receipt);
+        }
+        log.info("Object receipt {} settled against already-signed act {}",
+                receipt.getId(), winner.getId());
+        return winner;
     }
 
     /**

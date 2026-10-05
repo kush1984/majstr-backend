@@ -105,6 +105,20 @@ public interface WorkActReceiptRepository extends JpaRepository<WorkActReceipt, 
             """, nativeQuery = true)
     BigDecimal sumSignedActReceipts(@Param("projectId") UUID projectId);
 
+    /** The same sum limited to acts signed no later than {@code asOf} — the «ДОВІДКОВО» block of an
+     *  already-signed act must not grow when a later act is signed (review B-77). */
+    @Query(value = """
+            SELECT COALESCE(SUM(r.amount - r.returned_amount), 0)
+            FROM work_act_receipt r
+            JOIN work_act wa ON wa.id = r.work_act_id
+            WHERE wa.project_id = :projectId
+              AND wa.status = 'SIGNED'
+              AND wa.signed_at <= :asOf
+              AND r.itemized = false
+            """, nativeQuery = true)
+    BigDecimal sumSignedActReceiptsAsOf(@Param("projectId") UUID projectId,
+                                        @Param("asOf") java.time.Instant asOf);
+
     /**
      * Every act receipt in a period whose money left the MASTER's pocket and is recorded nowhere
      * else (review B-33) — the act-side half of

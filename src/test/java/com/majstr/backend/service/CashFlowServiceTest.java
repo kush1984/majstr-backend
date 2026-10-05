@@ -180,6 +180,9 @@ class CashFlowServiceTest {
         ObjectExpense expense = expense("800.00");
         when(receiptRepository.findById(receipt.getId())).thenReturn(Optional.of(receipt));
         when(expenseRepository.findById(expense.getId())).thenReturn(Optional.of(expense));
+        // An expense row carries a bare objectId, so proving the owner needs the object (B-45:
+        // someone else's row is a 404 here, never the object service's 403).
+        when(projectRepository.findById(PROJECT)).thenReturn(Optional.of(project()));
 
         service.delete(OWNER, receipt.getId(), CashEntryKind.OBJECT_PAYMENT);
         service.delete(OWNER, expense.getId(), CashEntryKind.OBJECT_EXPENSE);
@@ -323,6 +326,7 @@ class CashFlowServiceTest {
     void deletingATillReceiptGoesThroughTheSameDoor() {
         ProjectReceipt till = tillReceipt("2000.00");
         when(projectReceiptRepository.findById(till.getId())).thenReturn(Optional.of(till));
+        when(projectRepository.findById(PROJECT)).thenReturn(Optional.of(project())); // B-45
 
         service.delete(OWNER, till.getId(), CashEntryKind.OBJECT_RECEIPT);
 
@@ -443,6 +447,55 @@ class CashFlowServiceTest {
         assertThat(summary.from()).isEqualTo(today.withDayOfMonth(1));
         assertThat(summary.to()).isEqualTo(today.withDayOfMonth(today.lengthOfMonth()));
         assertThat(summary.hasEntries()).isTrue();
+    }
+
+    // ---- review round 2 §2: the period, and what an omitted field means -------------------
+
+    /**
+     * B-52. Reversed bounds were swapped in silence, so a caller that believed something about a
+     * period got an answer about a different one — and a strip and a screen disagreeing about one
+     * number is the one thing a money screen may not do.
+     */
+    @Test
+    void aReversedPeriodIsRefused_notSilentlySwapped() {
+        assertThatThrownBy(() -> service.flow(OWNER, LocalDate.of(2026, 10, 31),
+                LocalDate.of(2026, 10, 1), false))
+                .isInstanceOf(com.majstr.backend.exception.PaymentValidationException.class)
+                .hasMessage("error.cash.period-reversed");
+    }
+
+    /** B-52. The widest view is a year, served month by month; anything beyond thirteen months
+     *  would load every row the master has ever had in order to cut it to 500. */
+    @Test
+    void aPeriodWiderThanThirteenMonthsIsRefused() {
+        assertThatThrownBy(() -> service.flow(OWNER, LocalDate.of(2024, 1, 1),
+                LocalDate.of(2026, 1, 1), false))
+                .isInstanceOf(com.majstr.backend.exception.PaymentValidationException.class)
+                .hasMessage("error.cash.period-too-long");
+    }
+
+    /**
+     * B-44. The object-expense edit builds its request by hand, so an omitted category used to
+     * become OTHER — turning a MATERIALS cost into «Інше» — and an omitted date became today,
+     * moving the row into a month the master was not even looking at. Latent while the PWA sends
+     * both, and exactly the trap a replayed offline op walks into.
+     */
+    @Test
+    void editingAnObjectExpenseWithoutACategoryOrADateKeepsTheStoredOnes() {
+        ObjectExpense expense = expense("800.00");
+        expense.setCategory(ExpenseCategory.MATERIALS);
+        expense.setSpentAt(LocalDate.of(2026, 3, 7));
+        when(expenseRepository.findById(expense.getId())).thenReturn(Optional.of(expense));
+        when(projectRepository.findById(PROJECT)).thenReturn(Optional.of(project()));
+
+        service.update(OWNER, expense.getId(), new CashEntryRequest(
+                CashDirection.EXPENSE, new BigDecimal("900.00"), null, "клей", null, false,
+                CashEntryKind.OBJECT_EXPENSE));
+
+        ArgumentCaptor<ExpenseRequest> sent = ArgumentCaptor.forClass(ExpenseRequest.class);
+        verify(expenseService).update(eq(PROJECT), eq(expense.getId()), eq(OWNER), sent.capture());
+        assertThat(sent.getValue().category()).isEqualTo(ExpenseCategory.MATERIALS);
+        assertThat(sent.getValue().spentAt()).isEqualTo(LocalDate.of(2026, 3, 7));
     }
 
     // ---- fixtures ---------------------------------------------------------

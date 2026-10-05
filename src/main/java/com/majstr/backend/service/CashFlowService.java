@@ -11,11 +11,13 @@ import com.majstr.backend.dto.ProjectReceiptRequest;
 import com.majstr.backend.entity.CashCategory;
 import com.majstr.backend.entity.CashDirection;
 import com.majstr.backend.entity.CashEntry;
+import com.majstr.backend.entity.ExpenseCategory;
 import com.majstr.backend.entity.ObjectExpense;
 import com.majstr.backend.entity.PaymentReceipt;
 import com.majstr.backend.entity.Project;
 import com.majstr.backend.entity.ProjectReceipt;
 import com.majstr.backend.entity.WorkActReceipt;
+import com.majstr.backend.exception.PaymentValidationException;
 import com.majstr.backend.exception.ResourceNotFoundException;
 import com.majstr.backend.exception.WorkActSignedException;
 import com.majstr.backend.repository.CashEntryRepository;
@@ -93,6 +95,10 @@ public class CashFlowService {
      */
     private static final int MAX_ENTRIES = 500;
 
+    /** The widest period any screen asks for is a year, and the year view is served month by month.
+     *  Thirteen leaves room for «1 Jan – 31 Dec» however the client rounds the bounds. */
+    private static final int MAX_PERIOD_MONTHS = 13;
+
     private final CashEntryRepository cashRepository;
     private final PaymentReceiptRepository receiptRepository;
     private final ObjectExpenseRepository expenseRepository;
@@ -114,12 +120,21 @@ public class CashFlowService {
      */
     @Transactional(readOnly = true)
     public CashFlowResponse flow(UUID ownerId, LocalDate from, LocalDate to, boolean monthly) {
-        LocalDate start = from != null ? from : startOfMonth();
-        LocalDate end = to != null ? to : endOfMonth();
+        // ONE clock read for both defaults (review B-52): two reads could straddle midnight and
+        // answer «1 November – 31 October».
+        LocalDate today = today();
+        LocalDate start = from != null ? from : today.withDayOfMonth(1);
+        LocalDate end = to != null ? to : today.withDayOfMonth(today.lengthOfMonth());
+        // Reversed bounds are a REFUSAL, not a silent swap: the caller believes something about this
+        // period, and quietly answering about a different one is how a screen and a strip disagree.
         if (end.isBefore(start)) {
-            LocalDate swap = start;
-            start = end;
-            end = swap;
+            throw new PaymentValidationException("error.cash.period-reversed");
+        }
+        // A cap on the range itself, not only on the row count: the year view already asks for
+        // thirteen months at most, and anything beyond that loads every row the master has ever had
+        // in order to cut it to 500.
+        if (start.plusMonths(MAX_PERIOD_MONTHS).isBefore(end)) {
+            throw new PaymentValidationException("error.cash.period-too-long");
         }
         List<CashFlowResponse.Entry> all = collect(ownerId, start, end);
 
@@ -225,9 +240,17 @@ public class CashFlowService {
             }
             case OBJECT_EXPENSE -> {
                 ObjectExpense expense = ownedExpense(ownerId, id);
-                CashCategory category = req.category() != null ? req.category() : CashCategory.OTHER;
+                // An omitted field LEAVES THE STORED ONE (review B-44). This request is built by
+                // hand, so a missing category used to become OTHER — turning a MATERIALS or LABOR
+                // cost into «Інше» — and a missing date became today, moving the row into a month
+                // the master was not even looking at. Latent today (the PWA always sends both) and
+                // exactly the trap a replayed offline op walks into.
+                ExpenseCategory category = req.category() != null
+                        ? req.category().toExpenseCategory()
+                        : expense.getCategory();
                 expenseService.update(expense.getObjectId(), id, ownerId, new ExpenseRequest(
-                        amount, category.toExpenseCategory(), trimToNull(req.note()), day, null));
+                        amount, category, trimToNull(req.note()),
+                        req.happenedOn() != null ? req.happenedOn() : expense.getSpentAt(), null));
                 yield fromExpense(ownedExpense(ownerId, id), projectName(expense.getObjectId()));
             }
             case OBJECT_RECEIPT -> {
@@ -267,13 +290,24 @@ public class CashFlowService {
     /** Idempotent for every kind: a row already gone is a no-op, so a replayed queue op is harmless. */
     @Transactional
     public void delete(UUID ownerId, UUID id, CashEntryKind kind) {
+        // A row that is not his is a **404**, not a 403 (review B-45): letting the object's own
+        // service refuse it answered «forbidden», which confirms the id belongs to someone. An
+        // UNKNOWN id stays a no-op, because that is what makes a replayed offline delete harmless —
+        // the two answers still differ, and that is the deliberate trade: idempotency for a queue
+        // the master cannot see outranks hiding the existence of a row he could only guess at.
         switch (kind == null ? CashEntryKind.PERSONAL : kind) {
-            case OBJECT_PAYMENT -> receiptRepository.findById(id).ifPresent(r ->
-                    paymentService.deleteReceipt(r.getProject().getId(), id, ownerId));
-            case OBJECT_EXPENSE -> expenseRepository.findById(id).ifPresent(e ->
-                    expenseService.delete(e.getObjectId(), id, ownerId));
-            case OBJECT_RECEIPT -> projectReceiptRepository.findById(id).ifPresent(r ->
-                    projectReceiptService.delete(r.getProjectId(), id, ownerId));
+            case OBJECT_PAYMENT -> receiptRepository.findById(id).ifPresent(r -> {
+                requireOwner(ownerId, r.getProject().getOwner().getId(), id);
+                paymentService.deleteReceipt(r.getProject().getId(), id, ownerId);
+            });
+            case OBJECT_EXPENSE -> expenseRepository.findById(id).ifPresent(e -> {
+                requireOwnedObject(ownerId, e.getObjectId(), id);
+                expenseService.delete(e.getObjectId(), id, ownerId);
+            });
+            case OBJECT_RECEIPT -> projectReceiptRepository.findById(id).ifPresent(r -> {
+                requireOwnedObject(ownerId, r.getProjectId(), id);
+                projectReceiptService.delete(r.getProjectId(), id, ownerId);
+            });
             case ACT_RECEIPT -> throw new WorkActSignedException();
             case PERSONAL -> cashRepository.findByIdAndOwnerId(id, ownerId)
                     .ifPresent(cashRepository::delete);
@@ -450,6 +484,19 @@ public class CashFlowService {
      * the project id to hand it. It still refuses an id that is not his, so a probe for someone
      * else's row answers «not found» rather than «forbidden»: a money id is not worth confirming.</p>
      */
+    /** Not found, never forbidden — see {@link #delete} (review B-45). */
+    private static void requireOwner(UUID ownerId, UUID rowOwnerId, UUID id) {
+        if (!ownerId.equals(rowOwnerId)) {
+            throw new ResourceNotFoundException("Cash entry not found: " + id);
+        }
+    }
+
+    private void requireOwnedObject(UUID ownerId, UUID objectId, UUID id) {
+        projectRepository.findById(objectId)
+                .filter(p -> p.getOwner().getId().equals(ownerId))
+                .orElseThrow(() -> new ResourceNotFoundException("Cash entry not found: " + id));
+    }
+
     private PaymentReceipt ownedReceipt(UUID ownerId, UUID id) {
         return receiptRepository.findById(id)
                 .filter(r -> r.getProject().getOwner().getId().equals(ownerId))

@@ -52,14 +52,19 @@ public class MaterialPrefService {
             if (value.length() > 100) {
                 throw new MaterialPrefValidationException("error.material-pref.value-too-long");
             }
+            // Validated and CANONICALISED here, at the only door (review B-19). «2,5» used to be
+            // stored verbatim, confirmed on screen, and then silently dropped on the read path where
+            // BigDecimal cannot parse a comma — a saved correction that changed nothing. And nothing
+            // was bounded: PAINT_COVERAGE divides, so 0,5 multiplied every paint figure by eighteen.
+            String stored = MaterialPrefs.canonical(key, value);
             if (existing == null) {
                 prefRepository.save(MasterMaterialPref.builder()
                         .userId(userId)
                         .prefKey(key)
-                        .prefValue(value)
+                        .prefValue(stored)
                         .build());
             } else {
-                existing.setPrefValue(value);
+                existing.setPrefValue(stored);
             }
         }
         return get(userId);

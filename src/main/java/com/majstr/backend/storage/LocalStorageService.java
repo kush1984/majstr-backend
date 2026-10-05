@@ -13,6 +13,7 @@ import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.Locale;
 
 /**
  * Stores objects under a single root directory. The object key encodes
@@ -40,7 +41,7 @@ public class LocalStorageService implements StorageService {
 
     @Override
     public StoredObject store(InputStream content, long size, String prefix, String extension, String contentType) throws IOException {
-        String safeExtension = (extension == null || extension.isBlank()) ? "bin" : extension.toLowerCase();
+        String safeExtension = (extension == null || extension.isBlank()) ? "bin" : extension.toLowerCase(Locale.ROOT);
         String filename = UUID.randomUUID() + "." + safeExtension;
         String key = prefix + "/" + filename;
         Path target = resolve(key);

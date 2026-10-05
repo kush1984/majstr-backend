@@ -115,20 +115,28 @@ public class ProjectPhotoService {
                 new ByteArrayInputStream(content), content.length,
                 PHOTO_PREFIX, kind.extension, kind.contentType);
 
-        ProjectPhoto photo = photoRepository.save(ProjectPhoto.builder()
-                .projectId(projectId)
-                .storageKey(stored.key())
-                .source(source)
-                .visibility(PhotoVisibility.PRIVATE)
-                .caption(blankToNull(caption))
-                .estimateId(linkedEstimateId)
-                .estimateNameSnapshot(estimateName)
-                // Folder routing (photo-folders): an upload made from INSIDE a folder says so, and
-                // that wins. With nothing said, receipts from ANY flow land in «Чеки» and everything
-                // else in «Інше» (null) — no photo is ever left outside a folder.
-                .folder(resolveUploadFolder(projectId, source, folder))
-                .build());
-        return ProjectPhotoResponse.from(photo);
+        // A failing row save after the store leaves a blob nothing points at (review B-48) — the
+        // photo cap, an invalid folder name, a connection dropping. Nothing can find the key
+        // afterwards, so it is dropped here.
+        try {
+            ProjectPhoto photo = photoRepository.save(ProjectPhoto.builder()
+                    .projectId(projectId)
+                    .storageKey(stored.key())
+                    .source(source)
+                    .visibility(PhotoVisibility.PRIVATE)
+                    .caption(blankToNull(caption))
+                    .estimateId(linkedEstimateId)
+                    .estimateNameSnapshot(estimateName)
+                    // Folder routing (photo-folders): an upload made from INSIDE a folder says so,
+                    // and that wins. With nothing said, receipts from ANY flow land in «Чеки» and
+                    // everything else in «Інше» (null) — no photo is left outside a folder.
+                    .folder(resolveUploadFolder(projectId, source, folder))
+                    .build());
+            return ProjectPhotoResponse.from(photo);
+        } catch (RuntimeException e) {
+            cleanup.afterCommit(stored.key());
+            throw e;
+        }
     }
 
     /**
@@ -254,14 +262,19 @@ public class ProjectPhotoService {
         StoredObject stored = storage.store(
                 new ByteArrayInputStream(content), content.length,
                 PHOTO_PREFIX, kind.extension, kind.contentType);
-        photoRepository.save(ProjectPhoto.builder()
-                .projectId(projectId)
-                .storageKey(stored.key())
-                .source(PhotoSource.RECEIPT)
-                .visibility(PhotoVisibility.PRIVATE)
-                .caption(blankToNull(caption))
-                .folder(ProjectPhoto.FOLDER_RECEIPTS)
-                .build());
+        try {
+            photoRepository.save(ProjectPhoto.builder()
+                    .projectId(projectId)
+                    .storageKey(stored.key())
+                    .source(PhotoSource.RECEIPT)
+                    .visibility(PhotoVisibility.PRIVATE)
+                    .caption(blankToNull(caption))
+                    .folder(ProjectPhoto.FOLDER_RECEIPTS)
+                    .build());
+        } catch (RuntimeException e) {
+            cleanup.afterCommit(stored.key()); // review B-48, same rule as the upload above
+            throw e;
+        }
     }
 
     /**

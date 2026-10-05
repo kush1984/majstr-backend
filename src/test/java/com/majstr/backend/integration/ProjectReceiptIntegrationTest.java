@@ -175,6 +175,54 @@ class ProjectReceiptIntegrationTest extends IntegrationTestBase {
         assertThat(receipts.findIdentifiedByProjectId(projectId)).isEmpty();
     }
 
+    /**
+     * B-53. The identity arrives on the OBJECT side LAST — the act is built and signed on site, the
+     * till receipts are photographed in a batch and their QRs read later. By then the sign-time
+     * reconciler had already run and matched nothing, so the paper stayed in the «клієнт
+     * відшкодовує» receivable while the act's own copy had moved the same money into «За
+     * договором». Reading the QR now is what finally identifies it, so that is where it settles.
+     */
+    @Test
+    void aReceiptThatLearnsItsIdentityAfterTheActWasSignedSettlesAgainstIt() {
+        UUID actId = insertSignedActWithIdentifiedReceipt("4000123456", "77", "483.50");
+        UUID receiptId = insertReceipt("Епіцентр", "483.50");
+
+        receiptService.update(projectId, receiptId, ownerId, new ProjectReceiptRequest(
+                "Епіцентр", new BigDecimal("483.50"), LocalDate.of(2026, 9, 8), null,
+                "4000123456", "77"));
+
+        assertThat(receipts.findById(receiptId).orElseThrow().getBilledOnActId())
+                .as("the act that billed this paper first")
+                .isEqualTo(actId);
+    }
+
+    /** A different paper settles against nothing — the identity alone decides, never the amount. */
+    @Test
+    void aReceiptWithItsOwnCodeIsLeftAlone() {
+        insertSignedActWithIdentifiedReceipt("4000123456", "77", "483.50");
+        UUID receiptId = insertReceipt("Нова Лінія", "483.50");
+
+        receiptService.update(projectId, receiptId, ownerId, new ProjectReceiptRequest(
+                "Нова Лінія", new BigDecimal("483.50"), LocalDate.of(2026, 9, 8), null,
+                "4000123456", "88"));
+
+        assertThat(receipts.findById(receiptId).orElseThrow().getBilledOnActId()).isNull();
+    }
+
+    /** An act still in DRAFT has billed nobody: the sign is what moves the money. */
+    @Test
+    void anUnsignedActDoesNotSettleAnything() {
+        UUID actId = insertSignedActWithIdentifiedReceipt("4000123456", "77", "483.50");
+        jdbc.update("UPDATE work_act SET status = 'DRAFT', signed_at = NULL WHERE id = ?", actId);
+        UUID receiptId = insertReceipt("Епіцентр", "483.50");
+
+        receiptService.update(projectId, receiptId, ownerId, new ProjectReceiptRequest(
+                "Епіцентр", new BigDecimal("483.50"), LocalDate.of(2026, 9, 8), null,
+                "4000123456", "77"));
+
+        assertThat(receipts.findById(receiptId).orElseThrow().getBilledOnActId()).isNull();
+    }
+
     // ---- helpers ----------------------------------------------------------
 
     private UUID insertReceipt(String label, String amount) {
@@ -198,6 +246,25 @@ class ProjectReceiptIntegrationTest extends IntegrationTestBase {
                         FALSE, now(), now())
                 """, id, ownerId, projectId);
         return id;
+    }
+
+    /** A SIGNED act carrying one identified receipt — the paper the object copy turns out to be. */
+    private UUID insertSignedActWithIdentifiedReceipt(String fn, String fiscalId, String amount) {
+        UUID actId = UUID.randomUUID();
+        jdbc.update("""
+                INSERT INTO work_act (id, user_id, project_id, number, kind, status, issued_at,
+                                      period_from, period_to, receipts_to_expenses, signed_at,
+                                      created_at, updated_at)
+                VALUES (?, ?, ?, ?, 'INTERIM', 'SIGNED', CURRENT_DATE, CURRENT_DATE, CURRENT_DATE,
+                        FALSE, now(), now(), now())
+                """, actId, ownerId, projectId, UUID.randomUUID().toString().substring(0, 6));
+        jdbc.update("""
+                INSERT INTO work_act_receipt (id, work_act_id, label, amount, returned_amount,
+                                              storage_key, sort_order, itemized, fiscal_fn,
+                                              fiscal_id, created_at, version)
+                VALUES (?, ?, 'Чек', ?::numeric, 0, 'act-receipts/x.jpg', 0, false, ?, ?, now(), 0)
+                """, UUID.randomUUID(), actId, amount, fn, fiscalId);
+        return actId;
     }
 
     private void stampBilled(UUID receiptId, UUID actId) {

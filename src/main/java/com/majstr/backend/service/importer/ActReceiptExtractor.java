@@ -1,5 +1,6 @@
 package com.majstr.backend.service.importer;
 
+import com.majstr.backend.config.LocalizationConfig;
 import com.majstr.backend.exception.AiExtractionException;
 import com.majstr.backend.service.ai.AiExtractors;
 import com.majstr.backend.service.ai.AiFlow;
@@ -102,7 +103,7 @@ public class ActReceiptExtractor {
                 // months or years old, the value only PREFILLS a field they see and correct before
                 // «Додати чек», and blanking a date the model read correctly taught them that the
                 // recognition "doesn't take dates at all".
-                return parsed.isAfter(LocalDate.now()) ? null : parsed;
+                return parsed.isAfter(LocalDate.now(LocalizationConfig.ZONE)) ? null : parsed;
             } catch (DateTimeParseException ignored) {
                 // try the next shape
             }

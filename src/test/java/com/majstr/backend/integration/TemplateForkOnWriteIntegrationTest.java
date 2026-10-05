@@ -207,6 +207,54 @@ class TemplateForkOnWriteIntegrationTest extends IntegrationTestBase {
         assertThat(detail.items()).extracting(i -> i.sortOrder()).containsExactly(0, 1, 2);
     }
 
+    /**
+     * The batch an offline outbox replays (review B-34): EVERY op names the DEFAULT's ids, because the
+     * device queued them before anything forked. Op 1 forked and was translated; ops 2..n found the
+     * fork already there, were handed an empty map, matched nothing and were answered as SUCCESS — so
+     * a master who renamed, dropped a position, retyped another and reordered offline kept only the
+     * rename, and the editor re-seeded its baseline from that answer.
+     */
+    @Test
+    void everyOpOfAnOfflineBatch_lands_evenThoughTheyAllNameTheDefaultsIds() {
+        UUID priming = itemId("Грунтування");
+        UUID painting = itemId("Фарбування");
+        UUID demolition = itemId("Демонтаж");
+
+        // Op 1 forks. From here on the copy exists and the default is hidden for this master…
+        service.updateMeta(defaultId, "Мій набір", null, ownerId);
+        // …and ops 2..4 are still addressing the DEFAULT's position ids.
+        service.removeItem(defaultId, demolition, ownerId);
+        service.updateItem(defaultId, priming,
+                new TemplateItemRequest("Грунтування в два шари", ItemType.WORK, Unit.M2), ownerId);
+        var detail = service.reorderItems(defaultId,
+                new TemplateItemsOrderRequest(new ArrayList<>(List.of(painting, priming))), ownerId);
+
+        assertThat(detail.id()).isNotEqualTo(defaultId);
+        assertThat(detail.items()).extracting(i -> i.name())
+                .containsExactly("Фарбування", "Грунтування в два шари");
+        // The shared row is untouched — every other master still sees the bundle they had.
+        assertThat(jdbc.queryForObject(
+                "SELECT count(*) FROM estimate_template_items WHERE template_id = ?",
+                Integer.class, defaultId)).isEqualTo(3);
+    }
+
+    @Test
+    void theCopysPositionsRecordWhichDefaultPositionTheyCameFrom() {
+        // The column is what makes the translation above reconstructible from the DATA rather than
+        // only from the moment of the copy.
+        UUID priming = itemId("Грунтування");
+        UUID forkId = service.updateMeta(defaultId, "Мій набір", null, ownerId).id();
+
+        assertThat(jdbc.queryForObject("""
+                SELECT count(*) FROM estimate_template_items
+                 WHERE template_id = ? AND forked_from_item_id IS NULL
+                """, Integer.class, forkId)).as("every copied row knows its origin").isZero();
+        assertThat(jdbc.queryForObject("""
+                SELECT count(*) FROM estimate_template_items
+                 WHERE template_id = ? AND forked_from_item_id = ?
+                """, Integer.class, forkId, priming)).isEqualTo(1);
+    }
+
     // ---- what the copy carries with it -------------------------------------------------------
 
     /**

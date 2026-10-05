@@ -1,5 +1,6 @@
 package com.majstr.backend.service;
 
+import com.majstr.backend.config.LocalizationConfig;
 import com.majstr.backend.dto.CrewMarginResponse;
 import com.majstr.backend.dto.ExpenseRequest;
 import com.majstr.backend.dto.ExpenseResponse;
@@ -105,7 +106,7 @@ public class ObjectExpenseService {
                 .category(req.category())
                 .source(req.source() != null ? req.source() : ExpenseSource.MANUAL)
                 .note(trimToNull(req.note()))
-                .spentAt(req.spentAt() != null ? req.spentAt() : LocalDate.now())
+                .spentAt(req.spentAt() != null ? req.spentAt() : LocalDate.now(LocalizationConfig.ZONE))
                 .build();
         return ExpenseResponse.from(expenseRepository.save(expense));
     }
@@ -180,10 +181,14 @@ public class ObjectExpenseService {
         ObjectEconomyActsResponse acts = actsAxis(objectId);
         ObjectEconomyMaterialsResponse materials = materialsAxis(objectId);
         PaymentsSummaryResponse payments = enabled ? paymentService.summaryUnchecked(objectId) : null;
-        ObjectEconomyInternalsResponse internals = enabled
-                ? internalsOf(objectId, payments.contractedTotal())
-                : null;
-        return new ObjectEconomyResponse(panels, acts, materials, payments, internals);
+        // ALWAYS null (review B-85). `internals` was {expenses, profit}, and «Прибуток» left the
+        // object for good (commit 170a419): the formula subtracted expenses no screen lets a master
+        // enter against an object, so it read ≈ «За договором» for everyone. Nothing has rendered it
+        // since — the PWA's own PRO gate reads the plan, not this field. The field stays on the DTO
+        // because the PWA's hand-written types declare it (nullable, so a null is already handled);
+        // removing it is a contract change for both repos, and an aggregate query per request for a
+        // figure nobody reads is not.
+        return new ObjectEconomyResponse(panels, acts, materials, payments, null);
     }
 
     /** The FREE-visible works axis (acts iteration): contracted / accepted-by-acts / received,
@@ -221,12 +226,6 @@ public class ObjectExpenseService {
                 projectReceiptRepository.countUnpriced(objectId));
     }
 
-    private ObjectEconomyInternalsResponse internalsOf(UUID objectId, BigDecimal contracted) {
-        BigDecimal expenses = expenseRepository.sumAll(objectId);
-        BigDecimal profit = contracted.subtract(expenses);
-        return new ObjectEconomyInternalsResponse(expenses, profit);
-    }
-
     /**
      * «Бригаді / Твоя націнка» for every marked-up copy signed on this object, keyed by estimate id.
      *
@@ -248,7 +247,8 @@ public class ObjectExpenseService {
         for (Estimate copy : copies) {
             CrewMarginResponse margin = CrewMarginCalculator.of(copy,
                     itemsByEstimate.getOrDefault(copy.getId(), List.of()),
-                    workActItemRepository.sumSignedActMargin(copy.getId()));
+                    workActItemRepository.sumSignedActMargin(copy.getId()),
+                    workActItemRepository.sumSignedActAdjustments(copy.getId()));
             if (margin != null) {
                 byEstimate.put(copy.getId(), margin);
             }

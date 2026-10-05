@@ -460,6 +460,28 @@ class PublicEstimateServiceTest {
         assertThat(view.payments()).isNull(); // SIGNATURE never has a payments card
     }
 
+    /**
+     * B-74. A markup copy used to be named «… +20%» by default, and the portal prints that name:
+     * the client divides by 1,2 and has the crew's prices off his own estimate. New copies are
+     * named differently, but the ones already created are out there, so the rate is stripped on the
+     * way out. Nothing else about the name is touched.
+     */
+    @Test
+    void viewPortal_neverPrintsTheMarkupRateInAnEstimateName() {
+        Estimate copy = sampleEstimate();
+        copy.setName("Санвузол +20%");
+        given(projectShareLinkRepository.findByTokenAndKind(token, ShareLinkKind.PORTAL))
+                .willReturn(Optional.of(usablePortalLink(copy.getProject())));
+        given(estimateRepository.findByProjectIdAndPortalVisibleTrueOrderByCreatedAtAsc(copy.getProject().getId()))
+                .willReturn(List.of(copy));
+        given(itemRepository.findByEstimateIdOrderBySortOrderAscIdAsc(copy.getId()))
+                .willReturn(List.of(workItem(copy)));
+
+        PublicPortalView view = publicService.viewPortal(token);
+
+        assertThat(view.estimates().get(0).name()).isEqualTo("Санвузол");
+    }
+
     @Test
     void viewPortal_stillRendersASignedEstimate_soTheJustSignedConfirmationBannerCanShow() {
         // Regression guard: viewPortal must NOT filter by status. signPortal returns this exact

@@ -18,6 +18,21 @@ public interface ProjectMessageFileRepository extends JpaRepository<ProjectMessa
     long countByMessageId(UUID messageId);
 
     /**
+     * Every stored key behind this object's message attachments — read BEFORE the object's cascade
+     * takes the rows (review B-48).
+     *
+     * <p>{@code project_message_file} was the fourth file table and the one B-26 missed, and it is
+     * the worst one to miss: {@code MessageFileRetentionService} finds files THROUGH their rows, so
+     * a key orphaned by a project delete can never be cleaned later by anything. A client's
+     * attachment is also his own data, which a deletion is supposed to remove.</p>
+     */
+    @Query("""
+            SELECT f.storageKey FROM ProjectMessageFile f
+            WHERE f.message.project.id = :projectId
+            """)
+    List<String> findStorageKeysByProjectId(@Param("projectId") UUID projectId);
+
+    /**
      * A file by id AND the message it must belong to.
      *
      * <p>Both halves are required. Looking a file up by id alone and checking the message afterwards

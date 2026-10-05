@@ -81,6 +81,41 @@ class EstimatePdfServiceTest {
         assertThat(text).doesNotContain("10.03.2026");
     }
 
+    /**
+     * The one number in this product the client must never see (review B-75).
+     *
+     * <p>{@code PublicEstimateIsolationTest} walks the public DTO trees by component NAME, and the
+     * PDF model's components are ENTITIES — an {@code EstimateItem} legitimately carries
+     * {@code source_unit_price}, so the walk stops there and can say nothing about whether the
+     * renderer prints it. This asserts the rendered page instead, which is the question that
+     * actually matters.</p>
+     */
+    @Test
+    void render_neverPrintsTheCrewsOwnPrice() throws Exception {
+        given(featureGuard.isEnabled(org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.eq(Feature.BRANDED_PDF))).willReturn(false);
+        EstimatePdfService.PdfModel base = sampleModel();
+        EstimateItem copyLine = EstimateItem.builder()
+                .id(UUID.randomUUID())
+                .estimate(base.estimate())
+                .type(ItemType.WORK)
+                .name("Штукатурка стін")
+                .unit(Unit.M2)
+                .quantity(new BigDecimal("1.000"))
+                .unitPrice(new BigDecimal("165.32"))        // what the client pays
+                .sourceUnitPrice(new BigDecimal("137.77"))  // what the crew is paid
+                .lineTotal(new BigDecimal("165.32"))
+                .sortOrder(0)
+                .build();
+        byte[] pdf = pdfService.render(new EstimatePdfService.PdfModel(
+                base.contractor(), base.project(), base.client(), base.estimate(),
+                List.of(copyLine), List.of()));
+
+        String digits = digitsOnly(textOf(pdf));
+        assertThat(digits).as("the client's own price is printed").contains("16532");
+        assertThat(digits).as("the crew's price must not appear anywhere").doesNotContain("13777");
+    }
+
     private EstimatePdfService.PdfModel sampleModel() {
         return sampleModel(Instant.now());
     }

@@ -76,6 +76,7 @@ class ProjectReceiptServiceTest {
      *  re-read the winner's row in a transaction the failed insert has not poisoned. */
     @Mock private ProjectReceiptCreator creator;
     @Mock private StorageCleanup cleanup;
+    @Mock private ActReceiptReconciler reconciler;
 
     @InjectMocks private ProjectReceiptService service;
 

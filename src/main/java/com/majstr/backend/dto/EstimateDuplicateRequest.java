@@ -3,6 +3,7 @@ package com.majstr.backend.dto;
 import jakarta.validation.constraints.AssertTrue;
 import jakarta.validation.constraints.DecimalMax;
 import jakarta.validation.constraints.DecimalMin;
+import jakarta.validation.constraints.Digits;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
 
@@ -31,8 +32,16 @@ import java.util.UUID;
  */
 public record EstimateDuplicateRequest(
         @Size(max = 255) String name,
-        @NotNull @DecimalMin("0") @DecimalMax("1000") BigDecimal markupPercent,
-        boolean discount,
+        @NotNull @DecimalMin("0") @DecimalMax("999.99") @Digits(integer = 3, fraction = 2)
+        BigDecimal markupPercent,
+        /**
+         * Whether {@code markupPercent} is a DISCOUNT rather than a rise. A wrapper with
+         * {@code @NotNull}, never a primitive (review B-38): the global
+         * {@code fail-on-null-for-primitives: false} (V135) turned an omitted field from a 400 into a
+         * silent {@code false}, so a client drift would quietly raise prices where the master meant
+         * to cut them. A boolean that reverses the SIGN of money has to be stated.
+         */
+        @NotNull Boolean discount,
         List<UUID> itemIds
 ) {
     /** A discount over 100 % would produce zero or negative prices — reject it as a 400. */

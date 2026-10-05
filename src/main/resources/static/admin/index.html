@@ -865,8 +865,12 @@
             const ageMs = u.lastActiveAt ? now - new Date(u.lastActiveAt).getTime() : null;
             return {
                 u,
-                activeNow: ageMs !== null && ageMs <= ACTIVE_WINDOW_MS,
-                activeToday: ageMs !== null && ageMs > ACTIVE_WINDOW_MS && ageMs <= RECENT_WINDOW_MS,
+                // STRICTLY inside the window, the same comparison the ordering query makes
+                // (`u.lastActiveAt > :activeSince`) — review B-54. With `<=` on this side a row
+                // exactly on the boundary was tinted green while the server had already sorted it
+                // into the amber bucket, so the colour and the position disagreed.
+                activeNow: ageMs !== null && ageMs < ACTIVE_WINDOW_MS,
+                activeToday: ageMs !== null && ageMs >= ACTIVE_WINDOW_MS && ageMs < RECENT_WINDOW_MS,
             };
         });
 

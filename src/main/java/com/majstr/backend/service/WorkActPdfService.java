@@ -152,9 +152,13 @@ public class WorkActPdfService {
         doc.add(new Paragraph("Дата складання: " + DATE.format(act.getIssuedAt()), fonts.regular(10)));
         doc.add(new Paragraph("Роботи виконано в період: з " + DATE.format(act.getPeriodFrom())
                 + " по " + DATE.format(act.getPeriodTo()), fonts.regular(10)));
-        String docCity = model.contractor().getDocCity();
-        if (notBlank(docCity)) {
-            doc.add(new Paragraph("Місце складання: " + docCity.trim(), fonts.regular(10)));
+        // The act's OWN place wins (review B-85): the field is on the act, the editor offers it, and
+        // the PDF printed the contractor's `docCity` regardless — so a master who typed «Бровари»
+        // for a job out of town saw his registered city on the document. The requisite stays the
+        // fallback, which is what makes typing nothing the right default.
+        String place = notBlank(act.getPlace()) ? act.getPlace() : model.contractor().getDocCity();
+        if (notBlank(place)) {
+            doc.add(new Paragraph("Місце складання: " + place.trim(), fonts.regular(10)));
         }
         Project project = model.project();
         Paragraph object = new Paragraph("Об'єкт: " + project.getName()
@@ -666,8 +670,16 @@ public class WorkActPdfService {
             CumulativeReference cumulative
     ) {
         public PdfModel {
-            estimateNames = estimateNames == null ? Map.of() : estimateNames;
+            // An act is always a document for the CLIENT, so the group headers are stripped of a
+            // trailing markup rate here rather than at each of the three call sites (review B-74).
+            estimateNames = estimateNames == null ? Map.of() : clientSafe(estimateNames);
             receipts = receipts == null ? List.of() : receipts;
+        }
+
+        private static Map<UUID, String> clientSafe(Map<UUID, String> names) {
+            Map<UUID, String> out = new LinkedHashMap<>(names.size());
+            names.forEach((id, name) -> out.put(id, ClientSafeName.of(name)));
+            return out;
         }
     }
 

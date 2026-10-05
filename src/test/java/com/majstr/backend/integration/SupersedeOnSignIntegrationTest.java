@@ -22,6 +22,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.UUID;
 
@@ -112,7 +113,117 @@ class SupersedeOnSignIntegrationTest extends IntegrationTestBase {
         });
     }
 
+    @Test
+    void signingAConsolidatedRollup_makesItTheContract_andUncountsItsSources() {
+        // B-68. consolidate() creates the rollup uncounted so it cannot double-count its sources —
+        // right until the client signs the ROLLUP. «За договором» counts SIGNED ∧ counted, and then
+        // nothing on the object was both: a 50 000 ₴ signed deal read 0 ₴, and no act could be made
+        // against it (the progress picker is SIGNED ∧ counted too).
+        User owner = userRepository.save(newOwner());
+        Project project = newProject(owner);
+
+        Estimate a = draft(project, "30000.00");
+        Estimate b = draft(project, "20000.00");
+        Estimate rollup = estimateRepository.save(Estimate.builder()
+                .project(project).status(EstimateStatus.DRAFT).countInEconomy(false).build());
+        addWork(rollup, "50000.00");
+        rollup.setConsolidationSourceIds(new LinkedHashSet<>(List.of(a.getId(), b.getId())));
+        estimateRepository.saveAndFlush(rollup);
+
+        signViaLink(rollup);
+
+        assertThat(estimateRepository.findById(rollup.getId()).orElseThrow().isCountInEconomy()).isTrue();
+        assertThat(estimateRepository.findById(a.getId()).orElseThrow().isCountInEconomy()).isFalse();
+        assertThat(estimateRepository.findById(b.getId()).orElseThrow().isCountInEconomy()).isFalse();
+        // 50 000 once — the signed rollup — never 50 000 + its two sources.
+        assertThat(estimateRepository.sumIncomeCounted(project.getId())).isEqualByComparingTo("50000.00");
+    }
+
+    @Test
+    void signingARollupOverAnAlreadySignedSource_movesNothing() {
+        // Deliberately narrow (B-68): a source that is already SIGNED ∧ counted IS the contract, and
+        // counting the rollup beside it would double exactly what the original `false` protected.
+        User owner = userRepository.save(newOwner());
+        Project project = newProject(owner);
+
+        Estimate signedSource = estimateRepository.save(Estimate.builder()
+                .project(project).status(EstimateStatus.SIGNED).countInEconomy(true)
+                .signedAt(Instant.now()).signerName("Олена").signerPhone("+380671111111").build());
+        addWork(signedSource, "30000.00");
+        Estimate rollup = estimateRepository.save(Estimate.builder()
+                .project(project).status(EstimateStatus.DRAFT).countInEconomy(false).build());
+        addWork(rollup, "30000.00");
+        rollup.setConsolidationSourceIds(new LinkedHashSet<>(List.of(signedSource.getId())));
+        estimateRepository.saveAndFlush(rollup);
+
+        signViaLink(rollup);
+
+        assertThat(estimateRepository.findById(rollup.getId()).orElseThrow().isCountInEconomy()).isFalse();
+        assertThat(estimateRepository.findById(signedSource.getId()).orElseThrow().isCountInEconomy()).isTrue();
+        assertThat(estimateRepository.sumIncomeCounted(project.getId())).isEqualByComparingTo("30000.00");
+    }
+
     // ---- fixtures ---------------------------------------------------------------
+
+    private Project newProject(User owner) {
+        return projectRepository.save(Project.builder()
+                .owner(owner).name("Обʼєкт").address("вул. Тестова, 1")
+                .status(ProjectStatus.IN_PROGRESS).build());
+    }
+
+    private Estimate draft(Project project, String amount) {
+        Estimate e = estimateRepository.save(Estimate.builder()
+                .project(project).status(EstimateStatus.DRAFT).countInEconomy(true).build());
+        addWork(e, amount);
+        return e;
+    }
+
+    private void signViaLink(Estimate estimate) {
+        EstimateShareLink link = shareLinkRepository.save(EstimateShareLink.builder()
+                .estimate(estimate).token("tok-" + UUID.randomUUID()).build());
+        publicService.sign(link.getToken(), new SignRequest("Марія Петренко", "+380672222222",
+                estimateRepository.findById(estimate.getId()).orElseThrow().getVersion()), "203.0.113.42");
+    }
+
+
+
+    /**
+     * B-73. A master prices three variants off one sheet and sends them all. {@code doSign} only
+     * ever looked at the PARENT, so two siblings could both end up SIGNED ∧ counted and «За
+     * договором» read the sum of two quotes for one job. The latest signature wins; the earlier
+     * variant keeps its signature and stops counting, exactly like a superseded parent.
+     */
+    @Test
+    void signingASecondSiblingCopy_uncountsTheFirstInsteadOfDoublingTheContract() {
+        User owner = userRepository.save(newOwner());
+        Project project = projectRepository.save(Project.builder()
+                .owner(owner).name("Обʼєкт").address("вул. Тестова, 1")
+                .status(ProjectStatus.IN_PROGRESS).build());
+        Estimate parent = estimateRepository.save(Estimate.builder()
+                .project(project).status(EstimateStatus.DRAFT).countInEconomy(true).build());
+        addWork(parent, "10000.00");
+
+        Estimate variantA = estimateRepository.save(Estimate.builder()
+                .project(project).status(EstimateStatus.DRAFT).countInEconomy(true)
+                .duplicatedFromId(parent.getId()).build());
+        addWork(variantA, "12000.00");
+        Estimate variantB = estimateRepository.save(Estimate.builder()
+                .project(project).status(EstimateStatus.DRAFT).countInEconomy(true)
+                .duplicatedFromId(parent.getId()).build());
+        addWork(variantB, "11000.00");
+
+        signViaLink(variantA);
+        signViaLink(variantB);
+
+        Estimate reloadedA = estimateRepository.findById(variantA.getId()).orElseThrow();
+        assertThat(reloadedA.getStatus()).as("the signature he really gave is history, not a lie")
+                .isEqualTo(EstimateStatus.SIGNED);
+        assertThat(reloadedA.isCountInEconomy()).isFalse();
+        assertThat(reloadedA.getSupersededByEstimateId()).isEqualTo(variantB.getId());
+        assertThat(estimateRepository.sumIncomeCounted(project.getId()))
+                .as("one job, one contract")
+                .isEqualByComparingTo("11000.00");
+    }
 
     private User newOwner() {
         String unique = UUID.randomUUID().toString();

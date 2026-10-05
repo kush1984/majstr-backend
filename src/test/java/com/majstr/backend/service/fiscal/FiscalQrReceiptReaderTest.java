@@ -66,7 +66,8 @@ class FiscalQrReceiptReaderTest {
     @Test
     void theIdentityIsTheOneOnThePaper_evenWhenTheLookupAnsweredLittle() {
         when(fiscalQr.read(QR, false)).thenReturn(Optional.of(
-                new FiscalReceipt(null, LocalDate.of(2026, 8, 15), new BigDecimal("690.00"), List.of())));
+                FiscalReceipt.fromCodeAlone(LocalDate.of(2026, 8, 15), new BigDecimal("690.00"),
+                        FiscalReceipt.PositionSource.NOT_ASKED)));
 
         ReceiptRecognizeResponse read = reader.read(QR);
 
@@ -90,6 +91,7 @@ class FiscalQrReceiptReaderTest {
     private static FiscalReceipt fiscalReceipt() {
         return new FiscalReceipt("Епіцентр", LocalDate.of(2026, 8, 15), new BigDecimal("690.00"),
                 List.of(new EstimateExtractor.Extracted.Line(
-                        "Шпаклівка", "шт", new BigDecimal("2"), new BigDecimal("345"), "MATERIAL", null)));
+                        "Шпаклівка", "шт", new BigDecimal("2"), new BigDecimal("345"), "MATERIAL", null)),
+                FiscalReceipt.PositionSource.LOOKUP);
     }
 }

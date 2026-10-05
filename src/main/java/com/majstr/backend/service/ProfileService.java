@@ -25,6 +25,7 @@ import java.time.Instant;
 import java.util.Arrays;
 import java.util.LinkedHashSet;
 import java.util.UUID;
+import java.util.Locale;
 
 @Slf4j
 @Service
@@ -208,7 +209,7 @@ public class ProfileService {
         if (rawEmail == null || rawEmail.isBlank()) {
             return;
         }
-        String newEmail = rawEmail.toLowerCase().trim();
+        String newEmail = rawEmail.toLowerCase(Locale.ROOT).trim();
         if (newEmail.equals(user.getEmail()) || user.isEmailVerified()) {
             return; // unchanged, or locked because already verified
         }

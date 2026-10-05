@@ -18,6 +18,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.util.LinkedHashSet;
 import java.util.Set;
+import java.util.Locale;
 
 /**
  * Creates the very first {@code ADMIN} on startup so a fresh production database
@@ -57,7 +58,7 @@ public class AdminSeeder implements ApplicationRunner {
             log.info("Admin auto-seed: an ADMIN already exists — skipping");
             return;
         }
-        String email = properties.email().toLowerCase().trim();
+        String email = properties.email().toLowerCase(Locale.ROOT).trim();
         if (userRepository.existsByEmailIgnoreCase(email)) {
             // The configured email is taken by a non-admin user — don't hijack it
             // or crash the unique constraint. Promote that account by hand if intended.

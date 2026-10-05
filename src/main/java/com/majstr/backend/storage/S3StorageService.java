@@ -13,6 +13,7 @@ import software.amazon.awssdk.services.s3.model.PutObjectRequest;
 import java.io.InputStream;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.Locale;
 
 /**
  * Stores objects in an S3-compatible bucket (built for Cloudflare R2, works
@@ -35,7 +36,7 @@ public class S3StorageService implements StorageService {
 
     @Override
     public StoredObject store(InputStream content, long size, String prefix, String extension, String contentType) {
-        String safeExtension = (extension == null || extension.isBlank()) ? "bin" : extension.toLowerCase();
+        String safeExtension = (extension == null || extension.isBlank()) ? "bin" : extension.toLowerCase(Locale.ROOT);
         String key = prefix + "/" + UUID.randomUUID() + "." + safeExtension;
         PutObjectRequest.Builder request = PutObjectRequest.builder().bucket(bucket).key(key);
         if (contentType != null && !contentType.isBlank()) {

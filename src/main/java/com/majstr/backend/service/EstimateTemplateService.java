@@ -655,6 +655,13 @@ public class EstimateTemplateService {
      * <p>The fork is recorded in {@code template_default_override}, which makes a second write on
      * the same default land in the SAME copy — without it an offline replay would fork twice and
      * the master would find two half-edited bundles.</p>
+     *
+     * <p><b>And the id translation outlives the forking request</b> (review B-34). The PWA's outbox
+     * replays every queued op addressing the DEFAULT's ids, so op 1 forked and was translated while
+     * ops 2..n found the fork already there, got an empty map, matched nothing — and were answered as
+     * SUCCESS. An offline batch of «rename, drop A, retype B, reorder» kept only the rename, and the
+     * editor re-seeded its baseline from that answer. {@code forked_from_item_id} (V143) makes the
+     * map reconstructible from the rows themselves, so every replayed op lands.</p>
      */
     private Writable loadWritable(UUID templateId, UUID ownerId) {
         EstimateTemplate template = templateRepository.findById(templateId)
@@ -667,7 +674,7 @@ public class EstimateTemplateService {
         Optional<EstimateTemplate> fork = row
                 .map(TemplateDefaultOverride::getForkedTemplateId)
                 .flatMap(templateRepository::findById);
-        return fork.map(f -> new Writable(f, Map.<UUID, UUID>of()))
+        return fork.map(f -> new Writable(f, translationFor(f)))
                 .orElseGet(() -> forkDefault(template, ownerId));
     }
 
@@ -678,8 +685,9 @@ public class EstimateTemplateService {
      * positions that do not exist in the copy and was silently dropped — and the PWA, which re-seeds
      * its baseline from the answer, reported success.
      *
-     * <p>Empty whenever nothing was forked (an own template, or a default already forked): the ids
-     * in the request are then the ones the template really carries.</p>
+     * <p>Empty for an OWN template: the ids in the request are then the ones it really carries. For a
+     * default that was already forked it is rebuilt from {@code forked_from_item_id} (B-34), because a
+     * replayed op is still naming the default's ids however long ago the fork happened.</p>
      */
     private record Writable(EstimateTemplate template, Map<UUID, UUID> itemIds) {
         /** The id this request's {@code itemId} became in the copy, or itself when nothing moved. */
@@ -687,6 +695,26 @@ public class EstimateTemplateService {
             UUID moved = itemIds.get(requested);
             return moved == null ? requested : moved;
         }
+    }
+
+    /**
+     * default-item-id → fork-item-id for a fork that already exists (review B-34).
+     *
+     * <p>Read off the copies' own {@code forked_from_item_id}, so it is the same answer
+     * {@link #forkDefault} returned when the copy was made — however many requests ago. A row with no
+     * pointer (an own position the master added afterwards, or a backfilled fork whose match was
+     * ambiguous) simply contributes nothing, which leaves that one id untranslated: the old behaviour,
+     * for the only rows where no honest translation exists.</p>
+     */
+    private Map<UUID, UUID> translationFor(EstimateTemplate fork) {
+        Map<UUID, UUID> itemIds = new LinkedHashMap<>();
+        for (EstimateTemplateItem i : templateItemRepository
+                .findByTemplateIdOrderBySortOrderAscIdAsc(fork.getId())) {
+            if (i.getForkedFromItemId() != null) {
+                itemIds.put(i.getForkedFromItemId(), i.getId());
+            }
+        }
+        return itemIds;
     }
 
     /** Copy a system default into the caller's own editable template and retire the original. */
@@ -717,6 +745,9 @@ public class EstimateTemplateService {
                     .type(i.getType())
                     .unit(i.getUnit())
                     .sortOrder(i.getSortOrder())
+                    // Where this row came from (V143, B-34) — so a LATER request still naming the
+                    // default's ids can be translated too, not only the one that did the forking.
+                    .forkedFromItemId(i.getId())
                     .build());
             // The id the request in flight is still naming → the row it must actually land on.
             itemIds.put(i.getId(), copied.getId());

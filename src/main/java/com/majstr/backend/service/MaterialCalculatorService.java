@@ -42,6 +42,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import java.util.Locale;
 
 /**
  * «Скільки матеріалу купити» — the estimate's works turned into a buying list (V127).
@@ -126,10 +127,17 @@ public class MaterialCalculatorService {
      * <p>A prefix for paint — {@code PAINT_INTERIOR}, {@code PAINT_CEILING} and V138's
      * {@code PAINT_FACADE} are all spread by the same hand — and an exact code for grout, which is
      * the only material a joint width governs. The habit is applied as a RATIO, which is what lets
-     * it cross a facade norm written against a different base (6,5 м²/л, not 9): a master who
-     * covers a third more than we assume covers a third more out there too. Adhesive, primer and
-     * putty do not scale with either: they are consumed per m2 of surface, and their own habit is a
-     * thickness, which the POSITION now answers.</p>
+     * it cross a facade norm written against a different base (≈5,7 м²/л — V138's 0,35 л/м² over two
+     * coats — not 9): a master who covers a third more than we assume covers a third more out there
+     * too. Adhesive, primer and putty do not scale with either: they are consumed per m2 of surface,
+     * and their own habit is a thickness, which the POSITION now answers.</p>
+     *
+     * <p><b>{@code ENAMEL_WOOD} and {@code VARNISH_CLEAR} are deliberately OUT</b> (review B-49
+     * asked for this to be decided rather than fall out of a prefix). {@code PAINT_COVERAGE} is the
+     * master's answer about HIS WALL PAINT, and an enamel or a clear varnish is a different product
+     * with a coverage of its own — V138 wrote 0,22 and 0,20 л/м² for them at ONE coat, so scaling
+     * them by a two-coat wall-paint ratio would be wrong in both factors at once. If a master's own
+     * figure for enamel ever matters, it is a second habit, not a reuse of this one.</p>
      */
     private static final String PAINT_CODE_PREFIX = "PAINT_";
     private static final String GROUT_CODE = "TILE_GROUT";
@@ -141,10 +149,19 @@ public class MaterialCalculatorService {
     /** The joint the shipped grout figures assume, in millimetres. */
     public static final BigDecimal DEFAULT_TILE_JOINT_MM = new BigDecimal("2.5");
 
-    /** Upper bound on a figure the master types per position — metres for a розгортка, millimetres
-     *  for a thickness. One bound for both because it is a stray extra digit it looks for, not a
-     *  rule of building; the PWA's own field guard uses the same number. */
-    private static final BigDecimal MAX_PER_POSITION = new BigDecimal("1000");
+    /**
+     * Upper bounds on the figures the master types, ONE PER QUESTION (review B-49).
+     *
+     * <p>They used to share a single 1000, which is a bound on nothing: a розгортка is metres and a
+     * thickness is millimetres, so a screed typed as 400 instead of 40 passed — 400 mm of screed is
+     * 800 kg/m² of dry mix on the shopping list, and the arithmetic line reads as if we meant it.
+     * Each number is deliberately well past any real answer and far short of a mistyped one: 150 mm
+     * covers the thickest plaster or screed layer anyone lays in one go, 5 m covers a короб's
+     * розгортка (V139's suggestions are 0,1–0,3 m), 1000 m covers a room's perimeter.</p>
+     */
+    private static final BigDecimal MAX_SECTION_M = new BigDecimal("5");
+    private static final BigDecimal MAX_THICKNESS_MM = new BigDecimal("150");
+    static final BigDecimal MAX_PERIMETER_M = new BigDecimal("1000");
 
     private final EstimateService estimateService;
     private final EstimateItemRepository itemRepository;
@@ -168,8 +185,8 @@ public class MaterialCalculatorService {
         if (perimeter == null) {
             perimeter = stored.perimeter();
         }
-        Map<UUID, BigDecimal> section = merged(stored.sections(), sections);
-        Map<UUID, BigDecimal> thickness = merged(stored.thicknesses(), thicknesses);
+        Map<UUID, BigDecimal> section = merged(stored.sections(), sections, MAX_SECTION_M);
+        Map<UUID, BigDecimal> thickness = merged(stored.thicknesses(), thicknesses, MAX_THICKNESS_MM);
         List<EstimateItem> buyable = buyableLines(itemRepository
                 .findByEstimateIdOrderBySortOrderAscIdAsc(estimateId));
         List<EstimateItem> works = priced(buyable);
@@ -508,9 +525,24 @@ public class MaterialCalculatorService {
             return scaleBy(per, habits.paint());
         }
         if (GROUT_CODE.equals(code)) {
-            return scaleBy(per, habits.joint());
+            // Against the joint THIS norm was written for, not always the product-wide 2,5 mm
+            // (review B-49). «Затирання швів від 3 мм» carries 0,8 kg/m² because its joint is wider,
+            // and rescaling that against 2,5 took a master's 5 mm habit and multiplied an
+            // already-wide figure by two. `baseline_param` (V144) is what each norm says it assumed.
+            BigDecimal baseline = norm.getBaselineParam() != null
+                    ? norm.getBaselineParam()
+                    : DEFAULT_TILE_JOINT_MM;
+            return scaleBy(per, ratio(habits.jointMm(), baseline));
         }
         return per;
+    }
+
+    /** {@code actual / assumed}, or 1 when either is missing — a habit nobody answered changes nothing. */
+    private static BigDecimal ratio(BigDecimal actual, BigDecimal assumed) {
+        if (actual == null || assumed == null || assumed.signum() <= 0 || actual.signum() <= 0) {
+            return null; // scaleBy reads null as «no habit»
+        }
+        return actual.divide(assumed, 10, RoundingMode.HALF_UP);
     }
 
     /**
@@ -540,9 +572,11 @@ public class MaterialCalculatorService {
             return paint;
         }
 
-        private BigDecimal joint() {
+        /** His joint in MILLIMETRES, raw — the ratio is per norm now (review B-49), because each
+         *  grout norm says which joint its own coefficient was written for. */
+        private BigDecimal jointMm() {
             if (!jointRead) {
-                joint = jointScale(ownerId);
+                joint = positive(pref(ownerId, MaterialPrefKey.TILE_JOINT_MM));
                 jointRead = true;
             }
             return joint;
@@ -571,11 +605,6 @@ public class MaterialCalculatorService {
                         6, RoundingMode.HALF_UP);
     }
 
-    /** Grout fills the joint, so it scales with the joint's width and nothing else. */
-    private BigDecimal jointScale(UUID ownerId) {
-        BigDecimal joint = positive(pref(ownerId, MaterialPrefKey.TILE_JOINT_MM));
-        return joint == null ? null : joint.divide(DEFAULT_TILE_JOINT_MM, 6, RoundingMode.HALF_UP);
-    }
 
     private BigDecimal positive(String raw) {
         BigDecimal value = parseWaste(raw);
@@ -599,13 +628,16 @@ public class MaterialCalculatorService {
         if (pref == null || pref.isBlank()) {
             return null;
         }
-        String[] parts = pref.toLowerCase().split("[x×*]");
+        String[] parts = pref.toLowerCase(Locale.ROOT).split("[x×*]");
         if (parts.length != 2) {
             return null;
         }
         try {
-            BigDecimal width = new BigDecimal(parts[0].trim());
-            BigDecimal height = new BigDecimal(parts[1].trim());
+            BigDecimal width = MaterialPrefs.number(parts[0]);
+            BigDecimal height = MaterialPrefs.number(parts[1]);
+            if (width == null || height == null) {
+                return null;
+            }
             if (width.signum() <= 0 || height.signum() <= 0) {
                 return null;
             }
@@ -626,15 +658,9 @@ public class MaterialCalculatorService {
         return value.max(BigDecimal.ZERO).min(MAX_WASTE_PERCENT);
     }
 
+    /** One reader for every stored habit — comma tolerant, see {@link MaterialPrefs} (B-19). */
     private BigDecimal parseWaste(String raw) {
-        if (raw == null || raw.isBlank()) {
-            return null;
-        }
-        try {
-            return new BigDecimal(raw.trim());
-        } catch (NumberFormatException e) {
-            return null;
-        }
+        return MaterialPrefs.number(raw);
     }
 
     private String pref(UUID ownerId, MaterialPrefKey key) {
@@ -689,18 +715,28 @@ public class MaterialCalculatorService {
      * короб sends that one, and the other box's answer from last week must not fall out of the
      * calculation because it was not in the query string.</p>
      */
-    private Map<UUID, BigDecimal> merged(Map<UUID, BigDecimal> stored, String raw) {
+    private Map<UUID, BigDecimal> merged(Map<UUID, BigDecimal> stored, String raw, BigDecimal max) {
         Map<UUID, BigDecimal> merged = new LinkedHashMap<>(stored);
-        merged.putAll(parsePerPosition(raw));
+        merged.putAll(parsePerPosition(raw, max));
         return merged;
     }
 
-    static Map<UUID, BigDecimal> parsePerPosition(String raw) {
+    /**
+     * The separator is {@code ;} OR a comma that starts a new id (review B-49).
+     *
+     * <p>Splitting on a bare comma contradicted this parameter's own documented shape:
+     * «uuid:0,4,uuid:0,55» — a comma DECIMAL, which the controller's javadoc shows and a Ukrainian
+     * keyboard types — was cut in half, so «uuid:0» parsed as zero (ignored as «unanswered») and
+     * «4» had no id at all. The answer was dropped in silence and the card went on asking. The
+     * lookahead keeps every legacy dot-decimal request working: a comma is a separator only where
+     * what follows it looks like the start of a UUID.</p>
+     */
+    static Map<UUID, BigDecimal> parsePerPosition(String raw, BigDecimal max) {
         if (raw == null || raw.isBlank()) {
             return Map.of();
         }
-        Map<UUID, BigDecimal> sections = new LinkedHashMap<>();
-        for (String entry : raw.split(",")) {
+        Map<UUID, BigDecimal> answers = new LinkedHashMap<>();
+        for (String entry : raw.split(";|,(?=\\s*[0-9a-fA-F]{8}-)")) {
             int colon = entry.lastIndexOf(':');
             if (colon <= 0 || colon == entry.length() - 1) {
                 continue;
@@ -708,18 +744,19 @@ public class MaterialCalculatorService {
             try {
                 UUID id = UUID.fromString(entry.substring(0, colon).trim());
                 BigDecimal value = new BigDecimal(entry.substring(colon + 1).trim().replace(',', '.'));
-                // Bounded for the same reason the PWA bounds its own field (B-18): the figure is
-                // multiplied into a quantity, so a stray extra digit is not a big answer, it is a
-                // shopping list nobody can read. Out of range is IGNORED, not rejected — the
-                // position then asks again, which is a screen the master can act on.
-                if (value.signum() > 0 && value.compareTo(MAX_PER_POSITION) <= 0) {
-                    sections.put(id, value);
+                // Bounded for the same reason the PWA bounds its own field (B-18), and bounded PER
+                // QUESTION since B-49: the figure is multiplied into a quantity, so a stray extra
+                // digit is not a big answer, it is a shopping list nobody can read. Out of range is
+                // IGNORED, not rejected — the position then asks again, which is a screen the
+                // master can act on.
+                if (value.signum() > 0 && value.compareTo(max) <= 0) {
+                    answers.put(id, value);
                 }
             } catch (IllegalArgumentException e) {
                 // not an id, or not a number — the position simply asks again
             }
         }
-        return sections;
+        return answers;
     }
 
     private BigDecimal scaled(BigDecimal value) {

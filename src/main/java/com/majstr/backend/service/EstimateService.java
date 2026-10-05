@@ -32,6 +32,8 @@ import com.majstr.backend.exception.ResourceNotFoundException;
 import com.majstr.backend.entity.EstimateKind;
 import com.majstr.backend.entity.WorkActStatus;
 import com.majstr.backend.exception.WorkActConflictException;
+import com.majstr.backend.feature.Feature;
+import com.majstr.backend.feature.FeatureGuard;
 import com.majstr.backend.feature.LimitService;
 import com.majstr.backend.repository.CatalogItemRepository;
 import com.majstr.backend.repository.EstimateItemRepository;
@@ -94,6 +96,8 @@ public class EstimateService {
     private final CatalogItemRepository catalogItemRepository;
     private final EstimatePdfService pdfService;
     private final LimitService limitService;
+    /** The crew margin is PRO-tier like the economy panel it mirrors (review B-75). */
+    private final FeatureGuard featureGuard;
     private final MeasurementService measurementService;
     private final ProjectPhotoRepository photoRepository;
     private final StorageService storage;
@@ -248,7 +252,7 @@ public class EstimateService {
 
         Estimate copy = estimateRepository.save(Estimate.builder()
                 .project(source.getProject())
-                .name(duplicateName(req.name(), source.getName(), signedPercent))
+                .name(duplicateName(req.name(), source.getName()))
                 .validUntil(source.getValidUntil())
                 .notes(source.getNotes())
                 // Same work at a different price — the level promised to the client is unchanged.
@@ -287,7 +291,13 @@ public class EstimateService {
                     // On a PERCENT line this records the ORIGINAL PERCENT rather than a price:
                     // that is what the crew's sheet charged, and it is the figure the economy has
                     // to measure the client's sheet against.
-                    .sourceUnitPrice(percent ? item.getQuantity() : item.getUnitPrice())
+                    // A COPY OF A COPY inherits the figure instead of overwriting it (review B-73):
+                    // the source's own `source_unit_price` IS the crew's price, and storing the
+                    // source's CLIENT price here made B (+20 %) → C (−5 %) show no margin at all,
+                    // and B → C (+5 %) report «Бригаді 12 000» for a crew paid 10 000.
+                    .sourceUnitPrice(item.getSourceUnitPrice() != null
+                            ? item.getSourceUnitPrice()
+                            : (percent ? item.getQuantity() : item.getUnitPrice()))
                     .percentBaseKind(item.getPercentBaseKind())
                     .percentBaseItemId(item.getPercentBaseItemId())
                     .baseDetached(item.isBaseDetached())
@@ -359,19 +369,25 @@ public class EstimateService {
     }
 
     /**
-     * «Санвузол» → «Санвузол +15%» (markup) or «Санвузол -15%» (discount), so the two are tellable
-     * apart in a list of variants. Only a fallback: the PWA composes the name itself and passes it,
-     * so {@code requested} is normally set — see the duplicate-onConfirm note in the editor.
+     * «Санвузол» → «Санвузол (копія)», so the two are tellable apart in a list of variants.
+     *
+     * <p><b>The rate used to be in the name, and the name is printed for the CLIENT</b> (review
+     * B-74): «Санвузол +20%» on the portal page and in the PDF heading let him divide by 1,2 and
+     * read the crew's prices off his own estimate. The direction is still visible to the master —
+     * {@code markup_percent} is on the response and the economy hint words it — just not in a
+     * string that travels. Existing copies keep their stored name and are stripped on the way out
+     * by {@link ClientSafeName}.</p>
+     *
+     * <p>Only a fallback: the PWA composes the name itself and passes it, so {@code requested} is
+     * normally set — see the duplicate-onConfirm note in the editor.</p>
      */
-    private static String duplicateName(String requested, String sourceName, BigDecimal signedPercent) {
+    private static String duplicateName(String requested, String sourceName) {
         String explicit = normalize(requested);
         if (explicit != null) {
             return explicit;
         }
-        String sign = signedPercent.signum() < 0 ? " -" : " +";
-        String suffix = sign + signedPercent.abs().stripTrailingZeros().toPlainString() + "%";
         String base = normalize(sourceName);
-        return base == null ? "Кошторис" + suffix : base + suffix;
+        return base == null ? "Кошторис (копія)" : base + " (копія)";
     }
 
     @Transactional
@@ -993,15 +1009,28 @@ public class EstimateService {
         boolean keyMoved = item.getType() != req.type()
                 || item.getUnit() != req.unit()
                 || !item.getName().equals(req.name().trim());
+        // «%» is not a unit of measure, it is a different ARITHMETIC: `source_unit_price` holds a
+        // crew PRICE on an ordinary line and the crew's own PERCENT on a «%» one, and
+        // CrewMarginCalculator reads it accordingly. Crossing that boundary leaves a 500 ₴ price
+        // being read as 500 % (review B-71). The crew figure for the new shape is unknown, so the
+        // line becomes unpriced — which contributes zero margin and is named by `unpricedCount`.
+        boolean percentBoundaryCrossed = (item.getUnit() == Unit.PERCENT) != (req.unit() == Unit.PERCENT);
         item.setType(req.type());
         item.setName(req.name().trim());
         item.setCategory(CatalogService.normalizeCategory(req.category()));
         item.setUnit(req.unit());
+        if (percentBoundaryCrossed) {
+            item.setSourceUnitPrice(null);
+        }
         if (keyMoved) {
-            // Nothing in his catalog answers for the new key ⇒ null, which is the honest value and
-            // the one `MaterialCalculatorService#normsFor` treats conservatively.
-            item.setTrade(resolveTrade(item.getName(), item.getType(), item.getUnit(),
-                    tradeIndex(ownerId)));
+            // The trade the master is WORKING IN wins, not the one the catalog row that happens to
+            // price this name carries (fix O / review B-41). `catalog_items` stores a shared
+            // position ONCE, under whichever trade claimed it first, so reading that row's stamp
+            // moved a renamed PAINTER line into DRYWALL and undid V140's re-filing on the next
+            // edit. The context here is the line's OWN current trade — the folder he is editing in.
+            // Only the trade is re-derived: the category is the master's explicit pick on this
+            // request, and overwriting it would move the row out of the folder he just chose.
+            item.setTrade(refiledTrade(item, ownerId));
         }
         Resolved r = resolveQuantity(estimate, req);
         item.setQuantity(r.quantity());
@@ -1153,6 +1182,14 @@ public class EstimateService {
         // Same unsigned-magnitude-plus-direction shape as the duplicate, and the same multiply:
         // discount → factor < 1 (1 − p/100), markup → factor > 1 (1 + p/100).
         BigDecimal factor = BigDecimal.ONE.add((discount ? percent.negate() : percent).movePointLeft(2));
+        // A «%» line is skipped, and that is NOT a silent loss the master can hit (review B-54,
+        // which asked for the skip to be reported): `canPickForMarkup` in the editor offers only
+        // WORK lines with a real unit, so the picker cannot put one in this list. A «%» line has no
+        // price to raise — its amount follows the base, which the markup has just moved, so it
+        // rises on its own; raising the PERCENT too is the duplicate's job (`markedUpPercent`),
+        // where the whole sheet is being re-priced at once. Reporting a skip in the response would
+        // document a case only a hand-written request can produce, and it would not reach the
+        // master offline, where this op is queued.
         List<EstimateItem> picked = itemRepository.findAllById(itemIds).stream()
                 .filter(i -> i.getEstimate().getId().equals(estimateId))
                 .filter(i -> i.getUnit() != Unit.PERCENT)
@@ -1200,6 +1237,12 @@ public class EstimateService {
      * {@code ON DELETE CASCADE}, which could not know about it. The parent's line still goes; the
      * signed copy keeps its own, its {@code sourceItemId} falls to NULL, and the money is
      * unaffected because the economy reads the price stored on the copy's own line.</p>
+     *
+     * <p><b>The copy gets the same treatment the parent does</b> (review B-75): its own «%» lines
+     * pointing at the twins just removed are detached, and the copy is recalculated. Neither was
+     * done, so a SENT copy went on showing «5 % від позиції» measured against a line the client no
+     * longer had in front of him, and its totals were whatever the deletion left behind —
+     * {@code line_total} is stored, so nothing recomputes it until the next edit of THAT sheet.</p>
      */
     private void cascadeIntoDuplicates(UUID parentEstimateId, List<UUID> deletedItemIds) {
         for (Estimate copy : estimateRepository.findByDuplicatedFromId(parentEstimateId)) {
@@ -1210,9 +1253,15 @@ public class EstimateService {
             }
             List<EstimateItem> twins = itemRepository.findByEstimateIdAndSourceItemIdIn(
                     copy.getId(), deletedItemIds);
-            if (!twins.isEmpty()) {
-                itemRepository.deleteAll(twins);
+            if (twins.isEmpty()) {
+                continue;
             }
+            List<UUID> twinIds = twins.stream().map(EstimateItem::getId).toList();
+            itemRepository.deleteAll(twins);
+            itemRepository.flush(); // the detach below re-reads the copy's lines
+            detachPercentagesPointingAt(copy.getId(), twinIds);
+            EstimateMath.recalculate(
+                    itemRepository.findByEstimateIdOrderBySortOrderAscIdAsc(copy.getId()));
         }
     }
 
@@ -1387,9 +1436,8 @@ public class EstimateService {
      * name a real catalog row inherit the trade automatically; a genuinely typed name that
      * matches nothing stays NULL, and the read side treats NULL as «no group» (see V125 header).
      *
-     * <p>{@code Locale.ROOT} on the lowercase call, same rule as {@link CatalogMatcher#normalize}:
-     * a Turkish locale's «I»/«ı» folding is exactly the class of bug this pattern removed from the
-     * dictation matcher last week.
+     * <p>The key itself is {@link NameKeys} through {@link CatalogFiling#key} — one notion of «the
+     * same name» for the whole product, {@code Locale.ROOT} folding included.
      */
     private Map<String, Trade> tradeIndex(UUID ownerId) {
         List<CatalogItem> catalog = catalogItemRepository.findByOwnerIdOrderByNameAsc(ownerId);
@@ -1400,12 +1448,33 @@ public class EstimateService {
         return out;
     }
 
+    /** {@link CatalogFiling#key} — the product's ONE notion of «the same name» (review B-41 kept a
+     *  third one here: a bare {@code trim().toLowerCase}, which disagreed with {@link NameKeys} on
+     *  double spaces and the two kinds of apostrophe). */
     private static String tradeIndexKey(String name, ItemType type, Unit unit) {
-        return name.trim().toLowerCase(Locale.ROOT) + "|" + type + "|" + unit;
+        return CatalogFiling.key(name, type, unit);
     }
 
     private static Trade resolveTrade(String name, ItemType type, Unit unit, Map<String, Trade> index) {
         return index.get(tradeIndexKey(name, type, unit));
+    }
+
+    /**
+     * The trade a RENAMED (or retyped, or re-united) line belongs to — review B-41.
+     *
+     * <p>Keeps the line in the trade the master is working in whenever the shipped library files
+     * that exact name+type+unit there, and only otherwise falls back to the trade of his own
+     * catalog row. The import and append paths deliberately keep the plain fallback: a receipt or
+     * an Excel sheet carries no «which folder was he in», so the matched row's own stamp is all
+     * there is to go on.</p>
+     */
+    private Trade refiledTrade(EstimateItem item, UUID ownerId) {
+        Trade context = item.getTrade();
+        if (context != null && catalogFiling.categoriesUnder(context)
+                .containsKey(CatalogFiling.key(item.getName(), item.getType(), item.getUnit()))) {
+            return context;
+        }
+        return resolveTrade(item.getName(), item.getType(), item.getUnit(), tradeIndex(ownerId));
     }
 
     private EstimateItemResponse savedItemResponse(Estimate estimate, EstimateItem item) {
@@ -1497,14 +1566,26 @@ public class EstimateService {
     /**
      * «Бригаді / Твоя націнка» for the editor, identical to what the economy panel reports once the
      * copy is signed — the same {@link CrewMarginCalculator}, so the two can never disagree.
+     *
+     * <p><b>Plan-gated like the panel</b> (review B-75): the figure belongs to the same tier as
+     * payments and internals, and the editor was handing it to every plan while the economy tab
+     * hid it. A soft {@code isEnabled} check, not a 403 — the estimate itself is FREE.</p>
      */
     private CrewMarginResponse crewMargin(Estimate estimate, List<EstimateItem> items) {
-        CrewMarginResponse margin = CrewMarginCalculator.of(estimate, items, BigDecimal.ZERO);
-        if (margin == null || estimate.getStatus() != EstimateStatus.SIGNED) {
+        CrewMarginResponse margin =
+                CrewMarginCalculator.of(estimate, items, BigDecimal.ZERO, BigDecimal.ZERO);
+        // The plan check is asked only when there IS a figure, so an ordinary estimate — almost
+        // every response this method serves — neither loads the owner nor pays for the lookup.
+        if (margin == null
+                || !featureGuard.isEnabled(estimate.getProject().getOwner(), Feature.OBJECT_ECONOMY)) {
+            return null;
+        }
+        if (estimate.getStatus() != EstimateStatus.SIGNED) {
             return margin;
         }
         return CrewMarginCalculator.of(estimate, items,
-                workActItemRepository.sumSignedActMargin(estimate.getId()));
+                workActItemRepository.sumSignedActMargin(estimate.getId()),
+                workActItemRepository.sumSignedActAdjustments(estimate.getId()));
     }
 
     /** Σ SIGNED-act quantity per estimate line for a project, keyed by {@code estimate_item_id}. */

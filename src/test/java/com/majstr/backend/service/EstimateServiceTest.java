@@ -79,6 +79,7 @@ class EstimateServiceTest {
     @Mock private CatalogFiling catalogFiling;
     @Mock private com.majstr.backend.repository.CatalogItemRepository catalogItemRepository;
     @Mock private LimitService limitService;
+    @Mock private com.majstr.backend.feature.FeatureGuard featureGuard;
     @Mock private MeasurementService measurementService;
     @Mock private EstimatePdfService pdfService;
     @Mock private ProjectPhotoRepository photoRepository;

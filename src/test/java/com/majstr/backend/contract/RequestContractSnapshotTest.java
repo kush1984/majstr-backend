@@ -11,7 +11,9 @@ import java.io.IOException;
 import java.lang.annotation.Annotation;
 import java.lang.reflect.Constructor;
 import java.lang.reflect.Parameter;
+import java.lang.reflect.ParameterizedType;
 import java.lang.reflect.RecordComponent;
+import java.lang.reflect.Type;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -78,7 +80,12 @@ class RequestContractSnapshotTest {
         }
 
         assertThat(Files.exists(SNAPSHOT)).as(STALE).isTrue();
-        assertThat(actual).as(STALE).isEqualTo(Files.readString(SNAPSHOT, StandardCharsets.UTF_8));
+        // Line endings normalised on BOTH sides (review B-36): render() builds LF, and with
+        // core.autocrlf a fresh Windows checkout hands back CRLF, so this assertion could
+        // never hold — the suite was green only on the machine whose own run rewrote the file.
+        // .gitattributes now pins the snapshot to LF; this keeps an older working copy honest too.
+        assertThat(lf(actual)).as(STALE)
+                .isEqualTo(lf(Files.readString(SNAPSHOT, StandardCharsets.UTF_8)));
     }
 
     /** name -&gt; (field -&gt; {@code "type"}, or {@code "type?"} when the client may leave it out). */
@@ -99,13 +106,55 @@ class RequestContractSnapshotTest {
             if (!type.isRecord() || !type.getSimpleName().endsWith("Request")) {
                 return;
             }
-            Map<String, String> fields = new TreeMap<>();
-            for (RecordComponent c : type.getRecordComponents()) {
-                fields.put(c.getName(), describe(c.getType()) + (required(type, c) ? "" : "?"));
-            }
-            contract.put(type.getSimpleName(), fields);
+            record(contract, type.getSimpleName(), type);
         });
         return contract;
+    }
+
+    /**
+     * One record's own shape, plus every NESTED record reachable from it (review B-46).
+     *
+     * <p>A component whose type is a record — or a {@code List<Entry>} of one — rendered as a bare
+     * {@code "array"} or {@code "object"}, so the shape the client actually has to build was
+     * outside the contract entirely. {@code ApplyTemplatesRequest.TemplatePick},
+     * {@code EstimateItemFromCatalogBatchRequest.Entry}, the import commit items, the measurement
+     * rooms and sheets: a required field added to any of them is the V135 bug one level down, and
+     * nothing on either side would have gone red.</p>
+     *
+     * <p>Keyed {@code Parent.Nested}, which keeps the file's shape exactly as it was — a flat map of
+     * name → field map — so the PWA's reader needs no new vocabulary to keep working. The nested
+     * entries are additions, and a nested record used by two parents is recorded under each, since
+     * that is the only way the file says who has to build it.</p>
+     */
+    private static void record(Map<String, Map<String, String>> contract, String name, Class<?> type) {
+        if (contract.containsKey(name)) {
+            return; // already recorded under this exact path
+        }
+        Map<String, String> fields = new TreeMap<>();
+        contract.put(name, fields); // before the recursion: a self-referencing record must terminate
+        for (RecordComponent c : type.getRecordComponents()) {
+            fields.put(c.getName(), describe(c.getType()) + (required(type, c) ? "" : "?"));
+            Class<?> nested = nestedRecord(c);
+            if (nested != null) {
+                record(contract, name + "." + nested.getSimpleName(), nested);
+            }
+        }
+    }
+
+    /** The record behind a component — itself, or the element type of its collection. */
+    private static Class<?> nestedRecord(RecordComponent c) {
+        if (c.getType().isRecord()) {
+            return c.getType();
+        }
+        if (Collection.class.isAssignableFrom(c.getType())
+                && c.getGenericType() instanceof ParameterizedType pt) {
+            for (Type arg : pt.getActualTypeArguments()) {
+                if (arg instanceof Class<?> element && element.isRecord()) {
+                    return element;
+                }
+            }
+        }
+        return null;
     }
 
     /**
@@ -186,5 +235,10 @@ class RequestContractSnapshotTest {
             out.append(left-- > 1 ? "  },\n" : "  }\n");
         }
         return out.append("}\n").toString();
+    }
+
+    /** CR/LF-insensitive comparison — see B-36 above. */
+    private static String lf(String text) {
+        return text.replace("\r\n", "\n").replace("\r", "\n");
     }
 }

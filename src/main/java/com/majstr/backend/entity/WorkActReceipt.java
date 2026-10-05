@@ -8,6 +8,7 @@ import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.PrePersist;
 import jakarta.persistence.Table;
+import jakarta.persistence.Version;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.EqualsAndHashCode;
@@ -39,6 +40,23 @@ import java.util.UUID;
 @AllArgsConstructor
 @EqualsAndHashCode(of = "id")
 public class WorkActReceipt {
+
+    /**
+     * Optimistic lock (review B-80). A PATCH that read this row before a concurrent sign committed
+     * wrote the whole entity back and reset {@code billed_on_act_id} to NULL — the V134 stamp that
+     * is the only thing keeping one paper from being billed twice. The loser is now a 409.
+     *
+     * <p><b>A WRAPPER, and that is the second half of the fix</b> (review B-43). These rows carry a
+     * CLIENT-assigned id, so {@code save()} could not tell a create from an update and went through
+     * {@code em.merge}: a concurrent replay of the same queued receipt UPDATED the winner's row —
+     * resetting {@code expense_id}, the fiscal identity and {@code billed_on_act_id} to builder
+     * defaults — and the duplicate-key recovery in the service never ran, because no key was ever
+     * violated. Spring Data reads a NULLABLE version attribute as «is this new?»: null means insert,
+     * the insert collides, and the recovery that re-reads the winner's row finally fires.</p>
+     */
+    @Version
+    @Column(name = "version", nullable = false)
+    private Long version;
 
     @Id
     @Column(name = "id", nullable = false, updatable = false)

@@ -24,16 +24,27 @@ class PublicEstimateIsolationTest {
     // `sourceUnitPrice` contains any of the original five — so a leak of the бригадир's own prices,
     // the one number in this product the client must never see, would have passed this guard
     // silently. The serialization test beside it covers the same ground from the other end.
+    // «baseprice», «sourceprice» and «parentprice» joined with review B-75: the walk matches on
+    // substrings, and none of the seven above appears in any of those three, so a crew figure
+    // reintroduced under one of those names would pass.
     private static final String[] FORBIDDEN =
-            {"expense", "profit", "economy", "cost", "margin", "crew", "sourceunitprice"};
+            {"expense", "profit", "economy", "cost", "margin", "crew", "sourceunitprice",
+             "baseprice", "sourceprice", "parentprice"};
     // PublicActView (acts iteration) is a third public DTO tree — the client-facing view of one
     // signed act. Walked here too, so an accidental economy/note leak on it fails at build time.
     // The estimate PDF's model is walked here too (crew-margin iteration): it is the fourth thing a
     // client receives, it is assembled from the same entities, and nothing else would notice a crew
     // price added to it.
+    // The ACT's PDF model is the fifth client document (review B-75). Both PDF models are records
+    // whose components are ENTITIES, so this walk stops at their names — which is why the real
+    // guard for the rendered page is a text assertion over the output
+    // ({@code EstimatePdfServiceTest#render_neverPrintsTheCrewsOwnPrice}) rather than a deeper
+    // reflection walk here: an entity legitimately CARRIES the crew price, and the question is only
+    // ever whether the renderer prints it.
     private static final Class<?>[] PUBLIC_ROOTS =
             {PublicEstimateView.class, PublicPortalView.class, PublicActView.class,
-             com.majstr.backend.service.EstimatePdfService.PdfModel.class};
+             com.majstr.backend.service.EstimatePdfService.PdfModel.class,
+             com.majstr.backend.service.WorkActPdfService.PdfModel.class};
 
     @Test
     void publicViewsCarryNoEconomyData() {

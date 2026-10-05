@@ -98,7 +98,15 @@ final class EstimateMath {
                 i -> kindOf(i) != PercentBaseKind.TOTAL && i.getType() == ItemType.MATERIAL);
         for (EstimateItem item : items) {
             if (item.getUnit() == Unit.PERCENT && kindOf(item) == PercentBaseKind.TOTAL) {
-                BigDecimal base = item.getType() == ItemType.WORK ? worksBase : materialsBase;
+                // A DETACHED line keeps what it last computed here too. Step 2 has always honoured
+                // the flag and step 3 did not, which no stored row could reach (the flag is only
+                // ever set on a POSITION line or a frozen consolidated MANUAL one) — but the PWA
+                // mirror already asked the question on both passes, so the two files disagreed on
+                // paper. They now say the same thing, and the crew view uses it to FREEZE a «%»
+                // line the master added after the copy (review B-72).
+                BigDecimal base = item.isBaseDetached()
+                        ? null
+                        : (item.getType() == ItemType.WORK ? worksBase : materialsBase);
                 item.setLineTotal(percentAmount(item, base));
             }
         }

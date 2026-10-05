@@ -31,10 +31,12 @@ import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.nio.charset.StandardCharsets;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -209,12 +211,22 @@ public class PaymentService {
                                                      UUID requestedId) {
         Project object = requireEconomy(objectId, ownerId);
         if (requestedId != null) {
-            var existing = receiptRepository.findById(requestedId);
-            if (existing.isPresent()) {
-                if (!existing.get().getProject().getId().equals(objectId)) {
-                    throw new AccessDeniedException("Receipt belongs to a different object");
+            // Both halves of a TRANSFER, not just the one the client named (B-69): the surplus row
+            // rides a DERIVED id, and when the stage was already fully received there IS no closing
+            // row — so looking only under `requestedId` found nothing and wrote the overflow again.
+            List<PaymentReceipt> landed = receiptRepository
+                    .findAllById(List.of(requestedId, surplusIdOf(requestedId)));
+            if (!landed.isEmpty()) {
+                for (PaymentReceipt r : landed) {
+                    if (!r.getProject().getId().equals(objectId)) {
+                        throw new AccessDeniedException("Receipt belongs to a different object");
+                    }
                 }
-                return List.of(PaymentReceiptResponse.from(existing.get())); // idempotent replay
+                // Closing row first, surplus second — the order the caller expects of a TRANSFER.
+                return landed.stream()
+                        .sorted(Comparator.comparing(r -> !r.getId().equals(requestedId)))
+                        .map(PaymentReceiptResponse::from)
+                        .toList(); // idempotent replay
             }
         }
 
@@ -268,6 +280,9 @@ public class PaymentService {
                     result.add(PaymentReceiptResponse.from(receiptRepository.save(closing)));
                 }
                 PaymentReceipt surplus = PaymentReceipt.builder()
+                        // Derived from the caller's id so a replay collides instead of duplicating
+                        // (B-69). Deterministic, so the SECOND attempt computes the same id.
+                        .id(requestedId == null ? null : surplusIdOf(requestedId))
                         .project(object).planPayment(next).amount(overflow)
                         .receivedAt(req.receivedAt()).materialRefund(req.materialRefund()).build();
                 result.add(PaymentReceiptResponse.from(receiptRepository.save(surplus)));
@@ -314,6 +329,11 @@ public class PaymentService {
     public List<ProjectPaymentResponse> transferSurplus(UUID objectId, UUID ownerId,
                                                           PaymentSurplusTransferRequest req) {
         requireEconomy(objectId, ownerId);
+        if (req.fromPaymentId().equals(req.toPaymentId())) {
+            // Moving a stage's surplus onto itself would delete its receipts and re-post the same
+            // money, losing every split the master had (B-69).
+            throw new PaymentValidationException("error.payment.transfer-same-stage");
+        }
         ProjectPayment from = loadPayment(objectId, req.fromPaymentId());
         ProjectPayment to = loadPayment(objectId, req.toPaymentId());
         List<PaymentReceipt> fromReceipts = receiptRepository
@@ -325,10 +345,20 @@ public class PaymentService {
             throw new PaymentValidationException("error.payment.no-surplus");
         }
 
+        // One MOVED row per source row, carrying that row's own date and refund flag (B-69). The
+        // old code wrote ONE aggregated receipt dated today() with no flag, which rewrote history in
+        // two ways: 8 000 ₴ received 28 Aug against a 5 000 ₴ stage, transferred on 2 Sep, left
+        // August 3 000 ₴ lighter and September 3 000 ₴ heavier — «Мої гроші» reads `received_at` as
+        // the authoritative day — and a «повернення за матеріал» came back as ordinary earnings,
+        // because `material_refund` is what keeps a reimbursement out of «Заробив».
         BigDecimal remainingSurplus = surplus;
+        List<PaymentReceipt> moved = new ArrayList<>();
         for (int i = fromReceipts.size() - 1; i >= 0 && remainingSurplus.signum() > 0; i--) {
             PaymentReceipt r = fromReceipts.get(i);
             BigDecimal take = r.getAmount().min(remainingSurplus);
+            moved.add(PaymentReceipt.builder()
+                    .project(from.getProject()).planPayment(to).amount(take)
+                    .receivedAt(r.getReceivedAt()).materialRefund(r.isMaterialRefund()).build());
             if (take.compareTo(r.getAmount()) == 0) {
                 receiptRepository.delete(r);
             } else {
@@ -336,13 +366,23 @@ public class PaymentService {
             }
             remainingSurplus = remainingSurplus.subtract(take);
         }
-
-        PaymentReceipt surplusReceipt = PaymentReceipt.builder()
-                .project(from.getProject()).planPayment(to).amount(surplus).receivedAt(today()).build();
-        receiptRepository.save(surplusReceipt);
+        receiptRepository.saveAll(moved);
 
         LocalDate today = today();
         return List.of(responseFor(from, today), responseFor(to, today));
+    }
+
+    /**
+     * The id a TRANSFER's surplus row is written under — derived from the one the caller sent, so a
+     * replay of the same offline op lands on the SAME two rows instead of a second pair (B-69).
+     *
+     * <p>A TRANSFER writes two receipts from one request, and only one of them could carry the
+     * caller's {@code X-Entity-Uuid}. Worse, when the stage was already fully received there is no
+     * closing row at all, so the replay check found nothing and recorded the overflow twice —
+     * money the client never paid, in a screen whose whole job is to say how much he did.</p>
+     */
+    static UUID surplusIdOf(UUID requestedId) {
+        return UUID.nameUUIDFromBytes((requestedId + ":surplus").getBytes(StandardCharsets.UTF_8));
     }
 
     /** The next plan stage (by schedule order) that isn't fully received yet — where a TRANSFER

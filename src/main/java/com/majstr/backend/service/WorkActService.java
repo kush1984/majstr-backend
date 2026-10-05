@@ -75,6 +75,10 @@ public class WorkActService {
     private final ActSignedCopyService signedCopy;
     private final ActReceiptCompleteness receiptCompleteness;
     private final ActLineBinder lineBinder;
+    private final ActFinalGuard finalGuard;
+    private final ActAdvanceGuard advanceGuard;
+    private final StorageCleanup storageCleanup;
+    private final ActReceiptDuplicateGuard receiptDuplicateGuard;
     private final ActAdjustmentCalculator adjustmentCalculator;
     private final ActReceiptReconciler receiptReconciler;
     private final ReceiptIdentityIndex identityIndex;
@@ -205,7 +209,13 @@ public class WorkActService {
         if (req.showReceiptPhotos() != null) {
             act.setShowReceiptPhotos(req.showReceiptPhotos());
         }
-        act.setAdvanceOffset(req.advanceOffset());
+        // null = leave the stored figure alone (review B-78). An omitted field used to CLEAR the
+        // advance, so any client or replay that did not resend it silently un-offset a prepayment
+        // the client had already paid — the same three-valued rule the receipts flags follow above.
+        if (req.advanceOffset() != null) {
+            act.setAdvanceOffset(req.advanceOffset());
+        }
+        advanceGuard.requireAdvanceWithinAct(act);
         return responseFactory.build(act);
     }
 
@@ -271,7 +281,16 @@ public class WorkActService {
         if (act.getStatus() != WorkActStatus.DRAFT && act.getStatus() != WorkActStatus.REJECTED) {
             throw new WorkActConflictException("error.work-act.not-deletable", "WORK_ACT_NOT_DELETABLE");
         }
+        // The receipt ROWS cascade; the photographed slips behind them did not (review B-48). Each
+        // is financial personal data, and they used to outlive the act they were attached to with
+        // nothing left pointing at them — the same leak B-26 closed for a project delete. Keys
+        // collected BEFORE the cascade, deleted AFTER the commit (B-25).
+        List<String> blobKeys = receiptRepository.findByWorkActIdNewestFirst(id).stream()
+                .map(com.majstr.backend.entity.WorkActReceipt::getStorageKey)
+                .filter(k -> k != null && !k.isBlank())
+                .toList();
         workActRepository.delete(act); // items cascade at the DB level
+        storageCleanup.afterCommit(blobKeys);
     }
 
     /**
@@ -282,7 +301,10 @@ public class WorkActService {
      * client has an email, a PDF copy — an offline signature is exactly the case where an
      * independent trace matters most.
      */
-    @Transactional
+    // rollbackFor = Exception (review B-81): the `doc_hash` render throws CHECKED exceptions, and
+    // Spring's default rules COMMIT on those — a SIGNED act with no tamper stamp, immutable and
+    // undeletable from that moment on.
+    @Transactional(rollbackFor = Exception.class)
     public WorkActResponse signOffline(UUID id, WorkActSignOfflineRequest req, UUID ownerId)
             throws IOException, DocumentException {
         // FOR UPDATE, and before anything else (B-60): a receipt or a line landing between this
@@ -291,9 +313,13 @@ public class WorkActService {
         WorkAct act = requireNotSigned(loadOwnedForUpdate(id, ownerId));
         requireItems(id); // a signed act is immutable and undeletable — never let an empty one in
         receiptCompleteness.requireAllPriced(id); // …nor one whose receipts are not priced yet
+        advanceGuard.requireAdvanceWithinAct(act); // …nor one whose advance exceeds what it bills
+        receiptDuplicateGuard.requireNoReceiptBilledElsewhere(act); // …nor a slip another act billed
         // …nor one whose estimate moved under it since the save (B-56): reopened, uncounted or
         // already closed by another act. Structure only — the prices stay the frozen copy.
         lineBinder.requireStillValid(act);
+        // …nor one the object's own підсумковий акт already closed (B-62).
+        finalGuard.requireObjectNotClosed(act);
         addendumCreator.createIfNeeded(act);
         // …and settle the object receipts that are THE SAME PAPER as one of this act's (B-04). Must
         // follow the ADDENDUM: it is that estimate moving the money into «За договором» that takes
@@ -320,6 +346,12 @@ public class WorkActService {
      * another act may have been opened in between). A SIGNED act stays immutable; everything else
      * is a 409. Going back to DRAFT clears {@code sentAt} and lets the share link 404 (the public
      * read only serves SENT/SIGNED).</p>
+     *
+     * <p>Coming back to DRAFT is also where the object may have moved on without this act (B-62): a
+     * REJECTED act is not an OPEN act, so further acts could be created, signed and paid while it
+     * sat there. If one of them was the FINAL act, there is nothing left to reopen into
+     * ({@link ActFinalGuard}); otherwise the act's «виконано раніше» figures are re-frozen against
+     * what those signatures actually closed.</p>
      */
     @Transactional
     public WorkActResponse changeStatus(UUID id, WorkActStatus target, UUID ownerId) {
@@ -338,9 +370,13 @@ public class WorkActService {
                         List.of(WorkActStatus.DRAFT, WorkActStatus.SENT), id)) {
             throw new WorkActConflictException("error.work-act.open-exists", "WORK_ACT_OPEN");
         }
+        if (target == WorkActStatus.DRAFT) {
+            finalGuard.requireObjectNotClosed(act);
+        }
         act.setStatus(target);
         if (target == WorkActStatus.DRAFT) {
             act.setSentAt(null);
+            lineBinder.refreshCumulativeBefore(act);
         }
         return responseFactory.build(act);
     }

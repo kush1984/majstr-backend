@@ -1,4 +1,4 @@
-package com.majstr.backend.service;
+package com.majstr.backend.staticpages;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -21,18 +21,28 @@ import static org.assertj.core.api.Assertions.assertThat;
  * then makes the immediate retry read as a zoom rather than a second click. {@code user-select:
  * none} plus {@code touch-action: manipulation} on every control is the fix.</p>
  *
- * <p>Asserted against the page as TEXT, the same trick {@link UnitRenderCoverageTest} uses: there
+ * <p>Asserted against the page as TEXT, the same trick {@code UnitRenderCoverageTest} uses: there
  * is nothing to render server-side that would prove a stylesheet rule is still there, and the
  * failure mode of losing it is invisible — the page looks perfect and the button simply misses
  * taps. The PWA carries the same block in {@code src/styles/index.css}, pinned by its own
  * {@code src/styles/touch.test.ts}; change one, change the other.</p>
+ *
+ * <p><b>Comments are stripped first</b> (review B-54). Matching the raw file meant a rule that
+ * survived only inside a {@code /* … *}{@code /} — which is where a tidy-up parks a block it is
+ * unsure about — kept the test green while every control on the page had lost it. The whole point
+ * of a text assertion is that nothing else can notice; it has to look at what the browser looks
+ * at. It also no longer sits in the {@code service} package, where it had nothing to do with a
+ * service.</p>
  */
 class PortalTouchTargetsTest {
 
     private static final Path STATIC = Path.of("src/main/resources/static");
 
+    /** The page as the browser reads it: CSS and HTML comments removed. */
     private static String page(String name) throws IOException {
-        return Files.readString(STATIC.resolve(name).resolve("index.html"), StandardCharsets.UTF_8);
+        String raw = Files.readString(STATIC.resolve(name).resolve("index.html"), StandardCharsets.UTF_8);
+        return raw.replaceAll("(?s)/\\*.*?\\*/", " ")      // CSS and JS block comments
+                .replaceAll("(?s)<!--.*?-->", " ");        // HTML comments
     }
 
     @ParameterizedTest
@@ -79,5 +89,17 @@ class PortalTouchTargetsTest {
         // An 18 px dot sits beside a heading and cannot simply be grown to 44 px, so the hit area
         // is enlarged past the drawn circle instead. Dropping this leaves a control a thumb misses.
         assertThat(page("portal")).contains(".info-trigger::after, .info-panel-close::after");
+    }
+
+    /**
+     * The guard on the guard: the stripper must really remove a commented-out rule, or this whole
+     * file is back to proving that a page MENTIONS the fix somewhere.
+     */
+    @Test
+    void aRuleThatSurvivesOnlyInACommentDoesNotCount() throws IOException {
+        String stripped = page("portal");
+
+        assertThat(stripped).doesNotContain("/*");
+        assertThat(stripped).doesNotContain("<!--");
     }
 }

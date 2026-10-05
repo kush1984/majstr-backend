@@ -9,6 +9,7 @@ import com.majstr.backend.dto.QuestionResponse;
 import com.majstr.backend.dto.SignRequest;
 import com.majstr.backend.entity.Client;
 import com.majstr.backend.entity.Estimate;
+import com.majstr.backend.entity.EstimateKind;
 import com.majstr.backend.entity.EstimateItem;
 import com.majstr.backend.entity.ProjectMessage;
 import com.majstr.backend.entity.EstimateShareLink;
@@ -52,9 +53,11 @@ import java.text.DecimalFormatSymbols;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 
 /**
@@ -106,11 +109,44 @@ public class PublicEstimateService {
         if (parent == null || parent.getStatus() != EstimateStatus.SIGNED) {
             return null;
         }
-        if (workActItemRepository.existsSignedLineForEstimate(parent.getId())) {
+        requireSupersedable(parent);
+        return parent;
+    }
+
+    /**
+     * Sibling copies of the same parent that this signature replaces (review B-73).
+     *
+     * <p>A master can price three variants off one sheet and send them all. {@code doSign} only
+     * ever looked at the PARENT, so two siblings could both be SIGNED ∧ counted and «За договором»
+     * read the sum of two quotes for one job — the exact double the parent supersede exists to
+     * prevent, one level sideways.</p>
+     *
+     * <p>The answer is the one the parent already gets, for the same reason: the signature is a
+     * historical fact, so the earlier sibling keeps it and is merely UNCOUNTED, with
+     * {@code superseded_by_estimate_id} recording which variant won. Refusing the client's tap
+     * instead would hand him an error only the master can fix (B-28) over a decision the master
+     * made when he sent two links. A sibling that signed acts cannot be uncounted at all (B-64),
+     * and then the refusal is unavoidable.</p>
+     */
+    private List<Estimate> supersededSiblings(Estimate estimate) {
+        if (estimate.getDuplicatedFromId() == null) {
+            return List.of();
+        }
+        List<Estimate> siblings = estimateRepository.findByDuplicatedFromId(estimate.getDuplicatedFromId())
+                .stream()
+                .filter(e -> !e.getId().equals(estimate.getId()))
+                .filter(e -> e.getStatus() == EstimateStatus.SIGNED && e.isCountInEconomy())
+                .toList();
+        siblings.forEach(this::requireSupersedable);
+        return siblings;
+    }
+
+    /** Uncounting an estimate that signed acts close erases accepted work (B-64) — 409 instead. */
+    private void requireSupersedable(Estimate signed) {
+        if (workActItemRepository.existsSignedLineForEstimate(signed.getId())) {
             throw new WorkActConflictException("error.estimate.parent-has-acts",
                     "ESTIMATE_HAS_SIGNED_ACTS");
         }
-        return parent;
     }
 
     // ---- legacy per-estimate token (?t=) ----------------------------------
@@ -224,15 +260,7 @@ public class PublicEstimateService {
     public PublicPortalView viewEconomyPortal(String token) {
         ProjectShareLink link = resolveLink(token, ShareLinkKind.ECONOMY);
         Project project = link.getProject();
-        List<PublicPortalView.Section> sections =
-                estimateRepository.findByProjectIdAndEconomyVisibleTrueOrderByCreatedAtAsc(project.getId())
-                        .stream()
-                        // Defense-in-depth: economyVisible can outlive a SIGNED status (auto-reopen
-                        // on supersede leaves the flag set while the estimate flips back to DRAFT) —
-                        // the ECONOMY portal is a settled-money view, never an unsettled draft.
-                        .filter(e -> e.getStatus() == EstimateStatus.SIGNED)
-                        .map(this::sectionOf)
-                        .toList();
+        List<PublicPortalView.Section> sections = economySections(project.getId());
         Client client = project.getClient();
         User contractor = project.getOwner();
         List<PublicEstimateView.SharedPhoto> sharedPhotos = projectPhotoService.sharedPhotos(project.getId())
@@ -252,6 +280,41 @@ public class PublicEstimateService {
                 sections,
                 sharedPhotos,
                 paymentsCard);
+    }
+
+    /**
+     * What the ECONOMY portal shows, and therefore what its «За договором» adds up to (review B-66).
+     *
+     * <p>Two filters and one addition. The filters: SIGNED — the flag outlives a reopen — and
+     * <b>counted</b>, because it outlives an uncount too, and a SUPERSEDED parent stays SIGNED
+     * forever. A renegotiated 50 000 ₴ job whose 47 500 ₴ copy was also ticked showed the client
+     * 97 500 ₴ for one job, with his «Залишок» measured against the pair.</p>
+     *
+     * <p>The addition is the ADDENDUM. It is SIGNED and counted, and by design never shared — so
+     * extras the client accepted ON AN ACT were in «Отримано» but not in «За договором», and a
+     * client still owing 3 000 ₴ of extras read «Залишок 0». Nothing is disclosed by showing it: an
+     * ADDENDUM is the record of lines and receipts that were printed on the act he signed, and it
+     * already names itself for him («Додаткові роботи до акта № 3»). It rides along only when the
+     * master shared something — an ECONOMY portal with no sections of its own is not a portal about
+     * this deal, and extras alone would be a bill out of nowhere.</p>
+     */
+    private List<PublicPortalView.Section> economySections(UUID projectId) {
+        List<Estimate> shared =
+                estimateRepository.findByProjectIdAndEconomyVisibleTrueOrderByCreatedAtAsc(projectId)
+                        .stream()
+                        .filter(e -> e.getStatus() == EstimateStatus.SIGNED && e.isCountInEconomy())
+                        .filter(e -> e.getKind() != EstimateKind.ADDENDUM)
+                        .toList();
+        if (shared.isEmpty()) {
+            return List.of();
+        }
+        List<Estimate> all = new ArrayList<>(shared);
+        estimateRepository.findByProjectIdOrderByCreatedAtDesc(projectId).stream()
+                .filter(e -> e.getKind() == EstimateKind.ADDENDUM)
+                .filter(e -> e.getStatus() == EstimateStatus.SIGNED && e.isCountInEconomy())
+                .sorted(Comparator.comparing(Estimate::getCreatedAt))
+                .forEach(all::add);
+        return all.stream().map(this::sectionOf).toList();
     }
 
     @Transactional
@@ -347,6 +410,7 @@ public class PublicEstimateService {
         // document is stamped: the client is being told to go and talk to the master, so nothing
         // he did may leave a mark.
         Estimate supersededParent = supersededParent(estimate);
+        List<Estimate> supersededSiblings = supersededSiblings(estimate);
 
         estimate.setStatus(EstimateStatus.SIGNED);
         estimate.setSignedAt(Instant.now());
@@ -368,6 +432,13 @@ public class PublicEstimateService {
             supersededParent.setCountInEconomy(false);
             supersededParent.setSupersededByEstimateId(estimate.getId());
         }
+        // Same rule one level sideways: a variant the client signed earlier is history, not a
+        // second live deal (B-73).
+        for (Estimate sibling : supersededSiblings) {
+            sibling.setCountInEconomy(false);
+            sibling.setSupersededByEstimateId(estimate.getId());
+        }
+        countSignedConsolidation(estimate);
         // A signed estimate means work begins. object-status-unification made the DISPLAYED stage
         // fully derived (a SIGNED estimate alone now drives IN_PROGRESS — see ObjectStage.derive),
         // so this write is no longer load-bearing for anything the UI shows. Left in place anyway:
@@ -384,6 +455,40 @@ public class PublicEstimateService {
                 new Object[]{req.clientName().trim(), formatHryvnia(totals.total())},
                 LocalizationConfig.UKRAINIAN);
         pushService.sendToUser(contractor, title, pushBody(estimate), "/projects/" + project.getId());
+    }
+
+    /**
+     * A consolidated rollup the client actually SIGNED becomes the contract (review B-68).
+     *
+     * <p>{@code consolidate()} creates the rollup {@code countInEconomy = false} on purpose — its
+     * sources keep counting, and counting both would bill the same work twice. That is right up to
+     * the moment the client signs the ROLLUP: «За договором» counts SIGNED ∧ counted, and now
+     * nothing on the object is both. A 50 000 ₴ deal the client signed read «За договором 0 ₴», no
+     * act could be made against it (the progress picker is SIGNED ∧ counted too), and the payments
+     * card asked for nothing.</p>
+     *
+     * <p>Deliberately narrow: if ANY source is already SIGNED ∧ counted, nothing moves. Those
+     * sources ARE the contract, and counting the rollup beside them would double exactly what the
+     * original {@code false} was protecting. That leaves the MIXED case (a signed source rolled up
+     * together with unsigned ones) under-counted by the unsigned part — recorded as an open
+     * question rather than answered by guesswork here.</p>
+     *
+     * <p>No {@code requireNoActs} on the sources: an act can only close a SIGNED ∧ counted
+     * estimate, and we are here precisely because none of them is.</p>
+     */
+    private void countSignedConsolidation(Estimate rollup) {
+        Set<UUID> sourceIds = rollup.getConsolidationSourceIds();
+        if (sourceIds == null || sourceIds.isEmpty()) {
+            return;
+        }
+        List<Estimate> sources = estimateRepository.findAllById(sourceIds);
+        boolean anyIsTheContract = sources.stream().anyMatch(
+                e -> e.getStatus() == EstimateStatus.SIGNED && e.isCountInEconomy());
+        if (anyIsTheContract) {
+            return;
+        }
+        rollup.setCountInEconomy(true);
+        sources.forEach(e -> e.setCountInEconomy(false));
     }
 
     private QuestionResponse doAsk(Estimate estimate, QuestionRequest req, String clientIp) {
@@ -565,7 +670,9 @@ public class PublicEstimateService {
         Totals t = totalsOf(estimate);
         return new PublicPortalView.Section(
                 estimate.getId(),
-                estimate.getName(),
+                // The heading the client reads. A markup copy used to be named «… +20%» by default,
+                // which hands him the crew's prices for a division — review B-74.
+                ClientSafeName.of(estimate.getName()),
                 estimate.getStatus(),
                 estimate.getValidUntil(),
                 estimate.getNotes(),

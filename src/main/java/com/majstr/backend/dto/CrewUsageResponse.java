@@ -16,12 +16,14 @@ package com.majstr.backend.dto;
  * @param withMarkupCopy30d   ...of them, those who made one in the last 30 days
  * @param withSignedMarkupCopy masters whose marked-up copy the client actually SIGNED — the crew
  *                            workflow completed, not merely tried
- * @param activeMasters       the denominator, the same one the activation funnel's first step uses
- *                            (all masters), so the two reports can be read side by side
+ * @param allMasters          the denominator: EVERY master (role USER), the same figure the
+ *                            activation funnel's first step uses, so the two reports can be read
+ *                            side by side. Named for what it counts (review B-85) — it was
+ *                            «activeMasters», which it never was: nothing here asks about activity
  */
 public record CrewUsageResponse(
         long withMarkupCopy,
         long withMarkupCopy30d,
         long withSignedMarkupCopy,
-        long activeMasters
+        long allMasters
 ) {}

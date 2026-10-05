@@ -1,6 +1,7 @@
 package com.majstr.backend.service;
 
 import com.majstr.backend.dto.DashboardMetricsResponse;
+import com.majstr.backend.config.LocalizationConfig;
 import com.majstr.backend.entity.ProjectStatus;
 import com.majstr.backend.repository.ProjectMessageRepository;
 import com.majstr.backend.repository.EstimateRepository;
@@ -69,7 +70,7 @@ class DashboardServiceTest {
     }
 
     @Test
-    void metrics_usesFirstDayOfCurrentMonthUtc() {
+    void metrics_usesFirstDayOfTheMastersOwnMonth_notUtc() {
         given(projectRepository.countInProgressStage(any())).willReturn(0L);
         given(projectRepository.countPendingSignatureStage(any())).willReturn(0L);
         given(projectRepository.countByOwnerIdAndStatusAndCompletedAtGreaterThanEqual(any(), any(), any())).willReturn(0L);
@@ -80,8 +81,14 @@ class DashboardServiceTest {
         ArgumentCaptor<Instant> cap = ArgumentCaptor.forClass(Instant.class);
         verify(projectRepository).countByOwnerIdAndStatusAndCompletedAtGreaterThanEqual(
                 eq(ownerId), eq(ProjectStatus.COMPLETED), cap.capture());
-        LocalDateTime monthStart = LocalDateTime.ofInstant(cap.getValue(), ZoneOffset.UTC);
+        // Kyiv, not UTC (review B-67): the boundary has to be midnight in the zone the MASTER
+        // lives in, or on the 1st until 02:00/03:00 local the dashboard opens on the previous month
+        // and the object he finished an hour ago is missing from «завершено цього місяця».
+        LocalDateTime monthStart = LocalDateTime.ofInstant(cap.getValue(), LocalizationConfig.ZONE);
         assertThat(monthStart.getDayOfMonth()).isEqualTo(1);
         assertThat(monthStart.toLocalTime()).isEqualTo(LocalTime.MIDNIGHT);
+        // …and that is genuinely a different instant from the UTC one it used to send.
+        assertThat(LocalDateTime.ofInstant(cap.getValue(), ZoneOffset.UTC).toLocalTime())
+                .isNotEqualTo(LocalTime.MIDNIGHT);
     }
 }

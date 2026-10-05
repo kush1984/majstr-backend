@@ -2,6 +2,7 @@ package com.majstr.backend.dto;
 
 import jakarta.validation.constraints.DecimalMax;
 import jakarta.validation.constraints.DecimalMin;
+import jakarta.validation.constraints.Digits;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
@@ -15,7 +16,8 @@ import java.time.LocalDate;
  * longer a PATCH on this row; it goes through {@link PaymentReceiptRequest} instead.
  */
 public record ProjectPaymentRequest(
-        @NotNull @DecimalMin(value = "0.0") @DecimalMax("100000000") BigDecimal amount,
+        @NotNull @DecimalMin(value = "0.01") @DecimalMax("100000000")
+        @Digits(integer = 13, fraction = 2) BigDecimal amount,
         LocalDate dueDate,
         @Size(max = 255) String nextStage,
         @NotBlank @Size(max = 255) String purpose

@@ -96,10 +96,13 @@ class CrewMarginIntegrationTest extends IntegrationTestBase {
 
     private CrewMarginResponse panelMarginOf(UUID estimateId) {
         ObjectEconomyResponse economy = economyService.economy(projectId, ownerId);
+        // findFirst() AFTER the filter, never after a map that can yield null: Optional.of(null)
+        // throws, so «the panel reports no margin» used to come back as an NPE in the test itself.
         return economy.estimates().stream()
                 .filter(p -> p.id().equals(estimateId))
+                .findFirst()
                 .map(SignedEstimatePanelResponse::crewMargin)
-                .findFirst().orElse(null);
+                .orElse(null);
     }
 
     // --- the arithmetic --------------------------------------------------------------------
@@ -239,20 +242,32 @@ class CrewMarginIntegrationTest extends IntegrationTestBase {
     @Test
     void readingTheMarginDoesNotTouchTheStoredLines() {
         addWork("Штукатурка", "100", "200");
+        addWork("Шпаклювання", "50", "100");
         EstimateResponse copy = duplicateWith("20", false);
-        sign(copy.id());
 
         List<java.util.Map<String, Object>> before = jdbc.queryForList(
-                "SELECT unit_price, line_total FROM estimate_items WHERE estimate_id = ? ORDER BY sort_order",
+                "SELECT unit_price, line_total FROM estimate_items WHERE estimate_id = ? AND name = 'Штукатурка'",
                 copy.id());
 
+        // Read-only transactions never flush, so reading the margin could not have proved anything
+        // (review B-75): the margin is computed inside toResponse, which a WRITE path also calls,
+        // and that is where a dirty managed row would be persisted. So the margin is read here
+        // through an ordinary edit — a rename, which moves no money — and the rows are then read
+        // back via JDBC after that transaction has committed.
+        // BY NAME, not by index: both fixture lines are added with sortOrder 0, so the list order
+        // is whatever the id tiebreak gives.
+        UUID second = copy.items().stream()
+                .filter(i -> "Шпаклювання".equals(i.name())).findFirst().orElseThrow().id();
+        estimateService.updateItem(copy.id(), second, new EstimateItemRequest(
+                ItemType.WORK, "Шпаклювання стін", null, Unit.M2, new BigDecimal("50"),
+                new BigDecimal("120"), null, null, false, null, null), ownerId);
         economyService.economy(projectId, ownerId);
         estimateService.get(copy.id(), ownerId);
 
         assertThat(jdbc.queryForList(
-                "SELECT unit_price, line_total FROM estimate_items WHERE estimate_id = ? ORDER BY sort_order",
+                "SELECT unit_price, line_total FROM estimate_items WHERE estimate_id = ? AND name = 'Штукатурка'",
                 copy.id()))
-                .as("the client's own sheet, after two margin reads")
+                .as("the line nobody edited still carries the CLIENT's price, not the crew's")
                 .isEqualTo(before);
     }
 
@@ -350,7 +365,142 @@ class CrewMarginIntegrationTest extends IntegrationTestBase {
         assertThat(panelMarginOf(copy.id()).marginAccepted()).isEqualByComparingTo("1600");
     }
 
-    private void actWith(String status, UUID estimateId, UUID lineId, String quantity, String price) {
+    // --- review B-71 / B-72 / B-73 / B-75 ----------------------------------------------------
+
+    /**
+     * B-72. A «Знижка −10 % від кошторису» typed on the copy AFTER it was made has no crew price,
+     * and it used to be re-measured against the crew's smaller subtotal: −1 000 on the crew side
+     * against −1 200 on the client's, so the discount APPEARED to earn the master 1 800. The
+     * owner's rule freezes an unpriced line at its client amount and a negative one at zero — the
+     * discount comes out of his own margin, which is 800.
+     */
+    @Test
+    void aDiscountTypedOnTheCopyComesOutOfTheMastersOwnMargin() {
+        addWork("Штукатурка", "100", "100");          // crew 10 000
+        EstimateResponse copy = duplicateWith("20", false);   // client 12 000
+        estimateService.addItem(copy.id(), new EstimateItemRequest(
+                ItemType.WORK, "Знижка", null, Unit.PERCENT, new BigDecimal("-10"), BigDecimal.ZERO,
+                null, null, false, PercentBaseKind.TOTAL, null), ownerId);
+
+        EstimateResponse after = estimateService.get(copy.id(), ownerId);
+
+        assertThat(after.total()).isEqualByComparingTo("10800");
+        assertThat(after.crewMargin().crewTotal()).isEqualByComparingTo("10000");
+        assertThat(after.crewMargin().margin()).isEqualByComparingTo("800");
+        assertThat(after.crewMargin().unpricedCount()).isEqualTo(1);
+    }
+
+    /** The mirror image: a surcharge typed afterwards is frozen at its client amount, so it passes
+     *  through both views and the margin does not move. */
+    @Test
+    void aSurchargeTypedOnTheCopyPassesThroughBothViews() {
+        addWork("Штукатурка", "100", "100");          // crew 10 000, client 12 000
+        EstimateResponse copy = duplicateWith("20", false);
+        estimateService.addItem(copy.id(), new EstimateItemRequest(
+                ItemType.WORK, "Доставка", null, Unit.PERCENT, new BigDecimal("10"), BigDecimal.ZERO,
+                null, null, false, PercentBaseKind.TOTAL, null), ownerId);
+
+        EstimateResponse after = estimateService.get(copy.id(), ownerId);
+
+        assertThat(after.total()).isEqualByComparingTo("13200");
+        assertThat(after.crewMargin().crewTotal()).isEqualByComparingTo("11200");
+        assertThat(after.crewMargin().margin()).isEqualByComparingTo("2000");
+    }
+
+    /**
+     * B-72, the accepted half. «%» lines cannot BE act lines, so the estimate's discount reaches a
+     * signed act as a prorated ADJUSTMENT line (B-55). Counting only the ordinary lines reported
+     * 4 000 ₴ of accepted margin on a sheet whose whole margin is 1 600 — more accepted than exists.
+     * A fully closed estimate must meet the margin to the kopeck.
+     */
+    @Test
+    void aFullyClosedEstimateAcceptsExactlyTheMarginAndNoMore() {
+        addWork("Штукатурка", "200", "100");          // crew 20 000
+        EstimateResponse copy = duplicateWith("20", false);   // client 24 000
+        estimateService.addItem(copy.id(), new EstimateItemRequest(
+                ItemType.WORK, "Знижка", null, Unit.PERCENT, new BigDecimal("-10"), BigDecimal.ZERO,
+                null, null, false, PercentBaseKind.TOTAL, null), ownerId);
+        EstimateResponse priced = estimateService.get(copy.id(), ownerId);
+        sign(copy.id());
+        UUID lineId = priced.items().stream()
+                .filter(i -> i.unit() != Unit.PERCENT).findFirst().orElseThrow().id();
+
+        UUID actId = actWith("SIGNED", copy.id(), lineId, "200", "120");
+        adjustmentOn(actId, copy.id(), "-2400");
+
+        CrewMarginResponse margin = panelMarginOf(copy.id());
+        assertThat(margin.margin()).isEqualByComparingTo("1600");
+        assertThat(margin.marginAccepted())
+                .as("the whole estimate is closed, so the whole margin is accepted")
+                .isEqualByComparingTo("1600");
+    }
+
+    /**
+     * B-71. {@code source_unit_price} means a PRICE on an ordinary line and a PERCENT on a «%» one.
+     * Switching the unit left a 500 ₴/м² crew price being read as «500 %», which turned the crew
+     * total into an invented number. Crossing that boundary makes the line unpriced instead.
+     */
+    @Test
+    void changingALinesUnitToPercentDropsItsCrewPriceInsteadOfRereadingIt() {
+        addWork("Штукатурка", "100", "200");
+        EstimateResponse copy = duplicateWith("20", false);
+        UUID lineId = copy.items().get(0).id();
+
+        estimateService.updateItem(copy.id(), lineId, new EstimateItemRequest(
+                ItemType.WORK, "Непередбачені", null, Unit.PERCENT, new BigDecimal("10"),
+                BigDecimal.ZERO, null, null, false, PercentBaseKind.TOTAL, null), ownerId);
+
+        assertThat(jdbc.queryForObject(
+                "SELECT source_unit_price FROM estimate_items WHERE id = ?", BigDecimal.class, lineId))
+                .as("the crew figure for the new shape is unknown, so there is none")
+                .isNull();
+        assertThat(estimateService.get(copy.id(), ownerId).crewMargin().unpricedCount()).isEqualTo(1);
+    }
+
+    /**
+     * B-73. A copy of a copy stored the SOURCE's client price as its crew price, so C made off
+     * B (+20 %) reported «Бригаді 12 000» for a crew that is paid 10 000 — and a cheaper C showed
+     * no margin at all. The crew price is inherited, because that is what it already is.
+     */
+    @Test
+    void aCopyOfACopyKeepsTheCrewsOwnPriceNotTheParentsClientPrice() {
+        addWork("Штукатурка", "100", "100");          // crew 10 000
+        EstimateResponse b = duplicateWith("20", false);      // client 12 000
+
+        EstimateResponse c = estimateService.duplicate(b.id(),
+                new EstimateDuplicateRequest(null, new BigDecimal("5"), false, null), ownerId);
+
+        assertThat(c.total()).isEqualByComparingTo("12600");
+        assertThat(c.crewMargin().crewTotal()).isEqualByComparingTo("10000");
+        assertThat(c.crewMargin().margin()).isEqualByComparingTo("2600");
+    }
+
+    /** B-75. A copy superseded by a later renegotiation is SIGNED forever, and it kept reporting a
+     *  margin on a deal that counts nowhere else on the tab. */
+    @Test
+    void aSupersededCopyReportsNoMargin() {
+        addWork("Штукатурка", "100", "200");
+        EstimateResponse copy = duplicateWith("20", false);
+        sign(copy.id());
+        assertThat(panelMarginOf(copy.id())).isNotNull();
+
+        jdbc.update("UPDATE estimates SET count_in_economy = false WHERE id = ?", copy.id());
+
+        assertThat(panelMarginOf(copy.id())).isNull();
+    }
+
+    /** One server-authored ADJUSTMENT line (B-55) on an act, carrying an estimate's «%» share. */
+    private void adjustmentOn(UUID actId, UUID estimateId, String amount) {
+        jdbc.update("""
+                INSERT INTO work_act_item (id, work_act_id, estimate_item_id, estimate_id, line_kind,
+                                           type, name, unit, unit_price, quantity, line_total,
+                                           cumulative_before, sort_order)
+                VALUES (?, ?, NULL, ?, 'ADJUSTMENT', 'WORK', 'Знижка за кошторисом', 'PIECE',
+                        ?::numeric, 1, ?::numeric, 0, 99)
+                """, UUID.randomUUID(), actId, estimateId, amount, amount);
+    }
+
+    private UUID actWith(String status, UUID estimateId, UUID lineId, String quantity, String price) {
         UUID actId = UUID.randomUUID();
         jdbc.update("""
                 INSERT INTO work_act (id, user_id, project_id, number, kind, status, issued_at,
@@ -363,5 +513,6 @@ class CrewMarginIntegrationTest extends IntegrationTestBase {
                 VALUES (?, ?, ?, ?, 'WORK', 'Штукатурка', 'M2', ?::numeric, ?::numeric,
                         ?::numeric * ?::numeric, 0, 0)
                 """, UUID.randomUUID(), actId, lineId, estimateId, price, quantity, price, quantity);
+        return actId;
     }
 }

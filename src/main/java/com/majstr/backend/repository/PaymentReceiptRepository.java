@@ -61,4 +61,7 @@ public interface PaymentReceiptRepository extends JpaRepository<PaymentReceipt, 
             WHERE r.project.id = :projectId AND r.materialRefund = true
             """)
     BigDecimal sumMaterialRefunds(@Param("projectId") UUID projectId);
+
+    /** Whether any money was ever received on the object — the delete guard (review B-70). */
+    boolean existsByProjectId(UUID projectId);
 }

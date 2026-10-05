@@ -1,5 +1,6 @@
 package com.majstr.backend.service;
 
+import com.majstr.backend.config.LocalizationConfig;
 import com.majstr.backend.entity.Estimate;
 import com.majstr.backend.entity.EstimateItem;
 import com.majstr.backend.entity.EstimateKind;
@@ -146,7 +147,7 @@ class ActAddendumCreator {
                     .category(ExpenseCategory.MATERIALS)
                     .source(ExpenseSource.RECEIPT)
                     .note("Чек до акта № " + act.getNumber() + ": " + r.getLabel())
-                    .spentAt(r.getIssuedAt() == null ? LocalDate.now() : r.getIssuedAt())
+                    .spentAt(r.getIssuedAt() == null ? LocalDate.now(LocalizationConfig.ZONE) : r.getIssuedAt())
                     .build());
         }
         expenseRepository.saveAll(expenses);

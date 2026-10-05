@@ -103,4 +103,25 @@ public record EstimateItemRequest(
         }
         return quantity.compareTo(BigDecimal.ZERO) > 0;
     }
+
+    /**
+     * The AMOUNT must fit the column and the words (review B-85).
+     *
+     * <p>Both factors are bounded on their own — 12 integer digits of quantity, 13 of price — and
+     * their product is not: {@code line_total NUMERIC(15,2)} overflows at 10¹³, which is a 500 on
+     * save, and {@link com.majstr.backend.service.HryvniaInWords} stops at milliards, so the PDF's
+     * «сума словами» would silently say less than the figure above it on anything bigger. A single
+     * line is capped where both of those hold.</p>
+     *
+     * <p>A «%» line is excluded: its amount is derived from a base this request cannot see, and the
+     * bound belongs on the lines the base is made of.</p>
+     */
+    @AssertTrue(message = "quantity × unitPrice must not exceed 9 999 999 999 999.99")
+    public boolean isAmountWithinRange() {
+        if (quantity == null || unitPrice == null || unit == Unit.PERCENT) {
+            return true;
+        }
+        return quantity.multiply(unitPrice).abs()
+                .compareTo(new BigDecimal("9999999999999.99")) <= 0;
+    }
 }

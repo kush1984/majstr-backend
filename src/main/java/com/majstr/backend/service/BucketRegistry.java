@@ -37,6 +37,10 @@ public final class BucketRegistry<K> {
     private static final Duration MIN_IDLE = Duration.ofHours(2);
     private static final Duration SWEEP_EVERY = Duration.ofMinutes(10);
 
+    /** The ceiling the eviction above keeps. Well past any honest load: the login limiter's key is
+     *  {@code email|ip}, and 100 000 distinct ones is not a product this size. */
+    private static final int MAX_KEYS = 100_000;
+
     private final Bandwidth bandwidth;
     private final long idleNanos;
     private final ConcurrentMap<K, Entry> entries = new ConcurrentHashMap<>();
@@ -57,6 +61,7 @@ public final class BucketRegistry<K> {
     /** The bucket for this key, created full on first use. */
     public Bucket get(K key) {
         sweepIfDue();
+        evictIfOversized();
         Entry entry = entries.computeIfAbsent(key,
                 k -> new Entry(Bucket.builder().addLimit(bandwidth).build()));
         entry.touchedAt = System.nanoTime();
@@ -66,6 +71,33 @@ public final class BucketRegistry<K> {
     /** Visible for tests: how many keys are currently held. */
     public int size() {
         return entries.size();
+    }
+
+    /**
+     * A SIZE cap beside the idle sweep (review B-54).
+     *
+     * <p>Six of these registries are keyed by something a STRANGER picks — {@code email|ip}, a bare
+     * IP, a portal token — and the idle sweep only runs every few minutes with a threshold of hours.
+     * Between two sweeps a key-rotating caller can add entries at request rate, which is a slow leak
+     * with a wide-open ceiling. The cap turns it into a bounded one: past {@code MAX_KEYS} the
+     * oldest-touched tenth goes, which is the same thing the sweep does, only sooner and by
+     * pressure rather than by clock.</p>
+     *
+     * <p>Evicting a bucket is unobservable for a key that has gone quiet (it refills to full), and
+     * for a key under active attack the worst case is that it gets a fresh full bucket — which is
+     * exactly what rotating the key gave it anyway. 100 000 keys is far above any honest load here.</p>
+     */
+    private void evictIfOversized() {
+        if (entries.size() < MAX_KEYS) {
+            return;
+        }
+        int toDrop = Math.max(1, entries.size() / 10);
+        entries.entrySet().stream()
+                .sorted(java.util.Comparator.comparingLong(e -> e.getValue().touchedAt))
+                .limit(toDrop)
+                .map(Map.Entry::getKey)
+                .toList()
+                .forEach(entries::remove);
     }
 
     private void sweepIfDue() {

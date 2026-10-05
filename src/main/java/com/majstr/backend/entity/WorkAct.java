@@ -98,9 +98,14 @@ public class WorkAct {
     @Column(name = "show_cumulative", nullable = false)
     private boolean showCumulative = true;
 
-    /** On signing, post each attached receipt as a MATERIALS object expense so «Прибуток» is not
-     *  inflated by pass-through money (the client reimburses what the master already paid). Off for
-     *  a master who logs his receipts in the expense journal himself — otherwise they'd count twice. */
+    /** On signing, post each attached receipt as a MATERIALS/RECEIPT {@code object_expense}.
+     *
+     *  <p>The javadoc here used to point at an expense-journal screen and at «Прибуток» on the
+     *  object; both are gone (review B-85). What the flag still decides is real: an
+     *  {@code object_expense} is what «Мої гроші» reads on the expense side, so with the flag OFF
+     *  the act's receipts are money the master paid out that his own month never sees. ON is the
+     *  default for exactly that reason, and the one case for OFF is a master who records the same
+     *  purchase as an object receipt marked «це моя витрата» (V129) — then it is already there. */
     @Builder.Default
     @Column(name = "receipts_to_expenses", nullable = false)
     private boolean receiptsToExpenses = true;

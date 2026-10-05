@@ -40,6 +40,7 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -439,7 +440,9 @@ class PaymentServiceTest {
         UUID clientId = UUID.randomUUID();
         user(ownerId, Plan.PRO);
         given(projectService.loadOwned(objectId, ownerId)).willReturn(object());
-        given(receiptRepository.findById(clientId)).willReturn(Optional.of(PaymentReceipt.builder()
+        // The replay lookup asks for BOTH ids a TRANSFER can have written (B-69) — the caller's and
+        // the derived surplus one — so it is findAllById, not findById.
+        given(receiptRepository.findAllById(any())).willReturn(List.of(PaymentReceipt.builder()
                 .id(clientId).project(object()).planPayment(stage(stageId, new BigDecimal("500"), "Аванс"))
                 .amount(new BigDecimal("300.00")).receivedAt(LocalDate.now()).build()));
 
@@ -700,15 +703,18 @@ class PaymentServiceTest {
         given(receiptRepository.findByPlanPaymentIdOrderByReceivedAtAscCreatedAtAsc(fromId))
                 .willReturn(new ArrayList<>(List.of(onlyReceipt)));
         given(receiptRepository.findByPlanPaymentIdOrderByReceivedAtAscCreatedAtAsc(toId)).willReturn(List.of());
-        given(receiptRepository.save(any(PaymentReceipt.class))).willAnswer(inv -> inv.getArgument(0));
+        given(receiptRepository.saveAll(anyList())).willAnswer(inv -> inv.getArgument(0));
 
         service().transferSurplus(objectId, ownerId, new PaymentSurplusTransferRequest(fromId, toId));
 
         assertThat(onlyReceipt.getAmount()).isEqualByComparingTo("500.00"); // 700 - 200 surplus
-        ArgumentCaptor<PaymentReceipt> saved = ArgumentCaptor.forClass(PaymentReceipt.class);
-        verify(receiptRepository).save(saved.capture());
-        assertThat(saved.getValue().getPlanPayment()).isEqualTo(to);
-        assertThat(saved.getValue().getAmount()).isEqualByComparingTo("200.00");
+        List<PaymentReceipt> moved = captureMoved();
+        assertThat(moved).singleElement().satisfies(r -> {
+            assertThat(r.getPlanPayment()).isEqualTo(to);
+            assertThat(r.getAmount()).isEqualByComparingTo("200.00");
+            // The SOURCE row's own day and refund flag ride along (B-69), never today() and false.
+            assertThat(r.getReceivedAt()).isEqualTo(onlyReceipt.getReceivedAt());
+        });
         verify(receiptRepository, never()).delete(any(PaymentReceipt.class));
     }
 
@@ -730,15 +736,21 @@ class PaymentServiceTest {
         given(receiptRepository.findByPlanPaymentIdOrderByReceivedAtAscCreatedAtAsc(fromId))
                 .willReturn(new ArrayList<>(List.of(older, newer)));
         given(receiptRepository.findByPlanPaymentIdOrderByReceivedAtAscCreatedAtAsc(toId)).willReturn(List.of());
-        given(receiptRepository.save(any(PaymentReceipt.class))).willAnswer(inv -> inv.getArgument(0));
+        given(receiptRepository.saveAll(anyList())).willAnswer(inv -> inv.getArgument(0));
 
         service().transferSurplus(objectId, ownerId, new PaymentSurplusTransferRequest(fromId, toId));
 
         verify(receiptRepository).delete(newer);
         assertThat(older.getAmount()).isEqualByComparingTo("3000.00"); // 3500 - 500
-        ArgumentCaptor<PaymentReceipt> saved = ArgumentCaptor.forClass(PaymentReceipt.class);
-        verify(receiptRepository).save(saved.capture());
-        assertThat(saved.getValue().getAmount()).isEqualByComparingTo("1000.00");
+        // TWO moved rows now, one per source row — each keeping ITS date (B-69), because one
+        // aggregated row dated today() moved money between the master's months.
+        List<PaymentReceipt> moved = captureMoved();
+        assertThat(moved).hasSize(2);
+        assertThat(moved.stream().map(PaymentReceipt::getAmount).toList())
+                .usingElementComparator(BigDecimal::compareTo)
+                .containsExactlyInAnyOrder(new BigDecimal("500.00"), new BigDecimal("500.00"));
+        assertThat(moved).anySatisfy(r -> assertThat(r.getReceivedAt()).isEqualTo(newer.getReceivedAt()));
+        assertThat(moved).anySatisfy(r -> assertThat(r.getReceivedAt()).isEqualTo(older.getReceivedAt()));
     }
 
     @Test
@@ -777,10 +789,18 @@ class PaymentServiceTest {
         given(receiptRepository.findByPlanPaymentIdOrderByReceivedAtAscCreatedAtAsc(fromId))
                 .willReturn(new ArrayList<>(List.of(onlyReceipt)));
         given(receiptRepository.findByPlanPaymentIdOrderByReceivedAtAscCreatedAtAsc(toId)).willReturn(List.of());
-        given(receiptRepository.save(any(PaymentReceipt.class))).willAnswer(inv -> inv.getArgument(0));
+        given(receiptRepository.saveAll(anyList())).willAnswer(inv -> inv.getArgument(0));
 
         service().transferSurplus(objectId, ownerId, new PaymentSurplusTransferRequest(fromId, toId));
 
         assertThat(onlyReceipt.getAmount()).isEqualByComparingTo("500.00"); // 700 - 200 surplus
     }
+    /** The rows {@code transferSurplus} posted onto the target stage — one per source row (B-69). */
+    private List<PaymentReceipt> captureMoved() {
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<List<PaymentReceipt>> cap = ArgumentCaptor.forClass(List.class);
+        verify(receiptRepository).saveAll(cap.capture());
+        return cap.getValue();
+    }
+
 }

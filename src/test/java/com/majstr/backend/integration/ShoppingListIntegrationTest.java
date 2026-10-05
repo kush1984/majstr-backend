@@ -342,6 +342,31 @@ class ShoppingListIntegrationTest extends IntegrationTestBase {
     }
 
     /**
+     * …and so does a row carrying only a NOTE (review B-40). The RECALCULATION already kept such a
+     * row — {@code authoredByMaster} is «edited OR noted» — but the estimate DELETE asked only about
+     * {@code edited}, so «взяти в Епіцентрі» survived every recalculation and then vanished with the
+     * estimate. The note is the master's own writing on his own list; nothing about the estimate
+     * going away makes it worth less.
+     */
+    @Test
+    void deletingAnEstimateKeepsARowThatCarriesOnlyANote() {
+        ShoppingListResponse first = shoppingListService
+                .applyCalculated(projectId, ownerId, estimateA, List.of(row(PUTTY, "12"), row("Профіль CD", "40")));
+        shoppingListService.update(projectId, ownerId, only(first, PUTTY).id(),
+                new ShoppingListItemUpdateRequest(null, "взяти в Епіцентрі, спитати Сергія", null, null));
+
+        estimateService.delete(estimateA, ownerId);
+
+        ShoppingListResponse after = shoppingListService.get(projectId, ownerId);
+        assertThat(after.items()).extracting(ShoppingListItemResponse::name).containsExactly(PUTTY);
+        assertThat(only(after, PUTTY).note()).isEqualTo("взяти в Епіцентрі, спитати Сергія");
+        // The quantity is untouched — he never corrected it, he just wrote himself a reminder…
+        assertThat(only(after, PUTTY).quantity()).isEqualByComparingTo("12");
+        // …and the row is now HIS, like every other survivor of the delete.
+        assertThat(only(after, PUTTY).source()).isEqualTo(ShoppingListItemSource.MANUAL);
+    }
+
+    /**
      * The object's own delete reaches the rows down TWO sibling branches of one cascade — the list
      * (CASCADE) and `estimates` (SET NULL) — and Postgres does not define which fires first, so the
      * SET NULL could reach a row whose list was still there and fail the same CHECK.

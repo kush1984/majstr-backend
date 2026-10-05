@@ -21,8 +21,15 @@ import java.util.UUID;
  * both PDF-render paths (owner download and the public act portal).
  *
  * <p>Returns {@code null} whenever the block must not render: the master left it off, or this is the
- * first act (nothing to accumulate against yet). The figures are live and object-wide, which is why
- * the block is excluded from the canonical (hashed) PDF — see {@link WorkActPdfService.PdfModel}.</p>
+ * first act (nothing to accumulate against yet). The figures are object-wide and are excluded from
+ * the canonical (hashed) PDF — see {@link WorkActPdfService.PdfModel} — because they are not part of
+ * what the signature certifies.</p>
+ *
+ * <p><b>Two different questions, by status</b> (review B-77). While the act is open the block answers
+ * «what will this object stand at once this act is accepted», so the act's own lines and receipts are
+ * added to BOTH sides — the contract side too, since signing creates the ADDENDUM that carries the
+ * off-estimate half. Once the act is SIGNED it answers «what did it stand at then», computed as of
+ * {@code signed_at}: a document the client already holds must render the same figures tomorrow.</p>
  */
 @Component
 @RequiredArgsConstructor
@@ -46,15 +53,36 @@ class ActCumulativeCalculator {
         if (!actRepository.existsByProjectIdAndStatusAndIdNot(projectId, WorkActStatus.SIGNED, act.getId())) {
             return null; // first act on the object — no earlier work to reference
         }
-        BigDecimal accepted = itemRepository.sumSignedActLineTotals(projectId)
-                .add(receiptRepository.sumSignedActReceipts(projectId));
-        if (act.getStatus() != WorkActStatus.SIGNED) {
-            accepted = accepted.add(items.stream()
-                    .map(WorkActItem::getLineTotal)
-                    .reduce(BigDecimal.ZERO, BigDecimal::add));
-            accepted = accepted.add(ownReceiptsTotal == null ? BigDecimal.ZERO : ownReceiptsTotal);
+        if (act.getStatus() == WorkActStatus.SIGNED && act.getSignedAt() != null) {
+            // AS OF ITS OWN SIGNATURE (review B-77). The figures are live, which is right while the
+            // act is being prepared and wrong the moment it is history: re-downloading act 3 after
+            // act 4 was signed printed act 3's «виконано з початку» including act 4's work, so a
+            // document the client already holds said something different every time it was rendered.
+            return new WorkActPdfService.CumulativeReference(
+                    itemRepository.sumSignedActLineTotalsAsOf(projectId, act.getSignedAt())
+                            .add(receiptRepository.sumSignedActReceiptsAsOf(projectId, act.getSignedAt())),
+                    estimateRepository.sumIncomeCountedAsOf(projectId, act.getSignedAt()));
         }
-        BigDecimal contracted = estimateRepository.sumIncomeCounted(projectId);
+        BigDecimal ownLines = items.stream()
+                .map(WorkActItem::getLineTotal)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        BigDecimal ownReceipts = ownReceiptsTotal == null ? BigDecimal.ZERO : ownReceiptsTotal;
+        BigDecimal accepted = itemRepository.sumSignedActLineTotals(projectId)
+                .add(receiptRepository.sumSignedActReceipts(projectId))
+                .add(ownLines)
+                .add(ownReceipts);
+        // The act is not signed yet, so «За договором» does not know about what signing it will ADD
+        // (review B-77): off-estimate lines and the act's receipts become a SIGNED ADDENDUM at that
+        // moment ({@code ActAddendumCreator}), which is part of the contract. Counting them in
+        // `accepted` but not in `contracted` printed «Залишок −5 000 ₴» on the page the client reads
+        // before he signs. ADJUSTMENT lines are deliberately NOT added: they carry a share of an
+        // estimate's own discount, which `sumIncomeCounted` already measured in full.
+        BigDecimal futureAddendum = items.stream()
+                .filter(i -> i.getLineKind() == com.majstr.backend.entity.WorkActLineKind.ADDITIONAL)
+                .map(WorkActItem::getLineTotal)
+                .reduce(BigDecimal.ZERO, BigDecimal::add)
+                .add(ownReceipts);
+        BigDecimal contracted = estimateRepository.sumIncomeCounted(projectId).add(futureAddendum);
         return new WorkActPdfService.CumulativeReference(accepted, contracted);
     }
 }

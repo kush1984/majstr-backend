@@ -24,7 +24,9 @@ import java.util.UUID;
  * because the same record also carries ADDITIONAL (off-estimate) lines, where they ARE the line.</p>
  */
 public record WorkActItemsRequest(
-        @NotNull @Valid List<Line> items
+        /** Capped like every other bulk request (review B-85): the act is replaced wholesale, so an
+         *  unbounded list is an unbounded transaction. 500 is well past any real act. */
+        @NotNull @Size(max = 500) @Valid List<Line> items
 ) {
     public record Line(
             UUID estimateItemId,

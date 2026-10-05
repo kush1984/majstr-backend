@@ -20,6 +20,7 @@ import java.time.Instant;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.TreeSet;
+import java.util.Locale;
 
 @Service
 @RequiredArgsConstructor
@@ -38,7 +39,7 @@ public class AuthService {
 
     @Transactional
     public AuthResponse register(RegisterRequest req) {
-        String email = req.email().toLowerCase().trim();
+        String email = req.email().toLowerCase(Locale.ROOT).trim();
         // Anti-abuse: reject disposable/no-mail domains (fail-open on DNS), and dedupe
         // on the canonical form so gmail aliases can't spawn parallel accounts.
         emailPolicyService.assertAcceptable(email);

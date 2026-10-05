@@ -80,23 +80,29 @@ public class FiscalQrService {
             return Optional.empty();
         }
         FiscalQrPayload qr = parsed.get();
-        // What the code itself carries. Already enough to fill the dialog; the lookup only enriches.
-        FiscalReceipt fromCode =
-                new FiscalReceipt(null, qr.issuedAt().toLocalDate(), qr.sum(), List.of());
-
-        if (!withPositions || !props.enabled()) {
-            return Optional.of(fromCode);
+        if (!withPositions) {
+            return Optional.of(FiscalReceipt.fromCodeAlone(qr.issuedAt().toLocalDate(), qr.sum(),
+                    FiscalReceipt.PositionSource.NOT_ASKED));
+        }
+        if (!props.enabled()) {
+            return Optional.of(FiscalReceipt.fromCodeAlone(qr.issuedAt().toLocalDate(), qr.sum(),
+                    FiscalReceipt.PositionSource.DISABLED));
         }
         FiscalReceipt looked = lookup(qr);
         if (looked == null) {
-            return Optional.of(fromCode);
+            // The lookup RAN and did not answer. Distinct from «switched off» (review B-54): the
+            // configuration is ours and the outage is the tax service's, and only one of the two is
+            // worth telling the master to try again later.
+            return Optional.of(FiscalReceipt.fromCodeAlone(qr.issuedAt().toLocalDate(), qr.sum(),
+                    FiscalReceipt.PositionSource.UNAVAILABLE));
         }
         return Optional.of(new FiscalReceipt(
                 looked.label(),
                 // The QR's own values win: the lookup only answers at all when they matched it.
                 qr.issuedAt().toLocalDate(),
                 qr.sum(),
-                trustedItems(looked.items(), qr.sum())));
+                trustedItems(looked.items(), qr.sum()),
+                FiscalReceipt.PositionSource.LOOKUP));
     }
 
     /**

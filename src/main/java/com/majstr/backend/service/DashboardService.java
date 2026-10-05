@@ -1,5 +1,6 @@
 package com.majstr.backend.service;
 
+import com.majstr.backend.config.LocalizationConfig;
 import com.majstr.backend.dto.DashboardMetricsResponse;
 import com.majstr.backend.entity.ProjectStatus;
 import com.majstr.backend.repository.ProjectMessageRepository;
@@ -13,7 +14,6 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.Instant;
 import java.time.YearMonth;
-import java.time.ZoneOffset;
 import java.util.UUID;
 
 /**
@@ -34,7 +34,7 @@ public class DashboardService {
 
     @Transactional(readOnly = true)
     public DashboardMetricsResponse metrics(UUID ownerId) {
-        Instant monthStart = currentMonthStartUtc();
+        Instant monthStart = currentMonthStart();
 
         // object-status-unification: both counts are now OBJECTS in the derived stage, not a raw
         // ProjectStatus count / a count of SENT ESTIMATES — see ProjectRepository for why the old
@@ -57,7 +57,15 @@ public class DashboardService {
                 new DashboardMetricsResponse.CompletedThisMonth(completedCount, completedAmount));
     }
 
-    private static Instant currentMonthStartUtc() {
-        return YearMonth.now(ZoneOffset.UTC).atDay(1).atStartOfDay().toInstant(ZoneOffset.UTC);
+    /**
+     * «Цей місяць» in the master's own month, not UTC (review B-67). Kyiv is UTC+2/+3, so on the
+     * 1st until 02:00 or 03:00 local the dashboard opened on the PREVIOUS month — and the object
+     * he completed an hour ago was missing from «завершено цього місяця» at exactly the moment he
+     * went looking for it. {@code LocalizationConfig.ZONE} is the same zone «Мої гроші» already
+     * resolves its period defaults in, so the two screens name the same month.
+     */
+    private static Instant currentMonthStart() {
+        return YearMonth.now(LocalizationConfig.ZONE)
+                .atDay(1).atStartOfDay(LocalizationConfig.ZONE).toInstant();
     }
 }

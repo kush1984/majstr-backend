@@ -39,12 +39,20 @@ public interface ShoppingListItemRepository extends JpaRepository<ShoppingListIt
      * NULL as an UPDATE, so it is checked against {@code shopping_list_item_calculated_source_check}
      * — a CALCULATOR row with no estimate fails it and the whole delete 500s. An untouched row is
      * also worth nothing once its source is gone: nobody bought it and nobody corrected it.
+     *
+     * <p><b>«Untouched» means the same thing here as everywhere else</b> (review B-40): the
+     * recalculation learned to keep a row carrying a NOTE ({@code ShoppingListItem.authoredByMaster},
+     * «купити в Епіцентрі, там дешевше» is the master's writing on his own list), and this query did
+     * not — so deleting the estimate deleted the note that survived every recalculation. Spelled out
+     * as the same two clauses the method names, because a third reader of «touched» is how this drifts
+     * again.
      */
     @Modifying
     @Query("""
             DELETE FROM ShoppingListItem i
             WHERE i.sourceEstimateId = :estimateId
-              AND i.bought = false AND i.clearedAt IS NULL AND i.edited = false
+              AND i.bought = false AND i.clearedAt IS NULL
+              AND i.edited = false AND (i.note IS NULL OR TRIM(i.note) = '')
             """)
     int deleteUntouchedByEstimate(@Param("estimateId") UUID estimateId);
 

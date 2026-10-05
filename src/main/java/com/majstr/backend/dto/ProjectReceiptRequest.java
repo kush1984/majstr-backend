@@ -3,6 +3,7 @@ package com.majstr.backend.dto;
 import jakarta.validation.constraints.AssertTrue;
 import jakarta.validation.constraints.DecimalMax;
 import jakarta.validation.constraints.DecimalMin;
+import jakarta.validation.constraints.Digits;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
@@ -25,7 +26,8 @@ import java.time.LocalDate;
  */
 public record ProjectReceiptRequest(
         @NotBlank @Size(max = 160) String label,
-        @NotNull @DecimalMin("0.00") @DecimalMax("99999999.99") BigDecimal amount,
+        @NotNull @DecimalMin("0.00") @DecimalMax("99999999.99")
+        @Digits(integer = 13, fraction = 2) BigDecimal amount,
         LocalDate issuedAt,
         Boolean reimbursable,
         @Size(max = 64) String fiscalFn,

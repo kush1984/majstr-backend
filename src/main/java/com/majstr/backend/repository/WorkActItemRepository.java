@@ -101,6 +101,22 @@ public interface WorkActItemRepository extends JpaRepository<WorkActItem, UUID> 
             """, nativeQuery = true)
     BigDecimal sumSignedActLineTotals(@Param("projectId") UUID projectId);
 
+    /** The same sum limited to acts signed no later than {@code asOf} (review B-77): a document the
+     *  client already holds may not say something different the next time it is rendered. */
+    @Query(value = """
+            SELECT COALESCE(SUM(wai.line_total), 0)
+            FROM work_act_item wai
+            JOIN work_act wa ON wa.id = wai.work_act_id
+            LEFT JOIN estimates e ON e.id = wai.estimate_id
+            WHERE wa.project_id = :projectId
+              AND wa.status = 'SIGNED'
+              AND wa.signed_at <= :asOf
+              AND (wai.line_kind = 'ADDITIONAL'
+                   OR (e.status = 'SIGNED' AND e.count_in_economy = true))
+            """, nativeQuery = true)
+    BigDecimal sumSignedActLineTotalsAsOf(@Param("projectId") UUID projectId,
+                                          @Param("asOf") java.time.Instant asOf);
+
     /**
      * The бригадир's margin the client has already ACCEPTED, per marked-up copy:
      * {@code Σ (act price − crew price) × act quantity} over SIGNED acts.
@@ -123,7 +139,7 @@ public interface WorkActItemRepository extends JpaRepository<WorkActItem, UUID> 
      * agreeing after the estimate is edited. The margin follows the money actually accepted.</p>
      */
     @Query(value = """
-            SELECT COALESCE(SUM((wai.unit_price - ei.source_unit_price) * wai.quantity), 0)
+            SELECT COALESCE(ROUND(SUM((wai.unit_price - ei.source_unit_price) * wai.quantity), 2), 0)
             FROM work_act_item wai
             JOIN work_act wa ON wa.id = wai.work_act_id
             JOIN estimate_items ei ON ei.id = wai.estimate_item_id
@@ -132,4 +148,29 @@ public interface WorkActItemRepository extends JpaRepository<WorkActItem, UUID> 
               AND ei.source_unit_price IS NOT NULL
             """, nativeQuery = true)
     BigDecimal sumSignedActMargin(@Param("estimateId") UUID estimateId);
+
+    /**
+     * Σ of the ADJUSTMENT lines SIGNED acts carry for one estimate — the share of its «%» lines
+     * the acts have already taken across (review B-72).
+     *
+     * <p>An act can never carry a «%» line itself (B-57), so an estimate's discounts and surcharges
+     * reach it as one server-authored ADJUSTMENT line per type, prorated by what that act closes
+     * (B-55, {@link com.majstr.backend.service.ActAdjustmentCalculator}). The crew margin needs it
+     * for the same reason «Прийнято актами» does: without it, «з прийнятого актами» summed the GROSS
+     * prices and reported 4 000 ₴ of accepted margin on a sheet whose whole margin is 1 600.</p>
+     */
+    @Query(value = """
+            SELECT COALESCE(SUM(wai.line_total), 0)
+            FROM work_act_item wai
+            JOIN work_act wa ON wa.id = wai.work_act_id
+            WHERE wa.status = 'SIGNED'
+              AND wai.line_kind = 'ADJUSTMENT'
+              AND wai.estimate_id = :estimateId
+            """, nativeQuery = true)
+    BigDecimal sumSignedActAdjustments(@Param("estimateId") UUID estimateId);
+
+    /** One act's own billed total — every line it carries, ADJUSTMENT rows included (they are part
+     *  of what this act bills). Feeds {@link com.majstr.backend.service.ActAdvanceGuard}. */
+    @Query("SELECT COALESCE(SUM(i.lineTotal), 0) FROM WorkActItem i WHERE i.workAct.id = :actId")
+    BigDecimal sumLineTotalsByWorkActId(@Param("actId") UUID actId);
 }

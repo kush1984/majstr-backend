@@ -113,7 +113,6 @@ class ObjectExpenseServiceTest {
         given(refundCalculator.forObject(object)).willReturn(
                 MaterialRefundSplit.of(new BigDecimal("800.00"), new BigDecimal("2000.00")));
         given(paymentService.summaryUnchecked(object)).willReturn(payments(BigDecimal.ZERO));
-        given(expenseRepository.sumAll(object)).willReturn(BigDecimal.ZERO);
 
         ObjectEconomyMaterialsResponse materials = service().economy(object, owner).materials();
 
@@ -126,7 +125,7 @@ class ObjectExpenseServiceTest {
     // ---- FREE/PRO split on economy() ---------------------------------------
 
     @Test
-    void freeUser_economy_getsBothPaymentsAndInternalsToo_temporarily() {
+    void freeUser_economy_getsPaymentsTooForNow_andNeverInternals() {
         // TEMPORARY business decision — see the comment on Plan.FREE in PlanConfig: economy
         // opened up to FREE (previously: FREE saw only the signed-acts panels, nothing past
         // them) while the AI-calling flows are hidden in the PWA to cut AI spend.
@@ -137,16 +136,17 @@ class ObjectExpenseServiceTest {
         actsAxisZero(object);
         materialsAxisZero(object);
         given(paymentService.summaryUnchecked(object)).willReturn(payments(BigDecimal.ZERO));
-        given(expenseRepository.sumAll(object)).willReturn(BigDecimal.ZERO);
 
         ObjectEconomyResponse eco = service().economy(object, owner);
 
         assertThat(eco.payments()).isNotNull();
-        assertThat(eco.internals()).isNotNull();
+        // internals is ALWAYS null since review B-85 — «Прибуток» left the object with the
+        // crew-margin iteration and nothing has read the field since.
+        assertThat(eco.internals()).isNull();
     }
 
     @Test
-    void proUser_economy_getsBothPaymentsAndInternals() {
+    void proUser_economy_getsPaymentsAndNeverInternals() {
         UUID owner = UUID.randomUUID();
         UUID object = UUID.randomUUID();
         user(owner, Plan.PRO);
@@ -154,12 +154,13 @@ class ObjectExpenseServiceTest {
         actsAxisZero(object);
         materialsAxisZero(object);
         given(paymentService.summaryUnchecked(object)).willReturn(payments(BigDecimal.ZERO));
-        given(expenseRepository.sumAll(object)).willReturn(BigDecimal.ZERO);
 
         ObjectEconomyResponse eco = service().economy(object, owner);
 
         assertThat(eco.payments()).isNotNull();
-        assertThat(eco.internals()).isNotNull();
+        // internals is ALWAYS null since review B-85 — «Прибуток» left the object with the
+        // crew-margin iteration and nothing has read the field since.
+        assertThat(eco.internals()).isNull();
     }
 
     @Test
@@ -189,15 +190,24 @@ class ObjectExpenseServiceTest {
         assertThat(res.amount()).isEqualByComparingTo("450.00");
         assertThat(res.category()).isEqualTo(ExpenseCategory.MATERIALS);
         assertThat(res.note()).isEqualTo("клей");              // trimmed
-        assertThat(res.spentAt()).isEqualTo(LocalDate.now());  // defaulted to today
+        // Defaulted to today IN KYIV, not in the server's zone (review B-83): a flip at 00:30
+        // local time used to date the row to the previous day.
+        assertThat(res.spentAt())
+                .isEqualTo(LocalDate.now(com.majstr.backend.config.LocalizationConfig.ZONE));
         assertThat(res.source()).isEqualTo(ExpenseSource.MANUAL); // hand-entered → unforeseen
     }
 
+    /**
+     * «Прибуток» is GONE from the object, and this is the guard that keeps it gone (review B-85).
+     *
+     * <p>The formula — contracted minus every {@code object_expense} — subtracted costs the app
+     * gives a master no way to enter against an object, so it read ≈ «За договором» for everyone.
+     * Two tests used to pin that arithmetic; what is worth pinning now is that the figure is not
+     * computed at all: no expense aggregate is read on the economy path, however much the object
+     * has spent.</p>
+     */
     @Test
-    void economy_profitIsContractedMinusEveryExpense_expensesIsTheirSum() {
-        // Economy-rework: no works/materials/cash split — profit reads straight off the same
-        // contracted total the payments block already shows, minus every object_expense
-        // regardless of category or source (materials, crew wages logged as LABOR, anything else).
+    void economy_neverSendsInternals_andNeverEvenAsksForTheExpenseTotal() {
         UUID owner = UUID.randomUUID();
         UUID object = UUID.randomUUID();
         user(owner, Plan.PRO);
@@ -206,31 +216,12 @@ class ObjectExpenseServiceTest {
         materialsAxisZero(object);
         given(paymentService.summaryUnchecked(object))
                 .willReturn(payments(new BigDecimal("14000.00"), new BigDecimal("6000.00")));
-        given(expenseRepository.sumAll(object)).willReturn(new BigDecimal("3500.00"));
 
         ObjectEconomyResponse eco = service().economy(object, owner);
 
-        assertThat(eco.internals().expenses()).isEqualByComparingTo("3500.00");
-        assertThat(eco.internals().profit()).isEqualByComparingTo("10500.00"); // 14000 − 3500
-    }
-
-    @Test
-    void economy_expensesExceedingContracted_goesNegativeNotClamped() {
-        // The master spent more than the contracted total (materials out of pocket, or an
-        // over-budget crew payment) — profit is honestly negative, not floored at zero.
-        UUID owner = UUID.randomUUID();
-        UUID object = UUID.randomUUID();
-        user(owner, Plan.PRO);
-        given(projectService.loadOwned(object, owner)).willReturn(object(ProjectStatus.IN_PROGRESS));
-        actsAxisZero(object);
-        materialsAxisZero(object);
-        given(paymentService.summaryUnchecked(object))
-                .willReturn(payments(new BigDecimal("3000.00"), new BigDecimal("3000.00")));
-        given(expenseRepository.sumAll(object)).willReturn(new BigDecimal("5000.00"));
-
-        ObjectEconomyResponse eco = service().economy(object, owner);
-
-        assertThat(eco.internals().profit()).isEqualByComparingTo("-2000.00"); // 3000 − 5000
+        assertThat(eco.internals()).isNull();
+        assertThat(eco.payments().contractedTotal()).isEqualByComparingTo("14000.00");
+        verify(expenseRepository, never()).sumAll(object);
     }
 
     // ---- offline authoring (client-supplied ids) ---------------------------

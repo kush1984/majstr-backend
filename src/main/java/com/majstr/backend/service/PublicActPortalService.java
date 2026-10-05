@@ -68,6 +68,8 @@ public class PublicActPortalService {
     private final ActReceiptReconciler receiptReconciler;
     private final ActSignedCopyService signedCopy;
     private final ActReceiptCompleteness receiptCompleteness;
+    private final AfterCommit afterCommit;
+    private final ActReceiptDuplicateGuard receiptDuplicateGuard;
     private final ActLineBinder lineBinder;
     private final WorkActReceiptService receiptService;
     private final PushService pushService;
@@ -85,7 +87,11 @@ public class PublicActPortalService {
      * the canonical PDF) as tamper evidence, notifies the master (push, fail-soft) and emails the
      * client a PDF copy (independent external trace, fail-soft).
      */
-    @Transactional
+    // rollbackFor = Exception (review B-81): Spring rolls back on a RuntimeException and COMMITS on
+    // a checked one, and the two steps that can throw a checked exception here are the PDF render
+    // behind `doc_hash` and the client copy. The default rules would commit a SIGNED, immutable,
+    // undeletable act with no tamper stamp at all.
+    @Transactional(rollbackFor = Exception.class)
     public PublicActView sign(String token, SignRequest req, String clientIp, String userAgent)
             throws IOException, DocumentException {
         // FOR UPDATE, before every guard below (B-60): a receipt or a line landing between this
@@ -119,6 +125,9 @@ public class PublicActPortalService {
         // already refused one, but a SENT act can still gain receipts — the not-signed rule, not the
         // not-sent rule, is what governs receipt writes.
         receiptCompleteness.requireAllPriced(act.getId());
+        // Nor a slip a SIGNED act of this object already billed (B-79). This is the one guard that
+        // is worth showing the CLIENT: being billed twice for one purchase is worse than an error.
+        receiptDuplicateGuard.requireNoReceiptBilledElsewhere(act);
         // Nor one whose estimate moved under it after it was sent (B-56) — reopened, uncounted, or
         // closed to the last unit by another act. Structure only: the prices the client is looking
         // at are the frozen copy and must stay exactly what he agreed to.
@@ -283,13 +292,30 @@ public class PublicActPortalService {
 
     // ---- side effects -----------------------------------------------------
 
+    /**
+     * «Клієнт підписав акт» — pushed AFTER the commit (review B-81). {@code @Async} alone was not
+     * enough: it made the send concurrent with the commit rather than dependent on it, so a sign
+     * that lost its optimistic lock still told the master the act was signed.
+     */
     private void notifyContractor(WorkAct act, List<WorkActItem> items) {
-        BigDecimal total = items.stream().map(WorkActItem::getLineTotal)
+        // «До сплати», not the works subtotal (review B-85). The push is the first and often only
+        // figure the master reads about a signature, and the act's own «До сплати» adds the
+        // re-billed receipts and nets off the advance — on an act carrying 8 000 ₴ of material the
+        // two differ by that much, and the smaller number is the one he was told.
+        BigDecimal works = items.stream().map(WorkActItem::getLineTotal)
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
+        BigDecimal advance = act.getAdvanceOffset() == null ? BigDecimal.ZERO : act.getAdvanceOffset();
+        BigDecimal receipts = receiptRepository.sumByWorkActId(act.getId());
+        BigDecimal payable = works
+                .add(receipts == null ? BigDecimal.ZERO : receipts)
+                .subtract(advance)
+                .max(BigDecimal.ZERO);
         String title = messages.getMessage("push.act-signed",
-                new Object[]{act.getSignerName(), money(total)}, LocalizationConfig.UKRAINIAN);
-        pushService.sendToUser(act.getProject().getOwner(), title,
-                "Акт № " + act.getNumber(), "/projects/" + act.getProject().getId());
+                new Object[]{act.getSignerName(), money(payable)}, LocalizationConfig.UKRAINIAN);
+        User owner = act.getProject().getOwner();
+        String body = "Акт № " + act.getNumber();
+        String url = "/projects/" + act.getProject().getId();
+        afterCommit.run(() -> pushService.sendToUser(owner, title, body, url));
     }
 
     // ---- helpers ----------------------------------------------------------

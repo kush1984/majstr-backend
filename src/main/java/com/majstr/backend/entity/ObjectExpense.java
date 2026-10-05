@@ -1,5 +1,6 @@
 package com.majstr.backend.entity;
 
+import com.majstr.backend.config.LocalizationConfig;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
@@ -75,7 +76,7 @@ public class ObjectExpense {
             createdAt = Instant.now();
         }
         if (spentAt == null) {
-            spentAt = LocalDate.now();
+            spentAt = LocalDate.now(LocalizationConfig.ZONE);
         }
     }
 }

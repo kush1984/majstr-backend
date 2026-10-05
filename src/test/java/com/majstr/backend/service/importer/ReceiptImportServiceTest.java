@@ -44,8 +44,6 @@ class ReceiptImportServiceTest {
     @Mock private EstimateExtractor extractor;
     @Mock private EstimateService estimateService;
     @Mock private com.majstr.backend.service.fiscal.FiscalQrService fiscalQr;
-    private final com.majstr.backend.config.FiscalQrProperties fiscalQrProps =
-            new com.majstr.backend.config.FiscalQrProperties("https://cabinet.tax.gov.ua");
 
     private ReceiptImportService service;
 
@@ -56,7 +54,7 @@ class ReceiptImportServiceTest {
     @BeforeEach
     void setUp() {
         service = new ReceiptImportService(featureGuard, userRepository, extractor, estimateService,
-                fiscalQr, fiscalQrProps);
+                fiscalQr);
     }
 
     @Test
@@ -151,7 +149,8 @@ class ReceiptImportServiceTest {
                         "Епіцентр", java.time.LocalDate.of(2026, 8, 15), new BigDecimal("690.00"),
                         List.of(new EstimateExtractor.Extracted.Line(
                                 "Шпаклівка", "шт", new BigDecimal("2"), new BigDecimal("345"),
-                                "MATERIAL", null)))));
+                                "MATERIAL", null)),
+                        com.majstr.backend.service.fiscal.FiscalReceipt.PositionSource.LOOKUP)));
 
         EstimateImportParseResponse resp = service.parseQr(ownerId, estimateId, "fn=1&id=2&sm=690&date=20260815");
 
@@ -164,38 +163,29 @@ class ReceiptImportServiceTest {
         verify(featureGuard, never()).requireFeature(any(User.class), any(Feature.class));
     }
 
-    @Test
-    void parseQr_failsLoudlyWhenThereAreNoPositions() {
+    /**
+     * «Немає позицій» meant THREE different things and said one of them (review B-23 and its B-54
+     * remainder). The reason now travels on the receipt itself — the ladder knows which rung it
+     * stopped on — and each one points the master at a different next move.
+     */
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.CsvSource({
+            "LOOKUP,error.fiscal-qr.no-items",
+            "DISABLED,error.fiscal-qr.lookup-disabled",
+            "UNAVAILABLE,error.fiscal-qr.lookup-unavailable",
+    })
+    void parseQr_namesWhyThereAreNoPositions(String why, String expectedKey) {
         // This flow exists only to produce lines, so an empty review would read as «чек порожній»
         // instead of «спробуйте фото». The act's dialog is the one that answers softly.
         given(estimateService.get(estimateId, ownerId)).willReturn(estimate(EstimateStatus.DRAFT));
         given(fiscalQr.read("x")).willReturn(Optional.of(
-                new com.majstr.backend.service.fiscal.FiscalReceipt(
-                        null, java.time.LocalDate.of(2026, 8, 15), new BigDecimal("690.00"), List.of())));
+                com.majstr.backend.service.fiscal.FiscalReceipt.fromCodeAlone(
+                        java.time.LocalDate.of(2026, 8, 15), new BigDecimal("690.00"),
+                        com.majstr.backend.service.fiscal.FiscalReceipt.PositionSource.valueOf(why))));
 
         assertThatThrownBy(() -> service.parseQr(ownerId, estimateId, "x"))
                 .isInstanceOf(com.majstr.backend.exception.CatalogImportException.class)
-                .hasMessage("error.fiscal-qr.no-items");
-    }
-
-    /**
-     * With the ДПС lookup switched off the QR carries a total and a date and no positions at all,
-     * so «позицій у чеку немає» blamed the paper for our own configuration (review B-23). The
-     * master's next move differs — photograph it — so the code has to differ too.
-     */
-    @Test
-    void parseQr_saysTheLookupIsOffRatherThanBlamingTheReceipt() {
-        ReceiptImportService offline = new ReceiptImportService(featureGuard, userRepository,
-                extractor, estimateService, fiscalQr,
-                new com.majstr.backend.config.FiscalQrProperties("   "));
-        given(estimateService.get(estimateId, ownerId)).willReturn(estimate(EstimateStatus.DRAFT));
-        given(fiscalQr.read("x")).willReturn(Optional.of(
-                new com.majstr.backend.service.fiscal.FiscalReceipt(
-                        null, java.time.LocalDate.of(2026, 8, 15), new BigDecimal("690.00"), List.of())));
-
-        assertThatThrownBy(() -> offline.parseQr(ownerId, estimateId, "x"))
-                .isInstanceOf(com.majstr.backend.exception.CatalogImportException.class)
-                .hasMessage("error.fiscal-qr.lookup-disabled");
+                .hasMessage(expectedKey);
     }
 
     @Test

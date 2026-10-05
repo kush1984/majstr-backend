@@ -1082,4 +1082,70 @@ class MaterialCalculatorServiceTest {
     private MasterMaterialPref pref(MaterialPrefKey key, String value) {
         return MasterMaterialPref.builder().userId(OWNER).prefKey(key).prefValue(value).build();
     }
+
+    // ---- review B-49: the per-position scalar -------------------------------------------
+
+    /**
+     * The parameter's own documented shape is «uuid:0,4,uuid:0,55» — a comma DECIMAL, which a
+     * Ukrainian keyboard types and the controller's javadoc shows. Splitting on a bare comma cut
+     * that in half: «uuid:0» parsed as zero (read as «unanswered») and «4» had no id at all, so the
+     * answer vanished in silence and the card went on asking.
+     */
+    @Test
+    void aCommaDecimalSurvivesTheSplit() {
+        UUID a = UUID.randomUUID();
+        UUID b = UUID.randomUUID();
+
+        Map<UUID, BigDecimal> parsed = MaterialCalculatorService.parsePerPosition(
+                a + ":0,4," + b + ":0,55", new BigDecimal("5"));
+
+        assertThat(parsed).hasSize(2);
+        assertThat(parsed.get(a)).isEqualByComparingTo("0.4");
+        assertThat(parsed.get(b)).isEqualByComparingTo("0.55");
+    }
+
+    /** Every request shipped so far sends dots, and they must keep working unchanged. */
+    @Test
+    void theDotDecimalFormStillParses() {
+        UUID a = UUID.randomUUID();
+        UUID b = UUID.randomUUID();
+
+        Map<UUID, BigDecimal> parsed = MaterialCalculatorService.parsePerPosition(
+                a + ":0.4," + b + ":15", new BigDecimal("150"));
+
+        assertThat(parsed).hasSize(2);
+        assertThat(parsed.get(a)).isEqualByComparingTo("0.4");
+        assertThat(parsed.get(b)).isEqualByComparingTo("15");
+    }
+
+    /** A semicolon is the unambiguous separator, and it works beside comma decimals. */
+    @Test
+    void aSemicolonSeparatesEntriesToo() {
+        UUID a = UUID.randomUUID();
+        UUID b = UUID.randomUUID();
+
+        Map<UUID, BigDecimal> parsed = MaterialCalculatorService.parsePerPosition(
+                a + ":0,4;" + b + ":1,2", new BigDecimal("5"));
+
+        assertThat(parsed).containsOnlyKeys(a, b);
+    }
+
+    /**
+     * The bound is PER QUESTION. 400 is a plausible typo for 40 mm of screed and an impossible
+     * answer for anything else — at 800 kg/m² of dry mix the shopping list reads as if we meant it.
+     * Out of range is IGNORED, so the position asks again instead of showing an empty screen.
+     */
+    @Test
+    void aFigurePastItsOwnQuestionsBoundIsIgnored() {
+        UUID id = UUID.randomUUID();
+
+        assertThat(MaterialCalculatorService.parsePerPosition(id + ":400", new BigDecimal("150")))
+                .as("400 mm of screed").isEmpty();
+        assertThat(MaterialCalculatorService.parsePerPosition(id + ":40", new BigDecimal("150")))
+                .as("40 mm is an ordinary layer").containsKey(id);
+        assertThat(MaterialCalculatorService.parsePerPosition(id + ":8", new BigDecimal("5")))
+                .as("8 m of розгортка on one короб").isEmpty();
+        assertThat(MaterialCalculatorService.parsePerPosition(id + ":0.45", new BigDecimal("5")))
+                .as("a real розгортка").containsKey(id);
+    }
 }

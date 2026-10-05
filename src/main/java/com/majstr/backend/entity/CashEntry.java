@@ -1,5 +1,6 @@
 package com.majstr.backend.entity;
 
+import com.majstr.backend.config.LocalizationConfig;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
@@ -104,7 +105,7 @@ public class CashEntry {
             happenedAt = now;
         }
         if (happenedOn == null) {
-            happenedOn = LocalDate.now();
+            happenedOn = LocalDate.now(LocalizationConfig.ZONE);
         }
     }
 }

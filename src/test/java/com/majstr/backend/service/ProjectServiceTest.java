@@ -44,6 +44,8 @@ class ProjectServiceTest {
     @Mock com.majstr.backend.repository.ProjectPhotoRepository photoRepository;
     @Mock com.majstr.backend.repository.ProjectReceiptRepository projectReceiptRepository;
     @Mock com.majstr.backend.repository.WorkActReceiptRepository workActReceiptRepository;
+    @Mock com.majstr.backend.repository.ProjectMessageFileRepository messageFileRepository;
+    @Mock ProjectDeleteGuard deleteGuard;
     @Mock StorageCleanup cleanup;
     // updateStatus archives/unarchives the object's shopping list, so this one must not be null.
     @Mock com.majstr.backend.repository.ShoppingListRepository shoppingListRepository;
@@ -294,9 +296,11 @@ class ProjectServiceTest {
     @Test
     void delete_alsoRemovesEveryStoredFileTheObjectHeld() {
         // The ROWS cascade with the FK, but the objects in storage do not — every project delete
-        // leaked its files forever. THREE tables hold them, not one (review B-26): the gallery, the
-        // object's own till receipts (V129) and the receipts frozen into its acts (V110). The last
-        // two are financial personal data, and they used to outlive the object entirely.
+        // leaked its files forever. FOUR tables hold them, not one: the gallery, the object's own
+        // till receipts (V129), the receipts frozen into its acts (V110) — those three from review
+        // B-26 — and the client's own message attachments (V76), which review B-48 found missing.
+        // That last one is the worst to miss: MessageFileRetentionService finds files THROUGH their
+        // rows, so a key orphaned here can never be cleaned by anything afterwards.
         UUID projectId = UUID.randomUUID();
         Project project = Project.builder()
                 .id(projectId).owner(User.builder().id(ownerId).build())
@@ -309,6 +313,8 @@ class ProjectServiceTest {
                 .willReturn(List.of("receipts/c.jpg"));
         given(workActReceiptRepository.findStorageKeysByProjectId(projectId))
                 .willReturn(List.of("act-receipts/d.jpg"));
+        given(messageFileRepository.findStorageKeysByProjectId(projectId))
+                .willReturn(List.of("message-files/e.pdf"));
 
         projectService.delete(projectId, ownerId);
 
@@ -322,6 +328,7 @@ class ProjectServiceTest {
         // Handed to the cleanup, which deletes AFTER the commit (B-25) — never inline, where a
         // rollback would leave rows pointing at files already gone.
         org.mockito.Mockito.verify(cleanup).afterCommit(List.of(
-                "photos/a.jpg", "photos/b.jpg", "receipts/c.jpg", "act-receipts/d.jpg"));
+                "photos/a.jpg", "photos/b.jpg", "receipts/c.jpg", "act-receipts/d.jpg",
+                "message-files/e.pdf"));
     }
 }

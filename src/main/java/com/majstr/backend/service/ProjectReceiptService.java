@@ -1,5 +1,6 @@
 package com.majstr.backend.service;
 
+import com.majstr.backend.config.LocalizationConfig;
 import com.majstr.backend.dto.ProjectReceiptRequest;
 import com.majstr.backend.dto.ProjectReceiptResponse;
 import com.majstr.backend.dto.ProjectReceiptsResponse;
@@ -98,6 +99,8 @@ public class ProjectReceiptService {
     private final ProjectReceiptCreator creator;
     private final ReceiptIdentityIndex identityIndex;
     private final StorageCleanup cleanup;
+    /** Settles a paper that turns out to be one an act already billed (B-04/B-53). */
+    private final ActReceiptReconciler reconciler;
 
     @Transactional(readOnly = true)
     public ProjectReceiptsResponse list(UUID projectId, UUID ownerId) {
@@ -147,6 +150,13 @@ public class ProjectReceiptService {
                     .orElseThrow(() -> e);
             tryDelete(storageKey);
             return winner;
+        } catch (RuntimeException e) {
+            // ANY other failure after the store leaves a blob nothing points at (review B-48): the
+            // row never landed, so no retention job and no project delete can ever find the key.
+            // The won-race branch above is the one case where the file is redundant rather than
+            // orphaned, and it already drops it.
+            tryDelete(storageKey);
+            throw e;
         }
     }
 
@@ -180,6 +190,11 @@ public class ProjectReceiptService {
             // and makes this receipt the twin of every other blank one (B-21).
             receipt.setFiscalFn(req.normalizedFiscalFn());
             receipt.setFiscalId(req.normalizedFiscalId());
+            // …and the paper may ALREADY have been billed on a signed act (review B-53). The
+            // identity arrives on this side last — the act is signed on site, the till receipts are
+            // read later — so the sign-time reconciler had nothing to match and the money sat in
+            // the receivable and in «За договором» at once.
+            reconciler.settleAgainstSignedActs(receipt);
         }
         applyReimbursable(receipt, req.reimbursable());
         // The identity arrives HERE and nowhere else — the photo is saved before anything is read
@@ -361,7 +376,7 @@ public class ProjectReceiptService {
         }
         expense.setAmount(receipt.getAmount());
         expense.setNote(receipt.getLabel());
-        expense.setSpentAt(receipt.getIssuedAt() == null ? LocalDate.now() : receipt.getIssuedAt());
+        expense.setSpentAt(receipt.getIssuedAt() == null ? LocalDate.now(LocalizationConfig.ZONE) : receipt.getIssuedAt());
         receipt.setExpenseId(expenseRepository.save(expense).getId());
     }
 

@@ -109,6 +109,24 @@ public class MaterialNorm {
     @Column(name = "default_param", precision = 15, scale = 4)
     private BigDecimal defaultParam;
 
+    /**
+     * The parameter value this coefficient was WRITTEN AGAINST, when it is not the product-wide
+     * default (review B-49, V144).
+     *
+     * <p>A master's habit rescales a shipped norm as a ratio, and the denominator used to be one
+     * constant per material: every {@code TILE_GROUT} figure was assumed to be a 2,5 mm joint. It is
+     * not. «Затирання швів від 3 мм» carries 0,8 kg/m² precisely because its joint is wider, so a
+     * 5 mm habit multiplied an already-wide figure by two — the master bought twice the grout for
+     * the one position whose data was most specific.</p>
+     *
+     * <p>NULL means «the product-wide default for my scaling habit», which is what almost every row
+     * says. A figure here is a row saying «mine assumed something else», and the ratio is taken
+     * against that instead. It is deliberately NOT {@link #defaultParam}: that one is a SUGGESTION
+     * for the master to confirm, this one is a statement about the coefficient beside it.</p>
+     */
+    @Column(name = "baseline_param", precision = 15, scale = 4)
+    private BigDecimal baselineParam;
+
     @Builder.Default
     @Column(name = "waste_percent", nullable = false, precision = 5, scale = 2)
     private BigDecimal wastePercent = BigDecimal.ZERO;

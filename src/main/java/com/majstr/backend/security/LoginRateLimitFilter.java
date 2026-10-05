@@ -21,6 +21,7 @@ import tools.jackson.databind.ObjectMapper;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.util.Locale;
 
 @Slf4j
 @Component
@@ -45,7 +46,7 @@ public class LoginRateLimitFilter extends OncePerRequestFilter {
         CachedBodyHttpServletRequest cached = new CachedBodyHttpServletRequest(request);
         String email = extractEmail(cached.getBody());
         String ip = clientIp(request);
-        String key = (email == null ? "<unknown>" : email.toLowerCase()) + "|" + ip;
+        String key = (email == null ? "<unknown>" : email.toLowerCase(Locale.ROOT)) + "|" + ip;
 
         LoginRateLimiter.ConsumeResult result = rateLimiter.tryConsume(key);
         if (!result.allowed()) {
