@@ -415,6 +415,49 @@ class WorkActIntegrationTest extends IntegrationTestBase {
         assertThat(second.label()).isEqualTo("Чек №2");
     }
 
+    /**
+     * The identity rides the CREATE, because a queued receipt makes no other call.
+     *
+     * <p>The printed fiscal QR is decoded on the DEVICE — the free first rung of «додати чек з
+     * фото» — so a receipt photographed in a basement already knows which piece of paper it is. It
+     * used to have nowhere to put that: the identity is written by the PATCH, and a queued receipt
+     * replays as a create and never as a PATCH. V134's whole point is that a dropped identity is
+     * how the same slip stays billed twice with nothing able to see it.</p>
+     */
+    @Test
+    void aCreateCarriesTheFiscalIdentityTheDeviceReadOffTheQr() throws Exception {
+        User owner = newOwner();
+        Project p = newProject(owner);
+        signedEstimateWithLine(p, "Робота", "100.000", "145.00");
+        WorkActResponse act = createInterim(p.getId(), owner.getId());
+
+        var saved = receiptService.add(act.id(), owner.getId(), null, receiptPhoto(), "Епіцентр",
+                new BigDecimal("2400.00"), LocalDate.of(2026, 9, 14), false, " 4000123456 ", "77");
+
+        var stored = receiptRepository.findById(saved.id()).orElseThrow();
+        // Normalised on the way in, the same as the PATCH does it (B-21/V136).
+        assertThat(stored.getFiscalFn()).isEqualTo("4000123456");
+        assertThat(stored.getFiscalId()).isEqualTo("77");
+    }
+
+    /** HALF an identity is not one: a blank pair would key as «|» and twin two codeless papers. */
+    @Test
+    void aCreateRefusesHalfAnIdentityRatherThanStoringIt() throws Exception {
+        User owner = newOwner();
+        Project p = newProject(owner);
+        signedEstimateWithLine(p, "Робота", "100.000", "145.00");
+        WorkActResponse act = createInterim(p.getId(), owner.getId());
+
+        var onlyFn = receiptService.add(act.id(), owner.getId(), null, receiptPhoto(), "Тільки fn",
+                new BigDecimal("100.00"), null, false, "4000123456", "   ");
+        var neither = receiptService.add(act.id(), owner.getId(), null, receiptPhoto(), "Без коду",
+                new BigDecimal("100.00"), null, false, null, null);
+
+        assertThat(receiptRepository.findById(onlyFn.id()).orElseThrow().getFiscalFn()).isNull();
+        assertThat(receiptRepository.findById(onlyFn.id()).orElseThrow().getFiscalId()).isNull();
+        assertThat(receiptRepository.findById(neither.id()).orElseThrow().getFiscalFn()).isNull();
+    }
+
     @Test
     void receiptsAreListedNewestFirst_withUndatedOnTop() throws Exception {
         // One ordering for the editor list, the PDF, the portal and the ADDENDUM rollup — an
