@@ -1,5 +1,6 @@
 package com.majstr.backend.service;
 
+import com.majstr.backend.dto.FiscalIdentity;
 import com.majstr.backend.dto.WorkActReceiptResponse;
 import com.majstr.backend.entity.WorkAct;
 import com.majstr.backend.entity.WorkActReceipt;
@@ -77,7 +78,7 @@ class WorkActReceiptCreator {
     @Transactional
     public WorkActReceiptResponse attempt(UUID actId, UUID requestedId, String label,
                                          BigDecimal amount, LocalDate issuedAt, String storageKey,
-                                         int sortOrder) {
+                                         int sortOrder, String fiscalFn, String fiscalId) {
         WorkAct act = workActRepository.findByIdForUpdate(actId)
                 .orElseThrow(() -> new ResourceNotFoundException("Work act not found: " + actId));
         WorkActService.requireNotSigned(act);
@@ -91,6 +92,12 @@ class WorkActReceiptCreator {
                 .storageKey(storageKey)
                 .sortOrder(sortOrder)
                 .build();
+        // HALF an identity is not one (B-21/V136): the pair is written together or not at all, so a
+        // codeless paper can never key as «|» and twin another codeless paper.
+        if (FiscalIdentity.complete(fiscalFn, fiscalId)) {
+            receipt.setFiscalFn(fiscalFn);
+            receipt.setFiscalId(fiscalId);
+        }
         return WorkActReceiptResponse.from(receiptRepository.saveAndFlush(receipt));
     }
 

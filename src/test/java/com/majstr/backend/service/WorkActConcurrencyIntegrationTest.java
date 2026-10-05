@@ -91,7 +91,7 @@ class WorkActConcurrencyIntegrationTest extends IntegrationTestBase {
         // The insert re-asks under the act's own lock, so the receipt is refused instead of landing
         // at 1 800 ₴ on a frozen document — unpriceable, undeletable, yet counted.
         assertThatThrownBy(() -> receiptCreator.attempt(f.actId, receiptId, "Епіцентр",
-                new BigDecimal("1800.00"), LocalDate.now(), "act-receipts/orphan.jpg", 0))
+                new BigDecimal("1800.00"), LocalDate.now(), "act-receipts/orphan.jpg", 0, null, null))
                 .isInstanceOf(WorkActSignedException.class);
         assertThat(receiptRepository.findByWorkActIdNewestFirst(f.actId)).isEmpty();
     }
@@ -148,7 +148,7 @@ class WorkActConcurrencyIntegrationTest extends IntegrationTestBase {
         long afterLines = version(f.actId);
 
         receiptService.add(f.actId, f.ownerId, null, receiptPhoto(), "Епіцентр",
-                new BigDecimal("1800.00"), LocalDate.now(), false);
+                new BigDecimal("1800.00"), LocalDate.now(), false, null, null);
         long afterReceipt = version(f.actId);
         assertThat(afterReceipt).isGreaterThan(afterLines);
 

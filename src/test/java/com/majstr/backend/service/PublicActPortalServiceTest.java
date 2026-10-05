@@ -28,6 +28,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
+import org.mockito.Spy;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.math.BigDecimal;
@@ -62,6 +63,11 @@ class PublicActPortalServiceTest {
     @Mock org.springframework.context.MessageSource messages;
     @Mock ActReceiptCompleteness receiptCompleteness;
     @Mock ActLineBinder lineBinder;
+    @Mock ActReceiptDuplicateGuard receiptDuplicateGuard;
+    /** Real, not a mock: the sign path registers its push through it, and «the master is told only
+     *  after the commit» (review B-81) is worth asserting rather than stubbing away. With no
+     *  transaction in progress it runs the action at once, which is what this unit test wants. */
+    @Spy AfterCommit afterCommit = new AfterCommit();
     @InjectMocks PublicActPortalService service;
 
     private static final String TOKEN = "tok-123";

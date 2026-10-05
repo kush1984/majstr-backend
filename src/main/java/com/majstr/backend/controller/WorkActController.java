@@ -172,7 +172,11 @@ public class WorkActController {
             + "yet» and blocks sharing and signing until it is filled in. Send a client-generated "
             + "UUID in X-Entity-Uuid to make the create idempotent (a retried upload over a weak "
             + "connection must not bill the material twice). 409 WORK_ACT_SIGNED once signed — "
-            + "receipts are part of the doc_hash")
+            + "receipts are part of the doc_hash. fiscalFn+fiscalId are optional and accepted "
+            + "TOGETHER only: the printed QR is decoded on the device, so a receipt authored with "
+            + "no signal can still carry the identity that makes it the same paper as an object "
+            + "receipt — the create is the only chance it gets, since a queued receipt replays as "
+            + "a create and never as a PATCH")
     @PostMapping(value = "/api/acts/{id}/receipts", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public ResponseEntity<WorkActReceiptResponse> addReceipt(
             @PathVariable UUID id,
@@ -183,10 +187,12 @@ public class WorkActController {
             @RequestParam(value = "issuedAt", required = false)
             @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate issuedAt,
             @RequestParam(value = "saveToPhotos", required = false, defaultValue = "false") boolean saveToPhotos,
+            @RequestParam(value = "fiscalFn", required = false) String fiscalFn,
+            @RequestParam(value = "fiscalId", required = false) String fiscalId,
             @AuthenticationPrincipal UserPrincipal principal) throws IOException {
         return ResponseEntity.status(HttpStatus.CREATED)
                 .body(receiptService.add(id, principal.id(), entityId, file, label, amount,
-                        issuedAt, saveToPhotos));
+                        issuedAt, saveToPhotos, fiscalFn, fiscalId));
     }
 
     @Operation(summary = "Recognize a receipt photo for the dialog: label + date + total off the "

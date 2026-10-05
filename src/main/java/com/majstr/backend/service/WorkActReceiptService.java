@@ -11,6 +11,7 @@ import com.majstr.backend.exception.ResourceNotFoundException;
 import com.majstr.backend.exception.WorkActSignedException;
 import com.majstr.backend.exception.WorkActValidationException;
 import com.majstr.backend.repository.WorkActReceiptRepository;
+import com.majstr.backend.dto.FiscalIdentity;
 import com.majstr.backend.service.fiscal.FiscalQrReceiptReader;
 import com.majstr.backend.service.importer.ActReceiptExtractor;
 import com.majstr.backend.service.ImageContentTypeDetector.ImageKind;
@@ -125,7 +126,8 @@ public class WorkActReceiptService {
      */
     public WorkActReceiptResponse add(UUID actId, UUID ownerId, UUID requestedId, MultipartFile file,
                                       String label, BigDecimal amount, LocalDate issuedAt,
-                                      boolean saveToPhotos) throws IOException {
+                                      boolean saveToPhotos, String fiscalFn, String fiscalId)
+            throws IOException {
         // Deliberately NOT @Transactional: the duplicate-key recovery below reads the winner's row
         // back after a failed insert, which the poisoned transaction could not do. Only one row is
         // written here, so nothing is lost by letting each step commit on its own — the shape
@@ -152,10 +154,13 @@ public class WorkActReceiptService {
                 : label.trim();
         String storageKey = storeBytes(content, kind);
         WorkActReceiptResponse saved;
+        // A replay loser must not copy the photo into the gallery a second time (review B-43): the
+        // winner's own attempt already did, and the master would find «Чек №3» twice in «Чеки».
+        boolean wonTheInsert = true;
         try {
             saved = creator.attempt(actId, requestedId, resolvedLabel,
                     amount.setScale(MONEY_SCALE, RoundingMode.HALF_UP), issuedAt, storageKey,
-                    sortOrder);
+                    sortOrder, FiscalIdentity.normalize(fiscalFn), FiscalIdentity.normalize(fiscalId));
         } catch (WorkActSignedException e) {
             // The act was signed while this photo was uploading (B-60) — the re-check inside the
             // locked transaction is what caught it. Nothing was written, so the stored photo is an
@@ -168,8 +173,14 @@ public class WorkActReceiptService {
             // stored is an orphan. Nothing else can collide here, so a miss is a real failure.
             saved = creator.replay(requestedId, actId).orElseThrow(() -> e);
             tryDelete(storageKey);
+            wonTheInsert = false;
+        } catch (RuntimeException e) {
+            // ANY other failure after the store leaves a blob nothing points at (review B-48) —
+            // the row never landed, so nothing can find the key to clean it up later.
+            tryDelete(storageKey);
+            throw e;
         }
-        if (saveToPhotos) {
+        if (saveToPhotos && wonTheInsert) {
             // A SECOND copy into the object's Фото tab («Чеки» folder, photo-folders) — the act
             // keeps its own frozen copy, so the gallery one can be deleted or re-filed freely.
             // Fail-soft, and swallowed HERE: the copy runs in its own transaction (REQUIRES_NEW),
