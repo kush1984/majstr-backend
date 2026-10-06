@@ -403,6 +403,16 @@ public class WorkActService {
         return act;
     }
 
+    /**
+     * The guard opens its OWN short transaction on purpose. It walks act &rarr; project &rarr; owner,
+     * and {@code WorkAct.project} is lazy, so the second hop needs a session — while
+     * {@link WorkActReceiptService#recognizeStored} and its siblings are deliberately NOT
+     * transactional (a vision call must not hold a pooled connection). Without this, a guard called
+     * from one of them threw {@code LazyInitializationException} and a foreign id answered 500
+     * instead of 404. {@code REQUIRED} joins the caller's transaction where there is one, so every
+     * write path still gets a managed entity.
+     */
+    @Transactional(readOnly = true)
     WorkAct loadOwned(UUID id, UUID ownerId) {
         return requireOwned(workActRepository.findById(id), id, ownerId);
     }

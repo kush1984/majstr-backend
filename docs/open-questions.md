@@ -432,6 +432,36 @@ one-line summary — keep the item in the file as a record.
 
 ## Security
 
+### Automated security scanning (IDOR matrix + secrets done; deps and DAST open)
+- **Status:** IN_PROGRESS (2026-10-06) — first two rungs shipped, two left.
+- **Since:** the «чи можемо ми прогнати якісь пентести» round (2026-10-06)
+- **Context:** the product had no automated security verification beyond the
+  functional tests. Four rungs were identified; two now stand in CI.
+  **Done:** (1) `IdorMatrixIntegrationTest` — two seeded masters, B's token against
+  A's ids across three classes (foreign parent, foreign child under B's own parent,
+  foreign id in the body), with a **bidirectional coverage guard** over all 151
+  id-bearing owner-scoped routes, so a new endpoint without a case reddens the
+  build. It found one real defect (`WorkActService.loadOwned` crashed outside a
+  session — fixed) and no IDOR. (2) `.github/workflows/secrets.yml` in **both**
+  repos — gitleaks 8.30.1 pinned, `fetch-depth: 0`, `--redact`, no baseline;
+  both histories scanned clean.
+- **Notes / options:** the two open rungs.
+  **Dependency scanning:** neither repo has a `dependabot.yml`, and the PWA's CI
+  runs no `npm audit`. Cheapest honest version is Dependabot on both plus
+  `npm audit --audit-level=high` in the PWA's `verify` job; the backend side wants
+  the OWASP dependency-check Gradle plugin or Dependabot's Gradle ecosystem. The
+  question to settle first is what a finding DOES — a red build on a transitive
+  CVE with no fix available is noise, so this needs a severity floor and an
+  ignore file with expiry dates, not just the tool.
+  **DAST (ZAP baseline):** a crawl of the deployed PWA + a ZAP API scan against
+  the OpenAPI document would cover the headers/TLS/cookie layer the ITs cannot
+  see. Needs a throwaway account on a non-prod deploy first — pointing a scanner
+  at prod would file real objects and send real push/email. Related: «Swagger /
+  API docs exposed in all profiles» is one of the things such a scan would flag.
+  Not on the ladder on purpose: a paid pentest, which is a thing to buy after the
+  first paying user, not before.
+- **Resolution:** partial — see `docs/iteration-idor-matrix.md`.
+
 ### PWA query cache not partitioned by user (cross-account data bleed)
 - **Status:** RESOLVED (2026-06-12) — `useLogin.onSuccess` now `qc.clear()`s the
   React Query cache before priming the new user (mirrors `useLogout`), so a login
