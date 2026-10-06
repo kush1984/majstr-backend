@@ -371,6 +371,74 @@ class MaterialCalculatorServiceTest {
         assertThat(calculate(null, null).wastePercent()).isEqualByComparingTo("10");
     }
 
+    /**
+     * Two positions can consume ONE material and waste it differently — adhesive combed onto a flat
+     * wall is not the same loss as the same bag worked into a stair nose — so each amount is grown
+     * by its OWN norm's allowance as it arrives.
+     *
+     * <p>The bucket used to take the MAXIMUM of the allowances it saw and apply that to everything
+     * in it, which bought the flat wall's 100 m² of adhesive for a loss only the stairs have.</p>
+     */
+    @Test
+    void eachPositionsAmountIsGrownByItsOwnNormsAllowance() {
+        Material glue = material("TILE_ADHESIVE_C2", "Клей для плитки C2", Unit.KG, null, null);
+        MaterialNorm wall =
+                wasted(norm(Trade.TILING, "укладання плитки 600х600", Unit.M2, glue, "1.0"), "5");
+        MaterialNorm stairs =
+                wasted(norm(Trade.TILING, "облицювання сходів плиткою", Unit.M2, glue, "2.0"), "20");
+        given(List.of(item("Укладання плитки 600х600", Unit.M2, "100", Trade.TILING),
+                        item("Облицювання сходів плиткою", Unit.M2, "10", Trade.TILING)),
+                List.of(wall, stairs));
+
+        CalculatedMaterialLine line = only(calculate(NO_WASTE, null));
+
+        // 100 × 1,05 + 20 × 1,2 = 129. The maximum would have been 120 × 1,2 = 144.
+        assertThat(line.baseQuantity()).isEqualByComparingTo("120");
+        assertThat(line.quantity()).as("each position's own allowance, not the worst of them")
+                .isEqualByComparingTo("129");
+        // One line still states ONE percent, and it is what the two allowances came to: 129/120.
+        assertThat(line.wastePercent()).isEqualByComparingTo("7.5");
+    }
+
+    /**
+     * Every shipped norm today carries 0 (V127), so the allowance in play is the master's own one
+     * for all of them — and the figure he reads back has to be HIS number, not a division's
+     * rounding of it. A bucket that never mixes allowances hands the one it was given straight back.
+     */
+    @Test
+    void oneSharedAllowanceIsReportedExactlyAsItWasGiven() {
+        Material glue = material("TILE_ADHESIVE_C2", "Клей для плитки C2", Unit.KG, null, null);
+        given(List.of(item("Укладання плитки 600х600", Unit.M2, "100", Trade.TILING),
+                        item("Облицювання сходів плиткою", Unit.M2, "10", Trade.TILING)),
+                List.of(norm(Trade.TILING, "укладання плитки 600х600", Unit.M2, glue, "1.0"),
+                        norm(Trade.TILING, "облицювання сходів плиткою", Unit.M2, glue, "2.0")));
+
+        CalculatedMaterialLine line = only(calculate(new BigDecimal("15"), null));
+
+        assertThat(line.wastePercent().toPlainString())
+                .as("his own figure, verbatim").isEqualTo("15");
+        assertThat(line.quantity()).isEqualByComparingTo("138");
+    }
+
+    /**
+     * A norm WITH an allowance of its own overrides the master's global one. That means THIS
+     * material is wasted differently in THIS work, not that he is careless — so the response still
+     * reports the figure he asked for while the line reports what was actually applied to it.
+     */
+    @Test
+    void aNormsOwnAllowanceOverridesTheMastersGlobalOne() {
+        Material glue = material("TILE_ADHESIVE_C2", "Клей для плитки C2", Unit.KG, null, null);
+        given(item("Облицювання сходів плиткою", Unit.M2, "100", Trade.TILING),
+                wasted(norm(Trade.TILING, "облицювання сходів плиткою", Unit.M2, glue, "1.0"), "25"));
+
+        MaterialCalculationResponse result = calculate(new BigDecimal("5"), null);
+
+        assertThat(result.wastePercent())
+                .as("what he asked for, unchanged").isEqualByComparingTo("5");
+        assertThat(only(result).wastePercent()).isEqualByComparingTo("25");
+        assertThat(only(result).quantity()).isEqualByComparingTo("125");
+    }
+
     /** Half a bag is not sold, and being one bag short stops the work — so rounding is always UP. */
     @Test
     void aPackagedMaterialIsRoundedUpToAWholePackage() {
@@ -461,6 +529,28 @@ class MaterialCalculatorServiceTest {
         });
         // The position is still counted: its other materials are known, only this one figure is not.
         assertThat(result.coverage().trades()).containsExactly("DRYWALL");
+    }
+
+    /**
+     * The bound was declared beside the thickness's and the section's and then applied to neither
+     * the query string nor the stored row (V145), so the one answer asked ONCE for the whole
+     * estimate was the only unbounded one. A typo of three extra digits is IGNORED exactly as a
+     * per-position answer out of range is: the card asks again instead of putting a six-digit coil
+     * of profile on the list.
+     */
+    @Test
+    void aPerimeterBeyondTheBoundIsAskedAgainInsteadOfBought() {
+        Material track = material("PROFILE_UD", "Профіль UD 27×28", Unit.LINEAR_METER, null, null);
+        given(item("Монтаж на стелю", Unit.M2, "20", Trade.DRYWALL),
+                perimeterNorm(Trade.DRYWALL, "монтаж на стелю", Unit.M2, track, "1.05"));
+
+        MaterialCalculationResponse result = calculate(NO_WASTE,
+                MaterialCalculatorService.MAX_PERIMETER_M.add(BigDecimal.ONE));
+
+        assertThat(result.materials()).isEmpty();
+        assertThat(result.perimeter()).isNull();
+        assertThat(result.parameters()).singleElement()
+                .satisfies(parameter -> assertThat(parameter.parameter()).isEqualTo("PERIMETER"));
     }
 
     /** One room, one perimeter: a wall AND a ceiling position must not buy the track twice. */
@@ -811,6 +901,60 @@ class MaterialCalculatorServiceTest {
     }
 
     /**
+     * The habit rescales from the joint THIS norm was written for, not from the product-wide 2,5
+     * ({@code baseline_param}, V144). Outdoor porcelain assumes a 3 mm joint; a master who grouts at
+     * 6 buys twice as much as THAT, not 2,4 times as much as a bathroom figure nobody wrote here.
+     */
+    @Test
+    void theHabitRescalesFromTheJointTheNormItselfAssumed() {
+        Material grout = material("TILE_GROUT", "Затирка для швів", Unit.KG, null, null);
+        given(item("Укладання керамограніту на вулиці", Unit.M2, "10", Trade.TILING),
+                groutNorm(Trade.TILING, "укладання керамограніту на вулиці", Unit.M2, grout,
+                        "0.2", "3"));
+        when(prefRepository.findByUserIdAndPrefKey(OWNER, MaterialPrefKey.TILE_JOINT_MM))
+                .thenReturn(Optional.of(pref(MaterialPrefKey.TILE_JOINT_MM, "6")));
+
+        // 6/3, not 6/2,5 — which would have bought 4,8 kg for a 3 mm norm doubled.
+        assertThat(only(calculate(NO_WASTE, null)).baseQuantity()).isEqualByComparingTo("4");
+    }
+
+    /**
+     * And a norm written for a WIDE joint is not rescaled at all. The habit is «мій шов у плитці» —
+     * a 2-3 mm answer a master gives once about ordinary tiling. Reading it onto a 10 mm masonry
+     * joint says he lays brick cladding to his bathroom habit, which is not what he was asked, and
+     * every such norm already carries the only joint it can sensibly have.
+     *
+     * <p>So the habit is not merely cancelled out here — it is never even asked for, which is what
+     * keeps the arithmetic line honest about why the figure did not move.</p>
+     */
+    @Test
+    void aNormWrittenForAWideJointIgnoresTheHabitAltogether() {
+        Material grout = material("TILE_GROUT", "Затирка для швів", Unit.KG, null, null);
+        given(item("Облицювання будинків клінкером «під цеглу»", Unit.M2, "10", Trade.TILING),
+                groutNorm(Trade.TILING, "облицювання будинків клінкером «під цеглу»", Unit.M2,
+                        grout, "2.9", "10"));
+
+        assertThat(only(calculate(NO_WASTE, null)).baseQuantity())
+                .as("the masonry joint the norm was written for stands")
+                .isEqualByComparingTo("29");
+        verify(prefRepository, never())
+                .findByUserIdAndPrefKey(OWNER, MaterialPrefKey.TILE_JOINT_MM);
+    }
+
+    /** 5 mm is the boundary itself, and it is exempt: that is already a wide joint, not a habit. */
+    @Test
+    void theExemptionStartsAtFiveMillimetres() {
+        Material grout = material("TILE_GROUT", "Затирка для швів", Unit.KG, null, null);
+        given(item("Заповнення товстого шва напівсухою сумішшю", Unit.M2, "10", Trade.TILING),
+                groutNorm(Trade.TILING, "заповнення товстого шва напівсухою сумішшю", Unit.M2,
+                        grout, "0.8", "5"));
+
+        assertThat(only(calculate(NO_WASTE, null)).baseQuantity()).isEqualByComparingTo("8");
+        verify(prefRepository, never())
+                .findByUserIdAndPrefKey(OWNER, MaterialPrefKey.TILE_JOINT_MM);
+    }
+
+    /**
      * A master who corrected the coefficient has already told us the number he buys against.
      * Multiplying his answer by his own habit applies the same opinion twice, and nothing on the
      * screen would say it happened — so his habit is not merely ignored, it is never even read.
@@ -1055,6 +1199,20 @@ class MaterialCalculatorServiceTest {
                 .wastePercent(BigDecimal.ZERO)
                 .basis(NormBasis.QUANTITY)
                 .build();
+    }
+
+    /** {@code waste} is the norm's OWN allowance — it overrides the master's global one. */
+    private MaterialNorm wasted(MaterialNorm norm, String waste) {
+        norm.setWastePercent(new BigDecimal(waste));
+        return norm;
+    }
+
+    /** {@code baseline} is the joint width, in mm, this coefficient was written for (V144). */
+    private MaterialNorm groutNorm(Trade trade, String nameKey, Unit unit, Material material,
+                                   String qty, String baseline) {
+        MaterialNorm norm = norm(trade, nameKey, unit, material, qty);
+        norm.setBaselineParam(new BigDecimal(baseline));
+        return norm;
     }
 
     private MaterialNorm perimeterNorm(Trade trade, String nameKey, Unit unit, Material material, String qty) {

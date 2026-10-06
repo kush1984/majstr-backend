@@ -60,32 +60,57 @@ class NormDataCorrectionsOnLiveDataIntegrationTest extends IntegrationTestBase {
      * Grout is GEOMETRY: a bigger tile has fewer metres of joint per m², so the figure falls as the
      * format grows. 0,4 kg/m² is CE 33/40's 10-30 cm answer and it was on every position, including
      * a 1,6 × 3,2 m slab with almost no joint at all.
+     *
+     * <p>V146 then put every ordinary format through the manufacturers' own formula rather than
+     * leaving two flat bands — {@code (A+B)/(A×B) × C × D × 1,6} (Mapei Ultracolor TDS) — which is
+     * why a 300×300 is no longer the same figure as a 300×600, and why the smallest tile there is
+     * goes UP.</p>
      */
     @Test
-    void groutFallsAsTheFormatGrows() {
-        assertThat(qty("укладання плитки 300х300", "TILE_GROUT"))
-                .as("the geometry 0,4 was written for").isEqualByComparingTo("0.4");
+    void groutFollowsTheFormatsOwnGeometry() {
+        assertThat(qty("укладання плитки 100х100", "TILE_GROUT"))
+                .as("the smallest format has the most joint per m²").isEqualByComparingTo("0.5");
+        assertThat(qty("укладання плитки 300х300", "TILE_GROUT")).isEqualByComparingTo("0.25");
+        assertThat(qty("укладання плитки 300х600", "TILE_GROUT")).isEqualByComparingTo("0.2");
         assertThat(qty("укладання плитки 600х600", "TILE_GROUT")).isEqualByComparingTo("0.15");
         assertThat(qty("укладання плитки 1200х2400 мм", "TILE_GROUT")).isEqualByComparingTo("0.1");
-        assertThat(qty("укладання керамограніту 20 мм", "TILE_GROUT")).isEqualByComparingTo("0.1");
     }
 
     /**
-     * …and clinker goes the other way. CE 43 gives 1,2 kg/m² for 10×10 at a 5 mm joint, and 0,8 for
-     * a 30×30 floor tile at 10 mm. Both rows also record the joint they were written for
+     * A plank's long side does not make its joints disappear — the short side still runs the whole
+     * length of the room. A flat 0,15 for «anything long» was the slab figure read onto a 150 mm
+     * board.
+     */
+    @Test
+    void aPlankIsGroutedAlongItsShortSide() {
+        assertThat(qty("укладання плитки дошка до 900 мм", "TILE_GROUT")).isEqualByComparingTo("0.3");
+        assertThat(qty("укладання плитки дошка до 1200 мм", "TILE_GROUT")).isEqualByComparingTo("0.25");
+        assertThat(qty("укладання плитки дошка до 1800 мм", "TILE_GROUT")).isEqualByComparingTo("0.22");
+    }
+
+    /**
+     * …and clinker goes the other way. Both rows record the joint they were written for
      * ({@code baseline_param}), so a master's own 5 mm habit rescales them from THEIR figure and not
      * from the product-wide 2,5 (review B-49).
+     *
+     * <p>«Під цеглу» is a 240×71 brick format on a 10 mm masonry joint, not the 10×10 tile at 5 mm
+     * V145 read CE 43's figure for — the same formula that lowered the large formats puts it at
+     * 2,9 kg/m² (V146). Outdoor porcelain is the mirror case: a 3 mm joint outdoors, not 2,5.</p>
      */
     @Test
     void clinkerTakesFarMoreGroutAndSaysWhichJointItAssumed() {
         assertThat(qty("облицювання будинків клінкером «під цеглу»", "TILE_GROUT"))
-                .isEqualByComparingTo("1.2");
+                .isEqualByComparingTo("2.9");
         assertThat(baseline("облицювання будинків клінкером «під цеглу»", "TILE_GROUT"))
-                .isEqualByComparingTo("5");
+                .isEqualByComparingTo("10");
         assertThat(qty("укладання клінкерної підлогової плитки", "TILE_GROUT"))
                 .isEqualByComparingTo("0.8");
         assertThat(baseline("укладання клінкерної підлогової плитки", "TILE_GROUT"))
                 .isEqualByComparingTo("10");
+        assertThat(qty("укладання керамограніту 20 мм", "TILE_GROUT")).isEqualByComparingTo("0.4");
+        assertThat(baseline("укладання керамограніту 20 мм", "TILE_GROUT"))
+                .isEqualByComparingTo("3");
+        assertThat(qty("укладання керамограніту на вулиці", "TILE_GROUT")).isEqualByComparingTo("0.2");
     }
 
     /** A thick bed is grouted too, and the position shipped with adhesive only. */
@@ -99,7 +124,11 @@ class NormDataCorrectionsOnLiveDataIntegrationTest extends IntegrationTestBase {
      * A movement joint takes silicone and «акрилення примикань» takes acrylic — neither is the
      * acoustic sealant V127 shipped for a drywall partition's perimeter. The RATE does not move
      * (0,025 l/m either way); what moves is which tube the master is sent to buy, and a cartridge is
-     * 0,3 l against the acoustic tube's 0,6.
+     * a fifth of the acoustic tube's 0,6.
+     *
+     * <p>V146 then corrected the cartridge itself: a silicone cartridge holds 280 ml, not 300. The
+     * package size is the LAST multiplication the shopping list does, so a figure that is 7 % out
+     * rounds a whole answer onto the wrong number of tubes.</p>
      */
     @Test
     void aMovementJointBuysSiliconeAndAnAcrylicJoinBuysAcrylic() {
@@ -108,16 +137,25 @@ class NormDataCorrectionsOnLiveDataIntegrationTest extends IntegrationTestBase {
         assertThat(materialOf("акрилення примикань", "SEALANT%")).isEqualTo("SEALANT_ACRYLIC");
         assertThat(jdbc.queryForObject(
                 "SELECT package_size FROM material WHERE code = 'SEALANT_SILICONE'", BigDecimal.class))
-                .isEqualByComparingTo("0.3");
+                .isEqualByComparingTo("0.28");
     }
 
-    /** Capacoll gives 0,15-0,3 kg/m² for a dispersive glue on paper; 0,01 was Quelyd's figure for a
-     *  fleece wallpaper, which is «apply to the wall» and a different product entirely. */
+    /**
+     * V145 raised the wallpaper rate to a DISPERSIVE glue's 0,15-0,3 kg/m², and that was the right
+     * figure against the wrong material: {@code WALLPAPER_GLUE} is «Клей для шпалер (суха суміш)»,
+     * a POWDER sold in a 0,3 kg pack that makes paste for ~30 m². At 0,2 kg/m² an ordinary room
+     * bought twenty packs. V146 puts the powder back on its own rate and gives the dispersive glue
+     * the material that actually is one — {@code FIBERGLASS_GLUE}, renamed to say «готовий» rather
+     * than inventing a second code for a product the dictionary already has (review B-109).
+     */
     @Test
-    void paperWallpaperBuysDispersiveGlue() {
+    void wallpaperPowderIsBoughtByWhatThePackMakes() {
         assertThat(qty("поклейка шпалер 50см без підбору", "WALLPAPER_GLUE"))
-                .isEqualByComparingTo("0.2");
-        assertThat(qty("поклейка фотошпалер", "WALLPAPER_GLUE")).isEqualByComparingTo("0.2");
+                .isEqualByComparingTo("0.009");
+        assertThat(qty("поклейка фотошпалер", "WALLPAPER_GLUE")).isEqualByComparingTo("0.009");
+        assertThat(jdbc.queryForObject(
+                "SELECT name FROM material WHERE code = 'FIBERGLASS_GLUE'", String.class))
+                .isEqualTo("Клей для склополотна і склошпалер (готовий)");
     }
 
     /**
@@ -176,17 +214,51 @@ class NormDataCorrectionsOnLiveDataIntegrationTest extends IntegrationTestBase {
         assertThat(rows).isZero();
     }
 
-    /** A position may never be left consuming nothing at all by a correction. */
+    /**
+     * A correction may never leave a position with NO row at all — which is not the same as a
+     * position whose rows say «consumes nothing». V127's verdict is a real row carrying both
+     * {@code material_id IS NULL} and {@code qty_per_unit IS NULL}; a position with zero rows is
+     * invisible to the lookup, so the screen is not offered for it at all.
+     *
+     * <p>The earlier shape of this test grouped {@code material_norm} and kept the groups with
+     * {@code count(*) = 0}, which no group can ever have — it was green against any data whatsoever.
+     * The question has to be asked of the CATALOG: a shipped position a norm was written for must
+     * still have one.</p>
+     */
     @Test
-    void everyPositionStillConsumesSomething() {
-        Integer empty = jdbc.queryForObject("""
+    void everyPositionANormWasWrittenForStillHasOne() {
+        Integer orphaned = jdbc.queryForObject("""
                 SELECT count(*) FROM (
-                    SELECT name_key, unit FROM material_norm WHERE owner_id IS NULL
-                     GROUP BY name_key, unit HAVING count(*) = 0
-                ) d
+                    SELECT DISTINCT n.name_key, n.unit
+                      FROM material_norm n
+                     WHERE n.owner_id IS NULL
+                ) answered
+                 WHERE EXISTS (SELECT 1 FROM catalog_templates c
+                                WHERE lower(trim(c.name)) = answered.name_key
+                                  AND c.unit::text = answered.unit)
+                   AND NOT EXISTS (SELECT 1 FROM material_norm n
+                                    WHERE n.owner_id IS NULL
+                                      AND n.name_key = answered.name_key
+                                      AND n.unit = answered.unit)
                 """, Integer.class);
 
-        assertThat(empty).isZero();
+        assertThat(orphaned).as("positions a norm was written for that now have none").isZero();
+    }
+
+    /**
+     * And a verdict is a PAIR of nulls, never half of one: V127's {@code material_norm_qty_check}
+     * says a row either names a material AND a coefficient or neither. V146 writes three new
+     * verdicts — the grouting steps that follow laying — so the invariant is worth reading back
+     * rather than trusting the CHECK to have been in force when they were written.
+     */
+    @Test
+    void aConsumesNothingVerdictIsBothNullsOrNeither() {
+        Integer halves = jdbc.queryForObject("""
+                SELECT count(*) FROM material_norm
+                 WHERE (material_id IS NULL) <> (qty_per_unit IS NULL)
+                """, Integer.class);
+
+        assertThat(halves).isZero();
     }
 
     // ---- helpers ----------------------------------------------------------------------------

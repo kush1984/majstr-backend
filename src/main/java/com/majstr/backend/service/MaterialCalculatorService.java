@@ -135,8 +135,9 @@ public class MaterialCalculatorService {
      * <p><b>{@code ENAMEL_WOOD} and {@code VARNISH_CLEAR} are deliberately OUT</b> (review B-49
      * asked for this to be decided rather than fall out of a prefix). {@code PAINT_COVERAGE} is the
      * master's answer about HIS WALL PAINT, and an enamel or a clear varnish is a different product
-     * with a coverage of its own — V138 wrote 0,22 and 0,20 л/м² for them at ONE coat, so scaling
-     * them by a two-coat wall-paint ratio would be wrong in both factors at once. If a master's own
+     * with a coverage of its own — V138 wrote 0,22 and 0,20 л/м² for them over two coats of ~9 and
+     * ~10 м²/л, figures read off enamel and varnish data sheets, not off his wall. Rescaling them by
+     * how far he spreads emulsion would answer a question he was never asked. If a master's own
      * figure for enamel ever matters, it is a second habit, not a reuse of this one.</p>
      */
     private static final String PAINT_CODE_PREFIX = "PAINT_";
@@ -150,6 +151,17 @@ public class MaterialCalculatorService {
     public static final BigDecimal DEFAULT_TILE_JOINT_MM = new BigDecimal("2.5");
 
     /**
+     * A norm written for a joint this wide or wider is NOT scaled by the master's habit.
+     *
+     * <p>{@code TILE_JOINT_MM} is what he leaves between ordinary tiles. A clinker course laid «під
+     * цеглу» has a 10 mm masonry joint and a thick joint filled with a semi-dry mix the same — those
+     * widths come from the WORK, not from his hand, so a stored habit of 5 mm would halve a figure
+     * that was never his to describe. V144's {@code baseline_param} already records which joint each
+     * norm assumed, so the exemption needs no second column.</p>
+     */
+    private static final BigDecimal WIDE_JOINT_MM = new BigDecimal("5");
+
+    /**
      * Upper bounds on the figures the master types, ONE PER QUESTION (review B-49).
      *
      * <p>They used to share a single 1000, which is a bound on nothing: a розгортка is metres and a
@@ -161,7 +173,7 @@ public class MaterialCalculatorService {
      */
     private static final BigDecimal MAX_SECTION_M = new BigDecimal("5");
     private static final BigDecimal MAX_THICKNESS_MM = new BigDecimal("150");
-    static final BigDecimal MAX_PERIMETER_M = new BigDecimal("1000");
+    public static final BigDecimal MAX_PERIMETER_M = new BigDecimal("1000");
 
     private final EstimateService estimateService;
     private final EstimateItemRepository itemRepository;
@@ -185,6 +197,14 @@ public class MaterialCalculatorService {
         if (perimeter == null) {
             perimeter = stored.perimeter();
         }
+        if (perimeter != null && perimeter.compareTo(MAX_PERIMETER_M) > 0) {
+            // The bound was declared with the other two and then applied to neither the query
+            // string nor the stored row, so the one answer that is asked ONCE for the whole
+            // estimate was the only unbounded one. Out of range is IGNORED, exactly as a
+            // per-position answer is: the card asks again instead of putting a six-digit coil of
+            // profile on the list.
+            perimeter = null;
+        }
         Map<UUID, BigDecimal> section = merged(stored.sections(), sections, MAX_SECTION_M);
         Map<UUID, BigDecimal> thickness = merged(stored.thicknesses(), thicknesses, MAX_THICKNESS_MM);
         List<EstimateItem> buyable = buyableLines(itemRepository
@@ -196,6 +216,10 @@ public class MaterialCalculatorService {
         boolean quantitiesMissing = works.isEmpty() && !buyable.isEmpty();
 
         Map<String, List<MaterialNorm>> byKey = normsByKey(works, ownerId);
+
+        // Read BEFORE the loop because the allowance is applied PER POSITION now (§1.8): it is the
+        // fallback each norm without an allowance of its own uses, not a figure for the whole line.
+        BigDecimal effectiveWaste = effectiveWaste(ownerId, wastePercent);
 
         Map<UUID, Bucket> buckets = new LinkedHashMap<>();
         Map<UUID, PerimeterDemand> perimeterDemand = new LinkedHashMap<>();
@@ -242,14 +266,14 @@ public class MaterialCalculatorService {
                     bucket(buckets, material).add(norm, new MaterialSourceLine(
                             item.getId(), item.getName(), item.getUnit(), scaled(quantity),
                             per, norm.getId(), norm.getOwner() != null,
-                            basis, scaled(param), scaled(amount)), amount);
+                            basis, scaled(param), scaled(amount)), amount, effectiveWaste);
                     continue;
                 }
                 BigDecimal amount = quantity.multiply(per);
                 bucket(buckets, material).add(norm, new MaterialSourceLine(
                         item.getId(), item.getName(), item.getUnit(), scaled(quantity),
                         per, norm.getId(), norm.getOwner() != null,
-                        NormBasis.QUANTITY, null, scaled(amount)), amount);
+                        NormBasis.QUANTITY, null, scaled(amount)), amount, effectiveWaste);
             }
         }
 
@@ -266,10 +290,9 @@ public class MaterialCalculatorService {
                     null, null, Unit.LINEAR_METER, scaled(perimeter),
                     demand.norm().getQtyPerUnit(), demand.norm().getId(),
                     demand.norm().getOwner() != null,
-                    NormBasis.PERIMETER, null, scaled(amount)), amount);
+                    NormBasis.PERIMETER, null, scaled(amount)), amount, effectiveWaste);
         }
 
-        BigDecimal effectiveWaste = effectiveWaste(ownerId, wastePercent);
         BigDecimal sheetArea = sheetArea(pref(ownerId, MaterialPrefKey.GKL_SHEET));
         List<CalculatedMaterialLine> materials = buckets.values().stream()
                 .sorted(Comparator.<Bucket>comparingInt(Bucket::rank)
@@ -477,11 +500,9 @@ public class MaterialCalculatorService {
     }
 
     private CalculatedMaterialLine line(Bucket bucket, BigDecimal effectiveWaste, BigDecimal sheetArea) {
-        // A norm carrying its own allowance overrides the master's global one: that means THIS
-        // material is wasted differently, not that he is careless.
-        BigDecimal percent = bucket.normWaste.signum() > 0 ? bucket.normWaste : effectiveWaste;
-        BigDecimal withWaste = bucket.total.multiply(HUNDRED.add(percent))
-                .divide(HUNDRED, 6, RoundingMode.HALF_UP);
+        // Already grown position by position (see Bucket#add); the percent is only what that came to.
+        BigDecimal percent = bucket.blendedWaste(effectiveWaste);
+        BigDecimal withWaste = bucket.withWaste;
 
         BigDecimal packageSize = packageSize(bucket.material, sheetArea);
         Integer packages = null;
@@ -532,6 +553,9 @@ public class MaterialCalculatorService {
             BigDecimal baseline = norm.getBaselineParam() != null
                     ? norm.getBaselineParam()
                     : DEFAULT_TILE_JOINT_MM;
+            if (baseline.compareTo(WIDE_JOINT_MM) >= 0) {
+                return per;
+            }
             return scaleBy(per, ratio(habits.jointMm(), baseline));
         }
         return per;
@@ -764,23 +788,68 @@ public class MaterialCalculatorService {
         return rounded.signum() == 0 ? BigDecimal.ZERO : rounded.stripTrailingZeros();
     }
 
-    /** One material accumulating across every position that consumes it. */
+    /**
+     * One material accumulating across every position that consumes it.
+     *
+     * <p><b>The allowance is applied PER POSITION, not per material.</b> Two positions can consume
+     * one material and be wasted differently — a tile adhesive combed onto a wall is not the same
+     * loss as the same bag poured into a stair nose — so each amount is grown by its OWN norm's
+     * allowance as it arrives, and the line reports what the whole bucket worked out to. Taking the
+     * MAXIMUM instead let the single most wasteful position's figure grow every other position's
+     * amount, which buys material for a loss that nobody has.</p>
+     */
     private static final class Bucket {
         private final Material material;
         private final List<MaterialSourceLine> sources = new ArrayList<>();
         private BigDecimal total = BigDecimal.ZERO;
-        private BigDecimal normWaste = BigDecimal.ZERO;
+        private BigDecimal withWaste = BigDecimal.ZERO;
+        private BigDecimal onePercent;
+        private boolean mixed;
         private int rank = Integer.MAX_VALUE;
 
         private Bucket(Material material) {
             this.material = material;
         }
 
-        private void add(MaterialNorm norm, MaterialSourceLine source, BigDecimal amount) {
+        /**
+         * @param fallbackWaste the master's own global allowance, used by a norm that carries none
+         *                      of its own. A norm WITH one overrides him: that means THIS material
+         *                      is wasted differently here, not that he is careless.
+         */
+        private void add(MaterialNorm norm, MaterialSourceLine source, BigDecimal amount,
+                         BigDecimal fallbackWaste) {
             sources.add(source);
             total = total.add(amount);
-            normWaste = normWaste.max(norm.getWastePercent());
+            BigDecimal percent = norm.getWastePercent().signum() > 0
+                    ? norm.getWastePercent()
+                    : fallbackWaste;
+            withWaste = withWaste.add(amount.multiply(HUNDRED.add(percent))
+                    .divide(HUNDRED, 6, RoundingMode.HALF_UP));
+            if (onePercent == null) {
+                onePercent = percent;
+            } else if (onePercent.compareTo(percent) != 0) {
+                mixed = true;
+            }
             rank = Math.min(rank, norm.getSortOrder());
+        }
+
+        /**
+         * What the bucket's allowances work out to overall, so the line can still state ONE number.
+         * While every position in the bucket carries the same allowance — which is every shipped
+         * norm today, all of them at 0 (V127) — that figure is handed back UNTOUCHED, so the number
+         * the master reads is his own and not a division's rounding of it.
+         */
+        private BigDecimal blendedWaste(BigDecimal fallbackWaste) {
+            if (onePercent == null) {
+                return fallbackWaste;
+            }
+            if (!mixed || total.signum() <= 0) {
+                return onePercent;
+            }
+            return withWaste.divide(total, 6, RoundingMode.HALF_UP)
+                    .subtract(BigDecimal.ONE)
+                    .multiply(HUNDRED)
+                    .setScale(2, RoundingMode.HALF_UP);
         }
 
         private int rank() {

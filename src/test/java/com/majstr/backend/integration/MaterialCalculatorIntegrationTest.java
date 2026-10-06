@@ -394,15 +394,53 @@ class MaterialCalculatorIntegrationTest extends IntegrationTestBase {
         assertThat(line(with, "Профіль UD").baseQuantity()).isEqualByComparingTo("16.8");
     }
 
-    /** One room, one perimeter: a wall lining beside a ceiling must not buy the track twice. */
+    /**
+     * A WALL's track is not a perimeter at all (V146). UD on a wall is the top and bottom rail of
+     * the frame, so it scales with the area being clad — and because a perimeter is asked ONCE for
+     * the whole estimate and the larger per-metre figure won, a flat with three lined walls used to
+     * buy one wall's track. The ceiling keeps the perimeter, which is the one place UD really does
+     * run the room's outline, so the two answers now ADD instead of one hiding the other.
+     */
     @Test
-    void aCeilingAndAWallLiningShareTheOnePerimeter() {
+    void aCeilingTakesThePerimeterAndAWallLiningTakesItsArea() {
         addWork(name("монтаж гіпсокартону на стелю рівну", "M2"), "M2", "15");
         addWork(name("монтаж гіпсокартону на стіни", "M2"), "M2", "30");
 
-        // The wall норм (2,1 м/м of perimeter) is the larger of the two and wins outright.
+        // 16 м of ceiling perimeter × 1,05 = 16,8, plus 30 m² of wall × 0,7 = 21.
         assertThat(line(calculate(BigDecimal.ZERO, new BigDecimal("16")), "Профіль UD").baseQuantity())
-                .isEqualByComparingTo("33.6");
+                .isEqualByComparingTo("37.8");
+    }
+
+    /**
+     * And the wall alone no longer ASKS, which is the half a figure cannot show: the screen used to
+     * open on «впишіть розгортку» for a job whose answer is already in the estimate.
+     */
+    @Test
+    void aWallLiningAloneAsksForNoPerimeter() {
+        addWork(name("монтаж гіпсокартону на стіни", "M2"), "M2", "30");
+
+        MaterialCalculationResponse result = calculate(BigDecimal.ZERO, null);
+
+        assertThat(result.parameters()).isEmpty();
+        assertThat(line(result, "Профіль UD").baseQuantity()).isEqualByComparingTo("21");
+    }
+
+    /**
+     * The perimeter is the one answer asked ONCE for the whole estimate, and it was the one answer
+     * with no upper bound: {@code MAX_PERIMETER_M} was declared beside the other two and applied to
+     * neither the query string nor the stored row. A mistyped розгортка is IGNORED, exactly as a
+     * per-position answer is — the card asks again instead of buying a kilometre of profile.
+     */
+    @Test
+    void aPerimeterBeyondTheBoundIsIgnoredAndAskedAgain() {
+        addWork(name("монтаж гіпсокартону на стелю рівну", "M2"), "M2", "15");
+
+        MaterialCalculationResponse result = calculate(BigDecimal.ZERO,
+                MaterialCalculatorService.MAX_PERIMETER_M.add(BigDecimal.ONE));
+
+        assertThat(result.parameters()).extracting("parameter").containsOnly("PERIMETER");
+        assertThat(result.materials()).extracting(CalculatedMaterialLine::name)
+                .noneMatch(n -> n.startsWith("Профіль UD"));
     }
 
     // --- the areas a metre of trim and a door present (V139) -----------------------------------

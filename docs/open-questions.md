@@ -391,6 +391,43 @@ one-line summary — keep the item in the file as a record.
 - **Context:** `GET /api/projects` returns an unread-question count per project (the card's 💬 indicator). A naive per-project count would be an N+1 over the project list.
 - **Resolution:** Fix F — one grouped query `EstimateQuestionRepository.countUnreadByProjectIds` (a row per project that has unread, absent when zero) folded into the list, mirroring the latest-estimate-summary pattern; single-project views use the derived `countByEstimateProjectIdAndReadFalse`. Backed by a partial index `idx_estimate_questions_unread ON estimate_questions(estimate_id) WHERE is_read = FALSE` (V22). Revisit only at very large per-contractor question volumes.
 
+### A photo's blob outlives the row when the upload transaction rolls back (B-111)
+- **Status:** OPEN
+- **Since:** review round 4 §4 (2026-10-06), untouched by the trade-review batch 1
+- **Context:** `StorageCleanup.afterCommit` is the rule for DELETES — the blob goes after the row,
+  never before (B-25). The UPLOAD side has no mirror of it: `ProjectPhotoService` writes the blob to
+  storage inside the transaction and then inserts the row, so a rollback after the write (a limit
+  check, a constraint, a `@Version` clash) leaves an orphan object in R2 that nothing references and
+  nothing will ever collect.
+- **Notes / options:** the symmetric fix is a `StorageCleanup.afterRollback` that deletes the keys
+  this transaction wrote, which is the same registration point the delete path already uses. Low
+  user impact (nobody sees it), unbounded storage impact over years. Not in batch 1 because it is
+  not a norm or a quantity, and batch 1 was scoped to what buys the wrong material.
+
+### A first material parameter saved twice at once answers 500 (B-112)
+- **Status:** OPEN
+- **Since:** review round 4 §4 (2026-10-06)
+- **Context:** `estimate_material_param` is keyed by (position, basis) under two PARTIAL unique
+  indexes (V142). `MaterialParamService` reads «is there a row» and then inserts, with no recovery
+  on the unique violation — so two devices answering the same card at the same moment (or one
+  offline replay racing the live screen) collide and the loser gets a 500 instead of the winner's
+  value. The receipt tables solved the same shape with a nullable `@Version` and a duplicate-key
+  recovery (B-43/B-80, V144).
+- **Notes / options:** the cheap version is an upsert; the consistent-with-the-codebase version is
+  the insert-then-recover pattern V144 established. Needs no migration either way.
+
+### `GKL_SHEET` is the one habit with no bounds
+- **Status:** OPEN
+- **Since:** review round 4 §4 (2026-10-06)
+- **Context:** `MaterialPrefs` is the single definition of what a stored habit may say, and it
+  canonicalises and bounds every key — coverage 3-20 m²/l, joint width, coats, waste. `GKL_SHEET` is
+  a sheet AREA in m² and goes through unbounded, so a typo («25» for a 2,5 m² sheet) silently divides
+  the sheet count by ten on every drywall estimate the master ever calculates.
+- **Notes / options:** a 1,5-7,5 m² bound covers every sheet on the market (1200×2000 through
+  1200×3000, plus the 600-wide boards). One line in `MaterialPrefs` plus its test; the awkward part
+  is what to do with a value already stored out of range — the read is comma-tolerant and lenient by
+  design, so clamping on READ changes an answer the master already saw.
+
 ---
 
 ## Security
@@ -2459,7 +2496,13 @@ one-line summary — keep the item in the file as a record.
   master habits that rescale a shipped coefficient — §27). **Cut 4 follow-ups shipped** (V138: the
   facade paint, wood enamel and clear varnish the survey turned out to have after all; V139,
   2026-09-24: the AREA behind a painted moulding, baguette and door, which needed no Java — see
-  §28). The item stays IN_PROGRESS: **FLOORING and the long tail (BUILDER, PLUMBING, ELECTRICAL,
+  §28). **Cut 5 shipped** (V145, 2026-10-04: primer bought once, grout as geometry with
+  `baseline_param`, a bound per question; then **V146**, 2026-10-06: the trade-review batch 1 —
+  every tile format's own grout figure off the manufacturers' formula, the adhesive class and notch,
+  wallpaper glue twenty times too high, ten more shared positions re-filed, five tiling bundles that
+  primed nothing, and the engine's per-position waste —
+  [iteration-trades-review-batch-1.md](iteration-trades-review-batch-1.md)). The item stays
+  IN_PROGRESS: **FLOORING and the long tail (BUILDER, PLUMBING, ELECTRICAL,
   METAL, DEMOLITION) still have no norms at all**, and the gaps deliberately left inside the trades
   already covered are now just three — epoxy grout, the decorative plasters beyond короїд/баранець,
   and the hidden aluminium skirting — each with its looked-up ranges recorded in V138's and V139's
@@ -2548,6 +2591,57 @@ one-line summary — keep the item in the file as a record.
   put `owner_id` inside `ux_material_norm`). Resolution is a read-path collapse (`preferOwn`), not a
   third ladder rung. Option (b) is dropped, not deferred — no edit logging shipped. Ready to close
   as RESOLVED on the master's word; see `docs/iteration-material-calculator.md` §21.
+
+### Trade-by-trade review (`TRADES-REVIEW.md`) — batch 1 shipped, batches 2+ open
+- **Status:** IN_PROGRESS — batch 1 (§4.1 + §1.8) shipped as **V146**, 2026-10-06, see
+  [iteration-trades-review-batch-1.md](iteration-trades-review-batch-1.md).
+- **Since:** 2026-10-06, a trade-by-trade read of the catalog, the bundles and the norms across all
+  nine trades against a clean V145 DB.
+- **Context:** batch 1 took only what buys the WRONG QUANTITY today — eleven data corrections plus
+  the calculator-engine gaps of §1.8. What the review found and batch 1 deliberately left:
+  - **norms for the trades that have none at all** — FLOORING, BUILDER, PLUMBING, ELECTRICAL, METAL,
+    DEMOLITION (the same gap the «Material calculators» item above tracks);
+  - **template ordering + the protection and cleanup steps** every trade's bundles are missing;
+  - **catalog additions, de-duplication and descriptions**, and the renames;
+  - **the shared-position re-filings beyond the ten** §7 took.
+- **Notes / options:** the owner's two rulings from batch 1 stand for the later ones — grout is the
+  «гібрид» (it stays on the laying positions; a grouting step that follows laying is a recorded
+  «consumes nothing» verdict) and the deep primer belongs to the standalone «Грунтування» position
+  while product primers stay on theirs. A later batch that INSERTs a `catalog_templates` row **must
+  re-run V118's ranking verbatim** — batch 1 avoided that by shipping no new catalog position.
+
+### The calculator bases the review asked for and batch 1 did not add
+- **Status:** OPEN
+- **Since:** `TRADES-REVIEW.md` §1.8 (2026-10-06)
+- **Context:** §1.8 named five engine gaps. Batch 1 shipped two of them (per-position waste, and the
+  grout exemption for a norm written for a wide joint) plus the perimeter bound nothing was reading.
+  Four are still open, and each is a new `NormBasis` or close to one:
+  - **LENGTH** — a riser (стояк) is bought by the metre of pipe, not by the position's own unit;
+  - **rebar in kg/m³** — a concrete volume times a reinforcement ratio, which is a norm whose basis
+    is ANOTHER material's quantity;
+  - **inverse-to-step** — screws, hangers, dowels: the quantity falls as the step grows, so the
+    coefficient divides where every current basis multiplies;
+  - **a chase's CROSS-SECTION** — штроба is width × depth × length, and SECTION today is one number.
+- **Notes / options:** none of them is urgent in the way a wrong coefficient is — an absent norm
+  shows up as «we do not answer this», which is honest, while a wrong one buys the wrong thing
+  silently. The electrical demand the last one serves is also the one we deliberately refuse to
+  answer as metres of cable (see the item in «Features in the catalog enum but not implemented»).
+
+### Two catalog positions the review needs and batch 1 could not add
+- **Status:** OPEN
+- **Since:** `TRADES-REVIEW.md` §4.1 (2026-10-06)
+- **Context:** two corrections came out half-done because the position they need does not exist:
+  - **«Монтаж кроквяної системи»** — V146 §9 removed the «комплекс» rollup from «Покрівля
+    двоскатна» because it was priced beside its own parts, and the rafter system is the part of it
+    the bundle never had as a step of its own. The bundle is now correct and incomplete.
+  - **a ceiling mineral-wool position** — V146 §2 removed the duplicate wool row from the WALL frame
+    position only. The plan was both frame positions; the snapshot proved there is no ceiling wool
+    position for the ceiling's wool to move to, so deleting it there would have bought nothing at
+    all. The ceiling frame therefore still carries wool that a separate insulation step would own.
+- **Notes / options:** both are `catalog_templates` INSERTs, so the migration that adds them **must
+  re-run V118's ranking verbatim**, and the bundle lines must copy the names character for character
+  — a bundle line resolves its price off the master's own `catalog_items` by `lower(trim(name))` and
+  a miss applies the line at 0 ₴ **silently** (V112).
 
 ### Masters do not discover the FAB — a field report, not a hypothesis
 - **Status:** RESOLVED (2026-09-08) — the estimate-editor redesign shipped (PWA 1.41.0), taking options (a), (c) and (d) together: `EstimateNextStep` names the next action in words at the end of the list, the FAB is a single direct «＋ Додати позицію» again, and every secondary action moved to a header ⋮. (b), the coach mark, was not built. **This is the estimate editor only** — the FAB on every other screen still opens a menu, and whether the same misread bites there is untested — reopen as a new item if a second field report says so. Details: `docs/iteration-estimate-next-step.md`.

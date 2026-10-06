@@ -80,6 +80,7 @@ class MaterialNormServiceTest {
         shipped.setBasis(NormBasis.PERIMETER);
         shipped.setDefaultParam(new BigDecimal("15.0000"));
         shipped.setWastePercent(new BigDecimal("5.00"));
+        shipped.setBaselineParam(new BigDecimal("10.00"));
         shipped.setSortOrder(7);
         when(normRepository.findById(shipped.getId())).thenReturn(Optional.of(shipped));
         when(normRepository.findByOwnerIdAndNameKeyAndUnit(OWNER, NAME_KEY, Unit.M2))
@@ -95,6 +96,10 @@ class MaterialNormServiceTest {
         // The suggestion is part of the QUESTION, not of the figure he corrected (V137).
         assertThat(saved.getValue().getDefaultParam()).isEqualByComparingTo("15");
         assertThat(saved.getValue().getWastePercent()).isEqualByComparingTo("5.00");
+        // And so is the joint the coefficient assumed (V144): a fork that dropped it would be a
+        // number with no record of what it was written for, and the habit would rescale it from the
+        // product-wide 2,5 the moment the fork started being rescaled at all.
+        assertThat(saved.getValue().getBaselineParam()).isEqualByComparingTo("10");
         assertThat(saved.getValue().getSortOrder()).isEqualTo(7);
         assertThat(saved.getValue().getTrade()).isEqualTo(Trade.DRYWALL);
     }
@@ -130,6 +135,68 @@ class MaterialNormServiceTest {
         assertThat(response.id()).isEqualTo(mine.getId());
         assertThat(mine.getQtyPerUnit()).isEqualByComparingTo("1.5");
         verify(userRepository, never()).getReferenceById(any());
+    }
+
+    /**
+     * A position two trades ship is re-filed to {@code trade = NULL} rather than duplicated, and the
+     * migration is supposed to carry the FORKS with it ({@code owner_id} is inside
+     * {@code ux_material_norm}). When one is left behind — V137 left several, V143 repaired them —
+     * his fork sits under the old trade while the default it hides is trade-less.
+     *
+     * <p>Matching on the trade ALONE makes that fork invisible: the save writes a SECOND one, the
+     * unique index lets it in because the trade differs, and from then on two owned rows answer for
+     * one norm (review B-107). So the trade is matched first and then given up on.</p>
+     */
+    @Test
+    void aForkStrandedUnderTheOldTradeIsFoundInsteadOfForkedASecondTime() {
+        MaterialNorm shipped = norm(null, "1.0");
+        shipped.setTrade(null);
+        MaterialNorm stranded = norm(user(), "1.2");
+        when(normRepository.findById(shipped.getId())).thenReturn(Optional.of(shipped));
+        when(normRepository.findByOwnerIdAndNameKeyAndUnit(OWNER, NAME_KEY, Unit.M2))
+                .thenReturn(List.of(stranded));
+        when(normRepository.save(any())).thenAnswer(i -> i.getArgument(0));
+
+        MaterialNormResponse response = service.saveOwn(shipped.getId(), OWNER, new BigDecimal("1.5"));
+
+        assertThat(response.id()).isEqualTo(stranded.getId());
+        assertThat(stranded.getQtyPerUnit()).isEqualByComparingTo("1.5");
+        assertThat(stranded.getTrade()).as("the save corrects the figure, not the filing")
+                .isEqualTo(Trade.DRYWALL);
+        verify(userRepository, never()).getReferenceById(any());
+    }
+
+    /** Giving up on the trade is the FALLBACK, not the rule: an exact match still wins. */
+    @Test
+    void theForkFiledUnderThisTradeWinsOverOneFiledElsewhere() {
+        MaterialNorm shipped = norm(null, "1.0");
+        MaterialNorm elsewhere = norm(user(), "9.9");
+        elsewhere.setTrade(Trade.TILING);
+        MaterialNorm here = norm(user(), "1.2");
+        when(normRepository.findById(shipped.getId())).thenReturn(Optional.of(shipped));
+        when(normRepository.findByOwnerIdAndNameKeyAndUnit(OWNER, NAME_KEY, Unit.M2))
+                .thenReturn(List.of(elsewhere, here));
+        when(normRepository.save(any())).thenAnswer(i -> i.getArgument(0));
+
+        MaterialNormResponse response = service.saveOwn(shipped.getId(), OWNER, new BigDecimal("1.5"));
+
+        assertThat(response.id()).isEqualTo(here.getId());
+        assertThat(elsewhere.getQtyPerUnit()).isEqualByComparingTo("9.9");
+    }
+
+    /** Restoring finds the stranded fork too, or it could never be deleted from the screen. */
+    @Test
+    void restoringFindsTheForkStrandedUnderTheOldTrade() {
+        MaterialNorm shipped = norm(null, "1.0");
+        shipped.setTrade(null);
+        MaterialNorm stranded = norm(user(), "1.2");
+        when(normRepository.findById(shipped.getId())).thenReturn(Optional.of(shipped));
+        when(normRepository.findByOwnerIdAndNameKeyAndUnit(OWNER, NAME_KEY, Unit.M2))
+                .thenReturn(List.of(stranded));
+
+        service.restoreDefault(shipped.getId(), OWNER);
+
+        verify(normRepository).delete(stranded);
     }
 
     /** Another material under the same name and unit is a different norm, not the same one. */

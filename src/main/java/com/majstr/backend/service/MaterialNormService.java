@@ -11,6 +11,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
@@ -92,6 +93,10 @@ public class MaterialNormService {
                 // The question the norm asks travels with it: a THICKNESS fork that lost its
                 // suggestion would ask for millimetres over an empty field (V137).
                 .defaultParam(base.getDefaultParam())
+                // And so does the joint the coefficient was written for (V144): the fork is never
+                // rescaled today, so nothing reads it yet — but a copy that dropped it would be a
+                // number with no record of what it assumed.
+                .baselineParam(base.getBaselineParam())
                 .wastePercent(base.getWastePercent())
                 .sortOrder(base.getSortOrder())
                 .build());
@@ -101,14 +106,26 @@ public class MaterialNormService {
      * The master's own row for the same norm, matched on the natural key {@code ux_material_norm}
      * enforces. The trade and the material are filtered here rather than in the query because both
      * are nullable, and «either both null or equal» reads far worse as JPQL.
+     *
+     * <p><b>The trade is matched first and then given up on</b> (review B-107). A migration that
+     * re-files a shipped position to {@code trade = NULL} is supposed to carry the forks with it,
+     * and V143 repaired the ones V137 left behind — but the matching is what has to survive the next
+     * one. Without the fallback, a fork still sitting under the old trade is INVISIBLE here: the
+     * save writes a SECOND fork, the unique index lets it in (the trade differs), and from then on
+     * two owned rows answer for one norm and the master cannot see either of them from the other.
+     * One stranded row that keeps being found is a bad state we can repair; two are a bad state the
+     * read path has to guess between.</p>
      */
     private Optional<MaterialNorm> own(MaterialNorm base, UUID ownerId) {
         UUID materialId = materialId(base);
-        return normRepository
+        List<MaterialNorm> mine = normRepository
                 .findByOwnerIdAndNameKeyAndUnit(ownerId, base.getNameKey(), base.getUnit()).stream()
-                .filter(n -> n.getTrade() == base.getTrade())
                 .filter(n -> Objects.equals(materialId, materialId(n)))
-                .findFirst();
+                .toList();
+        return mine.stream()
+                .filter(n -> n.getTrade() == base.getTrade())
+                .findFirst()
+                .or(() -> mine.stream().findFirst());
     }
 
     private UUID materialId(MaterialNorm norm) {
