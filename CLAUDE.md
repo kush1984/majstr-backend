@@ -65,7 +65,7 @@ controllers return DTOs. `passwordHash` never appears in any response (`UserResp
 
 `hibernate.ddl-auto: validate` — never express schema changes in entity annotations. Add a new
 `V<N>__<desc>.sql` under `src/main/resources/db/migration/`; **check the highest number first**
-(latest is **V145**). **Never edit an applied migration** — Flyway checksums it and a changed file
+(latest is **V147**). **Never edit an applied migration** — Flyway checksums it and a changed file
 fails startup (a correction to a shipped migration's COMMENT goes in the next migration's header —
 review B-53 did that for V136). **A self-check may `RAISE EXCEPTION` only about the migration's OWN
 work** (review B-50): «I just re-filed these rows, assert none is left» is a bug if it fails, while

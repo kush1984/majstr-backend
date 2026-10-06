@@ -2501,12 +2501,18 @@ one-line summary — keep the item in the file as a record.
   every tile format's own grout figure off the manufacturers' formula, the adhesive class and notch,
   wallpaper glue twenty times too high, ten more shared positions re-filed, five tiling bundles that
   primed nothing, and the engine's per-position waste —
-  [iteration-trades-review-batch-1.md](iteration-trades-review-batch-1.md)). The item stays
-  IN_PROGRESS: **FLOORING and the long tail (BUILDER, PLUMBING, ELECTRICAL,
-  METAL, DEMOLITION) still have no norms at all**, and the gaps deliberately left inside the trades
+  [iteration-trades-review-batch-1.md](iteration-trades-review-batch-1.md)). **Cut 6 shipped**
+  (V147, 2026-10-06: the trade-review batch 2 — **FLOORING's first norms**, 52 of its 54 positions
+  answered out of a standing zero, 36 new dictionary rows, the layout surplus in the coefficient
+  while the master's cutting allowance stays his, and the five positions BUILDER ships too filed at
+  `trade = NULL` — [iteration-trades-review-flooring-norms.md](iteration-trades-review-flooring-norms.md)).
+  The item stays IN_PROGRESS: **the long tail (BUILDER, PLUMBING, ELECTRICAL,
+  METAL, DEMOLITION) still has no norms at all**, and the gaps deliberately left inside the trades
   already covered are now just three — epoxy grout, the decorative plasters beyond короїд/баранець,
   and the hidden aluminium skirting — each with its looked-up ranges recorded in V138's and V139's
-  headers so nobody repeats the search. The §19
+  headers so nobody repeats the search. FLOORING adds two of its own, both named in V147's header:
+  «Машинна стяжка самовирівнююча» (two incompatible products behind one name — a rename first) and
+  «Монтаж та виготовлення ніші під плінтус прихованого монтажу» (a system we do not name). The §19
   audit left three things open for the master — the box/slope/niche parameters, whether «Каркасна
   звукоізоляція» plus «Монтаж ГКЛ на стелю» for one ceiling should be flagged as a possible
   double-count, and how the coverage report should word a position that is size-driven by nature.
@@ -2592,23 +2598,33 @@ one-line summary — keep the item in the file as a record.
   third ladder rung. Option (b) is dropped, not deferred — no edit logging shipped. Ready to close
   as RESOLVED on the master's word; see `docs/iteration-material-calculator.md` §21.
 
-### Trade-by-trade review (`TRADES-REVIEW.md`) — batch 1 shipped, batches 2+ open
+### Trade-by-trade review (`TRADES-REVIEW.md`) — batches 1-2 shipped, batches 3+ open
 - **Status:** IN_PROGRESS — batch 1 (§4.1 + §1.8) shipped as **V146**, 2026-10-06, see
-  [iteration-trades-review-batch-1.md](iteration-trades-review-batch-1.md).
+  [iteration-trades-review-batch-1.md](iteration-trades-review-batch-1.md); batch 2 (§4 item 1 —
+  FLOORING's norms + the §3.5 dictionary) as **V147**, same day, see
+  [iteration-trades-review-flooring-norms.md](iteration-trades-review-flooring-norms.md).
 - **Since:** 2026-10-06, a trade-by-trade read of the catalog, the bundles and the norms across all
   nine trades against a clean V145 DB.
 - **Context:** batch 1 took only what buys the WRONG QUANTITY today — eleven data corrections plus
-  the calculator-engine gaps of §1.8. What the review found and batch 1 deliberately left:
-  - **norms for the trades that have none at all** — FLOORING, BUILDER, PLUMBING, ELECTRICAL, METAL,
-    DEMOLITION (the same gap the «Material calculators» item above tracks);
+  the calculator-engine gaps of §1.8. Batch 2 took FLOORING from zero norms to 52 of 54 positions
+  answered. What the review found and both batches deliberately left:
+  - **norms for the five trades that still have none at all** — BUILDER, PLUMBING, ELECTRICAL,
+    METAL, DEMOLITION (the same gap the «Material calculators» item above tracks);
+  - **FLOORING's §3.3 — eighteen new positions and their norms**, plus the new LINEAR_METER
+    damper-tape row, all of which need a `catalog_templates` INSERT;
   - **template ordering + the protection and cleanup steps** every trade's bundles are missing;
-  - **catalog additions, de-duplication and descriptions**, and the renames;
-  - **the shared-position re-filings beyond the ten** §7 took.
+  - **catalog additions, de-duplication and descriptions**, and the renames (FLOORING's own §1b:
+    «Монтаж утеплювача» says nothing about where, and the hidden skirting ships as a complex beside
+    its two parts, so an estimate carrying all three double-buys);
+  - **the shared-position re-filings beyond the ten** §7 took and the five §4 of V147 took.
 - **Notes / options:** the owner's two rulings from batch 1 stand for the later ones — grout is the
   «гібрид» (it stays on the laying positions; a grouting step that follows laying is a recorded
   «consumes nothing» verdict) and the deep primer belongs to the standalone «Грунтування» position
-  while product primers stay on theirs. A later batch that INSERTs a `catalog_templates` row **must
-  re-run V118's ranking verbatim** — batch 1 avoided that by shipping no new catalog position.
+  while product primers stay on theirs. Batch 2 adds a third that generalises: **a shipped norm
+  carries 0 waste** — its own `waste_percent` OVERRIDES the master's habit, so the layout surplus
+  goes in the coefficient and the cutting allowance stays his. A later batch that INSERTs a
+  `catalog_templates` row **must re-run V118's ranking verbatim** — neither batch so far has shipped
+  a new catalog position, which is precisely why §3.3 is still waiting.
 
 ### The calculator bases the review asked for and batch 1 did not add
 - **Status:** OPEN
