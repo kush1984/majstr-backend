@@ -2628,11 +2628,13 @@ one-line summary — keep the item in the file as a record.
   third ladder rung. Option (b) is dropped, not deferred — no edit logging shipped. Ready to close
   as RESOLVED on the master's word; see `docs/iteration-material-calculator.md` §21.
 
-### Trade-by-trade review (`TRADES-REVIEW.md`) — batches 1-2 shipped, batches 3+ open
+### Trade-by-trade review (`TRADES-REVIEW.md`) — batches 1-3 shipped, batches 4+ open
 - **Status:** IN_PROGRESS — batch 1 (§4.1 + §1.8) shipped as **V146**, 2026-10-06, see
   [iteration-trades-review-batch-1.md](iteration-trades-review-batch-1.md); batch 2 (§4 item 1 —
   FLOORING's norms + the §3.5 dictionary) as **V147**, same day, see
-  [iteration-trades-review-flooring-norms.md](iteration-trades-review-flooring-norms.md).
+  [iteration-trades-review-flooring-norms.md](iteration-trades-review-flooring-norms.md); batch 3
+  (§4 item 4 — every default bundle as a job sequence, 115 → 102, 141 positions added) as **V148**,
+  2026-10-07, see [iteration-trades-review-bundles.md](iteration-trades-review-bundles.md).
 - **Since:** 2026-10-06, a trade-by-trade read of the catalog, the bundles and the norms across all
   nine trades against a clean V145 DB.
 - **Context:** batch 1 took only what buys the WRONG QUANTITY today — eleven data corrections plus
@@ -2640,9 +2642,16 @@ one-line summary — keep the item in the file as a record.
   answered. What the review found and both batches deliberately left:
   - **norms for the five trades that still have none at all** — BUILDER, PLUMBING, ELECTRICAL,
     METAL, DEMOLITION (the same gap the «Material calculators» item above tracks);
-  - **FLOORING's §3.3 — eighteen new positions and their norms**, plus the new LINEAR_METER
-    damper-tape row, all of which need a `catalog_templates` INSERT;
-  - **template ordering + the protection and cleanup steps** every trade's bundles are missing;
+  - **FLOORING's §3.3 — the new positions V148 did not need for a bundle** (V148 added 14 of them
+    with norms), plus the new LINEAR_METER damper-tape row;
+  - ~~template ordering + the protection and cleanup steps~~ — **done in V148**;
+  - **V148's leftovers:** the 141 new positions carry ORIENTIR prices (report midpoints; 40 ₴/м²
+    cleanup, 600 ₴/м³ debris, 200 ₴/шт door protection outside TILING/PAINTER) to be settled by
+    `price_insight_candidate`; DEMOLITION's «Вантаження сміття в авто» (950/м³) may already include
+    haulage, which would double-count with the new «Вивезення сміття контейнером» in the same
+    bundle; METAL's «Виготовлення металевого каркасу сходів» at 900 ₴/шт only makes sense per step;
+    piles, ФБС, monolithic work and the mineral-wool facade have no BUILDER bundle (owner ruling 6);
+    the five trades still without norms now ship bundles whose lines answer nothing in «Матеріали»;
   - **catalog additions, de-duplication and descriptions**, and the renames (FLOORING's own §1b:
     «Монтаж утеплювача» says nothing about where, and the hidden skirting ships as a complex beside
     its two parts, so an estimate carrying all three double-buys);
@@ -2653,8 +2662,11 @@ one-line summary — keep the item in the file as a record.
   while product primers stay on theirs. Batch 2 adds a third that generalises: **a shipped norm
   carries 0 waste** — its own `waste_percent` OVERRIDES the master's habit, so the layout surplus
   goes in the coefficient and the cutting allowance stays his. A later batch that INSERTs a
-  `catalog_templates` row **must re-run V118's ranking verbatim** — neither batch so far has shipped
-  a new catalog position, which is precisely why §3.3 is still waiting.
+  `catalog_templates` row **must re-run V118's ranking verbatim** — V148 is the first batch that
+  did. A fourth ruling from batch 3: **a later RENAME must rewrite the bundle lines in the same
+  migration** — several V148 lines ride names the reports want renamed (plumbing chases,
+  «Установка кранів», «Установка змішувача прихованого типу для душа (біде)»), and a renamed
+  position without its lines prices them at 0 ₴.
 
 ### The calculator bases the review asked for and batch 1 did not add
 - **Status:** OPEN
@@ -2674,7 +2686,10 @@ one-line summary — keep the item in the file as a record.
   answer as metres of cable (see the item in «Features in the catalog enum but not implemented»).
 
 ### Two catalog positions the review needs and batch 1 could not add
-- **Status:** OPEN
+- **Status:** RESOLVED (2026-10-07) — V148 added «Монтаж кроквяної системи» (the pitched-roof bundle
+  is complete again, with counter-battens and battens) and «Звукоізоляція стелі мінеральною ватою»,
+  which took the wall wool's norm while the ceiling frame lost its own wool in the same migration.
+  See [iteration-trades-review-bundles.md](iteration-trades-review-bundles.md).
 - **Since:** `TRADES-REVIEW.md` §4.1 (2026-10-06)
 - **Context:** two corrections came out half-done because the position they need does not exist:
   - **«Монтаж кроквяної системи»** — V146 §9 removed the «комплекс» rollup from «Покрівля

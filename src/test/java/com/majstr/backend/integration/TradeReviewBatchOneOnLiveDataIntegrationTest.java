@@ -27,9 +27,10 @@ import static org.assertj.core.api.Assertions.assertThat;
  */
 class TradeReviewBatchOneOnLiveDataIntegrationTest extends IntegrationTestBase {
 
+    /** V148 renamed two of the five; the bundle (and its id) is the same one V146 primed. */
     private static final List<String> PRIMED_BUNDLES = List.of(
-            "Басейн та мозаїка", "Душова без піддону (трап, лінійний канал)",
-            "Натуральний камінь та сляби", "Сходи плиткою", "Тераса, балкон, вулиця");
+            "Басейн та мозаїка", "Душова врівень з підлогою (трап)",
+            "Облицювання натуральним каменем", "Сходи плиткою", "Тераса, балкон, вулиця");
 
     /** The ten positions two trades ship, which a norm filed under one of them answered for once. */
     private static final List<String> SHARED_POSITIONS = List.of(
@@ -77,13 +78,13 @@ class TradeReviewBatchOneOnLiveDataIntegrationTest extends IntegrationTestBase {
      * twice. The frame position buys the frame and the sheets; the insulation position buys the
      * insulation.
      *
-     * <p>The CEILING twin KEEPS its wool, and that is the half worth pinning. The library has no
-     * «Звукоізоляція стелі мінеральною ватою», so the ceiling frame position is the only line that
-     * buys the ceiling's wool at all — taking it off would stop a double count that does not exist
-     * and start an undercount that does.</p>
+     * <p>V146 had to leave the CEILING twin its wool: the library had no «Звукоізоляція стелі
+     * мінеральною ватою», so taking it off would have bought none at all. V148 added that position,
+     * gave it the wall wool's norm and took the wool off the ceiling frame in the same statement —
+     * so both frames now buy the frame, and each wool position buys the wool.</p>
      */
     @Test
-    void theWallFramePositionStoppedBuyingWoolAndTheCeilingOneDidNot() {
+    void bothFramePositionsStoppedBuyingWoolOnceEachHadAWoolPosition() {
         assertThat(count("""
                 SELECT count(*) FROM material_norm n JOIN material m ON m.id = n.material_id
                  WHERE n.owner_id IS NULL AND m.code = 'MINERAL_WOOL'
@@ -94,7 +95,13 @@ class TradeReviewBatchOneOnLiveDataIntegrationTest extends IntegrationTestBase {
                 SELECT count(*) FROM material_norm n JOIN material m ON m.id = n.material_id
                  WHERE n.owner_id IS NULL AND m.code = 'MINERAL_WOOL'
                    AND n.name_key = 'каркасна звукоізоляція (гкл в два слоя) стелі'
-                """)).as("the ceiling has no standalone wool position to move it to").isEqualTo(1);
+                """)).as("the ceiling frame position's own wool row (V148)").isZero();
+
+        assertThat(count("""
+                SELECT count(*) FROM material_norm n JOIN material m ON m.id = n.material_id
+                 WHERE n.owner_id IS NULL AND m.code = 'MINERAL_WOOL'
+                   AND n.name_key = 'звукоізоляція стелі мінеральною ватою'
+                """)).as("the ceiling's standalone position buys it (V148)").isEqualTo(1);
 
         assertThat(count("""
                 SELECT count(*) FROM material_norm n JOIN material m ON m.id = n.material_id
@@ -327,12 +334,15 @@ class TradeReviewBatchOneOnLiveDataIntegrationTest extends IntegrationTestBase {
                     """, bundle)).as("%s primes exactly once", bundle).isEqualTo(1);
         }
 
+        // V148 opened every bundle with protection and the demolition it needs, so the exact
+        // positions moved; what is pinned is the place relative to the base it primes.
         assertThat(sortOrder("Басейн та мозаїка", "ґрунтівка поверхні"))
-                .as("after the screed, before the pool's waterproofing").isEqualTo(1);
-        assertThat(sortOrder("Сходи плиткою", "ґрунтівка поверхні"))
-                .as("the stairs bundle starts with it").isZero();
+                .as("after the screed, before the pool's waterproofing")
+                .isGreaterThan(sortOrder("Басейн та мозаїка", "штукатурка, стяжка басейну"));
         assertThat(sortOrder("Тераса, балкон, вулиця", "ґрунтівка поверхні"))
-                .as("after the demolition and the screed").isEqualTo(2);
+                .as("after the demolition and the screed")
+                .isGreaterThan(sortOrder("Тераса, балкон, вулиця",
+                        "влаштування стяжки з ухилом (балкон, тераса)"));
     }
 
     /** «Підлога великоформатом» already had the step, one line too late: a self-levelling floor is
@@ -351,7 +361,7 @@ class TradeReviewBatchOneOnLiveDataIntegrationTest extends IntegrationTestBase {
      * whole facade was charged twice; «Покрівля двоскатна» did the same with the roof rollup. A
      * rollup belongs in a bundle of its own, never beside its own parts. «Кладка цегла» mixed mortar
      * WITH gravel, which is concrete and not masonry mortar — the library has the right position and
-     * the bundle simply named the wrong one.
+     * the bundle simply named the wrong one. (V148 renamed that bundle «Коробка будинку з цегли».)
      */
     @Test
     void aBundleNoLongerPricesARollupBesideItsOwnParts() {
@@ -364,7 +374,7 @@ class TradeReviewBatchOneOnLiveDataIntegrationTest extends IntegrationTestBase {
 
         assertThat(count("""
                 SELECT count(*) FROM estimate_template_items i JOIN estimate_templates t ON t.id = i.template_id
-                 WHERE t.owner_id IS NULL AND t.is_default AND t.trade = 'BUILDER' AND t.name = 'Кладка цегла'
+                 WHERE t.owner_id IS NULL AND t.is_default AND t.trade = 'BUILDER' AND t.name = 'Коробка будинку з цегли'
                    AND lower(trim(i.name)) = 'приготування розчину для кладки без щебня'
                 """)).as("masonry mixes mortar, not concrete").isEqualTo(1);
     }
@@ -412,13 +422,14 @@ class TradeReviewBatchOneOnLiveDataIntegrationTest extends IntegrationTestBase {
     /**
      * In «САНТЕХНІКА» the chase was closed BETWEEN them, which is worse than the wrong order: the
      * water pipe was buried before it had been tested. The sequence ends as lay → test → close the
-     * chase → start.
+     * chase → start. V148 retired that dump; the apartment's rough-in bundle carries the rule now.
      */
     @Test
     void theChaseIsClosedAfterTheTestAndBeforeTheStart() {
-        int test = sortOrder("PLUMBING", "САНТЕХНІКА", "перевірка системи водопроводу тиском");
-        int chase = sortOrder("PLUMBING", "САНТЕХНІКА", "заробка штроб (сантехніка)");
-        int start = sortOrder("PLUMBING", "САНТЕХНІКА", "запуск системи водопроводу");
+        String bundle = "Квартира — вузол вводу, розводка води й каналізації";
+        int test = sortOrder("PLUMBING", bundle, "перевірка системи водопроводу тиском");
+        int chase = sortOrder("PLUMBING", bundle, "заробка штроб (сантехніка)");
+        int start = sortOrder("PLUMBING", bundle, "запуск системи водопроводу");
 
         assertThat(test).as("tested while the pipe is still exposed").isLessThan(chase);
         assertThat(chase).as("and started once it is closed up").isLessThan(start);

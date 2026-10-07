@@ -83,6 +83,10 @@ class CatalogCleanupOnLegacyDataIntegrationTest extends IntegrationTestBase {
         //    every previous failure of this chain surfaced at production startup instead.
         Flyway.configure().dataSource(url, user, pass)
                 .locations("classpath:db/migration")
+                // Up to V147, not to the head: what is pinned here is THIS history's outcome, and V148
+                // rewrote every default bundle and pushed positions into every trade. V148 on live
+                // data is pinned by BundlesAsJobSequencesOnLiveDataIntegrationTest.
+                .target(MigrationVersion.fromVersion("147"))
                 .load().migrate();
     }
 

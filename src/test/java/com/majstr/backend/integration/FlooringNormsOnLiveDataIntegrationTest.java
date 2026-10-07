@@ -77,12 +77,13 @@ class FlooringNormsOnLiveDataIntegrationTest extends IntegrationTestBase {
     }
 
     /** V147 inserts no catalog position, deliberately: one would force V118's ranking to be re-run
-     *  verbatim, which is a batch of its own. */
+     *  verbatim, which is a batch of its own. V148 was that batch: its bundles needed 14 more, and
+     *  each of them is answered too (the test above). */
     @Test
-    void theCatalogItselfIsUntouched() {
+    void theCatalogGrewOnlyByTheFourteenTheBundlesNeed() {
         assertThat(count("""
                 SELECT count(*) FROM catalog_templates WHERE trade = 'FLOORING' AND type = 'WORK'
-                """)).isEqualTo(54);
+                """)).isEqualTo(54 + 14);
     }
 
     /** «Checked, consumes nothing» is a RECORDED verdict and needs BOTH nulls together (V127's
@@ -101,7 +102,9 @@ class FlooringNormsOnLiveDataIntegrationTest extends IntegrationTestBase {
                 "шліфування бетонної основи", "шліфування бетону стяжки",
                 "шліфування дерев'яної підлоги", "брашування паркету",
                 "підготовка поверхні (очищення і т.п.)", "чистка підлоги порохотягом підготовка",
-                "штроблення в стяжці під монтаж перегородок");
+                "штроблення в стяжці під монтаж перегородок",
+                // V148: trimming a door frame for the new covering is the eighth.
+                "підрізання дверних коробок і наличників під покриття");
     }
 
     // ---- the waste decision -------------------------------------------------------------------
