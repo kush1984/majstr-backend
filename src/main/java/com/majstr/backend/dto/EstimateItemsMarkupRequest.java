@@ -40,6 +40,7 @@ public record EstimateItemsMarkupRequest(
 ) {
     @jakarta.validation.constraints.AssertTrue(message = "a discount cannot exceed 100%")
     public boolean isDirectionWithinBounds() {
-        return !discount || percent == null || percent.compareTo(new BigDecimal("100")) <= 0;
+        // A null `discount` is the @NotNull's 400 to report; unboxing it here threw HV000090 → 500 (B-100).
+        return !Boolean.TRUE.equals(discount) || percent == null || percent.compareTo(new BigDecimal("100")) <= 0;
     }
 }

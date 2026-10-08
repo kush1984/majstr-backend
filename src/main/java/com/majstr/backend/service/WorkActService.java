@@ -80,6 +80,7 @@ public class WorkActService {
     private final StorageCleanup storageCleanup;
     private final ActReceiptDuplicateGuard receiptDuplicateGuard;
     private final ActAdjustmentCalculator adjustmentCalculator;
+    private final ActRepricer repricer;
     private final ActReceiptReconciler receiptReconciler;
     private final ReceiptIdentityIndex identityIndex;
     private final ProjectService projectService;
@@ -267,7 +268,9 @@ public class WorkActService {
                     .sortOrder(sort++)
                     .build());
         }
-        // The estimate's own discounts and surcharges, prorated by what this act closes (B-55).
+        // The line closing a position's last unit takes exactly what remains (B-87)…
+        repricer.settleLastUnits(items, act.getProject().getId());
+        // …and the estimate's own discounts and surcharges follow, cumulatively (B-55, B-87).
         // Written here rather than at sign time so the client sees the discount on the page he is
         // about to sign, not only afterwards.
         items.addAll(adjustmentCalculator.adjustmentsFor(act, items, sort));
@@ -313,6 +316,10 @@ public class WorkActService {
         WorkAct act = requireNotSigned(loadOwnedForUpdate(id, ownerId));
         requireItems(id); // a signed act is immutable and undeletable — never let an empty one in
         receiptCompleteness.requireAllPriced(id); // …nor one whose receipts are not priced yet
+        // The master's own document is issued here, so its money is re-derived here (B-87): the
+        // last unit's exact remainder and the cumulative adjustments — which also gives a draft
+        // saved before V141 the discount it never carried.
+        repricer.reprice(act);
         advanceGuard.requireAdvanceWithinAct(act); // …nor one whose advance exceeds what it bills
         receiptDuplicateGuard.requireNoReceiptBilledElsewhere(act); // …nor a slip another act billed
         // …nor one whose estimate moved under it since the save (B-56): reopened, uncounted or
@@ -374,11 +381,26 @@ public class WorkActService {
             finalGuard.requireObjectNotClosed(act);
         }
         act.setStatus(target);
+        if (from == WorkActStatus.REJECTED && target == WorkActStatus.DRAFT) {
+            rebindToCurrentContract(act);
+        }
         if (target == WorkActStatus.DRAFT) {
             act.setSentAt(null);
             lineBinder.refreshCumulativeBefore(act);
         }
         return responseFactory.build(act);
+    }
+
+    /**
+     * A REJECTED act coming back follows the contract as it stands now (B-88, owner ruling: re-bind):
+     * its estimate lines take the current price and wording, and its discount/surcharge lines are
+     * derived afresh from them — the old ADJUSTMENT rows were prorated off the old prices.
+     */
+    private void rebindToCurrentContract(WorkAct act) {
+        lineBinder.rebindToCurrentEstimates(itemRepository.findByWorkActIdOrderBySortOrderAscIdAsc(act.getId())
+                .stream().filter(i -> i.getLineKind() == WorkActLineKind.ESTIMATE).toList());
+        repricer.reprice(act);
+        touch(act);
     }
 
     // ---- helpers ----------------------------------------------------------

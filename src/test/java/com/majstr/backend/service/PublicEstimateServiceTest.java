@@ -360,7 +360,7 @@ class PublicEstimateServiceTest {
                 .build();
         given(shareLinkRepository.findByToken(token)).willReturn(Optional.of(usableLink(duplicate)));
         given(estimateRepository.findById(parent.getId())).willReturn(Optional.of(parent));
-        given(workActItemRepository.existsSignedLineForEstimate(parent.getId())).willReturn(true);
+        given(workActItemRepository.existsLiveActLineForEstimate(parent.getId())).willReturn(true);
 
         assertThatThrownBy(() -> publicService.sign(token,
                 new SignRequest("Марія Петренко", "+380671234567", 0L), "203.0.113.42"))

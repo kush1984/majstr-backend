@@ -183,20 +183,24 @@ public class ProjectReceiptService {
         receipt.setLabel(req.label().trim());
         receipt.setAmount(amount);
         receipt.setIssuedAt(req.issuedAt());
-        if (req.normalizedFiscalFn() != null && req.normalizedFiscalId() != null) {
+        boolean identified = req.normalizedFiscalFn() != null && req.normalizedFiscalId() != null;
+        if (identified) {
             // Written once, when a QR read finally identifies the paper. Never cleared by an
             // ordinary edit: the identity belongs to the photo, not to the numbers beside it.
             // NORMALIZED, so a client sending "" does not store a blank that reads as an identity
             // and makes this receipt the twin of every other blank one (B-21).
             receipt.setFiscalFn(req.normalizedFiscalFn());
             receipt.setFiscalId(req.normalizedFiscalId());
+        }
+        applyReimbursable(receipt, req.reimbursable());
+        if (identified) {
             // …and the paper may ALREADY have been billed on a signed act (review B-53). The
             // identity arrives on this side last — the act is signed on site, the till receipts are
             // read later — so the sign-time reconciler had nothing to match and the money sat in
-            // the receivable and in «За договором» at once.
+            // the receivable and in «За договором» at once. It runs LAST (B-91): settled first, its
+            // dropped expense was posted straight back by the `reimbursable:false` of the same save.
             reconciler.settleAgainstSignedActs(receipt);
         }
-        applyReimbursable(receipt, req.reimbursable());
         // The identity arrives HERE and nowhere else — the photo is saved before anything is read
         // off it — so this is the one answer that can tell the master «цей чек уже є» at the moment
         // he is looking at the paper. Answering `null` would hide the warning until a later refetch.
@@ -359,6 +363,14 @@ public class ProjectReceiptService {
                 ? null
                 : expenseRepository.findByIdAndObjectId(receipt.getExpenseId(), receipt.getProjectId())
                         .orElse(null);
+        if (expense == null && receipt.getBilledOnActId() != null) {
+            // Billed on a signed act: the reconciler decided the paper's cost then, and a missing
+            // expense means it was dropped because the act posts the cost itself. Re-sending
+            // `reimbursable:false` — an ordinary save from a screen that knows the answer — used to
+            // post it a second time beside the act's own (B-91).
+            receipt.setExpenseId(null);
+            return;
+        }
         if (expense == null && requested == null) {
             // An ordinary edit carries no opinion about whose money this is, so it must not create
             // an expense — least of all resurrect one the master removed from the journal himself

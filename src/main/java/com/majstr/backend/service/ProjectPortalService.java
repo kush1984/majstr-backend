@@ -69,6 +69,7 @@ public class ProjectPortalService {
     private final WorkActReceiptRepository workActReceiptRepository;
     private final ActReceiptCompleteness receiptCompleteness;
     private final ActLineBinder lineBinder;
+    private final ActRepricer repricer;
     private final ActFinalGuard finalGuard;
     private final ActAdvanceGuard advanceGuard;
     private final ActReceiptDuplicateGuard receiptDuplicateGuard;
@@ -216,6 +217,9 @@ public class ProjectPortalService {
             // and signing freezes the receipts block into the doc_hash and the ADDENDUM estimate
             // (receipts-batch — a photo is now saved before it is priced).
             receiptCompleteness.requireAllPriced(actId);
+            // What the client is about to read is re-derived now (B-87): the last unit's exact
+            // remainder and the cumulative adjustments — a draft saved before V141 had none.
+            repricer.reprice(act);
             // The estimate behind a linked line must still be closeable, and the act must not be
             // closing more than remains (B-56). Publishing is the door the MASTER controls, so it
             // is the one place he can still be told about it and act on it.

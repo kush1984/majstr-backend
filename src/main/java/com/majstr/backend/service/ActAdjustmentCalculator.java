@@ -8,6 +8,7 @@ import com.majstr.backend.entity.WorkAct;
 import com.majstr.backend.entity.WorkActItem;
 import com.majstr.backend.entity.WorkActLineKind;
 import com.majstr.backend.repository.EstimateItemRepository;
+import com.majstr.backend.repository.WorkActItemRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
@@ -66,6 +67,7 @@ class ActAdjustmentCalculator {
     private static final RoundingMode ROUNDING = RoundingMode.HALF_UP;
 
     private final EstimateItemRepository estimateItemRepository;
+    private final WorkActItemRepository workActItemRepository;
 
     /**
      * The adjustment lines for an act whose ordinary lines have just been built.
@@ -88,6 +90,16 @@ class ActAdjustmentCalculator {
                 .findByEstimateIdInOrderBySortOrderAscIdAsc(estimateIds)) {
             byEstimate.computeIfAbsent(item.getEstimate().getId(), k -> new ArrayList<>()).add(item);
         }
+        // CUMULATIVE (B-87): this act's share is the rounded figure WITH it less the rounded figure
+        // without it, both measured over what the object's SIGNED acts have closed. Rounded per act,
+        // the shares drifted a kopeck from the estimate's own percentage in a third of multi-act
+        // closures, half of them above the contract; as differences of one running total they
+        // telescope to it exactly. Earlier acts are read by what they CLOSED, never by the
+        // adjustment rows they carry, so a pre-V141 act signed without one is not caught up here.
+        Map<UUID, BigDecimal> signedClosed = new HashMap<>();
+        for (Object[] row : workActItemRepository.sumSignedLineTotalsByEstimateItem(act.getProject().getId())) {
+            signedClosed.put((UUID) row[0], (BigDecimal) row[1]);
+        }
         List<WorkActItem> adjustments = new ArrayList<>();
         int sort = firstSortOrder;
         for (UUID estimateId : estimateIds) {
@@ -95,8 +107,15 @@ class ActAdjustmentCalculator {
             if (estimateItems == null) {
                 continue; // the estimate's lines are gone; the act's frozen rows still stand
             }
-            Map<ItemType, BigDecimal> perType =
-                    adjustmentsPerType(estimateItems, closed(lines, estimateId));
+            Map<UUID, BigDecimal> withThisAct = new HashMap<>(signedClosed);
+            closed(lines, estimateId).forEach((id, amount) -> withThisAct.merge(id, amount, BigDecimal::add));
+            Map<ItemType, BigDecimal> after = adjustmentsPerType(estimateItems, withThisAct);
+            Map<ItemType, BigDecimal> before = adjustmentsPerType(estimateItems, signedClosed);
+            Map<ItemType, BigDecimal> perType = new LinkedHashMap<>();
+            for (Map.Entry<ItemType, BigDecimal> e : after.entrySet()) {
+                perType.put(e.getKey(), e.getValue().setScale(MONEY_SCALE, ROUNDING)
+                        .subtract(before.get(e.getKey()).setScale(MONEY_SCALE, ROUNDING)));
+            }
             for (Map.Entry<ItemType, BigDecimal> e : perType.entrySet()) {
                 BigDecimal amount = e.getValue().setScale(MONEY_SCALE, ROUNDING);
                 if (amount.signum() == 0) {

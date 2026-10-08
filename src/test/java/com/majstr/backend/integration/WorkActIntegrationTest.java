@@ -68,6 +68,7 @@ class WorkActIntegrationTest extends IntegrationTestBase {
     @Autowired com.majstr.backend.repository.ProjectPhotoRepository photoRepository;
     @Autowired com.majstr.backend.service.ProjectPortalService projectPortalService;
     @Autowired com.majstr.backend.service.PublicEstimateService publicEstimateService;
+    @Autowired com.majstr.backend.repository.EstimateShareLinkRepository shareLinkRepository;
 
     @Test
     void numberingIsContinuousPerMaster_acrossObjects() {
@@ -979,6 +980,60 @@ class WorkActIntegrationTest extends IntegrationTestBase {
     }
 
     @Test
+    void aRejectedActComingBack_followsTheContractTheClientSignedLast() throws Exception {
+        // B-88. Dead paper does not hold the estimate back, so the estimate under a REJECTED act can
+        // be reopened, re-priced and signed again. Brought back unchanged, the act signed at the OLD
+        // price: 20 000 «Прийнято актами» against a 15 000 contract.
+        User owner = newOwner();
+        Project p = newProject(owner);
+        Estimate est = signedEstimateWithLine(p, "Робота", "100.000", "200.00");
+        EstimateItem position = estimateItemRepository.findByEstimateIdOrderBySortOrderAscIdAsc(est.getId()).get(0);
+        WorkActResponse act = createInterim(p.getId(), owner.getId());
+        setSingleLine(act.id(), owner.getId(), est.getId(), position.getId(), "100.000", "200.00");
+        markSent(act.id());
+        workActService.changeStatus(act.id(), WorkActStatus.REJECTED, owner.getId());
+
+        // Re-priced and re-signed — as the master's reopen → edit → client signature would leave it.
+        position.setUnitPrice(new BigDecimal("150.00"));
+        position.setLineTotal(new BigDecimal("15000.00"));
+        estimateItemRepository.saveAndFlush(position);
+
+        WorkActResponse back = workActService.changeStatus(act.id(), WorkActStatus.DRAFT, owner.getId());
+
+        assertThat(back.items()).singleElement().satisfies(line -> {
+            assertThat(line.unitPrice()).isEqualByComparingTo("150.00");
+            assertThat(line.lineTotal()).isEqualByComparingTo("15000.00");
+        });
+        workActService.signOffline(act.id(), new WorkActSignOfflineRequest("Клієнт"), owner.getId());
+        ObjectEconomyResponse economy = objectExpenseService.economy(p.getId(), owner.getId());
+        assertThat(economy.acts().acceptedByActs()).isLessThanOrEqualTo(economy.acts().contracted());
+    }
+
+    @Test
+    void aLineWhosePositionWasDeleted_cannotBeSigned() {
+        // B-89. The estimate went under a REJECTED act; its lines' FK fell to NULL. Signed, the line
+        // billed the client money no economy figure counted — no position, so no «За договором»,
+        // and no ADDENDUM either, because it is an ESTIMATE line, not an additional one.
+        User owner = newOwner();
+        Project p = newProject(owner);
+        Estimate est = signedEstimateWithLine(p, "Робота", "50.000", "145.00");
+        UUID lineId = estimateItemRepository.findByEstimateIdOrderBySortOrderAscIdAsc(est.getId()).get(0).getId();
+        WorkActResponse act = createInterim(p.getId(), owner.getId());
+        setSingleLine(act.id(), owner.getId(), est.getId(), lineId, "50.000", "145.00");
+        markSent(act.id());
+        workActService.changeStatus(act.id(), WorkActStatus.REJECTED, owner.getId());
+        estimateItemRepository.deleteById(lineId);
+        estimateItemRepository.flush();
+        workActService.changeStatus(act.id(), WorkActStatus.DRAFT, owner.getId());
+
+        assertThatThrownBy(() -> workActService.signOffline(act.id(),
+                new WorkActSignOfflineRequest("Клієнт"), owner.getId()))
+                .isInstanceOf(com.majstr.backend.exception.WorkActValidationException.class)
+                .extracting(e -> ((com.majstr.backend.exception.WorkActValidationException) e).getCode())
+                .isEqualTo("WORK_ACT_ESTIMATE_LINE_GONE");
+    }
+
+    @Test
     void duplicatingAnEstimate_isBlockedOnceActsAreSigned() throws Exception {
         // duplicate() excludes the SOURCE from the economy on the spot — with signed acts against
         // it, «Прийнято актами» would silently lose those works and the picker would forget them
@@ -1015,6 +1070,41 @@ class WorkActIntegrationTest extends IntegrationTestBase {
                 new com.majstr.backend.dto.EstimateDuplicateRequest(null, new BigDecimal("10"), false, null),
                 owner.getId()))
                 .isInstanceOf(WorkActConflictException.class);
+    }
+
+    @Test
+    void theClientSigningACopy_isRefusedWhileASentActStandsOnTheParent() {
+        // B-90. The master's doors refused uncounting an estimate under ANY live act since B-59, but
+        // the portal's own supersede still asked only about SIGNED ones — so the client could sign
+        // the copy, the parent stopped counting, and the SENT act on his phone could never be signed
+        // again (WORK_ACT_ESTIMATE_EXCLUDED).
+        User owner = newOwner();
+        Project p = newProject(owner);
+        Estimate parent = signedEstimateWithLine(p, "Робота", "100.000", "145.00");
+        UUID lineId = estimateItemRepository.findByEstimateIdOrderBySortOrderAscIdAsc(parent.getId()).get(0).getId();
+        WorkActResponse act = createInterim(p.getId(), owner.getId());
+        setSingleLine(act.id(), owner.getId(), parent.getId(), lineId, "60.000", "145.00");
+        markSent(act.id());
+
+        Estimate copy = estimateRepository.save(Estimate.builder()
+                .project(p).status(EstimateStatus.DRAFT).countInEconomy(true)
+                .duplicatedFromId(parent.getId()).build());
+        estimateItemRepository.save(EstimateItem.builder()
+                .estimate(copy).type(ItemType.WORK).name("Робота").unit(Unit.M2)
+                .quantity(new BigDecimal("100.000")).unitPrice(new BigDecimal("150.00"))
+                .lineTotal(new BigDecimal("15000.00")).sortOrder(0).build());
+        var link = shareLinkRepository.save(com.majstr.backend.entity.EstimateShareLink.builder()
+                .estimate(copy).token("tok-" + UUID.randomUUID()).build());
+
+        assertThatThrownBy(() -> publicEstimateService.sign(link.getToken(),
+                new com.majstr.backend.dto.SignRequest("Марія Петренко", "+380672222222",
+                        estimateRepository.findById(copy.getId()).orElseThrow().getVersion()),
+                "203.0.113.42"))
+                .isInstanceOf(WorkActConflictException.class);
+
+        assertThat(estimateRepository.findById(parent.getId()).orElseThrow().isCountInEconomy()).isTrue();
+        assertThat(estimateRepository.findById(copy.getId()).orElseThrow().getStatus())
+                .isEqualTo(EstimateStatus.DRAFT);
     }
 
     @Test
@@ -1384,6 +1474,16 @@ class WorkActIntegrationTest extends IntegrationTestBase {
         assertThat(listed.billedOnActId()).isEqualTo(act.id());
         assertThat(listed.billedOnActNumber()).isEqualTo(act.number());
         assertThat(listed.hasExpense()).isFalse();
+
+        // B-91: an ordinary save from a screen that knows the answer re-sends `reimbursable:false`
+        // — with and without the identity. Neither may post the dropped cost a second time.
+        projectReceiptService.update(p.getId(), atTheTill.id(), owner.getId(),
+                new com.majstr.backend.dto.ProjectReceiptRequest("Епіцентр, цвяхи", new BigDecimal("2000.00"),
+                        LocalDate.of(2026, 9, 8), false, null, null));
+        projectReceiptService.update(p.getId(), atTheTill.id(), owner.getId(),
+                new com.majstr.backend.dto.ProjectReceiptRequest("Епіцентр, цвяхи", new BigDecimal("2000.00"),
+                        LocalDate.of(2026, 9, 8), false, "4000123456", "77"));
+        assertThat(objectExpenseRepository.sumAll(p.getId())).isEqualByComparingTo("2000.00");
     }
 
     /**
@@ -1421,6 +1521,13 @@ class WorkActIntegrationTest extends IntegrationTestBase {
         assertThat(projectReceiptService.list(p.getId(), owner.getId()).items().getFirst()
                 .billedOnActId()).isEqualTo(act.id());
         assertThat(economy.materials().reimbursable()).isEqualByComparingTo("0.00");
+
+        // B-91, the other half: here the receipt's own expense IS the cost, so a later save keeps
+        // it — once, mirrored, never doubled.
+        projectReceiptService.update(p.getId(), atTheTill.id(), owner.getId(),
+                new com.majstr.backend.dto.ProjectReceiptRequest("Епіцентр, цвяхи", new BigDecimal("2000.00"),
+                        LocalDate.of(2026, 9, 8), false, "4000123456", "77"));
+        assertThat(objectExpenseRepository.sumAll(p.getId())).isEqualByComparingTo("2000.00");
     }
 
     @Test
@@ -1461,6 +1568,61 @@ class WorkActIntegrationTest extends IntegrationTestBase {
         // rolling it up would put the estimate's own discount into «За договором» a second time.
         assertThat(estimateRepository.findByProjectIdOrderByCreatedAtDesc(p.getId()))
                 .noneMatch(e -> e.getKind() == EstimateKind.ADDENDUM);
+    }
+
+    // ---- B-87: indivisible numbers ---------------------------------------------------------------
+    // The B-55 tests close 40 + 60 of 100 at 10 %, where every share is a whole kopeck. These are the
+    // closures that drifted: rounded per act, a third of them missed the contract by a kopeck, half
+    // of those ABOVE it. Cumulative shares and an exact last unit must land on the contract itself.
+
+    @Test
+    void aSurchargeSplitOverOneAndNine_carriesExactlyItsOwnPercentage() throws Exception {
+        assertClosingInActsMeetsTheContract("10.000", "187.50", "5.000",
+                List.of("1.000", "9.000"), "1968.75"); // 1 875 + 93.75 — per act it was 93.76
+    }
+
+    @Test
+    void aDiscountSplitOverOneAndNine_carriesExactlyItsOwnPercentage() throws Exception {
+        assertClosingInActsMeetsTheContract("10.000", "187.50", "-5.000",
+                List.of("1.000", "9.000"), "1781.25"); // per act it was 1 781.24
+    }
+
+    @Test
+    void aPositionSplitInThirds_billsItsTotalToTheKopeck() throws Exception {
+        assertClosingInActsMeetsTheContract("100.000", "145.00", null,
+                List.of("33.333", "33.333", "33.334"), "14500.00"); // price × quantity gave 14 500.01
+    }
+
+    private void assertClosingInActsMeetsTheContract(String qty, String price, String percent,
+                                                     List<String> parts, String contract) throws Exception {
+        User owner = newOwner();
+        Project p = newProject(owner);
+        Estimate est = estimateRepository.save(Estimate.builder()
+                .project(p).status(EstimateStatus.SIGNED).countInEconomy(true).build());
+        BigDecimal subtotal = new BigDecimal(qty).multiply(new BigDecimal(price)).setScale(2, RoundingMode.HALF_UP);
+        EstimateItem position = estimateItemRepository.save(EstimateItem.builder()
+                .estimate(est).type(ItemType.WORK).name("Робота").unit(Unit.M2)
+                .quantity(new BigDecimal(qty)).unitPrice(new BigDecimal(price))
+                .lineTotal(subtotal).sortOrder(0).build());
+        if (percent != null) {
+            estimateItemRepository.save(EstimateItem.builder()
+                    .estimate(est).type(ItemType.WORK).name(percent.startsWith("-") ? "Знижка" : "Транспортні")
+                    .unit(Unit.PERCENT).percentBaseKind(PercentBaseKind.TOTAL)
+                    .quantity(new BigDecimal(percent)).unitPrice(new BigDecimal("0.00"))
+                    .lineTotal(subtotal.multiply(new BigDecimal(percent))
+                            .divide(new BigDecimal("100"), 2, RoundingMode.HALF_UP))
+                    .sortOrder(1).build());
+        }
+
+        for (String part : parts) {
+            WorkActResponse act = createInterim(p.getId(), owner.getId());
+            setSingleLine(act.id(), owner.getId(), est.getId(), position.getId(), part, price);
+            workActService.signOffline(act.id(), new WorkActSignOfflineRequest("Клієнт"), owner.getId());
+        }
+
+        ObjectEconomyResponse economy = objectExpenseService.economy(p.getId(), owner.getId());
+        assertThat(economy.acts().contracted()).isEqualByComparingTo(contract);
+        assertThat(economy.acts().acceptedByActs()).isEqualByComparingTo(contract);
     }
 
     @Test

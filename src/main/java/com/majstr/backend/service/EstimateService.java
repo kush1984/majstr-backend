@@ -1257,6 +1257,7 @@ public class EstimateService {
                 continue;
             }
             List<UUID> twinIds = twins.stream().map(EstimateItem::getId).toList();
+            touch(copy); // a SENT copy's client must not sign the sheet he saw before this (B-86)
             itemRepository.deleteAll(twins);
             itemRepository.flush(); // the detach below re-reads the copy's lines
             detachPercentagesPointingAt(copy.getId(), twinIds);
@@ -1317,7 +1318,19 @@ public class EstimateService {
         if (estimate.getSupersededByEstimateId() != null) {
             estimate.setSupersededByEstimateId(null);
         }
+        touch(estimate);
         return estimate;
+    }
+
+    /**
+     * Mark the estimate itself modified when its LINES change (B-86). {@code @Version} only moves when
+     * the estimate row is written, and a line edit writes the item rows alone — so a client holding
+     * the portal page at version 0 signed a sheet the master had since added 5 000 ₴ to, and the
+     * portal's version check saw nothing. Dirtying {@code updatedAt} goes through the ordinary
+     * optimistic-lock UPDATE; the same reasoning as {@code WorkActService#touch}.
+     */
+    private static void touch(Estimate estimate) {
+        estimate.setUpdatedAt(Instant.now());
     }
 
     Estimate loadOwned(UUID estimateId, UUID ownerId) {

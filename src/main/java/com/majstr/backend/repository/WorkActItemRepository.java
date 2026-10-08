@@ -72,6 +72,33 @@ public interface WorkActItemRepository extends JpaRepository<WorkActItem, UUID> 
     List<Object[]> sumSignedQuantitiesByEstimateItem(@Param("projectId") UUID projectId);
 
     /**
+     * What the object's SIGNED acts have BILLED for each estimate line — the money twin of
+     * {@link #sumSignedQuantitiesByEstimateItem}. Rows: {@code [estimate_item_id (UUID), billed
+     * (BigDecimal)]}. Read by {@code ActRepricer} (the last unit takes exactly what remains) and by
+     * {@code ActAdjustmentCalculator} (the cumulative closed share, B-87).
+     */
+    @Query(value = """
+            SELECT wai.estimate_item_id, COALESCE(SUM(wai.line_total), 0) AS billed
+            FROM work_act_item wai
+            JOIN work_act wa ON wa.id = wai.work_act_id
+            WHERE wa.project_id = :projectId
+              AND wa.status = 'SIGNED'
+              AND wai.line_kind = 'ESTIMATE'
+              AND wai.estimate_item_id IS NOT NULL
+            GROUP BY wai.estimate_item_id
+            """, nativeQuery = true)
+    List<Object[]> sumSignedLineTotalsByEstimateItem(@Param("projectId") UUID projectId);
+
+    /** How many SIGNED act rows have billed this estimate line — each may have rounded by a kopeck. */
+    @Query("""
+            SELECT COUNT(wai)
+            FROM WorkActItem wai
+            WHERE wai.estimateItemId = :estimateItemId
+              AND wai.workAct.status = com.majstr.backend.entity.WorkActStatus.SIGNED
+            """)
+    int countSignedLinesForEstimateItem(@Param("estimateItemId") UUID estimateItemId);
+
+    /**
      * Σ line totals over the object's SIGNED acts («Прийнято актами») — the value of work the client
      * has accepted, counted over the SAME set of estimates as «За договором» ({@code sumIncomeCounted}
      * — SIGNED and {@code count_in_economy = true}). A line whose estimate is EXCLUDED from the economy

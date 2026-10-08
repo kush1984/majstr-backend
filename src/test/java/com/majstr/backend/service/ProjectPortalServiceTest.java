@@ -60,6 +60,7 @@ class ProjectPortalServiceTest {
     @Mock WorkActReceiptRepository workActReceiptRepository;
     @Mock ActReceiptCompleteness receiptCompleteness;
     @Mock ActLineBinder lineBinder;
+    @Mock ActRepricer repricer;
     @Mock ActFinalGuard finalGuard;
     @Mock ActAdvanceGuard advanceGuard;
     @Mock ActReceiptDuplicateGuard receiptDuplicateGuard;

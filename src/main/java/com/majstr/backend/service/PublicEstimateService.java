@@ -141,9 +141,15 @@ public class PublicEstimateService {
         return siblings;
     }
 
-    /** Uncounting an estimate that signed acts close erases accepted work (B-64) — 409 instead. */
+    /**
+     * Uncounting an estimate that acts close erases accepted work (B-64) — 409 instead. Any act that
+     * is still alive counts, as on the master's own doors ({@code EstimateService#requireNoActs}): a
+     * SENT act on the parent can never be signed once the copy's signature uncounts it (B-90). The
+     * doors' second half — an ADDENDUM a signed act created — cannot be a parent: it has no ⋮, so it
+     * is never duplicated.
+     */
     private void requireSupersedable(Estimate signed) {
-        if (workActItemRepository.existsSignedLineForEstimate(signed.getId())) {
+        if (workActItemRepository.existsLiveActLineForEstimate(signed.getId())) {
             throw new WorkActConflictException("error.estimate.parent-has-acts",
                     "ESTIMATE_HAS_SIGNED_ACTS");
         }

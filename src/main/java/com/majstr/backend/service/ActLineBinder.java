@@ -5,6 +5,7 @@ import com.majstr.backend.entity.Estimate;
 import com.majstr.backend.entity.EstimateItem;
 import com.majstr.backend.entity.EstimateKind;
 import com.majstr.backend.entity.EstimateStatus;
+import com.majstr.backend.entity.WorkActLineKind;
 import com.majstr.backend.entity.Unit;
 import com.majstr.backend.entity.WorkAct;
 import com.majstr.backend.entity.WorkActItem;
@@ -17,6 +18,7 @@ import org.springframework.stereotype.Component;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -108,6 +110,13 @@ class ActLineBinder {
         Map<UUID, BigDecimal> requested = new LinkedHashMap<>();
         for (WorkActItem item : items) {
             requireNotPercent(item.getUnit());
+            if (item.getLineKind() == WorkActLineKind.ESTIMATE && item.getEstimateItemId() == null) {
+                // The position it closed is gone (the estimate was deleted under a REJECTED act —
+                // the FK is ON DELETE SET NULL). Signed, the line billed the client outside every
+                // economy figure: no position, so no «За договором», and no ADDENDUM (B-89).
+                throw new WorkActValidationException(
+                        "error.work-act.estimate-line-gone", "WORK_ACT_ESTIMATE_LINE_GONE");
+            }
             if (item.getEstimateItemId() != null) {
                 requested.merge(item.getEstimateItemId(),
                         item.getQuantity().setScale(QUANTITY_SCALE, ROUNDING), BigDecimal::add);
@@ -122,6 +131,43 @@ class ActLineBinder {
         for (Map.Entry<UUID, BigDecimal> e : requested.entrySet()) {
             EstimateItem item = requireCloseable(linked.get(e.getKey()), projectId);
             requireWithinRemaining(item, e.getValue(), done);
+        }
+    }
+
+    /**
+     * Re-copy every ESTIMATE line from the position it closes, as it stands NOW (B-88).
+     *
+     * <p>The frozen copy is the feature while an act is alive — but a REJECTED act is dead paper, and
+     * nothing stops the estimate under it being reopened, re-priced and re-signed. Brought back to
+     * DRAFT unchanged, it published and signed at the OLD price: 20 000 accepted against a 15 000
+     * contract. Coming back is a new document, so it follows the contract the client signed last.
+     * Only a position whose estimate is SIGNED is a contract to follow; any other is left for
+     * {@link #requireStillValid} to refuse at publish.</p>
+     */
+    void rebindToCurrentEstimates(List<WorkActItem> lines) {
+        Set<UUID> ids = new HashSet<>();
+        for (WorkActItem line : lines) {
+            if (line.getLineKind() == WorkActLineKind.ESTIMATE && line.getEstimateItemId() != null) {
+                ids.add(line.getEstimateItemId());
+            }
+        }
+        if (ids.isEmpty()) {
+            return;
+        }
+        Map<UUID, EstimateItem> current = load(ids);
+        for (WorkActItem line : lines) {
+            EstimateItem source = line.getEstimateItemId() == null ? null : current.get(line.getEstimateItemId());
+            if (source == null || source.getEstimate().getStatus() != EstimateStatus.SIGNED) {
+                continue;
+            }
+            BigDecimal unitPrice = source.getUnitPrice().setScale(2, ROUNDING);
+            line.setEstimateId(source.getEstimate().getId());
+            line.setType(source.getType());
+            line.setName(source.getName().trim());
+            line.setCategory(CatalogService.normalizeCategory(source.getCategory()));
+            line.setUnit(source.getUnit());
+            line.setUnitPrice(unitPrice);
+            line.setLineTotal(unitPrice.multiply(line.getQuantity()).setScale(2, ROUNDING));
         }
     }
 
