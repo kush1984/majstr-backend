@@ -114,6 +114,7 @@ public class ProjectPhotoService {
         StoredObject stored = storage.store(
                 new ByteArrayInputStream(content), content.length,
                 PHOTO_PREFIX, kind.extension, kind.contentType);
+        cleanup.onRollback(stored.key()); // a rollback, at the save OR at commit, drops it (B-111)
 
         // A failing row save after the store leaves a blob nothing points at (review B-48) — the
         // photo cap, an invalid folder name, a connection dropping. Nothing can find the key
@@ -262,6 +263,7 @@ public class ProjectPhotoService {
         StoredObject stored = storage.store(
                 new ByteArrayInputStream(content), content.length,
                 PHOTO_PREFIX, kind.extension, kind.contentType);
+        cleanup.onRollback(stored.key()); // a rollback, at the save OR at commit, drops it (B-111)
         try {
             photoRepository.save(ProjectPhoto.builder()
                     .projectId(projectId)

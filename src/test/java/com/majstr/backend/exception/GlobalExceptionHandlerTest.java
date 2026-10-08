@@ -52,6 +52,14 @@ class GlobalExceptionHandlerTest {
             throw new OptimisticLockingFailureException("row was updated by another transaction");
         }
 
+        @GetMapping("/second-open-act")
+        String secondOpenAct() {
+            // What a lost race against V144's partial unique index surfaces as at commit.
+            throw new org.springframework.dao.DataIntegrityViolationException("could not execute statement",
+                    new org.hibernate.exception.ConstraintViolationException("duplicate key", null,
+                            "ux_work_act_one_open_per_project"));
+        }
+
         @GetMapping("/limit")
         String limit() {
             throw new LimitExceededException(Limit.MAX_PROJECTS, 2, Plan.FREE);
@@ -133,6 +141,15 @@ class GlobalExceptionHandlerTest {
                 .andExpect(jsonPath("$.status", is(409)))
                 .andExpect(jsonPath("$.code", is("ESTIMATE_SIGNED")))
                 .andExpect(jsonPath("$.message", containsString("Кошторис підписано клієнтом")));
+    }
+
+    @Test
+    void aLostRaceAgainstAnActIndexIsA409WithItsCode_notA500() throws Exception {
+        // Review B-95: V144 moved the one-open-act rule into the schema; a race the service check
+        // loses used to fall through to the generic 500 and a Sentry event.
+        mockMvc.perform(get("/second-open-act").header("Accept-Language", "uk"))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code", is("WORK_ACT_OPEN")));
     }
 
     @Test

@@ -152,3 +152,64 @@ SELECT c.project_id, c.id AS estimate_id, c.total AS contract, b.billed, b.bille
   render — any effect depending on `qc` re-runs, and a «runs once» assertion lies in both directions.
 - «Pending» is not «in the air»: an op held behind a refusal is pending forever. Anything gating on
   the queue must read `runnable`.
+
+---
+
+# Part 2 — §2-§4 of `FIXES-4.md`, backend (in progress), 2026-10-08
+
+**Status:** the items below are built and `./gradlew build` is green; the PWA gate is green (lint →
+`tsc -b` → `typecheck:tests` → vitest 1296 → `vite build`). Still open in this part: **B-92**
+(waits on the owner — it re-classifies lines on SIGNED acts), **B-94**, **B-103**, **B-105** (needs a
+`crew_priced` column, planned for the same V149 as B-92), the B-81 «rolled-back sign sends nothing»
+and the B-09 receipt-race tests. Then the PWA §5-§6.
+
+## Acts
+- **B-93** — a SENT act can no longer be shrunk under its advance: `replaceItems` and act-receipt
+  update/delete run `ActAdvanceGuard` when the act is SENT (the portal signature skips the guard by
+  design). IT `aSentActCannotBeShrunkUnderItsAdvance`.
+- **B-95** — V144's three unique indexes map to 409 (`WORK_ACT_OPEN`, `WORK_ACT_FINAL_EXISTS`,
+  `WORK_ACT_ADDENDUM_TAKEN`) instead of a 500; handler test.
+- **B-96** — the «receipts to expenses off» IT flipped a detached entity; it now goes through
+  `updateHeader` and asserts the flag. The estimate-signed push moved after the commit
+  (`AfterCommit`, like the act sign since B-81).
+- **B-97** — a line's amount is capped at 999 999 999 999.99 on both the estimate line and the act
+  line (`EstimateItemRequest.MAX_LINE_AMOUNT`): the act line had no product bound (a 500 on
+  `numeric(15,2)`), and the estimate's 9 999 999 999 999.99 was ten times what `HryvniaInWords`
+  can spell. The sign-time reconciler reads object receipts FOR UPDATE
+  (`findIdentifiedByProjectIdForUpdate`), so a master's concurrent PATCH waits or loses its own
+  version check — the client's signature never fails with 409. The photo-only «це той самий чек?»
+  warning is recorded in open-questions.
+
+## Economy, payments, cash, crew
+- **B-98** — `ClientSafeName` strips EVERY signed rate anywhere in the name («Санвузол +20%
+  (копія)», «Санвузол +20% +5%»), and the act portal (and the act PDF model) use it.
+- **B-99** — the accepted crew margin prorates each «%» line by the line it follows, running
+  `ActAdjustmentCalculator.adjustmentsPerType` over the client's sheet and over the crew's (closed
+  shares scaled per line) — not one Σ adjustments ÷ Σ client % ratio. The review's own case (+10 %
+  of L1 priced, −10 % of the estimate unpriced, an act closing L2) now accepts 800 (was −109.09).
+  `sumSignedActAdjustments` is gone; the callers pass `sumSignedLineTotalsByEstimateItem`.
+- **B-101** — `ProjectDeleteGuard` also refuses an object holding any till receipt worth money.
+- **B-102** — owner ruling: refuse. `PaymentService` refuses a material refund on a planned stage
+  (add and edit, 400 `error.payment.refund-on-stage`); the PWA no longer offers the tick on a stage
+  and lets an old stage refund only LOSE its tick.
+- **B-104** — a «Мої гроші» edit that omits the date or the category keeps the stored ones (payment,
+  till receipt, own row); `CashEntryRequest.materialRefund` is a required `@NotNull Boolean`
+  (contract snapshot refreshed and copied to the PWA, whose type already required it).
+- **B-106** — a discount must be strictly below 100 % (100 % floored every price at 0,01 ₴); the
+  cash summary reads the clock once; the editor shows no crew margin for a superseded copy.
+
+## Norms, params, storage
+- **B-111** — `StorageCleanup.onRollback` deletes a just-stored photo when the transaction rolls
+  back (at the save or at commit); the old catch-and-`afterCommit` never ran on a rollback. Both
+  receipt creators were already safe (non-transactional callers delete on any failure).
+- **B-112** — a params save takes the estimate's row lock first (concurrent first saves no longer
+  500 on the partial unique index); values carry `@Digits(4, 3)` (0.0004 was a 500); answers about
+  a line are dropped when its name or unit changes; `MaterialParamsControllerTest` covers the PUT
+  over HTTP (bounds, a foreign estimate → 404).
+- **B-113** — `GKL_SHEET` refuses a side outside 500-4000 mm on write (the open question is
+  resolved); the rest of B-113 had already landed with V146.
+
+## Tests touched by the new rules
+- `PaymentTransferIntegrationTest` seeds its stage refund by SQL (a row an older build could write).
+- `IdorMatrixIntegrationTest`'s cash body carries `materialRefund`.
+

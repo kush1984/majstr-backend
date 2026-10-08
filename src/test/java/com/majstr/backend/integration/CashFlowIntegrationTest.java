@@ -116,6 +116,33 @@ class CashFlowIntegrationTest extends IntegrationTestBase {
     }
 
     /**
+     * B-104: an omitted field keeps what is stored. A missing date used to become TODAY — moving a
+     * payment into a month the master was not looking at — and a missing category became null.
+     */
+    @Test
+    void anEditThatOmitsTheDateOrTheCategoryKeepsThem() {
+        LocalDate day = LocalDate.of(2026, 9, 12);
+        insertReceipt("6000.00", day, false);
+        CashFlowResponse.Entry payment = flow(day).entries().stream()
+                .filter(e -> e.kind() == CashEntryKind.OBJECT_PAYMENT).findFirst().orElseThrow();
+        CashFlowResponse.Entry own = cashService.create(ownerId, new CashEntryRequest(
+                CashDirection.EXPENSE, new BigDecimal("1200.00"), CashCategory.FUEL, "Дизель", day,
+                false, null), null);
+
+        cashService.update(ownerId, payment.id(), new CashEntryRequest(CashDirection.INCOME,
+                new BigDecimal("6500.00"), null, "Друга частина", null, false, CashEntryKind.OBJECT_PAYMENT));
+        cashService.update(ownerId, own.id(), new CashEntryRequest(CashDirection.EXPENSE,
+                new BigDecimal("1300.00"), null, "Дизель", null, false, CashEntryKind.PERSONAL));
+
+        assertThat(jdbc.queryForObject("SELECT received_at FROM payment_receipt WHERE project_id = ?",
+                LocalDate.class, projectId)).isEqualTo(day);
+        assertThat(jdbc.queryForObject("SELECT category FROM cash_entry WHERE id = ?", String.class,
+                own.id())).isEqualTo("FUEL");
+        assertThat(jdbc.queryForObject("SELECT happened_on FROM cash_entry WHERE id = ?", LocalDate.class,
+                own.id())).isEqualTo(day);
+    }
+
+    /**
      * An object's row is edited and deleted from HERE (master's ruling: «з можливістю видаляти рядки
      * чи едітати»). It is a second DOOR to one record, never a second copy — the write lands in the
      * object's own table, so its economy moves with it.

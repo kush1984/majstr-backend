@@ -29,6 +29,8 @@ final class MaterialPrefs {
 
     /** «1200x2500», «1200×2500», «1200*2500» — two positive integers and a separator. */
     private static final Pattern SHEET = Pattern.compile("^\\d{1,5}\\s*[x×*]\\s*\\d{1,5}$");
+    static final int MIN_SHEET_SIDE_MM = 500;
+    static final int MAX_SHEET_SIDE_MM = 4000;
 
     private MaterialPrefs() {
     }
@@ -44,6 +46,16 @@ final class MaterialPrefs {
             String sheet = raw.toLowerCase(Locale.ROOT).replace(" ", "").replace('×', 'x').replace('*', 'x');
             if (!SHEET.matcher(raw.toLowerCase(Locale.ROOT)).matches()) {
                 throw invalid();
+            }
+            // Each side within what a board can be (review B-113): «10x10» passed the shape check
+            // and divided every drywall estimate's sheet count by thousands. 500-4000 mm covers the
+            // 600-wide boards through 1200×3000 and the rare 4-metre sheet. Write path only — a value
+            // already stored is read as it is.
+            for (String side : sheet.split("x")) {
+                int mm = Integer.parseInt(side);
+                if (mm < MIN_SHEET_SIDE_MM || mm > MAX_SHEET_SIDE_MM) {
+                    throw invalid();
+                }
             }
             return sheet;
         }

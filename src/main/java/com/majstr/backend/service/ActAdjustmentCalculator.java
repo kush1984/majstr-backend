@@ -158,7 +158,7 @@ class ActAdjustmentCalculator {
      * {@link EstimateMath}'s pass, run over the CLOSED share instead of the whole estimate. One
      * amount per type, works before materials as the summary card splits them.
      */
-    private static Map<ItemType, BigDecimal> adjustmentsPerType(
+    static Map<ItemType, BigDecimal> adjustmentsPerType(
             List<EstimateItem> items, Map<UUID, BigDecimal> closedByItem) {
         // 1. Ordinary lines — and their type subtotals, which both fallbacks below measure.
         Map<ItemType, BigDecimal> ordinaryBase = new HashMap<>();

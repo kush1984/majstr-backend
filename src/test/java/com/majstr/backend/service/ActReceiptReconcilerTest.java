@@ -196,6 +196,7 @@ class ActReceiptReconcilerTest {
 
     private void onTheObject(ProjectReceipt... rows) {
         when(projectReceipts.findIdentifiedByProjectId(PROJECT)).thenReturn(List.of(rows));
+        when(projectReceipts.findIdentifiedByProjectIdForUpdate(PROJECT)).thenReturn(List.of(rows));
     }
 
     private static WorkActReceipt actReceipt(String fiscalId, String amount, String returned) {

@@ -38,9 +38,10 @@ public record EstimateItemsMarkupRequest(
          */
         @NotNull Boolean discount
 ) {
-    @jakarta.validation.constraints.AssertTrue(message = "a discount cannot exceed 100%")
+    /** Strictly below 100 % (review B-106): 100 % floored every price at 0,01 ₴. */
+    @jakarta.validation.constraints.AssertTrue(message = "a discount must be below 100%")
     public boolean isDirectionWithinBounds() {
         // A null `discount` is the @NotNull's 400 to report; unboxing it here threw HV000090 → 500 (B-100).
-        return !Boolean.TRUE.equals(discount) || percent == null || percent.compareTo(new BigDecimal("100")) <= 0;
+        return !Boolean.TRUE.equals(discount) || percent == null || percent.compareTo(new BigDecimal("100")) < 0;
     }
 }

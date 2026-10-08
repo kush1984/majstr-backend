@@ -1015,6 +1015,9 @@ public class EstimateService {
         // being read as 500 % (review B-71). The crew figure for the new shape is unknown, so the
         // line becomes unpriced — which contributes zero margin and is named by `unpricedCount`.
         boolean percentBoundaryCrossed = (item.getUnit() == Unit.PERCENT) != (req.unit() == Unit.PERCENT);
+        if (item.getUnit() != req.unit() || !item.getName().equals(req.name().trim())) {
+            materialParamService.clearForItem(item.getId()); // another line now (review B-112)
+        }
         item.setType(req.type());
         item.setName(req.name().trim());
         item.setCategory(CatalogService.normalizeCategory(req.category()));
@@ -1586,7 +1589,7 @@ public class EstimateService {
      */
     private CrewMarginResponse crewMargin(Estimate estimate, List<EstimateItem> items) {
         CrewMarginResponse margin =
-                CrewMarginCalculator.of(estimate, items, BigDecimal.ZERO, BigDecimal.ZERO);
+                CrewMarginCalculator.of(estimate, items, BigDecimal.ZERO, Map.of());
         // The plan check is asked only when there IS a figure, so an ordinary estimate — almost
         // every response this method serves — neither loads the owner nor pays for the lookup.
         if (margin == null
@@ -1596,9 +1599,24 @@ public class EstimateService {
         if (estimate.getStatus() != EstimateStatus.SIGNED) {
             return margin;
         }
+        if (!estimate.isCountInEconomy()) {
+            // Superseded (or excluded): it is no longer the deal, and the economy panel already
+            // shows nothing for it — the editor showing a margin the object will never earn
+            // disagreed with it (review B-106).
+            return null;
+        }
         return CrewMarginCalculator.of(estimate, items,
                 workActItemRepository.sumSignedActMargin(estimate.getId()),
-                workActItemRepository.sumSignedActAdjustments(estimate.getId()));
+                signedBilledByItem(estimate.getProject().getId()));
+    }
+
+    /** Σ SIGNED-act money per estimate line for a project — what the crew margin prorates over. */
+    private Map<UUID, BigDecimal> signedBilledByItem(UUID projectId) {
+        Map<UUID, BigDecimal> byItem = new HashMap<>();
+        for (Object[] row : workActItemRepository.sumSignedLineTotalsByEstimateItem(projectId)) {
+            byItem.put((UUID) row[0], (BigDecimal) row[1]);
+        }
+        return byItem;
     }
 
     /** Σ SIGNED-act quantity per estimate line for a project, keyed by {@code estimate_item_id}. */

@@ -89,7 +89,7 @@ class PublicEstimateServiceTest {
         publicService = new PublicEstimateService(shareLinkRepository, projectShareLinkRepository,
                 projectPaymentRepository, paymentReceiptRepository, estimateRepository, itemRepository,
                 messageRepository, estimateService, projectPhotoService, featureGuard, pushService,
-                workActItemRepository, refundCalculator, messages);
+                workActItemRepository, refundCalculator, messages, new AfterCommit());
     }
 
     @Test

@@ -2,6 +2,7 @@ package com.majstr.backend.dto;
 
 import jakarta.validation.constraints.DecimalMax;
 import jakarta.validation.constraints.DecimalMin;
+import jakarta.validation.constraints.Digits;
 import jakarta.validation.constraints.NotNull;
 
 import java.math.BigDecimal;
@@ -29,7 +30,9 @@ import java.util.UUID;
  * request is the ordinary way that happens.</p>
  */
 public record MaterialParamsRequest(
-        @DecimalMin("0") @DecimalMax("1000") BigDecimal perimeter,
-        Map<UUID, @NotNull @DecimalMin("0") @DecimalMax("5") BigDecimal> sections,
-        Map<UUID, @NotNull @DecimalMin("0") @DecimalMax("150") BigDecimal> thicknesses
+        // @Digits(4, 3) is the column's own numeric(12,3) precision seen from here (review B-112):
+        // 0.0004 rounded to 0 there and failed `CHECK (value > 0)` as a 500.
+        @DecimalMin("0") @DecimalMax("1000") @Digits(integer = 4, fraction = 3) BigDecimal perimeter,
+        Map<UUID, @NotNull @DecimalMin("0") @DecimalMax("5") @Digits(integer = 4, fraction = 3) BigDecimal> sections,
+        Map<UUID, @NotNull @DecimalMin("0") @DecimalMax("150") @Digits(integer = 4, fraction = 3) BigDecimal> thicknesses
 ) {}

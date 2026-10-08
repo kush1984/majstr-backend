@@ -230,6 +230,7 @@ public class PaymentService {
             }
         }
 
+        requireNoRefundOnStage(req.materialRefund(), req.planPaymentId() != null);
         if (req.planPaymentId() == null) {
             String label = requireLabel(req.label());
             validateUnplannedLabel(objectId, label);
@@ -302,6 +303,7 @@ public class PaymentService {
             validateUnplannedLabel(objectId, label);
             receipt.setLabel(label);
         }
+        requireNoRefundOnStage(Boolean.TRUE.equals(req.materialRefund()), receipt.getPlanPayment() != null);
         receipt.setAmount(req.amount());
         receipt.setReceivedAt(req.receivedAt());
         // null = leave it alone: the object economy's edit sheet never asks about a material
@@ -310,6 +312,18 @@ public class PaymentService {
             receipt.setMaterialRefund(req.materialRefund());
         }
         return PaymentReceiptResponse.from(receipt);
+    }
+
+    /**
+     * A material refund is never a payment for a planned stage (review B-102, owner ruling: refuse).
+     * A stage is a share of the WORK; counted against it, 2 000 paid back for tiles closed a 6 800
+     * stage with 2 000 of work still owed and no open stage left — and the app, which leaves refunds
+     * out of its own optimistic figure, disagreed with the server about it.
+     */
+    private static void requireNoRefundOnStage(boolean materialRefund, boolean onStage) {
+        if (materialRefund && onStage) {
+            throw new PaymentValidationException("error.payment.refund-on-stage");
+        }
     }
 
     /** Idempotent: deleting an already-gone receipt is a no-op. The stage it closed recomputes

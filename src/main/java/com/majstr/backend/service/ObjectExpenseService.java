@@ -243,12 +243,16 @@ public class ObjectExpenseService {
                 .findByEstimateIdInOrderBySortOrderAscIdAsc(copies.stream().map(Estimate::getId).toList())
                 .stream()
                 .collect(Collectors.groupingBy(i -> i.getEstimate().getId()));
+        Map<UUID, BigDecimal> billedByItem = new java.util.HashMap<>();
+        for (Object[] row : workActItemRepository.sumSignedLineTotalsByEstimateItem(objectId)) {
+            billedByItem.put((UUID) row[0], (BigDecimal) row[1]);
+        }
         Map<UUID, CrewMarginResponse> byEstimate = new LinkedHashMap<>();
         for (Estimate copy : copies) {
             CrewMarginResponse margin = CrewMarginCalculator.of(copy,
                     itemsByEstimate.getOrDefault(copy.getId(), List.of()),
                     workActItemRepository.sumSignedActMargin(copy.getId()),
-                    workActItemRepository.sumSignedActAdjustments(copy.getId()));
+                    billedByItem);
             if (margin != null) {
                 byEstimate.put(copy.getId(), margin);
             }

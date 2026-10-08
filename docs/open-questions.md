@@ -416,8 +416,21 @@ one-line summary — keep the item in the file as a record.
 - **Notes / options:** the cheap version is an upsert; the consistent-with-the-codebase version is
   the insert-then-recover pattern V144 established. Needs no migration either way.
 
-### `GKL_SHEET` is the one habit with no bounds
+### «Це той самий чек?» for a paper with no QR (B-85 photo half)
 - **Status:** OPEN
+- **Since:** review round 4 §2, B-97 (2026-10-08)
+- **Context:** the duplicate warning between an object receipt and an act receipt rests on the printed
+  fiscal identity (V134, `ReceiptIdentityIndex`). A till slip with no readable QR — a handwritten
+  invoice, a faded slip — has no identity, so the same paper filed on both sides is billed in «За
+  договором» and still sits in «клієнт відшкодовує», with nothing on either screen saying so.
+- **Notes / options:** a photo-only match (perceptual hash, or the same amount + date + shop) can only
+  ever be a WARNING the master answers, never an automatic settlement — the identity rule exists
+  precisely because guessing from an amount cost money (B-21).
+
+### `GKL_SHEET` is the one habit with no bounds
+- **Status:** RESOLVED (2026-10-08) — `MaterialPrefs` refuses a sheet side outside 500-4000 mm on
+  WRITE (review round 4, B-113); a value already stored is still read as it is, so no answer the
+  master has seen changes. See [iteration-money-audit-4.md](iteration-money-audit-4.md).
 - **Since:** review round 4 §4 (2026-10-06)
 - **Context:** `MaterialPrefs` is the single definition of what a stored habit may say, and it
   canonicalises and bounds every key — coverage 3-20 m²/l, joint width, coats, waste. `GKL_SHEET` is

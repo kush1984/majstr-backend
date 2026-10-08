@@ -1511,7 +1511,12 @@ class WorkActIntegrationTest extends IntegrationTestBase {
         receiptService.update(act.id(), onTheAct.id(), owner.getId(),
                 new com.majstr.backend.dto.WorkActReceiptRequest("Цвяхи", new BigDecimal("2000.00"),
                         null, null, "4000123456", "77"));
-        workActRepository.findById(act.id()).orElseThrow().setReceiptsToExpenses(false);
+        // Through the service (review B-96): flipping the flag on a detached entity wrote nothing,
+        // the act kept `true`, and the assertions below held either way.
+        workActService.updateHeader(act.id(), new com.majstr.backend.dto.WorkActUpdateRequest(
+                WorkActKind.INTERIM, null, LocalDate.now(), LocalDate.now().minusDays(7), LocalDate.now(),
+                null, null, null, null, null, false, null, null), owner.getId());
+        assertThat(workActRepository.findById(act.id()).orElseThrow().isReceiptsToExpenses()).isFalse();
 
         workActService.signOffline(act.id(), new WorkActSignOfflineRequest("Клієнт"), owner.getId());
 

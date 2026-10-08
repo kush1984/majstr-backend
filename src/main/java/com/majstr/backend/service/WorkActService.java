@@ -275,6 +275,13 @@ public class WorkActService {
         // about to sign, not only afterwards.
         items.addAll(adjustmentCalculator.adjustmentsFor(act, items, sort));
         itemRepository.saveAll(items);
+        if (act.getStatus() == WorkActStatus.SENT) {
+            // The portal signature skips the advance guard by design, so a SENT act shrunk under
+            // its advance must be refused HERE (review B-93: 20 000 cut to 10 000 under a 15 000
+            // advance, and the client signed «До сплати 0»).
+            itemRepository.flush();
+            advanceGuard.requireAdvanceWithinAct(act);
+        }
         return responseFactory.build(act);
     }
 

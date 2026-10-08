@@ -6,6 +6,7 @@ import com.majstr.backend.exception.ProjectHasSignedMoneyException;
 import com.majstr.backend.repository.EstimateRepository;
 import com.majstr.backend.repository.ObjectExpenseRepository;
 import com.majstr.backend.repository.PaymentReceiptRepository;
+import com.majstr.backend.repository.ProjectReceiptRepository;
 import com.majstr.backend.repository.WorkActRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
@@ -31,9 +32,10 @@ import java.util.UUID;
  *
  * <p>What counts as «money» is deliberately the set whose loss would move a figure the master has
  * already read: a SIGNED estimate, a SIGNED act, any {@code payment_receipt}, any
- * {@code object_expenses} row. A reimbursable {@code project_receipt} is NOT in the set — it writes
- * no expense by design (V129), so it changes no month; an own-cost one is in the set through the
- * {@code ObjectExpense} it posts, which is the same row «Мої гроші» reads.</p>
+ * {@code object_expenses} row, and any {@code project_receipt} worth money. The last was missing
+ * until review B-101: a reimbursable till receipt writes no expense (V129), but «Мої гроші» has
+ * counted it as an outlay since B-33, so deleting the object moved last month's «Заробив» by the
+ * receipt.</p>
  */
 @Component
 @RequiredArgsConstructor
@@ -43,6 +45,7 @@ class ProjectDeleteGuard {
     private final WorkActRepository workActRepository;
     private final PaymentReceiptRepository paymentReceiptRepository;
     private final ObjectExpenseRepository objectExpenseRepository;
+    private final ProjectReceiptRepository projectReceiptRepository;
 
     /** Refuses when deleting the object would take a signature or recorded money with it. */
     void requireNoSignedMoney(UUID projectId) {
@@ -50,7 +53,8 @@ class ProjectDeleteGuard {
                 || workActRepository.existsByProjectIdAndStatusIn(
                         projectId, java.util.List.of(WorkActStatus.SIGNED))
                 || paymentReceiptRepository.existsByProjectId(projectId)
-                || objectExpenseRepository.existsByObjectId(projectId)) {
+                || objectExpenseRepository.existsByObjectId(projectId)
+                || projectReceiptRepository.existsByProjectIdAndAmountGreaterThan(projectId, java.math.BigDecimal.ZERO)) {
             throw new ProjectHasSignedMoneyException();
         }
     }

@@ -52,6 +52,7 @@ class WorkActReceiptGuardsTest {
     @Mock private ReceiptIdentityIndex identityIndex;
     @Mock private WorkActReceiptCreator creator;
     @Mock private StorageCleanup cleanup;
+    @Mock private ActAdvanceGuard advanceGuard;
 
     @InjectMocks private WorkActReceiptService service;
 

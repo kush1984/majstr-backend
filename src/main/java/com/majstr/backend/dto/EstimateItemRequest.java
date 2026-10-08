@@ -116,12 +116,16 @@ public record EstimateItemRequest(
      * <p>A «%» line is excluded: its amount is derived from a base this request cannot see, and the
      * bound belongs on the lines the base is made of.</p>
      */
-    @AssertTrue(message = "quantity × unitPrice must not exceed 9 999 999 999 999.99")
+    @AssertTrue(message = "quantity × unitPrice must not exceed 999 999 999 999.99")
     public boolean isAmountWithinRange() {
         if (quantity == null || unitPrice == null || unit == Unit.PERCENT) {
             return true;
         }
-        return quantity.multiply(unitPrice).abs()
-                .compareTo(new BigDecimal("9999999999999.99")) <= 0;
+        // 999 999 999 999.99, not 9 999 999 999 999.99 (review B-97): HryvniaInWords spells up to
+        // milliards, and 1 000 000 000 000.00 printed «гривень 00 копійок» under the figure.
+        return quantity.multiply(unitPrice).abs().compareTo(MAX_LINE_AMOUNT) <= 0;
     }
+
+    /** The largest single line the PDF can still put into words. */
+    public static final BigDecimal MAX_LINE_AMOUNT = new BigDecimal("999999999999.99");
 }

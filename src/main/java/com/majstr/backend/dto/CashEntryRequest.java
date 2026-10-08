@@ -54,7 +54,10 @@ public record CashEntryRequest(
         @Size(max = 500) String note,
         /** Absent = today, resolved in Europe/Kyiv (never the server's UTC idea of today). */
         LocalDate happenedOn,
-        boolean materialRefund,
+        // A wrapper, required (review B-104): as a primitive, an omitted field read as «false» and an
+        // edit silently un-ticked a refund — which moves the object's «Залишилось» (B-65). A boolean
+        // that reverses where money lands is never defaulted by omission.
+        @NotNull Boolean materialRefund,
         CashEntryKind kind
 ) {
     /**

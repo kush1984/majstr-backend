@@ -471,6 +471,21 @@ class PaymentServiceTest {
         verify(receiptRepository, never()).save(any(PaymentReceipt.class));
     }
 
+    /** B-102: a material refund pays for no work, so it never closes a planned stage. */
+    @Test
+    void addReceipt_aMaterialRefundOnAStage_isRefused() {
+        UUID stageId = UUID.randomUUID();
+        user(ownerId, Plan.PRO);
+        given(projectService.loadOwned(objectId, ownerId)).willReturn(object());
+
+        assertThatThrownBy(() -> service().addReceipt(objectId, ownerId,
+                new PaymentReceiptRequest(stageId, null, new BigDecimal("2000.00"), LocalDate.now(), null, true), null))
+                .isInstanceOf(PaymentValidationException.class)
+                .hasMessage("error.payment.refund-on-stage");
+
+        verify(receiptRepository, never()).save(any(PaymentReceipt.class));
+    }
+
     @Test
     void addReceipt_overflow_RESERVE_postsFullAmountAgainstTheSameStage_planUnchanged() {
         UUID stageId = UUID.randomUUID();

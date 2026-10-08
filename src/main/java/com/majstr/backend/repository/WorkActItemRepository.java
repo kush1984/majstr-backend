@@ -176,26 +176,6 @@ public interface WorkActItemRepository extends JpaRepository<WorkActItem, UUID> 
             """, nativeQuery = true)
     BigDecimal sumSignedActMargin(@Param("estimateId") UUID estimateId);
 
-    /**
-     * Σ of the ADJUSTMENT lines SIGNED acts carry for one estimate — the share of its «%» lines
-     * the acts have already taken across (review B-72).
-     *
-     * <p>An act can never carry a «%» line itself (B-57), so an estimate's discounts and surcharges
-     * reach it as one server-authored ADJUSTMENT line per type, prorated by what that act closes
-     * (B-55, {@link com.majstr.backend.service.ActAdjustmentCalculator}). The crew margin needs it
-     * for the same reason «Прийнято актами» does: without it, «з прийнятого актами» summed the GROSS
-     * prices and reported 4 000 ₴ of accepted margin on a sheet whose whole margin is 1 600.</p>
-     */
-    @Query(value = """
-            SELECT COALESCE(SUM(wai.line_total), 0)
-            FROM work_act_item wai
-            JOIN work_act wa ON wa.id = wai.work_act_id
-            WHERE wa.status = 'SIGNED'
-              AND wai.line_kind = 'ADJUSTMENT'
-              AND wai.estimate_id = :estimateId
-            """, nativeQuery = true)
-    BigDecimal sumSignedActAdjustments(@Param("estimateId") UUID estimateId);
-
     /** One act's own billed total — every line it carries, ADJUSTMENT rows included (they are part
      *  of what this act bills). Feeds {@link com.majstr.backend.service.ActAdvanceGuard}. */
     @Query("SELECT COALESCE(SUM(i.lineTotal), 0) FROM WorkActItem i WHERE i.workAct.id = :actId")

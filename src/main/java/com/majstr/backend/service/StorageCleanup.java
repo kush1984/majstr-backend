@@ -60,6 +60,29 @@ public class StorageCleanup {
         });
     }
 
+    /**
+     * Delete a just-stored object if the current transaction ROLLS BACK (review B-111).
+     *
+     * <p>The add paths used to catch a failing row save and call {@link #afterCommit} — inside a
+     * transaction that was about to roll back, so the after-commit hook never ran and the blob
+     * leaked. A failure at COMMIT time (a constraint checked on flush) skipped the catch entirely.
+     * Registered right after the store, this fires for both. Outside a transaction it does nothing:
+     * such a caller deletes the key itself on failure.</p>
+     */
+    public void onRollback(String key) {
+        if (key == null || key.isBlank() || !TransactionSynchronizationManager.isSynchronizationActive()) {
+            return;
+        }
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCompletion(int status) {
+                if (status == STATUS_ROLLED_BACK) {
+                    deleteQuietly(key);
+                }
+            }
+        });
+    }
+
     private void deleteQuietly(String key) {
         try {
             storage.delete(key);

@@ -89,6 +89,7 @@ public class PublicEstimateService {
     private final WorkActItemRepository workActItemRepository;
     private final MaterialRefundCalculator refundCalculator;
     private final MessageSource messages;
+    private final AfterCommit afterCommit;
 
     /**
      * The SIGNED estimate this one replaces, or {@code null} when nothing is superseded — and a 409
@@ -460,7 +461,10 @@ public class PublicEstimateService {
         String title = messages.getMessage("push.estimate-signed",
                 new Object[]{req.clientName().trim(), formatHryvnia(totals.total())},
                 LocalizationConfig.UKRAINIAN);
-        pushService.sendToUser(contractor, title, pushBody(estimate), "/projects/" + project.getId());
+        String body = pushBody(estimate);
+        // After the commit (review B-96): sent from inside the transaction, a signature that then
+        // rolled back still told the master «підписано» — the act sign learned this in B-81.
+        afterCommit.run(() -> pushService.sendToUser(contractor, title, body, "/projects/" + project.getId()));
     }
 
     /**

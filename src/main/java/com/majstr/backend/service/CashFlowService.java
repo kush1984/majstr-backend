@@ -166,8 +166,10 @@ public class CashFlowService {
      */
     @Transactional(readOnly = true)
     public CashSummaryResponse summary(UUID ownerId) {
-        LocalDate from = startOfMonth();
-        LocalDate to = endOfMonth();
+        // One clock read (review B-106), as `flow` does: two could straddle midnight on the 1st.
+        LocalDate today = today();
+        LocalDate from = today.withDayOfMonth(1);
+        LocalDate to = today.withDayOfMonth(today.lengthOfMonth());
         CashFlowResponse month = flow(ownerId, from, to, true);
         boolean any = month.income().signum() != 0 || month.expense().signum() != 0;
         return new CashSummaryResponse(from, to, month.income(), month.expense(), month.earned(), any);
@@ -207,7 +209,7 @@ public class CashFlowService {
                 .note(trimToNull(req.note()))
                 .happenedOn(day)
                 .happenedAt(Instant.now())
-                .materialRefund(req.direction() == CashDirection.INCOME && req.materialRefund())
+                .materialRefund(req.direction() == CashDirection.INCOME && Boolean.TRUE.equals(req.materialRefund()))
                 .build();
         return toEntry(cashRepository.save(entry));
     }
@@ -228,12 +230,14 @@ public class CashFlowService {
      */
     @Transactional
     public CashFlowResponse.Entry update(UUID ownerId, UUID id, CashEntryRequest req) {
-        LocalDate day = req.happenedOn() != null ? req.happenedOn() : today();
+        // An omitted date LEAVES THE STORED ONE on every kind (review B-104) — it used to become
+        // today, moving a payment or a till receipt into a month the master was not looking at.
         BigDecimal amount = req.amount().setScale(MONEY_SCALE, ROUNDING);
         return switch (kindOf(req)) {
             case OBJECT_PAYMENT -> {
                 PaymentReceipt receipt = ownedReceipt(ownerId, id);
                 UUID projectId = receipt.getProject().getId();
+                LocalDate day = req.happenedOn() != null ? req.happenedOn() : receipt.getReceivedAt();
                 paymentService.editReceipt(projectId, id, ownerId, new PaymentReceiptEditRequest(
                         amount, day, trimToNull(req.note()), req.materialRefund()));
                 yield fromReceipt(ownedReceipt(ownerId, id));
@@ -260,6 +264,7 @@ public class CashFlowService {
                 // receipts screen, in front of the photo. A month's feed must not flip it in
                 // passing, least of all by omission.
                 String note = trimToNull(req.note());
+                LocalDate day = req.happenedOn() != null ? req.happenedOn() : receipt.getIssuedAt();
                 projectReceiptService.update(receipt.getProjectId(), id, ownerId,
                         new ProjectReceiptRequest(note != null ? note : receipt.getLabel(),
                                 amount, day, null, null, null));
@@ -274,14 +279,16 @@ public class CashFlowService {
                 CashEntry entry = load(ownerId, id);
                 entry.setDirection(req.direction());
                 entry.setAmount(amount);
-                entry.setCategory(req.category());
+                if (req.category() != null) {
+                    entry.setCategory(req.category()); // omitted = keep (review B-104), never null
+                }
                 entry.setNote(trimToNull(req.note()));
                 if (req.happenedOn() != null) {
                     // The TIME stays where it was: it says «коли я це вписав», and re-stamping it on
                     // every correction would silently reshuffle a day's order under the master.
                     entry.setHappenedOn(req.happenedOn());
                 }
-                entry.setMaterialRefund(req.direction() == CashDirection.INCOME && req.materialRefund());
+                entry.setMaterialRefund(req.direction() == CashDirection.INCOME && Boolean.TRUE.equals(req.materialRefund()));
                 yield toEntry(entry);
             }
         };
@@ -562,15 +569,6 @@ public class CashFlowService {
     /** Today, and every period bound below it, in the master's own timezone — never the server's. */
     private static LocalDate today() {
         return LocalDate.now(LocalizationConfig.ZONE);
-    }
-
-    private static LocalDate startOfMonth() {
-        return today().withDayOfMonth(1);
-    }
-
-    private static LocalDate endOfMonth() {
-        LocalDate now = today();
-        return now.withDayOfMonth(now.lengthOfMonth());
     }
 
     private static String trimToNull(String value) {

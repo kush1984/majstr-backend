@@ -57,6 +57,7 @@ public class MaterialParamService {
      */
     @Transactional
     public StoredMaterialParams save(UUID estimateId, MaterialParamsRequest req) {
+        repository.lockEstimate(estimateId); // concurrent first saves: one inserts, one updates (B-112)
         Map<Key, EstimateMaterialParam> byKey = repository.findByEstimateId(estimateId).stream()
                 .collect(Collectors.toMap(Key::of, p -> p, (a, b) -> a, HashMap::new));
         List<EstimateMaterialParam> save = new ArrayList<>();
@@ -77,6 +78,16 @@ public class MaterialParamService {
         // byKey IS the result: it started as everything stored, gained each fresh row and lost every
         // cleared one — so the answer costs no second read.
         return read(new ArrayList<>(byKey.values()));
+    }
+
+    /**
+     * Forget what was answered about a line that is no longer the same line (review B-112): renamed,
+     * or measured in another unit, it is a different question — a 25 mm plaster answer must not
+     * follow the line into «Шпаклювання стін» and buy putty for a 25 mm coat.
+     */
+    @Transactional
+    public void clearForItem(UUID estimateItemId) {
+        repository.deleteByEstimateItemId(estimateItemId);
     }
 
     /**

@@ -143,7 +143,9 @@ class IdorMatrixIntegrationTest extends IntegrationTestBase {
             + "\"unit\":\"PIECE\",\"quantity\":1,\"unitPrice\":50}]}";
     private static final String B_CATALOG_ITEM =
             "{\"name\":\"Позиція каталогу\",\"type\":\"WORK\",\"unit\":\"M2\",\"defaultPrice\":150}";
-    private static final String B_CASH = "{\"amount\":500,\"direction\":\"INCOME\"}";
+    // `materialRefund` is a required wrapper since review B-104 — without it the PATCH is a 400 and
+    // never reaches the ownership check.
+    private static final String B_CASH = "{\"amount\":500,\"direction\":\"INCOME\",\"materialRefund\":false}";
     // `rooms[].items` is @NotEmpty, so an empty array answers 400 and the case proves nothing
     // about ownership.
     private static final String B_ROOMS_COMMIT =

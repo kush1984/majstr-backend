@@ -96,7 +96,7 @@ class ActReceiptReconciler {
         }
         UUID projectId = act.getProject().getId();
         List<ProjectReceipt> settled = new ArrayList<>();
-        for (ProjectReceipt r : projectReceipts.findIdentifiedByProjectId(projectId)) {
+        for (ProjectReceipt r : projectReceipts.findIdentifiedByProjectIdForUpdate(projectId)) {
             if (r.getBilledOnActId() != null || !keys.contains(keyOf(r.getFiscalFn(), r.getFiscalId()))) {
                 continue; // already billed on an earlier act, or a different paper
             }

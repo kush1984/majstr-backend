@@ -101,6 +101,12 @@ public class GlobalExceptionHandler {
      *  ({@link EmailAlreadyExistsException}) and the fallback constraint catch below. */
     private static final String EMAIL_UNIQUE_CONSTRAINT = "users_email_unique";
     private static final String CATALOG_UNIQUE_INDEX = "ux_catalog_items_owner_name_type_unit";
+    /** {index, message key, code} — the act invariants V144 put into the schema. */
+    private static final String[][] ACT_UNIQUE_INDEXES = {
+            {"ux_work_act_one_open_per_project", "error.work-act.open-exists", "WORK_ACT_OPEN"},
+            {"ux_work_act_one_signed_final_per_project", "error.work-act.final-signed", "WORK_ACT_FINAL_EXISTS"},
+            {"ux_work_act_addendum_estimate", "error.work-act.addendum-taken", "WORK_ACT_ADDENDUM_TAKEN"},
+    };
 
     @ExceptionHandler(EmailAlreadyExistsException.class)
     public ResponseEntity<ErrorResponse> handleDupEmail(EmailAlreadyExistsException ex, HttpServletRequest req) {
@@ -143,6 +149,16 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ErrorResponse> handleDataIntegrity(DataIntegrityViolationException ex, HttpServletRequest req) {
         if (isEmailUniqueViolation(ex)) {
             return emailTaken(req);
+        }
+        // V144's three act invariants, hit by a race the service checks lose (two tabs bringing two
+        // acts back to DRAFT at once): the database refuses, and that is a 409 the master can act on,
+        // not a 500 with a Sentry event (review B-95).
+        for (String[] actIndex : ACT_UNIQUE_INDEXES) {
+            if (isConstraintViolation(ex, actIndex[0])) {
+                ErrorResponse body = ErrorResponse.coded(HttpStatus.CONFLICT.value(),
+                        HttpStatus.CONFLICT.getReasonPhrase(), msg(actIndex[1]), req.getRequestURI(), actIndex[2]);
+                return ResponseEntity.status(HttpStatus.CONFLICT).body(body);
+            }
         }
         if (isConstraintViolation(ex, CATALOG_UNIQUE_INDEX)) {
             // A catalog item with the same name+type+unit already exists — a friendly 409,

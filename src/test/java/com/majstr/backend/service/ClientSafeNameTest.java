@@ -19,6 +19,9 @@ class ClientSafeNameTest {
         assertThat(ClientSafeName.of("Санвузол -15%")).isEqualTo("Санвузол");
         assertThat(ClientSafeName.of("Санвузол −10,5 %")).isEqualTo("Санвузол"); // real minus sign
         assertThat(ClientSafeName.of("Кошторис (+5%)")).isEqualTo("Кошторис");
+        // B-98: not only at the very end, and not only once.
+        assertThat(ClientSafeName.of("Санвузол +20% (копія)")).isEqualTo("Санвузол (копія)");
+        assertThat(ClientSafeName.of("Санвузол +20% +5%")).isEqualTo("Санвузол");
     }
 
     @Test

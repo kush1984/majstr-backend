@@ -40,6 +40,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 class ProjectDeleteGuardIntegrationTest extends IntegrationTestBase {
 
     @Autowired ProjectService projectService;
+    @Autowired com.majstr.backend.repository.ProjectReceiptRepository projectReceiptRepository;
     @Autowired UserRepository userRepository;
     @Autowired ProjectRepository projectRepository;
     @Autowired EstimateRepository estimateRepository;
@@ -75,6 +76,20 @@ class ProjectDeleteGuardIntegrationTest extends IntegrationTestBase {
         assertThatThrownBy(() -> projectService.delete(p.getId(), owner.getId()))
                 .isInstanceOf(ProjectHasSignedMoneyException.class);
         assertThat(projectRepository.findById(p.getId())).isPresent();
+    }
+
+    @Test
+    void anObjectWithATillReceipt_isNotDeletable() {
+        // B-101. A reimbursable till receipt posts no expense, but «Мої гроші» counts it as an
+        // outlay — so deleting the object moved last month's «Заробив» by the receipt.
+        User owner = newOwner();
+        Project p = newProject(owner);
+        projectReceiptRepository.save(com.majstr.backend.entity.ProjectReceipt.builder()
+                .projectId(p.getId()).label("Епіцентр").amount(new BigDecimal("2000.00"))
+                .reimbursable(true).sortOrder(0).build());
+
+        assertThatThrownBy(() -> projectService.delete(p.getId(), owner.getId()))
+                .isInstanceOf(ProjectHasSignedMoneyException.class);
     }
 
     @Test

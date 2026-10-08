@@ -101,6 +101,7 @@ public class WorkActReceiptService {
     private final ReceiptIdentityIndex identityIndex;
     private final WorkActReceiptCreator creator;
     private final StorageCleanup cleanup;
+    private final ActAdvanceGuard advanceGuard;
 
     @Transactional(readOnly = true)
     public List<WorkActReceiptResponse> list(UUID actId, UUID ownerId) {
@@ -347,9 +348,23 @@ public class WorkActReceiptService {
         }
         // The identity arrives on THIS call, so this is the answer that can say «цей чек уже є в
         // обʼєкті» while the master is still holding the paper.
+        requireAdvanceStillCoveredIfSent(act);
         ReceiptIdentityIndex.Twins twins = identityIndex
                 .forProject(receipt.getWorkAct().getProject().getId(), List.of());
         return WorkActReceiptResponse.from(receipt, twins.forAct(receipt));
+    }
+
+    /**
+     * A SENT act is on the client's phone, and the portal signature deliberately skips the advance
+     * guard (an error only the master can fix must not land on the client's tap). So the doors that
+     * can still shrink a SENT act must refuse here instead: re-priced or removed receipts left a
+     * 15 000 advance on a 10 000 act, and the client signed «До сплати 0» (review B-93).
+     */
+    private void requireAdvanceStillCoveredIfSent(WorkAct act) {
+        if (act.getStatus() == WorkActStatus.SENT) {
+            receiptRepository.flush();
+            advanceGuard.requireAdvanceWithinAct(act);
+        }
     }
 
     @Transactional
@@ -359,6 +374,7 @@ public class WorkActReceiptService {
         WorkActService.touch(act);
         WorkActReceipt receipt = load(actId, receiptId);
         receiptRepository.delete(receipt);
+        requireAdvanceStillCoveredIfSent(act);
         // The paper goes AFTER the row, never before it (B-25): a rollback here used to leave the
         // receipt pointing at a photo we had already destroyed.
         cleanup.afterCommit(receipt.getStorageKey());

@@ -436,6 +436,36 @@ class CrewMarginIntegrationTest extends IntegrationTestBase {
     }
 
     /**
+     * B-99. One ratio for every «%» line (Σ adjustments ÷ Σ client %) mixed a POSITION percentage
+     * with an ESTIMATE-wide one. L1 and L2 are 100 m² each at crew 100 / client 120; +10 % follows
+     * L1 (priced, so the crew has its own), −10 % of the estimate was typed afterwards (unpriced,
+     * frozen at 0 on the crew side). An act closing L2 alone earned (120 − 100) × 100 = 2 000 on the
+     * line and carried L2's share of the discount, 12 000 / 25 200 × −2 520 = −1 200 — the master's
+     * own, so 800 accepted. The single ratio reported −109.09.
+     */
+    @Test
+    void aPartialActCarriesEachPercentageByTheLineItFollows() {
+        addWork("Стіни", "100", "100");
+        addWork("Стеля", "100", "100");
+        UUID l1 = estimateService.get(parentId, ownerId).items().stream()
+                .filter(i -> i.name().equals("Стіни")).findFirst().orElseThrow().id();
+        estimateService.addItem(parentId, new EstimateItemRequest(
+                ItemType.WORK, "Складність стін", null, Unit.PERCENT, new BigDecimal("10"), BigDecimal.ZERO,
+                null, null, false, PercentBaseKind.POSITION, l1), ownerId);
+        EstimateResponse copy = duplicateWith("20", false);
+        estimateService.addItem(copy.id(), new EstimateItemRequest(
+                ItemType.WORK, "Знижка", null, Unit.PERCENT, new BigDecimal("-10"), BigDecimal.ZERO,
+                null, null, false, PercentBaseKind.TOTAL, null), ownerId);
+        sign(copy.id());
+        UUID copyL2 = estimateService.get(copy.id(), ownerId).items().stream()
+                .filter(i -> i.name().equals("Стеля")).findFirst().orElseThrow().id();
+
+        actWith("SIGNED", copy.id(), copyL2, "100", "120");
+
+        assertThat(panelMarginOf(copy.id()).marginAccepted()).isEqualByComparingTo("800");
+    }
+
+    /**
      * B-71. {@code source_unit_price} means a PRICE on an ordinary line and a PERCENT on a «%» one.
      * Switching the unit left a 500 ₴/м² crew price being read as «500 %», which turned the crew
      * total into an invented number. Crossing that boundary makes the line unpriced instead.

@@ -45,10 +45,30 @@ public interface ProjectReceiptRepository extends JpaRepository<ProjectReceipt, 
             """)
     List<ProjectReceipt> findIdentifiedByProjectId(@Param("projectId") UUID projectId);
 
+    /**
+     * The same rows, locked FOR UPDATE — what the SIGN-time reconciler writes through (review B-97).
+     * {@code project_receipt} carries an optimistic {@code @Version}, so a master's PATCH landing in
+     * the same moment used to fail the CLIENT's signature with 409. Locked, a concurrent PATCH either
+     * commits first (and is read fresh here) or waits and loses its own version check — the
+     * signature never does.
+     */
+    @org.springframework.data.jpa.repository.Lock(jakarta.persistence.LockModeType.PESSIMISTIC_WRITE)
+    @Query("""
+            SELECT r FROM ProjectReceipt r
+            WHERE r.projectId = :projectId
+              AND r.fiscalFn IS NOT NULL AND TRIM(r.fiscalFn) <> ''
+              AND r.fiscalId IS NOT NULL AND TRIM(r.fiscalId) <> ''
+            ORDER BY r.createdAt ASC, r.sortOrder ASC
+            """)
+    List<ProjectReceipt> findIdentifiedByProjectIdForUpdate(@Param("projectId") UUID projectId);
+
     /** Does an object receipt own this {@code object_expenses} row? The BACK-LINK is the test, never
      *  {@code source = RECEIPT}: {@code ActAddendumCreator.postReceiptExpenses} posts MATERIALS
      *  /RECEIPT rows too, and those belong to nobody — they must stay editable in the journal. */
     boolean existsByExpenseId(UUID expenseId);
+
+    /** Any till receipt on the object worth money — what «Мої гроші» counts as an outlay (B-33). */
+    boolean existsByProjectIdAndAmountGreaterThan(UUID projectId, BigDecimal amount);
 
     long countByProjectId(UUID projectId);
 

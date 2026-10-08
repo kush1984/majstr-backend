@@ -44,11 +44,15 @@ public record EstimateDuplicateRequest(
         @NotNull Boolean discount,
         List<UUID> itemIds
 ) {
-    /** A discount over 100 % would produce zero or negative prices — reject it as a 400. */
-    @AssertTrue(message = "A discount cannot exceed 100%")
+    /**
+     * A discount of 100 % or more would produce zero or negative prices — reject it as a 400. Strictly
+     * below 100 (review B-106): exactly 100 % was let through and floored every price at 0,01 ₴, a
+     * sheet of one-kopeck lines nobody meant.
+     */
+    @AssertTrue(message = "A discount must be below 100%")
     public boolean isDiscountWithinRange() {
         // A null `discount` is the @NotNull's 400 to report; unboxing it here threw HV000090 → 500 (B-100).
         return !Boolean.TRUE.equals(discount) || markupPercent == null
-                || markupPercent.compareTo(new BigDecimal("100")) <= 0;
+                || markupPercent.compareTo(new BigDecimal("100")) < 0;
     }
 }

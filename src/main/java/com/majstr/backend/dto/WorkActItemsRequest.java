@@ -39,5 +39,18 @@ public record WorkActItemsRequest(
             // would silently shrink «Прийнято актами» and the signed PDF's totals.
             @NotNull @DecimalMin("0.00") @Digits(integer = 13, fraction = 2) BigDecimal unitPrice,
             @NotNull @DecimalMin("0.001") @Digits(integer = 12, fraction = 3) BigDecimal quantity
-    ) {}
+    ) {
+        /**
+         * Each factor is bounded and their product was not: 13 + 12 digits overflow
+         * {@code line_total NUMERIC(15,2)} into a 500 (review B-97). Capped where the estimate line
+         * is, so the PDF can still spell it.
+         */
+        @jakarta.validation.constraints.AssertTrue(message = "quantity × unitPrice must not exceed 999 999 999 999.99")
+        public boolean isAmountWithinRange() {
+            if (quantity == null || unitPrice == null) {
+                return true;
+            }
+            return quantity.multiply(unitPrice).compareTo(EstimateItemRequest.MAX_LINE_AMOUNT) <= 0;
+        }
+    }
 }

@@ -107,6 +107,23 @@ class ActMoneyGuardsIntegrationTest extends IntegrationTestBase {
         assertThat(saved.payable()).isEqualByComparingTo("500.00");
     }
 
+    /**
+     * B-93. The portal signature skips the advance guard on purpose, so the doors that can still
+     * shrink a SENT act must refuse: cut from 2 000 to 1 000 under a 1 500 advance, the client
+     * signed «До сплати 0».
+     */
+    @Test
+    void aSentActCannotBeShrunkUnderItsAdvance() {
+        WorkActResponse act = createAct();
+        setLine(act.id(), "20");          // 2 000 ₴
+        updateAdvance(act.id(), "1500.00");
+        jdbc.update("UPDATE work_act SET status = 'SENT', sent_at = now() WHERE id = ?", act.id());
+
+        assertThatThrownBy(() -> setLine(act.id(), "10"))   // 1 000 ₴ < 1 500
+                .isInstanceOf(WorkActValidationException.class)
+                .hasMessageContaining("advance-over-total");
+    }
+
     /** An omitted advance leaves the stored one alone — it used to clear it (B-78). */
     @Test
     void anOmittedAdvanceKeepsTheStoredOne() {

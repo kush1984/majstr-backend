@@ -277,7 +277,9 @@ public class PublicActPortalService {
         Map<UUID, String> names = new HashMap<>();
         items.stream().map(WorkActItem::getEstimateId).filter(Objects::nonNull).distinct().forEach(id ->
                 estimateRepository.findById(id).ifPresent(e ->
-                        names.put(id, e.getName() == null || e.getName().isBlank() ? "Кошторис" : e.getName().trim())));
+                        // The client reads these: a copy's stored «Санвузол +20%» told him the markup (B-98).
+                        names.put(id, e.getName() == null || e.getName().isBlank()
+                                ? "Кошторис" : ClientSafeName.of(e.getName().trim()))));
         return names;
     }
 

@@ -3,12 +3,16 @@ package com.majstr.backend.service;
 import com.majstr.backend.dto.CrewMarginResponse;
 import com.majstr.backend.entity.Estimate;
 import com.majstr.backend.entity.EstimateItem;
+import com.majstr.backend.entity.ItemType;
 import com.majstr.backend.entity.PercentBaseKind;
 import com.majstr.backend.entity.Unit;
 
 import java.math.BigDecimal;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.UUID;
 
 /**
  * «Скільки лишається мені понад бригаду» — the one figure a бригадир can be given honestly.
@@ -69,11 +73,12 @@ final class CrewMarginCalculator {
      * @param items         its lines, as loaded — never modified
      * @param acceptedLines margin already accepted by SIGNED acts on ORDINARY lines, computed by
      *                      the caller from the act lines (this class has no repository)
-     * @param acceptedAdjustments Σ of those acts' ADJUSTMENT lines for this estimate (B-55), i.e.
-     *                      the share of its percentages the acts have carried across
+     * @param closedByItem  what SIGNED acts have billed for each line of the object (the act-line
+     *                      money twin of the closed quantity), keyed by estimate item id — the base
+     *                      the acts' own adjustments were prorated over
      */
     static CrewMarginResponse of(Estimate estimate, List<EstimateItem> items,
-                                 BigDecimal acceptedLines, BigDecimal acceptedAdjustments) {
+                                 BigDecimal acceptedLines, Map<UUID, BigDecimal> closedByItem) {
         // Deliberately NOT gated on `duplicatedFromId`. That column is ON DELETE SET NULL, so a
         // master who tidied away the crew's original sheet would lose the figure computed from his
         // own copy's lines — which is the exact scenario V85 stores a per-LINE crew price for.
@@ -82,16 +87,13 @@ final class CrewMarginCalculator {
         if (estimate.getMarkupPercent() == null || estimate.getMarkupPercent().signum() <= 0) {
             return null;
         }
-        EstimateMath.Totals client = EstimateMath.recalculate(detach(items, false));
+        List<EstimateItem> clientLines = detach(items, false);
+        EstimateMath.Totals client = EstimateMath.recalculate(clientLines);
         Crew crew = crewView(items);
 
         BigDecimal unpricedTotal = BigDecimal.ZERO;
         int unpricedCount = 0;
-        BigDecimal clientPercentTotal = BigDecimal.ZERO;
         for (EstimateItem item : items) {
-            if (item.getUnit() == Unit.PERCENT) {
-                clientPercentTotal = clientPercentTotal.add(amountOf(item));
-            }
             if (item.getSourceUnitPrice() == null) {
                 unpricedCount++;
                 unpricedTotal = unpricedTotal.add(amountOf(item));
@@ -101,8 +103,7 @@ final class CrewMarginCalculator {
         return new CrewMarginResponse(
                 money(crew.total()),
                 money(margin),
-                money(accepted(acceptedLines, acceptedAdjustments,
-                        clientPercentTotal, crew.percentTotal())),
+                money(accepted(acceptedLines, clientLines, crew.lines(), closedByItem)),
                 unpricedCount,
                 money(unpricedTotal));
     }
@@ -118,20 +119,44 @@ final class CrewMarginCalculator {
      * it lands on the master — which is what makes this sum meet the margin to the kopeck when the
      * acts have closed everything.</p>
      */
-    private static BigDecimal accepted(BigDecimal acceptedLines, BigDecimal acceptedAdjustments,
-                                       BigDecimal clientPercentTotal, BigDecimal crewPercentTotal) {
+    private static BigDecimal accepted(BigDecimal acceptedLines, List<EstimateItem> clientLines,
+                                       List<EstimateItem> crewLines, Map<UUID, BigDecimal> closedByItem) {
         BigDecimal lines = acceptedLines == null ? BigDecimal.ZERO : acceptedLines;
-        BigDecimal adjustments = acceptedAdjustments == null ? BigDecimal.ZERO : acceptedAdjustments;
-        if (adjustments.signum() == 0 || clientPercentTotal.signum() == 0) {
+        if (closedByItem == null || closedByItem.isEmpty()) {
             return lines;
         }
-        BigDecimal percentMargin = clientPercentTotal.subtract(crewPercentTotal);
-        BigDecimal carried = adjustments.divide(clientPercentTotal, 10, EstimateMath.MONEY_ROUNDING);
-        return lines.add(percentMargin.multiply(carried));
+        // The SAME per-line proration the acts' own adjustments use (review B-99), run twice — over
+        // the client's sheet and over the crew's — with the crew's closed share of each line scaled
+        // from the client's. One ratio for every «%» line (Σ adjustments ÷ Σ client %) mixed a
+        // position percentage with an estimate-wide one: an act closing only the line a +10 %
+        // followed reported −109 ₴ of margin, one closing only the other reported more than the
+        // whole sheet's margin, and a +10 % and −10 % that cancel skipped the branch entirely.
+        Map<UUID, BigDecimal> crewClosed = new HashMap<>();
+        Map<UUID, BigDecimal> crewAmount = new HashMap<>();
+        for (EstimateItem crewLine : crewLines) {
+            crewAmount.put(crewLine.getId(), amountOf(crewLine));
+        }
+        for (EstimateItem clientLine : clientLines) {
+            BigDecimal closed = closedByItem.get(clientLine.getId());
+            BigDecimal clientAmount = amountOf(clientLine);
+            if (closed == null || clientLine.getUnit() == Unit.PERCENT || clientAmount.signum() == 0) {
+                continue;
+            }
+            BigDecimal share = closed.divide(clientAmount, 10, EstimateMath.MONEY_ROUNDING);
+            crewClosed.put(clientLine.getId(),
+                    crewAmount.getOrDefault(clientLine.getId(), BigDecimal.ZERO).multiply(share));
+        }
+        BigDecimal percentMargin = BigDecimal.ZERO;
+        Map<ItemType, BigDecimal> clientCarried = ActAdjustmentCalculator.adjustmentsPerType(clientLines, closedByItem);
+        Map<ItemType, BigDecimal> crewCarried = ActAdjustmentCalculator.adjustmentsPerType(crewLines, crewClosed);
+        for (Map.Entry<ItemType, BigDecimal> e : clientCarried.entrySet()) {
+            percentMargin = percentMargin.add(e.getValue().subtract(crewCarried.getOrDefault(e.getKey(), BigDecimal.ZERO)));
+        }
+        return lines.add(percentMargin);
     }
 
-    /** The crew's total, and what its «%» lines contributed to it. */
-    private record Crew(BigDecimal total, BigDecimal percentTotal) {}
+    /** The crew's total and its recalculated lines. */
+    private record Crew(BigDecimal total, List<EstimateItem> lines) {}
 
     /**
      * The crew's own view of the sheet: the same lines at the prices the crew charged, with every
@@ -140,13 +165,7 @@ final class CrewMarginCalculator {
     private static Crew crewView(List<EstimateItem> items) {
         List<EstimateItem> lines = detach(items, true);
         EstimateMath.Totals totals = EstimateMath.recalculate(lines);
-        BigDecimal percentTotal = BigDecimal.ZERO;
-        for (EstimateItem line : lines) {
-            if (line.getUnit() == Unit.PERCENT) {
-                percentTotal = percentTotal.add(amountOf(line));
-            }
-        }
-        return new Crew(totals.total(), percentTotal);
+        return new Crew(totals.total(), lines);
     }
 
     /**

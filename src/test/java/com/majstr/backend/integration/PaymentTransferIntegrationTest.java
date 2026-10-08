@@ -38,6 +38,7 @@ class PaymentTransferIntegrationTest extends IntegrationTestBase {
     private static final LocalDate AUG_28 = LocalDate.of(2026, 8, 28);
 
     @Autowired PaymentService paymentService;
+    @Autowired org.springframework.jdbc.core.JdbcTemplate jdbc;
     @Autowired UserRepository userRepository;
     @Autowired ProjectRepository projectRepository;
     @Autowired PaymentReceiptRepository receiptRepository;
@@ -104,9 +105,13 @@ class PaymentTransferIntegrationTest extends IntegrationTestBase {
         ProjectPaymentResponse second = stage(p, owner, "Після робіт", "5000.00");
         paymentService.addReceipt(p.getId(), owner.getId(), new PaymentReceiptRequest(
                 first.id(), null, new BigDecimal("5000.00"), AUG_20, null, false), null);
-        paymentService.addReceipt(p.getId(), owner.getId(), new PaymentReceiptRequest(
-                first.id(), null, new BigDecimal("3000.00"), AUG_28,
-                PaymentOverflowResolution.RESERVE, true), null);
+        // A refund ON a stage is refused since review B-102, but an older build could still have
+        // written one — and the transfer must carry such a row's flag, not lose it.
+        jdbc.update("""
+                INSERT INTO payment_receipt (id, project_id, plan_payment_id, amount, received_at,
+                                             material_refund, created_at)
+                VALUES (?, ?, ?, 3000.00, ?, true, now())
+                """, UUID.randomUUID(), p.getId(), first.id(), AUG_28);
 
         paymentService.transferSurplus(p.getId(), owner.getId(),
                 new PaymentSurplusTransferRequest(first.id(), second.id()));

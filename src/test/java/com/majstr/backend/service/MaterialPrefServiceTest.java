@@ -90,6 +90,10 @@ class MaterialPrefServiceTest {
         assertThatThrownBy(() -> service.save(userId,
                 new MaterialPrefsRequest(Map.of("GKL_SHEET", "великий"))))
                 .isInstanceOf(MaterialPrefValidationException.class);
+        // B-113: the right shape is not enough — «10x10» divided every sheet count by thousands.
+        assertThatThrownBy(() -> service.save(userId,
+                new MaterialPrefsRequest(Map.of("GKL_SHEET", "10x10"))))
+                .isInstanceOf(MaterialPrefValidationException.class);
 
         given(prefRepository.findByUserId(userId)).willReturn(List.of());
         service.save(userId, new MaterialPrefsRequest(Map.of("GKL_SHEET", "1200 × 2500")));
