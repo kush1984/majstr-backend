@@ -21,6 +21,7 @@ import com.majstr.backend.entity.WorkActKind;
 import com.majstr.backend.entity.WorkActLineKind;
 import com.majstr.backend.entity.WorkActStatus;
 import com.majstr.backend.dto.ObjectEconomyResponse;
+import com.majstr.backend.exception.ResourceNotFoundException;
 import com.majstr.backend.exception.WorkActConflictException;
 import com.majstr.backend.exception.WorkActOpenException;
 import com.majstr.backend.exception.WorkActSignedException;
@@ -892,8 +893,7 @@ class WorkActIntegrationTest extends IntegrationTestBase {
                         Unit.M2, new BigDecimal("500.00"), new BigDecimal("3.000")))), owner.getId());
         workActService.signOffline(act.id(), new WorkActSignOfflineRequest("Клієнт"), owner.getId());
 
-        var state = projectPortalService.updateEconomy(
-                p.getId(), List.of(base.getId()), true, owner.getId());
+        var state = projectPortalService.updateEconomy(p.getId(), true, owner.getId());
         String token = state.url().substring(state.url().indexOf("?e=") + 3);
         var view = publicEstimateService.viewEconomyPortal(token);
 
@@ -906,6 +906,38 @@ class WorkActIntegrationTest extends IntegrationTestBase {
         assertThat(view.payments().contractedTotal()).isEqualByComparingTo("16000.00");
         assertThat(view.payments().contractedTotal())
                 .isEqualByComparingTo(estimateRepository.sumIncomeCounted(p.getId()));
+    }
+
+    @Test
+    void theEconomyPortalIsTheWholeDeal_withNoPicker() throws Exception {
+        // B-103, owner decision 2026-10-09. A sheet the master signed on paper and never ticked used
+        // to stay off the page, and the client read «Залишок 0» while he still owed for it. Now the
+        // page is every SIGNED ∧ counted estimate — the master's own «За договором» — and a sheet
+        // that stops counting leaves it with nothing to untick.
+        User owner = newOwner();
+        owner.setEmailVerified(true);
+        userRepository.saveAndFlush(owner);
+        Project p = newProject(owner);
+        Estimate first = signedEstimateWithLine(p, "Робота", "100.000", "145.00");     // 14 500
+        Estimate onPaper = signedEstimateWithLine(p, "Плитка", "10.000", "500.00");    //  5 000
+        var state = projectPortalService.updateEconomy(p.getId(), true, owner.getId());
+        String token = state.url().substring(state.url().indexOf("?e=") + 3);
+
+        var view = publicEstimateService.viewEconomyPortal(token);
+        assertThat(view.estimates()).hasSize(2);
+        assertThat(view.payments().contractedTotal()).isEqualByComparingTo("19500.00")
+                .isEqualByComparingTo(estimateRepository.sumIncomeCounted(p.getId()));
+
+        estimateService.setCountInEconomy(onPaper.getId(), false, owner.getId());
+
+        var after = publicEstimateService.viewEconomyPortal(token);
+        assertThat(after.estimates()).extracting(sec -> sec.id()).containsExactly(first.getId());
+        assertThat(after.payments().contractedTotal()).isEqualByComparingTo("14500.00");
+
+        // «Сховати все» has nothing to untick any more: closing the link is how the page goes away.
+        projectPortalService.revokeEconomy(p.getId(), owner.getId());
+        assertThatThrownBy(() -> publicEstimateService.viewEconomyPortal(token))
+                .isInstanceOf(ResourceNotFoundException.class);
     }
 
     @Test

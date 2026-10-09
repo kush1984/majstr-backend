@@ -416,6 +416,23 @@ one-line summary — keep the item in the file as a record.
 - **Notes / options:** the cheap version is an upsert; the consistent-with-the-codebase version is
   the insert-then-recover pattern V144 established. Needs no migration either way.
 
+### The economy portal's «За договором»: shared sections only, or the whole deal? (B-103)
+- **Status:** RESOLVED (2026-10-09) — owner chose a fourth option: no picker at all. The ECONOMY
+  portal shows every SIGNED ∧ counted estimate (+ the ADDENDUM), so its «За договором» is the
+  master's own; `economy_visible` dropped in V149; the sheet can close the link instead. A signed
+  estimate is one the client already read — often on paper the master signed himself — so the pick
+  protected nothing. See [iteration-money-audit-4.md](iteration-money-audit-4.md).
+- **Since:** review round 4 §3, B-103 (2026-10-09)
+- **Context:** the payments card sums only the estimates the master SHARED — an isolation rule from
+  the payments-economy-portal iteration, pinned by `PublicEstimateIsolationTest` and
+  `cardSumsOnlySharedActs_neverAllOfTheMasters`. The review's case: two counted estimates 30 000 +
+  20 000, one shared, 40 000 received → the client reads «Залишок 0» while 10 000 is still owed.
+- **Notes / options:** (a) keep the rule — the master shares every estimate whose money he wants
+  measured; (b) the review's fix — «За договором» = every SIGNED ∧ counted estimate (which this client
+  signed himself), the sections are a breakdown, and the unshared remainder is ONE line «інші
+  підписані кошториси» with no lines behind it. (b) was built and reverted pending this answer; the
+  other half of B-103 (uncounted estimates leave the portal, the picker hides them) shipped.
+
 ### «Це той самий чек?» for a paper with no QR (B-85 photo half)
 - **Status:** OPEN
 - **Since:** review round 4 §2, B-97 (2026-10-08)

@@ -290,38 +290,39 @@ public class PublicEstimateService {
     }
 
     /**
-     * What the ECONOMY portal shows, and therefore what its «За договором» adds up to (review B-66).
+     * What the ECONOMY portal shows, and therefore what its «За договором» adds up to (review B-66,
+     * B-103).
      *
-     * <p>Two filters and one addition. The filters: SIGNED — the flag outlives a reopen — and
-     * <b>counted</b>, because it outlives an uncount too, and a SUPERSEDED parent stays SIGNED
-     * forever. A renegotiated 50 000 ₴ job whose 47 500 ₴ copy was also ticked showed the client
-     * 97 500 ₴ for one job, with his «Залишок» measured against the pair.</p>
+     * <p>Every SIGNED and <b>counted</b> estimate of the object — the same set the master's own
+     * «За договором» sums, with no picker in between (owner decision 2026-10-09). A signed estimate
+     * is one the client already read, online or on the paper the master handed him; a forgotten
+     * tick only ever showed him «Залишок 0» while part of the deal was unpaid. Counted, because a
+     * SUPERSEDED parent stays SIGNED forever: the pair showed 97 500 ₴ for one 47 500 ₴ job.</p>
      *
      * <p>The addition is the ADDENDUM. It is SIGNED and counted, and by design never shared — so
      * extras the client accepted ON AN ACT were in «Отримано» but not in «За договором», and a
      * client still owing 3 000 ₴ of extras read «Залишок 0». Nothing is disclosed by showing it: an
      * ADDENDUM is the record of lines and receipts that were printed on the act he signed, and it
      * already names itself for him («Додаткові роботи до акта № 3»). It rides along only when the
-     * master shared something — an ECONOMY portal with no sections of its own is not a portal about
-     * this deal, and extras alone would be a bill out of nowhere.</p>
+     * object has a contract — extras alone would be a bill out of nowhere.</p>
      */
     private List<PublicPortalView.Section> economySections(UUID projectId) {
-        List<Estimate> shared =
-                estimateRepository.findByProjectIdAndEconomyVisibleTrueOrderByCreatedAtAsc(projectId)
-                        .stream()
-                        .filter(e -> e.getStatus() == EstimateStatus.SIGNED && e.isCountInEconomy())
-                        .filter(e -> e.getKind() != EstimateKind.ADDENDUM)
-                        .toList();
-        if (shared.isEmpty()) {
+        List<Estimate> deal = estimateRepository.findByProjectIdOrderByCreatedAtDesc(projectId).stream()
+                .filter(PublicEstimateService::isTheDeal)
+                .sorted(Comparator.comparing(Estimate::getCreatedAt))
+                .toList();
+        if (deal.stream().allMatch(e -> e.getKind() == EstimateKind.ADDENDUM)) {
             return List.of();
         }
-        List<Estimate> all = new ArrayList<>(shared);
-        estimateRepository.findByProjectIdOrderByCreatedAtDesc(projectId).stream()
-                .filter(e -> e.getKind() == EstimateKind.ADDENDUM)
-                .filter(e -> e.getStatus() == EstimateStatus.SIGNED && e.isCountInEconomy())
-                .sorted(Comparator.comparing(Estimate::getCreatedAt))
-                .forEach(all::add);
+        List<Estimate> all = new ArrayList<>(deal.stream().filter(e -> e.getKind() != EstimateKind.ADDENDUM).toList());
+        deal.stream().filter(e -> e.getKind() == EstimateKind.ADDENDUM).forEach(all::add);
         return all.stream().map(this::sectionOf).toList();
+    }
+
+    /** SIGNED ∧ counted — what the ECONOMY portal shows, and the one rule both its page and the
+     *  estimate PDF/question doors behind it ask (B-103). */
+    static boolean isTheDeal(Estimate e) {
+        return e.getStatus() == EstimateStatus.SIGNED && e.isCountInEconomy();
     }
 
     @Transactional
@@ -341,9 +342,10 @@ public class PublicEstimateService {
     }
 
     /**
-     * {@code contractedTotal} sums only the SHARED sections passed in — never the master's
-     * private "all counted estimates" total, which could include work this client was never
-     * shown (isolation). {@code received}/{@code payments} are genuinely object-level: payments
+     * {@code contractedTotal} sums the sections passed in — every SIGNED ∧ counted estimate plus the
+     * ADDENDUM, the same figure as the master's own «За договором» (B-103; the old «shared sections
+     * only» rule showed «Залишок 0» to a client still owing for a sheet nobody ticked).
+     * {@code received}/{@code payments} are genuinely object-level: payments
      * were never tied to one estimate even before this iteration, so the full list is safe.
      * One receipts query, grouped in memory by plan stage (or left unplanned) — same shape as
      * {@code PaymentService.buildSummary}, and it also yields each stage's most recent receipt
@@ -584,15 +586,14 @@ public class PublicEstimateService {
         return estimate;
     }
 
-    /** An estimate is reachable through the ECONOMY portal only while the master shows it there
-     *  AND it is still SIGNED — same defense-in-depth reasoning as {@link #viewEconomyPortal}. */
+    /** An estimate is reachable through the ECONOMY portal only while the portal shows it —
+     *  SIGNED and counted ({@link #isTheDeal}). */
     private Estimate resolveEconomyEstimate(String token, UUID estimateId) {
         Project project = resolveProject(token, ShareLinkKind.ECONOMY);
         Estimate estimate = estimateRepository.findById(estimateId).orElse(null);
         if (estimate == null
                 || !estimate.getProject().getId().equals(project.getId())
-                || !estimate.isEconomyVisible()
-                || estimate.getStatus() != EstimateStatus.SIGNED) {
+                || !isTheDeal(estimate)) {
             throw new ResourceNotFoundException("Estimate not found");
         }
         return estimate;

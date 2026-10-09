@@ -96,7 +96,6 @@ class ActAddendumCreator {
                 .kind(EstimateKind.ADDENDUM)
                 .countInEconomy(true)
                 .portalVisible(false)
-                .economyVisible(false)
                 .signedAt(Instant.now())
                 .build());
         // ADDENDUM lines deliberately carry a NULL trade (V125). An off-estimate act row is filed

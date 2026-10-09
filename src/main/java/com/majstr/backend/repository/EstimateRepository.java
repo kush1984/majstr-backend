@@ -25,9 +25,6 @@ public interface EstimateRepository extends JpaRepository<Estimate, UUID> {
     /** Portal sections, oldest first — so «Кошторис 1» stays first as new ones are added. */
     List<Estimate> findByProjectIdAndPortalVisibleTrueOrderByCreatedAtAsc(UUID projectId);
 
-    /** Economy portal acts, oldest first — same ordering rule as the SIGNATURE portal. */
-    List<Estimate> findByProjectIdAndEconomyVisibleTrueOrderByCreatedAtAsc(UUID projectId);
-
     /** All estimates of a project, any status — the live count for the FREE
      *  per-project estimate limit (deleting one frees a slot). */
     long countByProjectId(UUID projectId);
@@ -246,12 +243,21 @@ public interface EstimateRepository extends JpaRepository<Estimate, UUID> {
      * today's contract and today's accepted total, so a document the client already holds said
      * something different every time it was rendered. An estimate signed AFTER this act was not
      * part of the deal the act closed.</p>
+     *
+     * <p>«Counted» is asked AS OF that moment too (review B-94): a parent that a copy superseded
+     * LATER still counted when the act was signed, and reading today's {@code count_in_economy}
+     * took it out of a document already in the client's hands. The supersede moment is the copy's
+     * own signature. What has no timestamp — a manual «виключити з економіки», a consolidation's
+     * sources — is still read as it stands today.</p>
      */
     @Query(value = """
             SELECT COALESCE(SUM(i.line_total), 0)
             FROM estimates e JOIN estimate_items i ON i.estimate_id = e.id
-            WHERE e.project_id = :projectId AND e.count_in_economy = true AND e.status = 'SIGNED'
+            LEFT JOIN estimates successor ON successor.id = e.superseded_by_estimate_id
+            WHERE e.project_id = :projectId AND e.status = 'SIGNED'
               AND e.signed_at <= :asOf
+              AND (e.count_in_economy = true
+                   OR (successor.signed_at IS NOT NULL AND successor.signed_at > :asOf))
             """, nativeQuery = true)
     BigDecimal sumIncomeCountedAsOf(@Param("projectId") UUID projectId,
                                     @Param("asOf") java.time.Instant asOf);
@@ -364,7 +370,7 @@ public interface EstimateRepository extends JpaRepository<Estimate, UUID> {
             WHERE e.project.id = :projectId
               AND e.status = com.majstr.backend.entity.EstimateStatus.SIGNED
               AND e.countInEconomy = true
-              AND e.markupPercent > 0
+              AND e.crewPriced = true
             """)
     List<Estimate> findSignedMarkupDuplicates(@Param("projectId") UUID projectId);
 

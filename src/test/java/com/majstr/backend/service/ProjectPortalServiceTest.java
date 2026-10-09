@@ -90,16 +90,14 @@ class ProjectPortalServiceTest {
         return e;
     }
 
-    private Estimate economyEstimate(Project p, EstimateStatus status, boolean visible) {
-        Estimate e = Estimate.builder()
+    private Estimate economyEstimate(Project p, EstimateStatus status) {
+        return Estimate.builder()
                 .id(UUID.randomUUID())
                 .project(p)
                 .status(status)
                 .createdAt(Instant.now())
                 .updatedAt(Instant.now())
                 .build();
-        e.setEconomyVisible(visible);
-        return e;
     }
 
     @Test
@@ -204,58 +202,50 @@ class ProjectPortalServiceTest {
     }
 
     @Test
-    void updateEconomy_setsExactVisibleSetAndPaymentsVisible_mintsOneLink() {
+    void updateEconomy_setsPaymentsVisible_mintsOneLink_andShowsEverySignedCountedEstimate() {
+        // B-103: no picker. What the client sees is the deal — SIGNED ∧ counted — and the master's
+        // publish only decides the payments card.
         Project p = project(true, null);
-        Estimate wanted = economyEstimate(p, EstimateStatus.SIGNED, false);
-        Estimate other = economyEstimate(p, EstimateStatus.SIGNED, true);
+        Estimate signed = economyEstimate(p, EstimateStatus.SIGNED);
+        Estimate draft = economyEstimate(p, EstimateStatus.DRAFT);
+        Estimate superseded = economyEstimate(p, EstimateStatus.SIGNED);
+        superseded.setCountInEconomy(false);
         given(projectService.loadOwned(projectId, ownerId)).willReturn(p);
         given(estimateRepository.findByProjectIdOrderByCreatedAtDesc(projectId))
-                .willReturn(List.of(wanted, other));
+                .willReturn(List.of(signed, draft, superseded));
         given(linkRepository.findFirstByProjectIdAndKindAndRevokedFalseOrderByCreatedAtDesc(
                 projectId, ShareLinkKind.ECONOMY))
                 .willReturn(Optional.empty());
         given(linkRepository.save(any(ProjectShareLink.class))).willAnswer(inv -> inv.getArgument(0));
         given(portalProperties.publicBaseUrl()).willReturn("https://majstr.pro");
 
-        PortalStateResponse state = portalService.updateEconomy(
-                projectId, List.of(wanted.getId()), true, ownerId);
+        PortalStateResponse state = portalService.updateEconomy(projectId, true, ownerId);
 
-        assertThat(wanted.isEconomyVisible()).isTrue();
-        assertThat(other.isEconomyVisible()).isFalse();
         assertThat(state.url()).startsWith("https://majstr.pro/portal/index.html?e=");
         assertThat(state.paymentsVisible()).isTrue();
+        assertThat(state.estimates())
+                .filteredOn(PortalStateResponse.PortalEstimate::visible)
+                .extracting(PortalStateResponse.PortalEstimate::id)
+                .containsExactly(signed.getId());
         verify(linkRepository).save(any(ProjectShareLink.class));
     }
 
     @Test
-    void updateEconomy_rejectsANonSignedEstimate() {
+    void revokeEconomy_killsTheLiveLink_soTheNextPublishMintsANewOne() {
         Project p = project(true, null);
-        Estimate draft = economyEstimate(p, EstimateStatus.DRAFT, false);
+        ProjectShareLink live = ProjectShareLink.builder()
+                .id(UUID.randomUUID()).project(p).token("tok").kind(ShareLinkKind.ECONOMY)
+                .createdAt(Instant.now()).revoked(false).build();
         given(projectService.loadOwned(projectId, ownerId)).willReturn(p);
-        given(estimateRepository.findByProjectIdOrderByCreatedAtDesc(projectId))
-                .willReturn(List.of(draft));
+        given(linkRepository.findFirstByProjectIdAndKindAndRevokedFalseOrderByCreatedAtDesc(
+                projectId, ShareLinkKind.ECONOMY))
+                .willReturn(Optional.of(live));
+        given(estimateRepository.findByProjectIdOrderByCreatedAtDesc(projectId)).willReturn(List.of());
 
-        assertThatThrownBy(() -> portalService.updateEconomy(
-                projectId, List.of(draft.getId()), false, ownerId))
-                .isInstanceOf(InvalidEstimateStatusException.class);
-    }
+        PortalStateResponse state = portalService.revokeEconomy(projectId, ownerId);
 
-    @Test
-    void updateEconomy_refusesASupersededEstimate_soTheClientNeverSeesOneJobTwice() {
-        // B-66: a SUPERSEDED parent is SIGNED forever and merely uncounted, so the SIGNED-only guard
-        // let the master share both halves of a renegotiation — the client saw 50 000 + 47 500 for
-        // one job, and the payments card measured his «Залишок» against the pair.
-        Project p = project(true, null);
-        Estimate superseded = economyEstimate(p, EstimateStatus.SIGNED, false);
-        superseded.setCountInEconomy(false);
-        given(projectService.loadOwned(projectId, ownerId)).willReturn(p);
-        given(estimateRepository.findByProjectIdOrderByCreatedAtDesc(projectId))
-                .willReturn(List.of(superseded));
-
-        assertThatThrownBy(() -> portalService.updateEconomy(
-                projectId, List.of(superseded.getId()), false, ownerId))
-                .isInstanceOf(InvalidEstimateStatusException.class);
-        assertThat(superseded.isEconomyVisible()).isFalse();
+        assertThat(live.isRevoked()).isTrue();
+        assertThat(state.url()).isNull();
     }
 
     @Test
@@ -265,14 +255,15 @@ class ProjectPortalServiceTest {
         given(linkRepository.findFirstByProjectIdAndKindAndRevokedFalseOrderByCreatedAtDesc(
                 projectId, ShareLinkKind.ECONOMY))
                 .willReturn(Optional.empty());
-        Estimate e = economyEstimate(p, EstimateStatus.SIGNED, false);
+        Estimate e = economyEstimate(p, EstimateStatus.SIGNED);
         given(estimateRepository.findByProjectIdOrderByCreatedAtDesc(projectId)).willReturn(List.of(e));
 
         PortalStateResponse state = portalService.economyState(projectId, ownerId);
 
         assertThat(state.url()).isNull();
         assertThat(state.estimates()).hasSize(1);
-        assertThat(state.estimates().get(0).visible()).isFalse();
+        // Already «what the client will see» before the first publish — the sheet lists it (B-103).
+        assertThat(state.estimates().get(0).visible()).isTrue();
     }
 
     @Test

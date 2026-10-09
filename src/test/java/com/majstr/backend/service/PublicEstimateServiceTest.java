@@ -532,7 +532,7 @@ class PublicEstimateServiceTest {
         act.setName("Підписаний акт");
         given(projectShareLinkRepository.findByTokenAndKind(token, ShareLinkKind.ECONOMY))
                 .willReturn(Optional.of(usableEconomyLink(act.getProject())));
-        given(estimateRepository.findByProjectIdAndEconomyVisibleTrueOrderByCreatedAtAsc(act.getProject().getId()))
+        given(estimateRepository.findByProjectIdOrderByCreatedAtDesc(act.getProject().getId()))
                 .willReturn(List.of(act));
         given(itemRepository.findByEstimateIdOrderBySortOrderAscIdAsc(act.getId()))
                 .willReturn(List.of(workItem(act)));
@@ -546,15 +546,13 @@ class PublicEstimateServiceTest {
     }
 
     @Test
-    void viewEconomyPortal_excludesAnActWhoseFlagOutlivedItsSignedStatus() {
-        // Defense-in-depth: economyVisible can outlive SIGNED (auto-reopen on a superseding
-        // duplicate flips status back to DRAFT without clearing the flag) — the ECONOMY portal
-        // must never show an unsettled draft just because the flag is still set.
+    void viewEconomyPortal_neverShowsAnUnsignedEstimate() {
+        // The ECONOMY portal is the settled deal: a draft or a reopened sheet is not on it.
         Estimate reopened = economyEstimate();
         reopened.setStatus(EstimateStatus.DRAFT);
         given(projectShareLinkRepository.findByTokenAndKind(token, ShareLinkKind.ECONOMY))
                 .willReturn(Optional.of(usableEconomyLink(reopened.getProject())));
-        given(estimateRepository.findByProjectIdAndEconomyVisibleTrueOrderByCreatedAtAsc(reopened.getProject().getId()))
+        given(estimateRepository.findByProjectIdOrderByCreatedAtDesc(reopened.getProject().getId()))
                 .willReturn(List.of(reopened));
 
         PublicPortalView view = publicService.viewEconomyPortal(token);
@@ -563,11 +561,19 @@ class PublicEstimateServiceTest {
     }
 
     @Test
-    void viewEconomyPortal_paymentsVisible_cardSumsOnlySharedActs_neverAllOfTheMasters() {
-        // Isolation: the object may have OTHER (private, unshared) counted estimates — the
-        // portal's contractedTotal must sum only what THIS client is actually shown.
+    void viewEconomyPortal_paymentsVisible_cardSumsTheWholeDeal_andNothingSuperseded() {
+        // B-103, owner decision 2026-10-09: no picker. Every SIGNED and counted estimate is on the
+        // page and in «За договором» — a sheet signed on paper and never ticked used to leave the
+        // client reading «Залишок 0» while he still owed for it. A superseded parent stays SIGNED
+        // but uncounted, and stays OFF: one job is never shown twice.
         Estimate shared = economyEstimate();
         shared.setName("Економ");
+        Estimate onPaper = economyEstimate();
+        onPaper.setProject(shared.getProject());
+        onPaper.setName("Підписаний на папері");
+        Estimate superseded = economyEstimate();
+        superseded.setProject(shared.getProject());
+        superseded.setCountInEconomy(false);
         ProjectShareLink link = ProjectShareLink.builder()
                 .id(UUID.randomUUID()).project(shared.getProject()).token(token)
                 .createdAt(Instant.now()).revoked(false).paymentsVisible(true).build();
@@ -576,10 +582,12 @@ class PublicEstimateServiceTest {
                 .amount(new BigDecimal("1000.00")).sortOrder(0).build();
         given(projectShareLinkRepository.findByTokenAndKind(token, ShareLinkKind.ECONOMY))
                 .willReturn(Optional.of(link));
-        given(estimateRepository.findByProjectIdAndEconomyVisibleTrueOrderByCreatedAtAsc(shared.getProject().getId()))
-                .willReturn(List.of(shared));
+        given(estimateRepository.findByProjectIdOrderByCreatedAtDesc(shared.getProject().getId()))
+                .willReturn(List.of(superseded, onPaper, shared));
         given(itemRepository.findByEstimateIdOrderBySortOrderAscIdAsc(shared.getId()))
                 .willReturn(List.of(workItem(shared)));
+        given(itemRepository.findByEstimateIdOrderBySortOrderAscIdAsc(onPaper.getId()))
+                .willReturn(List.of(workItem(onPaper)));
         given(projectPaymentRepository.findByProjectIdOrderBySortOrderAscIdAsc(shared.getProject().getId()))
                 .willReturn(List.of(stage));
         noRefunds(shared.getProject().getId());
@@ -592,9 +600,11 @@ class PublicEstimateServiceTest {
         PublicPortalView view = publicService.viewEconomyPortal(token);
 
         assertThat(view.payments()).isNotNull();
-        assertThat(view.payments().contractedTotal()).isEqualByComparingTo("4590.00"); // shared act only
+        assertThat(view.estimates()).extracting(PublicPortalView.Section::name)
+                .containsExactlyInAnyOrder("Економ", "Підписаний на папері");
+        assertThat(view.payments().contractedTotal()).isEqualByComparingTo("9180.00"); // both, never the superseded one
         assertThat(view.payments().received()).isEqualByComparingTo("1000.00");
-        assertThat(view.payments().remaining()).isEqualByComparingTo("3590.00");
+        assertThat(view.payments().remaining()).isEqualByComparingTo("8180.00");
         assertThat(view.payments().unplannedReceipts()).isEmpty();
         assertThat(view.payments().payments()).hasSize(1);
         assertThat(view.payments().payments().get(0).received()).isEqualByComparingTo("1000.00");
@@ -611,7 +621,7 @@ class PublicEstimateServiceTest {
                 .createdAt(Instant.now()).revoked(false).paymentsVisible(true).build();
         given(projectShareLinkRepository.findByTokenAndKind(token, ShareLinkKind.ECONOMY))
                 .willReturn(Optional.of(link));
-        given(estimateRepository.findByProjectIdAndEconomyVisibleTrueOrderByCreatedAtAsc(shared.getProject().getId()))
+        given(estimateRepository.findByProjectIdOrderByCreatedAtDesc(shared.getProject().getId()))
                 .willReturn(List.of(shared));
         given(itemRepository.findByEstimateIdOrderBySortOrderAscIdAsc(shared.getId()))
                 .willReturn(List.of(workItem(shared)));
@@ -642,7 +652,7 @@ class PublicEstimateServiceTest {
                 .createdAt(Instant.now()).revoked(false).paymentsVisible(true).build();
         given(projectShareLinkRepository.findByTokenAndKind(token, ShareLinkKind.ECONOMY))
                 .willReturn(Optional.of(link));
-        given(estimateRepository.findByProjectIdAndEconomyVisibleTrueOrderByCreatedAtAsc(shared.getProject().getId()))
+        given(estimateRepository.findByProjectIdOrderByCreatedAtDesc(shared.getProject().getId()))
                 .willReturn(List.of(shared));
         given(itemRepository.findByEstimateIdOrderBySortOrderAscIdAsc(shared.getId()))
                 .willReturn(List.of(workItem(shared)));
@@ -665,9 +675,9 @@ class PublicEstimateServiceTest {
     }
 
     @Test
-    void askEconomyQuestion_rejectsAnActHiddenFromEconomy() {
+    void askEconomyQuestion_rejectsAnEstimateNoLongerInTheDeal() {
         Estimate estimate = economyEstimate();
-        estimate.setEconomyVisible(false);
+        estimate.setCountInEconomy(false); // superseded: SIGNED forever, never on the economy page
         given(projectShareLinkRepository.findByTokenAndKind(token, ShareLinkKind.ECONOMY))
                 .willReturn(Optional.of(usableEconomyLink(estimate.getProject())));
         given(estimateRepository.findById(estimate.getId())).willReturn(Optional.of(estimate));
@@ -796,11 +806,10 @@ class PublicEstimateServiceTest {
                 .build();
     }
 
-    /** A SIGNED, economy-visible act — the only shape the ECONOMY portal ever shows. */
+    /** A SIGNED, counted estimate — the only shape the ECONOMY portal ever shows. */
     private Estimate economyEstimate() {
         Estimate estimate = sampleEstimate();
         estimate.setStatus(EstimateStatus.SIGNED);
-        estimate.setEconomyVisible(true);
         return estimate;
     }
 

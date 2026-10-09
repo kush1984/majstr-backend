@@ -124,7 +124,7 @@ class IdorMatrixIntegrationTest extends IntegrationTestBase {
     private static final String B_PHOTO_FOLDER = "{\"folder\":\"Тека\"}";
     private static final String B_PHOTO_VISIBILITY = "{\"visibility\":\"SHARED\"}";
     private static final String B_PORTAL = "{\"estimateIds\":[]}";
-    private static final String B_ECONOMY = "{\"estimateIds\":[],\"paymentsVisible\":false}";
+    private static final String B_ECONOMY = "{\"paymentsVisible\":false}";
     private static final String B_PROJECT_RECEIPT = "{\"label\":\"Чек\",\"amount\":100}";
     private static final String B_SHOPPING_ITEM = "{\"name\":\"Клей\",\"quantity\":2,\"unit\":\"PIECE\"}";
     private static final String B_SHOPPING_ITEM_UPDATE = "{\"quantity\":3}";
@@ -454,6 +454,7 @@ class IdorMatrixIntegrationTest extends IntegrationTestBase {
         c.add(post("/api/projects/{projectId}/portal/send-email", a.project));
         c.add(get("/api/projects/{projectId}/portal/economy", a.project));
         c.add(json("PUT", "/api/projects/{projectId}/portal/economy", B_ECONOMY, a.project));
+        c.add(del("/api/projects/{projectId}/portal/economy", a.project));
         c.add(post("/api/projects/{projectId}/portal/economy/send-email", a.project));
         c.add(get("/api/projects/{projectId}/message-link", a.project));
         c.add(del("/api/projects/{projectId}/message-link", a.project));
@@ -648,14 +649,11 @@ class IdorMatrixIntegrationTest extends IntegrationTestBase {
                         "{\"itemIds\":[\"" + a.templateItem + "\"]}", b.template),
                 "A's bundle position order", TEMPLATE_ITEM_SQL, a.templateItem));
 
-        // A's estimate must not become visible on B's portal link, nor join B's economy.
+        // A's estimate must not become visible on B's portal link. (The economy portal takes no
+        // ids since B-103 — it shows B's own signed, counted estimates and nothing else.)
         c.add(new BodyCase(
                 json("PUT", "/api/projects/{projectId}/portal",
                         "{\"estimateIds\":[\"" + a.estimate + "\"]}", b.project),
-                "A's estimate visibility", ESTIMATE_SQL, a.estimate));
-        c.add(new BodyCase(
-                json("PUT", "/api/projects/{projectId}/portal/economy",
-                        "{\"estimateIds\":[\"" + a.estimate + "\"],\"paymentsVisible\":true}", b.project),
                 "A's estimate visibility", ESTIMATE_SQL, a.estimate));
 
         // Money: a receipt filed against A's plan stage, and a surplus transferred out of it.
@@ -698,7 +696,7 @@ class IdorMatrixIntegrationTest extends IntegrationTestBase {
             select coalesce(max(name || '|' || sort_order::text), 'gone')
             from estimate_template_items where id = ?""";
     private static final String ESTIMATE_SQL = """
-            select coalesce(max(status || '|' || portal_visible::text || '|' || economy_visible::text
+            select coalesce(max(status || '|' || portal_visible::text
                    || '|' || count_in_economy::text || '|' || version::text), 'gone')
             from estimates where id = ?""";
     private static final String RECEIPTS_OF_PAYMENT_SQL =
@@ -994,8 +992,8 @@ class IdorMatrixIntegrationTest extends IntegrationTestBase {
                 owner, id.client, "Обʼєкт " + tag);
         id.estimate = insert("""
                 insert into estimates (id, project_id, name, status, kind, count_in_economy,
-                        portal_visible, economy_visible, version, created_at, updated_at)
-                values (?, ?, ?, 'DRAFT', 'REGULAR', true, false, false, 0, now(), now())""",
+                        portal_visible, version, created_at, updated_at)
+                values (?, ?, ?, 'DRAFT', 'REGULAR', true, false, 0, now(), now())""",
                 id.project, "Кошторис " + tag);
         id.estimateItem = insert("""
                 insert into estimate_items (id, estimate_id, type, name, unit, quantity, unit_price,

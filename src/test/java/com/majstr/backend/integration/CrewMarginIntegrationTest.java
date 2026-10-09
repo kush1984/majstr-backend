@@ -505,6 +505,43 @@ class CrewMarginIntegrationTest extends IntegrationTestBase {
         assertThat(c.crewMargin().margin()).isEqualByComparingTo("2600");
     }
 
+    /**
+     * B-105. A −5 % copy of a +20 % copy still holds the crew's prices — the panel was gated on the
+     * SIGN of the last step and showed nothing on a real margin of 1 400.
+     */
+    @Test
+    void aDiscountCopyOfACrewSheetStillReportsItsMargin() {
+        addWork("Штукатурка", "100", "100");          // crew 10 000
+        EstimateResponse b = duplicateWith("20", false);      // client 12 000
+
+        EstimateResponse c = estimateService.duplicate(b.id(),
+                new EstimateDuplicateRequest(null, new BigDecimal("5"), true, null), ownerId);
+
+        assertThat(c.total()).isEqualByComparingTo("11400");
+        assertThat(c.crewMargin()).isNotNull();
+        assertThat(c.crewMargin().crewTotal()).isEqualByComparingTo("10000");
+        assertThat(c.crewMargin().margin()).isEqualByComparingTo("1400");
+    }
+
+    /**
+     * B-105. A −10 % copy of an ORDINARY sheet is a cheaper offer, not a crew sheet — its recorded
+     * «source» prices are the original's client prices. A +20 % copy of IT used to inherit those as
+     * the crew's: «Бригаді 10 000», margin 800, against a sheet whose real base was 9 000.
+     */
+    @Test
+    void aMarkupCopyOfADiscountCopyMeasuresAgainstTheDiscountSheet() {
+        addWork("Штукатурка", "100", "100");          // A: 10 000, an ordinary sheet
+        EstimateResponse d = duplicateWith("10", true);       // D: 9 000
+
+        EstimateResponse e = estimateService.duplicate(d.id(),
+                new EstimateDuplicateRequest(null, new BigDecimal("20"), false, null), ownerId);
+
+        assertThat(d.crewMargin()).isNull();
+        assertThat(e.total()).isEqualByComparingTo("10800");
+        assertThat(e.crewMargin().crewTotal()).isEqualByComparingTo("9000");
+        assertThat(e.crewMargin().margin()).isEqualByComparingTo("1800");
+    }
+
     /** B-75. A copy superseded by a later renegotiation is SIGNED forever, and it kept reporting a
      *  margin on a deal that counts nowhere else on the tab. */
     @Test

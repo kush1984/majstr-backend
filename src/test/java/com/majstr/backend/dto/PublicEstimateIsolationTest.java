@@ -84,8 +84,8 @@ class PublicEstimateIsolationTest {
     }
 
     /**
-     * Payments-economy-portal isolation: the portal's payments card sums only the SHARED
-     * estimates and is a plain schedule (purpose/amount/dueDate/nextStage/status), plus unplanned
+     * Payments-economy-portal isolation: the portal's payments card sums the signed, counted
+     * estimates (B-103) and is a plain schedule (purpose/amount/dueDate/nextStage/status), plus unplanned
      * receipts as their own line items (label/amount/receivedAt) — it must never carry the
      * master's private aggregates (works/materials/spentReceipts/spentManual/cashBalance) that
      * {@code ObjectEconomyResponse} exposes on the owner-only side.

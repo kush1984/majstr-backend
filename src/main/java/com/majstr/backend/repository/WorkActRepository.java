@@ -69,6 +69,11 @@ public interface WorkActRepository extends JpaRepository<WorkAct, UUID> {
      *  cumulative reference block (it only makes sense from the second act onward). */
     boolean existsByProjectIdAndStatusAndIdNot(UUID projectId, WorkActStatus status, UUID id);
 
+    /** Was any act of the object signed before this moment — the «first act» question asked of a
+     *  SIGNED act as of its own signature (review B-94), never of today's acts. */
+    boolean existsByProjectIdAndStatusAndSignedAtBefore(UUID projectId, WorkActStatus status,
+                                                        java.time.Instant signedAt);
+
     /**
      * Whether a SIGNED FINAL act other than this one already closed the object (review B-62). Only
      * SIGNED counts: a FINAL act still sitting in DRAFT or REJECTED closes nothing, and a REJECTED

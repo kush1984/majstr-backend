@@ -259,6 +259,8 @@ public class EstimateService {
                 .qualityNote(source.getQualityNote())
                 .duplicatedFromId(source.getId())
                 .markupPercent(signedPercent)
+                // A markup makes a crew sheet; so does copying one, whatever the sign (B-105).
+                .crewPriced(signedPercent.signum() > 0 || source.isCrewPriced())
                 .build());
         projectRepository.incrementEstimatesCreated(projectId); // lifetime churn counter
 
@@ -295,7 +297,11 @@ public class EstimateService {
                     // the source's own `source_unit_price` IS the crew's price, and storing the
                     // source's CLIENT price here made B (+20 %) → C (−5 %) show no margin at all,
                     // and B → C (+5 %) report «Бригаді 12 000» for a crew paid 10 000.
-                    .sourceUnitPrice(item.getSourceUnitPrice() != null
+                    // …but only from a CREW-PRICED source (review B-105): a discount copy of an
+                    // ordinary sheet records the original's CLIENT price there, and a markup copy
+                    // of THAT read it as the crew's — «Бригаді 10 000» against a sheet whose real
+                    // base was 9 000.
+                    .sourceUnitPrice(source.isCrewPriced() && item.getSourceUnitPrice() != null
                             ? item.getSourceUnitPrice()
                             : (percent ? item.getQuantity() : item.getUnitPrice()))
                     .percentBaseKind(item.getPercentBaseKind())

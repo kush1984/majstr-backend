@@ -31,7 +31,7 @@ import java.util.UUID;
  * The per-estimate share link ({@code ?t=}) — one link, one estimate, independent of the object's
  * portal links. This is what "поділитися цим кошторисом" from the estimate editor mints: the client
  * who opens it sees exactly that document and nothing else of the object, and publishing it neither
- * reads nor touches {@code portal_visible} / {@code economy_visible}. The set-based object links
+ * reads nor touches {@code portal_visible}. The set-based object links
  * live in {@link ProjectPortalService}; the public read side of all of them is
  * {@link PublicEstimateService}.
  */

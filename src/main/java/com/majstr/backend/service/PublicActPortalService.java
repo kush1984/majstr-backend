@@ -218,7 +218,7 @@ public class PublicActPortalService {
     }
 
     /** As above, but also requires the act be in a client-visible status (SENT/SIGNED) — a DRAFT is
-     *  a 404 even with a valid token (the token existing is never sufficient; see {@code economyVisible}). */
+     *  a 404 even with a valid token (the token existing is never sufficient). */
     private WorkAct resolveShareableAct(String token) {
         WorkAct act = resolveActByToken(token);
         if (act.getStatus() != WorkActStatus.SENT && act.getStatus() != WorkActStatus.SIGNED) {

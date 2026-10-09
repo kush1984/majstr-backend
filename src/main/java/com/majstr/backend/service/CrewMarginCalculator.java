@@ -82,9 +82,11 @@ final class CrewMarginCalculator {
         // Deliberately NOT gated on `duplicatedFromId`. That column is ON DELETE SET NULL, so a
         // master who tidied away the crew's original sheet would lose the figure computed from his
         // own copy's lines — which is the exact scenario V85 stores a per-LINE crew price for.
-        // `markupPercent` is written only by duplicate() and never cleared, so it alone is both
-        // sufficient and stable.
-        if (estimate.getMarkupPercent() == null || estimate.getMarkupPercent().signum() <= 0) {
+        // `crewPriced` is written only by duplicate() (and V149's backfill) and never cleared, so it
+        // alone is both sufficient and stable. It replaced `markupPercent > 0` (review B-105): that
+        // is the sign of the last step, and a −5 % copy of a +20 % copy still holds the crew's
+        // prices and has a real margin.
+        if (!estimate.isCrewPriced()) {
             return null;
         }
         List<EstimateItem> clientLines = detach(items, false);

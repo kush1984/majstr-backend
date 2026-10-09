@@ -106,24 +106,61 @@ class ActCumulativeReferenceIntegrationTest extends IntegrationTestBase {
      */
     @Test
     void aSignedActsBlockIsFrozenAtItsOwnSignature() {
-        Instant firstSignedAt = Instant.now().minus(10, ChronoUnit.DAYS);
-        WorkAct first = signedAct("1", "4000.00", firstSignedAt);
-        signedAct("2", "6000.00", Instant.now().minus(1, ChronoUnit.DAYS));
+        signedAct("1", "1000.00", Instant.now().minus(20, ChronoUnit.DAYS));
+        WorkAct second = signedAct("2", "3000.00", Instant.now().minus(10, ChronoUnit.DAYS));
+        signedAct("3", "6000.00", Instant.now().minus(1, ChronoUnit.DAYS));
 
-        var ref = calculator.forDownload(first,
-                actItemRepository.findByWorkActIdOrderBySortOrderAscIdAsc(first.getId()),
+        var ref = calculator.forDownload(second,
+                actItemRepository.findByWorkActIdOrderBySortOrderAscIdAsc(second.getId()),
                 BigDecimal.ZERO);
 
         assertThat(ref).isNotNull();
         assertThat(ref.accepted())
-                .as("act 2 was signed nine days later and is none of act 1's business")
+                .as("act 3 was signed nine days later and is none of act 2's business")
                 .isEqualByComparingTo("4000.00");
+        assertThat(ref.contracted()).isEqualByComparingTo("10000.00");
+    }
+
+    /**
+     * B-94. «First act» was read off TODAY's acts: act 1 had no block when it was signed, and gained
+     * one the moment act 2 was — the document the client already held changed shape.
+     */
+    @Test
+    void theFirstActStaysWithoutTheBlockAfterLaterActsAreSigned() {
+        WorkAct first = signedAct("1", "4000.00", Instant.now().minus(10, ChronoUnit.DAYS));
+        signedAct("2", "6000.00", Instant.now().minus(1, ChronoUnit.DAYS));
+
+        assertThat(calculator.forDownload(first,
+                actItemRepository.findByWorkActIdOrderBySortOrderAscIdAsc(first.getId()),
+                BigDecimal.ZERO)).isNull();
+    }
+
+    /**
+     * B-94. A parent superseded by a copy signed AFTER the act still counted when the act was
+     * signed; today's {@code count_in_economy = false} took it out of a document already issued.
+     */
+    @Test
+    void aParentSupersededLaterStillCountsAsOfTheActsSignature() {
+        signedAct("1", "1000.00", Instant.now().minus(20, ChronoUnit.DAYS));
+        WorkAct second = signedAct("2", "3000.00", Instant.now().minus(10, ChronoUnit.DAYS));
+        Estimate copy = estimateRepository.save(Estimate.builder()
+                .project(project).status(EstimateStatus.SIGNED).countInEconomy(true)
+                .signedAt(Instant.now().minus(1, ChronoUnit.DAYS)).build());
+        estimate.setCountInEconomy(false);
+        estimate.setSupersededByEstimateId(copy.getId());
+        estimateRepository.saveAndFlush(estimate);
+
+        var ref = calculator.forDownload(second,
+                actItemRepository.findByWorkActIdOrderBySortOrderAscIdAsc(second.getId()),
+                BigDecimal.ZERO);
+
         assertThat(ref.contracted()).isEqualByComparingTo("10000.00");
     }
 
     /** An estimate signed AFTER the act is not part of the contract the act closed. */
     @Test
     void aLaterEstimateDoesNotEnterAnAlreadySignedActsContractFigure() {
+        signedAct("0", "500.00", Instant.now().minus(15, ChronoUnit.DAYS));
         WorkAct first = signedAct("1", "4000.00", Instant.now().minus(10, ChronoUnit.DAYS));
         signedAct("2", "1000.00", Instant.now().minus(9, ChronoUnit.DAYS));
         Estimate later = estimateRepository.save(Estimate.builder()

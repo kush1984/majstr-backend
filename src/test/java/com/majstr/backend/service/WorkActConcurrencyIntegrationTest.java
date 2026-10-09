@@ -96,6 +96,30 @@ class WorkActConcurrencyIntegrationTest extends IntegrationTestBase {
         assertThat(receiptRepository.findByWorkActIdNewestFirst(f.actId)).isEmpty();
     }
 
+    /**
+     * Review B-09 / B-96: one queued receipt uploaded twice at once. Both attempts pass the
+     * pre-flight (nothing landed yet), the first insert wins, and the loser must meet a duplicate
+     * key — which the service turns into «the winner's row is the answer» — never a second row and
+     * never a 500 of another kind.
+     */
+    @Test
+    void twoUploadsOfOneQueuedReceipt_landOneRow_andTheLoserReadsTheWinner() {
+        Fixture f = fixture("10.000");
+        UUID receiptId = UUID.randomUUID();
+        assertThat(receiptCreator.prepare(f.actId, f.ownerId, receiptId).replay()).isNull();
+        assertThat(receiptCreator.prepare(f.actId, f.ownerId, receiptId).replay()).isNull();
+
+        receiptCreator.attempt(f.actId, receiptId, "Епіцентр", new BigDecimal("1800.00"),
+                LocalDate.now(), "act-receipts/a.jpg", 0, null, null);
+        assertThatThrownBy(() -> receiptCreator.attempt(f.actId, receiptId, "Епіцентр",
+                new BigDecimal("1800.00"), LocalDate.now(), "act-receipts/b.jpg", 0, null, null))
+                .isInstanceOf(org.springframework.dao.DataIntegrityViolationException.class);
+
+        assertThat(receiptRepository.findByWorkActIdNewestFirst(f.actId)).hasSize(1);
+        assertThat(receiptCreator.replay(receiptId, f.actId)).isPresent()
+                .get().extracting(r -> r.id()).isEqualTo(receiptId);
+    }
+
     @Test
     void replaceItemsDuringSign_signLosesOrWaits() throws Exception {
         Fixture f = fixture("10.000");

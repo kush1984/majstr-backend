@@ -65,7 +65,7 @@ controllers return DTOs. `passwordHash` never appears in any response (`UserResp
 
 `hibernate.ddl-auto: validate` — never express schema changes in entity annotations. Add a new
 `V<N>__<desc>.sql` under `src/main/resources/db/migration/`; **check the highest number first**
-(latest is **V148**). **Never edit an applied migration** — Flyway checksums it and a changed file
+(latest is **V149**). **Never edit an applied migration** — Flyway checksums it and a changed file
 fails startup (a correction to a shipped migration's COMMENT goes in the next migration's header —
 review B-53 did that for V136). **A self-check may `RAISE EXCEPTION` only about the migration's OWN
 work** (review B-50): «I just re-filed these rows, assert none is left» is a bug if it fails, while
@@ -141,7 +141,7 @@ there first**, then the doc it names.
 - **Refresh tokens** — hashed at rest (SHA-256), rotated, swept daily; **the PWA must single-flight `/refresh`** or a burst of 401s self-logs-out.
 - **Email verification is soft** — `@Async` fail-soft; only `POST /estimates/{id}/share` is gated (403 `EMAIL_NOT_VERIFIED`); email editable only while unverified.
 - **Web push** — VAPID, `@Async`, env-gated fail-soft; `deliver()` MUST pass `Encoding.AES128GCM` (legacy `aesgcm` → FCM 403).
-- **Client portal is project-level** — `project_share_links` token + `estimates.portal_visible`; `payments_visible` (V93, default false) gates the payments card. **The per-estimate `?t=` link is NOT legacy** — it is the single-estimate share path and never touches the object portal. `ShareLinkService.create` is idempotent; an **expired** link is replaced (the repo query filters only `revoked`).
+- **Client portal is project-level** — `project_share_links` token + `estimates.portal_visible` (SIGNATURE picker); `payments_visible` (V93, default false) gates the payments card. **The ECONOMY portal has NO picker** (B-103, V149 dropped `economy_visible`): it is every SIGNED ∧ counted estimate + the ADDENDUM (`PublicEstimateService.isTheDeal`), so its «За договором» equals `sumIncomeCounted`; the master closes it by revoking the link. **The per-estimate `?t=` link is NOT legacy** — it is the single-estimate share path and never touches the object portal. `ShareLinkService.create` is idempotent; an **expired** link is replaced (the repo query filters only `revoked`).
 - **Client messages** — one-way inbox (renamed from "questions", V74); entity field `read` vs view JSON key `isRead`; message-link + attachments + 6-month retention (V75-77).
 - **Login rate limit** — `CachedBodyHttpServletRequest`; key `email|ip`; in-memory, single-node. **All eleven limiters share `BucketRegistry<K>`** (B-22) — six are keyed by something a STRANGER picks, so an entry idle for twice its own refill period is dropped (unobservable: the bucket is full by then).
 - **Signed estimates are immutable** — mutate/delete → 409 `ESTIMATE_SIGNED`; owner-only `reopen` (behind `REOPEN_ENABLED = false`); `@Version` (V23). **A signed parent is NOT auto-reopened when its duplicate is signed** — `doSign` sets `parent.countInEconomy = false` and stamps `estimates.superseded_by_estimate_id` (V95); cleared on edit (`requireNotSigned`, the one guard all 8 write paths share), re-sign or dismiss.

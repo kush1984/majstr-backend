@@ -43,11 +43,10 @@ import java.util.function.Predicate;
 /**
  * Owner side of the object-level client portal — TWO separate links, one per intent:
  * {@link ShareLinkKind#PORTAL} (Кошторис tab, any-status estimates, for signature, never
- * payments) and {@link ShareLinkKind#ECONOMY} (Економіка tab, SIGNED acts only, plus an optional
- * payments card). Which estimates each shows is controlled by {@link Estimate#isPortalVisible()}
- * / {@link Estimate#isEconomyVisible()} respectively — two independent flags, not one repurposed
- * one, because "should sign this" and "should appear in the money summary" are independent
- * questions. The public read side is in {@link PublicEstimateService}.
+ * payments) and {@link ShareLinkKind#ECONOMY} (Економіка tab, plus an optional payments card).
+ * The SIGNATURE portal shows the set the master ticks ({@link Estimate#isPortalVisible()}); the
+ * ECONOMY portal has no picker — it shows every SIGNED and counted estimate, the same deal the
+ * master's own figures sum (B-103). The public read side is in {@link PublicEstimateService}.
  */
 @Service
 @RequiredArgsConstructor
@@ -139,39 +138,33 @@ public class ProjectPortalService {
     public PortalStateResponse economyState(UUID projectId, UUID ownerId) {
         Project project = projectService.loadOwned(projectId, ownerId);
         return stateOf(project, usableLink(projectId, ShareLinkKind.ECONOMY),
-                ShareLinkKind.ECONOMY, Estimate::isEconomyVisible);
+                ShareLinkKind.ECONOMY, PublicEstimateService::isTheDeal);
     }
 
     /**
-     * Publishes the ECONOMY portal: the given SIGNED estimates become visible in the object's
-     * money summary, every other estimate is hidden from it. Every id must already be SIGNED —
-     * the ECONOMY portal is a settled-money view, not a second place to sign something; rejecting
-     * a non-SIGNED id here is defense-in-depth, the picker never offers one. Mints/reuses the
-     * ECONOMY link the same idempotent way the SIGNATURE one does.
+     * Publishes the ECONOMY portal: mints/reuses the link and sets the payments toggle. WHICH
+     * estimates it shows is not the master's pick (B-103) — every SIGNED and counted one, read at
+     * view time, so a sheet signed tomorrow is on the page without anyone reopening this sheet.
      */
     @Transactional
-    public PortalStateResponse updateEconomy(UUID projectId, List<UUID> estimateIds,
-                                              boolean paymentsVisible, UUID ownerId) {
+    public PortalStateResponse updateEconomy(UUID projectId, boolean paymentsVisible, UUID ownerId) {
         Project project = projectService.loadOwned(projectId, ownerId);
         requireSharable(project.getOwner());
-
-        applyVisibility(projectId, estimateIds, (estimate, visible) -> {
-            if (visible && estimate.getStatus() != EstimateStatus.SIGNED) {
-                throw new InvalidEstimateStatusException("error.estimate.not-signed-economy");
-            }
-            // …and it must still be part of the deal (B-66). A SUPERSEDED parent is SIGNED and
-            // uncounted: the master renegotiated, the copy is the contract. Sharing both showed the
-            // client 50 000 + 47 500 = 97 500 ₴ for one job, and the payments card measured his
-            // «Залишок» against that total.
-            if (visible && !estimate.isCountInEconomy()) {
-                throw new InvalidEstimateStatusException("error.estimate.not-counted-economy");
-            }
-            estimate.setEconomyVisible(visible);
-        });
-
         ProjectShareLink link = mintOrReuse(project, ShareLinkKind.ECONOMY);
         link.setPaymentsVisible(paymentsVisible);
-        return stateOf(project, Optional.of(link), ShareLinkKind.ECONOMY, Estimate::isEconomyVisible);
+        return stateOf(project, Optional.of(link), ShareLinkKind.ECONOMY, PublicEstimateService::isTheDeal);
+    }
+
+    /**
+     * Closes the ECONOMY link (B-103): with no picker, «hide everything» has nothing to untick, so
+     * the way to stop a client reading the object's money is to kill his URL. The next publish
+     * mints a NEW token — the old one stays dead. Idempotent: no live link is not an error.
+     */
+    @Transactional
+    public PortalStateResponse revokeEconomy(UUID projectId, UUID ownerId) {
+        Project project = projectService.loadOwned(projectId, ownerId);
+        usableLink(projectId, ShareLinkKind.ECONOMY).ifPresent(link -> link.setRevoked(true));
+        return stateOf(project, Optional.empty(), ShareLinkKind.ECONOMY, PublicEstimateService::isTheDeal);
     }
 
     /** Emails the ECONOMY portal link. Requires a published link — the PWA always PUTs first. */
@@ -181,7 +174,7 @@ public class ProjectPortalService {
         requireSharable(project.getOwner());
         ProjectShareLink link = requireUsableLink(projectId, ShareLinkKind.ECONOMY);
         emailLink(project, buildUrl(link.getToken(), ShareLinkKind.ECONOMY));
-        return stateOf(project, Optional.of(link), ShareLinkKind.ECONOMY, Estimate::isEconomyVisible);
+        return stateOf(project, Optional.of(link), ShareLinkKind.ECONOMY, PublicEstimateService::isTheDeal);
     }
 
     // ---- ACT portal — one link per act (Акти tab) ------------------------------------------

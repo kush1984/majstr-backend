@@ -44,9 +44,9 @@ class WorkActLineKindMigrationOnLiveDataIntegrationTest extends IntegrationTestB
     private static final String LINKED_LINE = "dddddddd-0000-0000-0000-000000000006";
     /** Off-estimate work the client accepted on the act itself — carries neither. */
     private static final String ADDITIONAL_LINE = "dddddddd-0000-0000-0000-000000000007";
-    /** A line whose estimate line was deleted afterwards: ON DELETE SET NULL left it id-less, and
-     *  the old code has read it as an additional work ever since. The migration must not invent a
-     *  different answer for it — the signed paper says what it says. */
+    /** A line whose estimate line was deleted afterwards: ON DELETE SET NULL left it item-less, and
+     *  V141 read it as an additional work. It still carries its ESTIMATE, which no additional line
+     *  ever does — so V149 gives it back its kind (review B-92). */
     private static final String ORPHANED_LINE = "dddddddd-0000-0000-0000-000000000008";
 
     private static JdbcTemplate db;
@@ -123,9 +123,25 @@ class WorkActLineKindMigrationOnLiveDataIntegrationTest extends IntegrationTestB
     @Test
     void aLineWithNoEstimatePositionBecomesAdditional() {
         assertThat(kindOf(ADDITIONAL_LINE)).isEqualTo("ADDITIONAL");
-        // Including one that merely LOST its position: the act was signed as an additional work, and
-        // nothing about the estimate being tidied away later changes what the client signed.
-        assertThat(kindOf(ORPHANED_LINE)).isEqualTo("ADDITIONAL");
+    }
+
+    /**
+     * Review B-92 (owner ruling: fix forward, V149). V141 made the orphan ADDITIONAL, and an
+     * additional line counts in «Прийнято актами» unconditionally while the estimate it closed
+     * counts in «За договором» nowhere — accepted moved 0 → 1 450 against nothing. Only the kind
+     * moves; the amount the client signed is untouched.
+     */
+    @Test
+    void aLineThatLostItsPositionIsAnEstimateLineAgain_andAddsNothingToTheAdditionalWorks() {
+        assertThat(kindOf(ORPHANED_LINE)).isEqualTo("ESTIMATE");
+        assertThat(db.queryForObject("SELECT line_total FROM work_act_item WHERE id = ?::uuid",
+                java.math.BigDecimal.class, ORPHANED_LINE)).isEqualByComparingTo("1450");
+        assertThat(db.queryForObject("""
+                SELECT COALESCE(SUM(line_total), 0) FROM work_act_item
+                 WHERE work_act_id = ?::uuid AND line_kind = 'ADDITIONAL'
+                """, java.math.BigDecimal.class, ACT))
+                .as("only the real off-estimate work is billed unconditionally")
+                .isEqualByComparingTo("1450");
     }
 
     @Test

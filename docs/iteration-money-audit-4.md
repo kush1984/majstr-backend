@@ -155,13 +155,10 @@ SELECT c.project_id, c.id AS estimate_id, c.total AS contract, b.billed, b.bille
 
 ---
 
-# Part 2 — §2-§4 of `FIXES-4.md`, backend (in progress), 2026-10-08
+# Part 2 — §2-§4 of `FIXES-4.md`, backend, 2026-10-08/09
 
-**Status:** the items below are built and `./gradlew build` is green; the PWA gate is green (lint →
-`tsc -b` → `typecheck:tests` → vitest 1296 → `vite build`). Still open in this part: **B-92**
-(waits on the owner — it re-classifies lines on SIGNED acts), **B-94**, **B-103**, **B-105** (needs a
-`crew_priced` column, planned for the same V149 as B-92), the B-81 «rolled-back sign sends nothing»
-and the B-09 receipt-race tests. Then the PWA §5-§6.
+**Status:** shipped in two commits; `./gradlew build` green. The second one carries migration
+**V149** (B-92 + B-105 + B-103, which drops `estimates.economy_visible`).
 
 ## Acts
 - **B-93** — a SENT act can no longer be shrunk under its advance: `replaceItems` and act-receipt
@@ -212,4 +209,104 @@ and the B-09 receipt-race tests. Then the PWA §5-§6.
 ## Tests touched by the new rules
 - `PaymentTransferIntegrationTest` seeds its stage refund by SQL (a row an older build could write).
 - `IdorMatrixIntegrationTest`'s cash body carries `materialRefund`.
+
+## Part 2b — the rest of §2-§4 (2026-10-09)
+
+- **B-92 (owner ruling: fix forward, V149 PART 1)** — an `ADDITIONAL` act line that carries an
+  `estimate_id` (no additional line ever does), or that sits on a SIGNED act whose ADDENDUM holds no
+  line of its name, is an estimate line whose position was deleted: it gets `line_kind = 'ESTIMATE'`
+  back. Only the kind moves — no amount, no quantity. An act with no ADDENDUM at all is left alone.
+  `WorkActLineKindMigrationOnLiveDataIntegrationTest` now asserts the orphan is ESTIMATE and that the
+  unconditional (ADDITIONAL) total holds only real off-estimate work. **Run this before deploying
+  V149 to see what it touches** (read-only):
+
+  ```sql
+  SELECT wa.project_id, wa.number, wai.id, wai.name, wai.line_total, wa.status
+    FROM work_act_item wai JOIN work_act wa ON wa.id = wai.work_act_id
+   WHERE wai.line_kind = 'ADDITIONAL'
+     AND (wai.estimate_id IS NOT NULL
+          OR (wa.status = 'SIGNED' AND wa.addendum_estimate_id IS NOT NULL
+              AND NOT EXISTS (SELECT 1 FROM estimate_items ei
+                               WHERE ei.estimate_id = wa.addendum_estimate_id
+                                 AND lower(trim(ei.name)) = lower(trim(wai.name)))))
+   ORDER BY wa.project_id, wa.number;
+  ```
+- **B-105 (V149 PART 2)** — `estimates.crew_priced`: a markup copy, or any copy of a crew-priced
+  sheet (backfilled recursively along `duplicated_from_id`). The crew-margin panel and the economy's
+  `findSignedMarkupDuplicates` gate on it instead of `markup_percent > 0`, and `duplicate()`
+  inherits `source_unit_price` only from a crew-priced source. A −5 % copy of a +20 % copy shows its
+  1 400 margin; a +20 % copy of a −10 % copy measures against the discount sheet (crew 9 000,
+  margin 1 800). Already-stored lines of such chains are not rewritten.
+- **B-94** — «ДОВІДКОВО» on a SIGNED act asks «first act?» as of its own `signed_at`
+  (`existsByProjectIdAndStatusAndSignedAtBefore`), and `sumIncomeCountedAsOf` counts a parent that a
+  copy superseded AFTER the act. Limit: a manual uncount and a consolidation's sources carry no
+  timestamp and are still read as they stand today.
+- **B-103 — the ECONOMY portal has no picker any more (owner decision 2026-10-09, option «г»).**
+  The review's case: two counted estimates 30 000 + 20 000, one ticked, 40 000 received — the client
+  read «Залишок 0» while 10 000 was owed. The «shared sections only» isolation rule came from the
+  payments-economy-portal iteration, where the economy sheet copied the SIGNATURE sheet's checkboxes;
+  for SIGNED estimates the pick protected nothing — the client had already read them, online or on
+  the paper the master signed and handed him — and a forgotten tick was the whole bug.
+  Now the page is every SIGNED ∧ counted estimate plus the ADDENDUM (`PublicEstimateService.isTheDeal`,
+  the one rule the page and its PDF/question doors ask), so «За договором» there IS
+  `sumIncomeCounted`. «Counted» is the one switch for «not this client's deal». `EconomyUpdateRequest`
+  carries only `paymentsVisible`; V149 PART 3 drops `economy_visible`; the PWA sheet lists what the
+  client sees read-only. «Прибрати все з порталу» had nothing to untick, so the economy sheet closes
+  the LINK instead: `DELETE /api/projects/{id}/portal/economy` revokes it, the next publish mints a
+  new token (IDOR case added). **Behaviour change for links already sent:** a client whose master
+  ticked only some signed estimates now sees all of them — the preview SQL below counts those
+  objects; it must run BEFORE the deploy, the column it reads is dropped.
+- **B-96** — `AfterCommitTest` (a rolled-back transaction sends nothing; a committed one sends
+  once) and the deterministic receipt race in `WorkActConcurrencyIntegrationTest` (both pre-flights
+  pass, the loser meets a duplicate key, one row, the loser reads the winner).
+
+# Part 3 — §5 of `FIXES-4.md`, PWA (2026-10-09)
+
+PWA gate green (lint → `tsc -b` → `typecheck:tests` → vitest 1306 → `vite build`), offline
+`shell.spec` green. PWA 1.49.3.
+
+- **P-58** — every money/quantity field submits what its validator parsed: `ItemForm` (price and
+  quantity through `parseMoney`/`parseQuantity`; «1'200» was NaN), the duplicate and markup sheets
+  (`parseMoney` with the server's bounds — two decimals, a markup ≤ 999,99 %, a discount < 100 %),
+  `SaveToCatalogPrompt` (blank still 0), `catalogItemSchema`, dictation and receipt import (blank 0,
+  garbage blocks the commit instead of becoming 0 ₴), and estimate import seeds cells at the stored
+  scale (a negative price arrives blank). P-66's two rounding remainders in the same code: the «%»
+  preview uses `roundMoney`, the markup sheet's totals `sumMoney`.
+- **P-59** — the optimistic payment patches round in kopecks, a pre-filled remaining is
+  `roundMoney`'d («3000.2», not «3000.2000000000003»), and a stage must be at least 0,01.
+- **P-60** — a receipt STUCK in transport is still the master's money on its way: shown and counted,
+  it holds Sign/Share back, and the gate names it («не вдалося відправити — спробуйте ще»). Only a
+  server refusal is set aside.
+- **P-61** — TRANSFER carries a client id, one per opening of the sheet, so a retry is a replay.
+- **P-62** — the estimate's PDF and share flush the queue and refuse while an op on the estimate (or
+  one waiting on it) is left; the add/edit/dictation/receipt sheets close when the estimate becomes
+  signed. Guarded by a source-reading test (`EstimateEditorPage.queueGate.test.ts`).
+- **B-102's PWA half** shipped in part 2.
+
+- **B-103's PWA half** — `SharePortalSheet` in economy mode: read-only list, payments toggle,
+  «Закрити посилання» once a link exists.
+
+Still open from `FIXES-4.md`: §6 (P-63 … P-72).
+
+## Preview before the V149 deploy — economy portals that will show MORE (B-103)
+
+Read-only; run on prod BEFORE deploying, `economy_visible` does not survive V149.
+
+```sql
+SELECT p.id AS project_id, p.name AS object, u.email AS master,
+       count(*) FILTER (WHERE NOT e.economy_visible) AS newly_shown,
+       sum(e_total.total) FILTER (WHERE NOT e.economy_visible) AS newly_shown_total
+FROM project_share_links l
+JOIN projects p ON p.id = l.project_id
+JOIN users u ON u.id = p.owner_id
+JOIN estimates e ON e.project_id = p.id
+LEFT JOIN LATERAL (SELECT COALESCE(SUM(line_total), 0) AS total
+                   FROM estimate_items WHERE estimate_id = e.id) e_total ON true
+WHERE l.kind = 'ECONOMY' AND NOT l.revoked AND (l.expires_at IS NULL OR l.expires_at > now())
+  AND e.status = 'SIGNED' AND e.count_in_economy AND e.kind <> 'ADDENDUM'
+GROUP BY p.id, p.name, u.email
+HAVING count(*) FILTER (WHERE NOT e.economy_visible) > 0
+ORDER BY newly_shown_total DESC;
+```
+
 

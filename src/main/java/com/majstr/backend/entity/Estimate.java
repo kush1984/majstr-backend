@@ -108,6 +108,17 @@ public class Estimate {
     private BigDecimal markupPercent;
 
     /**
+     * Its lines carry the CREW's prices in {@code source_unit_price} (V149, review B-105): a markup
+     * copy, or any copy of a crew-priced sheet. The panel used to read the SIGN of
+     * {@link #markupPercent}, which is only the last step: a −5 % copy of a +20 % copy carries the
+     * crew's prices and showed nothing, and a +20 % copy of a −10 % one read the discount sheet's
+     * inherited client prices as the crew's.
+     */
+    @Builder.Default
+    @Column(name = "crew_priced", nullable = false)
+    private boolean crewPriced = false;
+
+    /**
      * For a <b>consolidated</b> estimate: the estimates it was rolled up from. Empty for an ordinary
      * estimate. Line items are copied by value; the sources keep their receipts, and this lineage is
      * how the consolidated estimate offers those source receipts for its PDF. See V90.
@@ -125,14 +136,6 @@ public class Estimate {
      *  links, which stay usable for URLs already sent out. */
     @Column(name = "portal_visible", nullable = false)
     private boolean portalVisible;
-
-    /** Whether this estimate shows on the object's ECONOMY portal (a master-chosen set of already-
-     *  SIGNED acts, alongside a summary and optional payments card). A deliberately separate flag
-     *  from {@link #portalVisible} — the two answer independent questions (this act needing to be
-     *  in the client's money summary says nothing about whether there is still something to sign),
-     *  picked from the Економіка tab's own share sheet. */
-    @Column(name = "economy_visible", nullable = false)
-    private boolean economyVisible;
 
     @Column(name = "signed_at")
     private Instant signedAt;

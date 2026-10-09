@@ -50,10 +50,18 @@ class ActCumulativeCalculator {
             return null;
         }
         UUID projectId = act.getProject().getId();
-        if (!actRepository.existsByProjectIdAndStatusAndIdNot(projectId, WorkActStatus.SIGNED, act.getId())) {
+        boolean signed = act.getStatus() == WorkActStatus.SIGNED && act.getSignedAt() != null;
+        // «First act» is asked as of THIS act's signature once it is signed (review B-94): read off
+        // today's acts, act 1 had no block until act 2 was signed, and then gained one — a document
+        // the client already held changed shape.
+        boolean earlier = signed
+                ? actRepository.existsByProjectIdAndStatusAndSignedAtBefore(
+                        projectId, WorkActStatus.SIGNED, act.getSignedAt())
+                : actRepository.existsByProjectIdAndStatusAndIdNot(projectId, WorkActStatus.SIGNED, act.getId());
+        if (!earlier) {
             return null; // first act on the object — no earlier work to reference
         }
-        if (act.getStatus() == WorkActStatus.SIGNED && act.getSignedAt() != null) {
+        if (signed) {
             // AS OF ITS OWN SIGNATURE (review B-77). The figures are live, which is right while the
             // act is being prepared and wrong the moment it is history: re-downloading act 3 after
             // act 4 was signed printed act 3's «виконано з початку» including act 4's work, so a

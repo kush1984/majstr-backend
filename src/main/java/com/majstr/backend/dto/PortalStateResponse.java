@@ -9,7 +9,8 @@ import java.util.UUID;
 /**
  * Owner-side state of the object's client portal: the shareable URL (null
  * until the first publish mints a link) and every estimate of the object with
- * its "shows on the portal" flag — the share sheet renders this as checkboxes.
+ * its "shows on the portal" flag — checkboxes on the SIGNATURE sheet, a read-only list on the
+ * ECONOMY one.
  */
 public record PortalStateResponse(
         String url,
@@ -21,6 +22,8 @@ public record PortalStateResponse(
             String name,
             EstimateStatus status,
             Instant createdAt,
+            /** SIGNATURE: the master ticked it. ECONOMY: SIGNED ∧ counted — what the client sees,
+             *  never a pick (B-103). */
             boolean visible
     ) {}
 }

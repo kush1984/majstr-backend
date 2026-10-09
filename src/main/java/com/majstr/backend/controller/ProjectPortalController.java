@@ -10,6 +10,7 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -57,13 +58,19 @@ public class ProjectPortalController {
         return portalService.economyState(projectId, principal.id());
     }
 
-    @Operation(summary = "Publish the ECONOMY portal: set the visible SIGNED estimates + payments toggle, mint/reuse the link")
+    @Operation(summary = "Publish the ECONOMY portal: payments toggle, mint/reuse the link (shows every signed, counted estimate)")
     @PutMapping("/economy")
     public PortalStateResponse updateEconomy(@PathVariable UUID projectId,
                                              @Valid @RequestBody EconomyUpdateRequest req,
                                              @AuthenticationPrincipal UserPrincipal principal) {
-        return portalService.updateEconomy(projectId, req.estimateIds(),
-                Boolean.TRUE.equals(req.paymentsVisible()), principal.id());
+        return portalService.updateEconomy(projectId, Boolean.TRUE.equals(req.paymentsVisible()), principal.id());
+    }
+
+    @Operation(summary = "Close the ECONOMY portal link — the client's URL stops working; the next publish mints a new one")
+    @DeleteMapping("/economy")
+    public PortalStateResponse revokeEconomy(@PathVariable UUID projectId,
+                                             @AuthenticationPrincipal UserPrincipal principal) {
+        return portalService.revokeEconomy(projectId, principal.id());
     }
 
     @Operation(summary = "Email the ECONOMY portal link to the object's client")
