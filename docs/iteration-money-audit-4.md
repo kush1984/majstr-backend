@@ -286,7 +286,7 @@ PWA gate green (lint → `tsc -b` → `typecheck:tests` → vitest 1306 → `vit
 - **B-103's PWA half** — `SharePortalSheet` in economy mode: read-only list, payments toggle,
   «Закрити посилання» once a link exists.
 
-Still open from `FIXES-4.md`: §6 (P-63 … P-72).
+`FIXES-4.md` is closed on both sides with Part 4 below.
 
 ## Preview before the V149 deploy — economy portals that will show MORE (B-103)
 
@@ -310,3 +310,45 @@ ORDER BY newly_shown_total DESC;
 ```
 
 
+
+# Part 4 — §6 of `FIXES-4.md`, PWA should-fix (2026-10-09)
+
+PWA gate green (lint → `tsc -b` → `typecheck:tests` → vitest 1317 → `vite build`), offline
+`shell.spec` green (`journey.spec` still the known-rotten one). PWA 1.49.4. No backend change.
+
+- **P-63** — `flushOutbox` is single-flight: a caller arriving mid-flush AWAITS it and then gets one
+  shared follow-up pass (an op queued after the running pass read the queue is sent too), instead
+  of an immediate «nothing synced». The act editor's «client signed while you were editing» toast
+  reads «unsaved» (not `dirty`, which is false once SIGNED) from an effect declared after the
+  signature effect, and is silent for the master's own signature; Sign/Share/PDF run one at a time.
+- **P-64** — «Мої гроші»: `applyCashDelta` moves figures only for rows inside the window on screen
+  (the `summaryDelta` rule), and `placeRow` re-sorts an edited row by date and drops one dated
+  outside the window — no second group under one `key={d.day}`.
+- **P-65** — `refetchOnReconnect` is gated on the outbox like focus (`outboxBusy`); `useAddReceipt`
+  refetches only when the write LANDED online; `cancelCoverage.test.ts` strips comments and asks for
+  a `cancel` PROPERTY.
+- **P-66** — `parseMoney`/`parseQuantity` read «,5», «5.», «+5»; payments and cash pass
+  `PAYMENT_MAX` (100 000 000, the server's bound there); `roundQuantity` answers 0 below half a
+  thousandth instead of NaN; `formatMoney`/`formatAmount` round first, so no «-0 ₴»; receipt and
+  economy-summary totals and the «%» breakdown base go through `sumMoney`/`roundMoney`.
+- **P-67** — the act editor is masked whole; the object card's total carries its own mask;
+  `replayMasks.test.tsx` asserts the card total and, on the source, the act editor, ClientBanner,
+  SummaryCard, notes, the cash screen, the home strip, InfoPopover and ActionMenu.
+- **P-68** — `patchPendingCreate` and `dropPendingEntity` WAIT for a create whose POST is in the air
+  (then fold into it, or answer false once it landed), so the caller's PATCH/DELETE never races it —
+  cash, shopping and act receipts at once. `useUpdateActReceipt` writes the answer into the act cache.
+- **P-69** — the receipt batch never sends a blank label: typed, read, cached, else the server's own
+  «Чек №N» re-read (the field is `@NotBlank`, so omitting it was not an option).
+- **P-70** — a catalog pick sends `trade` only when the branch differs from the row's own trade.
+- **P-71** — `decodeQr` (dead since B-31h) and its tests removed; stale comments in `useEconomy`,
+  `ObjectEconomySection`, `types.ts`, `contract.test.ts` and this repo's shopping-list doc fixed; the
+  «Прибуток is gone» test asserts the fixture's FIGURES instead of strings in no bundle.
+- **P-72** — desktop sends `crew_margin_viewed` (`matchMedia` on SummaryCard); `materials.badNumber`
+  names each question's own bound; a remembered answer resets hand-typed quantities; the habits card
+  no longer flashes an error for a frame; habit parsing matches `MaterialPrefs` (`new BigDecimal`
+  shapes only, sheet case-insensitive and 500-4000 mm a side); act receipt dates are formatted; a
+  queued receipt's fiscal identity is taken as a PAIR; an abandoned template create drops its queued
+  positions and reports a refused delete; a guard test keeps `:has()` out of shared selector lists;
+  en plurals gained `_other`; «Мої гроші» moves «this week/month/year» forward after midnight; a mouse
+  pick in the catalog autocomplete no longer runs twice; the `materials:<id>:params` keys an earlier
+  build left in `localStorage` are swept at start-up.
