@@ -62,3 +62,34 @@ name the majority trade does not ship stays; a NULL trade stays NULL; a 50/50 ti
 alphabetically first trade (pinned as shipped, not endorsed); below half nothing moves; SIGNED and
 SENT are untouched. The two positions are read off `catalog_templates` at V139, not typed, so the
 test cannot drift from the library it describes.
+
+## `journey.spec` — the empty «Обʼєкти» was a real bug (PWA 1.49.5)
+
+The open-questions item suspected it, and it reproduced on the first run: the server had the
+object, `/projects` showed «Ще немає обʼєктів» for the whole 120 s.
+
+**Cause.** The query cache is persisted to IndexedDB with `throttleTime: 1000`, and a restored
+query keeps the `dataUpdatedAt` it was saved with. The spec created an object and hard-navigated
+within that second, so the snapshot still held the list from BEFORE the create — and, being younger
+than the 30 s `staleTime`, it restored as FRESH. No mount refetch; no focus refetch (off); nothing
+afterwards either, because the screen stays mounted. A master killing the app right after a write
+and reopening it within 30 s hits the same thing: his last change is missing from the screen until
+something else invalidates it. Instrumented: snapshot `n=0`, no `GET /api/projects` after the
+navigation, still empty after 40 s.
+
+**Fix.** `PersistQueryClientProvider.onSuccess` → `markRestoredStale(queryClient)`
+(`src/lib/offlinePersist.ts`): `invalidateQueries({ refetchType: 'none' })` once the snapshot is
+restored and BEFORE `isRestoring` drops, so every mounted screen asks the server once. It fetches
+nothing off screen, and the mount fetch is the one a cold start more than 30 s later already made —
+offline it fails fast and the restored data stays (`offlineFirst`). No new outbox race: mount
+fetches were never gated.
+
+**The spec's two stale steps** — written before a signed-in master on `/login` was redirected home:
+step 2 now asserts that a second cold navigation offline boots the shell from the cache (URL `/`,
+the offline banner, the object); step 3 creates an estimate through «+ Новий» → «Порожній» and
+waits for «Не синхронізовано» instead of clicking a button that no longer exists and accepting
+«Офлайн» as proof of a queued write.
+
+Verified both ways: green with the fix, red at the original spot with `onSuccess` removed. CI still
+runs only `shell.spec` — `journey.spec` needs a backend on :8080. `offlinePersist.test.ts` pins
+`markRestoredStale` (a snapshot fresh by the clock comes back invalidated, nothing is fetched).

@@ -3382,7 +3382,8 @@ one-line summary — keep the item in the file as a record.
   `crewMargin.ts` is one half of a **mirrored pair** — the fixture is asserted on both sides.
 
 ### The offline JOURNEY spec has rotted, and its last step may be a real bug
-- **Status:** OPEN — found 2026-09-25 while running the round-3 gate.
+- **Status:** RESOLVED 2026-10-12 — it WAS a real bug: a persisted snapshot younger than `staleTime` restored as fresh and was never refetched; `markRestoredStale` (PWA 1.49.5) marks every restored query stale. The two stale steps were rewritten; the spec is green. See [iteration-review-leftovers.md](iteration-review-leftovers.md).
+- **Found:** 2026-09-25 while running the round-3 gate.
 - **Context:** `npm run test:e2e:offline` runs two specs and **CI only runs `shell.spec`** (green).
   `journey.spec` needs a backend on :8080 and had drifted from the app in three places: the privacy
   consent checkbox it never ticked (the form simply refused to submit), the new-object button
