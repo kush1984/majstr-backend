@@ -42,9 +42,9 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
@@ -92,18 +92,19 @@ class ProjectReceiptServiceTest {
         verifyNoInteractions(storage);
     }
 
-    /** The whole point of the batch: the photo is saved before the sum is known. */
+    /** The whole point of the batch: the photo is saved before the sum is known. A blank label
+     *  reaches the creator as {@code null} — it numbers «Чек №N» under the object's lock (B-31d). */
     @Test
-    void savesWithNoAmountAndNamesTheReceiptItself() throws IOException {
+    void savesWithNoAmountAndLeavesTheNameToTheLockedInsert() throws IOException {
         owned();
         stored();
         when(receiptRepository.countByProjectId(PROJECT)).thenReturn(2L);
-        when(receiptRepository.maxSortOrder(PROJECT)).thenReturn(1);
         attemptWrites();
 
         ProjectReceiptResponse saved = service.add(PROJECT, OWNER, null, file(), "  ", null, null);
 
-        assertThat(saved.label()).isEqualTo("Чек №3");
+        verify(creator).attempt(any(), any(), isNull(), any(), any(), anyString());
+        assertThat(saved.label()).isEqualTo("Чек №?");
         assertThat(saved.amount()).isEqualByComparingTo("0.00");
         assertThat(saved.hasPhoto()).isTrue();
         // Nothing was decided about the money.
@@ -123,7 +124,7 @@ class ProjectReceiptServiceTest {
                 new BigDecimal("480.00"), null);
 
         assertThat(replay.id()).isEqualTo(id);
-        verify(creator, never()).attempt(any(), any(), anyString(), any(), any(), anyString(), anyInt());
+        verify(creator, never()).attempt(any(), any(), any(), any(), any(), anyString());
         verifyNoInteractions(storage);
     }
 
@@ -139,8 +140,7 @@ class ProjectReceiptServiceTest {
         stored();
         UUID id = UUID.randomUUID();
         when(receiptRepository.countByProjectId(PROJECT)).thenReturn(0L);
-        when(receiptRepository.maxSortOrder(PROJECT)).thenReturn(-1);
-        when(creator.attempt(any(), any(), anyString(), any(), any(), anyString(), anyInt()))
+        when(creator.attempt(any(), any(), any(), any(), any(), anyString()))
                 .thenThrow(new DataIntegrityViolationException(
                         "duplicate key value violates unique constraint \"project_receipt_pkey\""));
         when(creator.replay(id, PROJECT))
@@ -439,18 +439,18 @@ class ProjectReceiptServiceTest {
 
     // ---- helpers ----------------------------------------------------------
 
-    /** Let the creator's {@code attempt} write, answering the way the real one does — so label,
-     *  amount and sort order are still the SERVICE's own arithmetic, not the stub's. */
+    /** Let the creator's {@code attempt} write, answering the way the real one does — so the label
+     *  and amount are still the SERVICE's own arithmetic, not the stub's. The number in a server
+     *  name is the creator's (pinned by {@code ProjectReceiptIntegrationTest}), so «?» here. */
     private void attemptWrites() {
-        when(creator.attempt(any(), any(), anyString(), any(), any(), anyString(), anyInt()))
+        when(creator.attempt(any(), any(), any(), any(), any(), anyString()))
                 .thenAnswer(i -> response(ProjectReceipt.builder()
                         .id(UUID.randomUUID())
                         .projectId(i.getArgument(0))
-                        .label(i.getArgument(2))
+                        .label(i.getArgument(2) == null ? "Чек №?" : i.getArgument(2))
                         .amount(i.getArgument(3))
                         .issuedAt(i.getArgument(4))
                         .storageKey(i.getArgument(5))
-                        .sortOrder(i.getArgument(6))
                         .build()));
     }
 

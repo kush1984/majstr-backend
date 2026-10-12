@@ -73,7 +73,7 @@ public class WorkActReceiptService {
     private static final int HEADER_PEEK_BYTES = 16;
     private static final long MAX_PHOTO_BYTES = 8L * 1024 * 1024;
     private static final int MONEY_SCALE = 2;
-    private static final int MAX_RECEIPTS = 50;
+    static final int MAX_RECEIPTS = 50;
     private static final int MAX_LABEL = 160;
     /** Mirrors {@link com.majstr.backend.dto.WorkActReceiptRequest}'s bounds — the multipart add
      *  path has no bean validation, so the same rules are enforced here by hand (round 2: a
@@ -85,11 +85,6 @@ public class WorkActReceiptService {
      *  receipt is therefore a normal intermediate state, and what protects the document is
      *  {@link ActReceiptCompleteness}: an act holding one can be neither published nor signed.</p> */
     private static final BigDecimal MIN_AMOUNT = BigDecimal.ZERO;
-    /** Default label for a receipt added with none — «Чек №1», «Чек №2»… The number is the
-     *  receipt's own position at creation time and stays in the label, editable, even when the
-     *  list re-sorts by date; the server owns it because the client cannot know how many receipts
-     *  the act already holds (a batch upload would otherwise name every photo «Чек №1»). */
-    private static final String DEFAULT_LABEL_PREFIX = "Чек №";
     private static final BigDecimal MAX_AMOUNT = new BigDecimal("99999999.99");
 
     private final WorkActReceiptRepository receiptRepository;
@@ -149,19 +144,16 @@ public class WorkActReceiptService {
         }
         byte[] content = file.getBytes();
         ImageKind kind = requireImage(content);
-        int sortOrder = receiptRepository.maxSortOrder(actId) + 1;
-        String resolvedLabel = (label == null || label.isBlank())
-                ? DEFAULT_LABEL_PREFIX + (sortOrder + 1)
-                : label.trim();
+        String typedLabel = (label == null || label.isBlank()) ? null : label.trim();
         String storageKey = storeBytes(content, kind);
         WorkActReceiptResponse saved;
         // A replay loser must not copy the photo into the gallery a second time (review B-43): the
         // winner's own attempt already did, and the master would find «Чек №3» twice in «Чеки».
         boolean wonTheInsert = true;
         try {
-            saved = creator.attempt(actId, requestedId, resolvedLabel,
+            saved = creator.attempt(actId, requestedId, typedLabel,
                     amount.setScale(MONEY_SCALE, RoundingMode.HALF_UP), issuedAt, storageKey,
-                    sortOrder, FiscalIdentity.normalize(fiscalFn), FiscalIdentity.normalize(fiscalId));
+                    FiscalIdentity.normalize(fiscalFn), FiscalIdentity.normalize(fiscalId));
         } catch (WorkActSignedException e) {
             // The act was signed while this photo was uploading (B-60) — the re-check inside the
             // locked transaction is what caught it. Nothing was written, so the stored photo is an
@@ -187,7 +179,7 @@ public class WorkActReceiptService {
             // Fail-soft, and swallowed HERE: the copy runs in its own transaction (REQUIRES_NEW),
             // so the photo cap or a storage hiccup can never cost the master the receipt itself.
             try {
-                photoService.saveReceiptCopy(prepared.projectId(), ownerId, content, kind, resolvedLabel);
+                photoService.saveReceiptCopy(prepared.projectId(), ownerId, content, kind, saved.label());
             } catch (IOException | RuntimeException e) {
                 log.info("Receipt photo copy skipped for act {}: {}", actId, e.getMessage());
             }

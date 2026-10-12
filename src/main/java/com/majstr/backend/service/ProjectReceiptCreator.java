@@ -2,8 +2,10 @@ package com.majstr.backend.service;
 
 import com.majstr.backend.dto.ProjectReceiptResponse;
 import com.majstr.backend.entity.ProjectReceipt;
+import com.majstr.backend.exception.ProjectReceiptValidationException;
 import com.majstr.backend.exception.ResourceNotFoundException;
 import com.majstr.backend.repository.ProjectReceiptRepository;
+import com.majstr.backend.repository.ProjectRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
@@ -23,7 +25,12 @@ import java.util.UUID;
 @RequiredArgsConstructor
 class ProjectReceiptCreator {
 
+    /** The server names an unlabelled receipt, for the same reason the act does: a batch upload
+     *  cannot know how many the object already holds and would name every photo «Чек №1». */
+    static final String DEFAULT_LABEL_PREFIX = "Чек №";
+
     private final ProjectReceiptRepository receiptRepository;
+    private final ProjectRepository projectRepository;
     private final ProjectService projectService;
 
     /**
@@ -45,15 +52,25 @@ class ProjectReceiptCreator {
     /**
      * One create attempt in its own transaction. {@code saveAndFlush} so a duplicate primary key
      * surfaces HERE rather than on commit, where the caller could no longer tell it apart.
+     *
+     * <p>The object row is locked first, so the cap and «Чек №N» are counted by one upload at a time
+     * (review B-31d — two concurrent uploads used to share a number). A {@code null} label is named
+     * by the server.</p>
      */
     @Transactional
     public ProjectReceiptResponse attempt(UUID projectId, UUID requestedId, String label,
-                                         BigDecimal amount, LocalDate issuedAt, String storageKey,
-                                         int sortOrder) {
+                                         BigDecimal amount, LocalDate issuedAt, String storageKey) {
+        projectRepository.findByIdForUpdate(projectId)
+                .orElseThrow(() -> new ResourceNotFoundException("Project not found: " + projectId));
+        if (receiptRepository.countByProjectId(projectId) >= ProjectReceiptService.MAX_RECEIPTS) {
+            throw new ProjectReceiptValidationException(
+                    "error.project-receipt.limit", "PROJECT_RECEIPT_LIMIT");
+        }
+        int sortOrder = receiptRepository.maxSortOrder(projectId) + 1;
         ProjectReceipt receipt = ProjectReceipt.builder()
                 .id(requestedId)
                 .projectId(projectId)
-                .label(label)
+                .label(label != null ? label : DEFAULT_LABEL_PREFIX + (sortOrder + 1))
                 .amount(amount)
                 .issuedAt(issuedAt)
                 .storageKey(storageKey)

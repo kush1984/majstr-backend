@@ -5,6 +5,7 @@ import com.majstr.backend.dto.WorkActReceiptResponse;
 import com.majstr.backend.entity.WorkAct;
 import com.majstr.backend.entity.WorkActReceipt;
 import com.majstr.backend.exception.ResourceNotFoundException;
+import com.majstr.backend.exception.WorkActValidationException;
 import com.majstr.backend.repository.WorkActReceiptRepository;
 import com.majstr.backend.repository.WorkActRepository;
 import lombok.RequiredArgsConstructor;
@@ -26,6 +27,12 @@ import java.util.UUID;
 @Component
 @RequiredArgsConstructor
 class WorkActReceiptCreator {
+
+    /** Default label for a receipt added with none — «Чек №1», «Чек №2»… The number is the
+     *  receipt's own position at creation time and stays in the label, editable, even when the
+     *  list re-sorts by date; the server owns it because the client cannot know how many receipts
+     *  the act already holds (a batch upload would otherwise name every photo «Чек №1»). */
+    static final String DEFAULT_LABEL_PREFIX = "Чек №";
 
     private final WorkActReceiptRepository receiptRepository;
     private final WorkActRepository workActRepository;
@@ -74,19 +81,27 @@ class WorkActReceiptCreator {
      * receipt landed on a SIGNED act: unpriceable afterwards, outside the {@code doc_hash} and
      * the ADDENDUM, yet counted by {@code sumSignedActReceipts}. The lock is what makes the check
      * hold: a signature in flight either waits for this insert or finds it already committed.
+     *
+     * <p>The same lock numbers the receipt (review B-31d): read before it, two uploads to one act
+     * both saw the same highest position and the master got «Чек №3» twice. The cap is re-asked
+     * here for the same reason. A {@code null} label is named by the server.</p>
      */
     @Transactional
     public WorkActReceiptResponse attempt(UUID actId, UUID requestedId, String label,
                                          BigDecimal amount, LocalDate issuedAt, String storageKey,
-                                         int sortOrder, String fiscalFn, String fiscalId) {
+                                         String fiscalFn, String fiscalId) {
         WorkAct act = workActRepository.findByIdForUpdate(actId)
                 .orElseThrow(() -> new ResourceNotFoundException("Work act not found: " + actId));
         WorkActService.requireNotSigned(act);
+        if (receiptRepository.countByWorkActId(actId) >= WorkActReceiptService.MAX_RECEIPTS) {
+            throw new WorkActValidationException("error.work-act.receipts-limit", "WORK_ACT_RECEIPTS_LIMIT");
+        }
+        int sortOrder = receiptRepository.maxSortOrder(actId) + 1;
         WorkActService.touch(act); // a receipt IS part of the document (B-61)
         WorkActReceipt receipt = WorkActReceipt.builder()
                 .id(requestedId)
                 .workAct(act)
-                .label(label)
+                .label(label != null ? label : DEFAULT_LABEL_PREFIX + (sortOrder + 1))
                 .amount(amount)
                 .issuedAt(issuedAt)
                 .storageKey(storageKey)

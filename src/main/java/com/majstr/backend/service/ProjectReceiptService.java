@@ -82,13 +82,10 @@ public class ProjectReceiptService {
     private static final long MAX_PHOTO_BYTES = 8L * 1024 * 1024;
     private static final int MONEY_SCALE = 2;
     /** Higher than an act's 50: an act covers one stage, an object covers the whole renovation. */
-    private static final int MAX_RECEIPTS = 100;
+    static final int MAX_RECEIPTS = 100;
     private static final int MAX_LABEL = 160;
     private static final BigDecimal MIN_AMOUNT = BigDecimal.ZERO;
     private static final BigDecimal MAX_AMOUNT = new BigDecimal("99999999.99");
-    /** The server names an unlabelled receipt, for the same reason the act does: a batch upload
-     *  cannot know how many the object already holds and would name every photo «Чек №1». */
-    private static final String DEFAULT_LABEL_PREFIX = "Чек №";
 
     private final ProjectReceiptRepository receiptRepository;
     private final ObjectExpenseRepository expenseRepository;
@@ -133,15 +130,12 @@ public class ProjectReceiptService {
         }
         byte[] content = file.getBytes();
         ImageKind kind = requireImage(content);
-        int sortOrder = receiptRepository.maxSortOrder(projectId) + 1;
-        String resolvedLabel = (label == null || label.isBlank())
-                ? DEFAULT_LABEL_PREFIX + (sortOrder + 1)
-                : label.trim();
+        String typedLabel = (label == null || label.isBlank()) ? null : label.trim();
         String storageKey = storeBytes(content, kind);
         try {
-            return creator.attempt(projectId, requestedId, resolvedLabel,
+            return creator.attempt(projectId, requestedId, typedLabel,
                     resolvedAmount.setScale(MONEY_SCALE, RoundingMode.HALF_UP), issuedAt,
-                    storageKey, sortOrder);
+                    storageKey);
         } catch (DataIntegrityViolationException e) {
             // Two uploads of one queued receipt in flight at once: the loser's insert violates the
             // primary key, and the row the winner wrote IS the answer — so the photo this attempt

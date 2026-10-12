@@ -2,8 +2,10 @@ package com.majstr.backend.repository;
 
 import com.majstr.backend.entity.Project;
 import com.majstr.backend.entity.ProjectStatus;
+import jakarta.persistence.LockModeType;
 import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -23,6 +25,11 @@ public interface ProjectRepository extends JpaRepository<Project, UUID> {
     List<Project> findByOwnerIdOrderByCreatedAtDesc(UUID ownerId);
 
     long countByOwnerId(UUID ownerId);
+
+    /** Serialises writes that number rows within one object (a receipt's «Чек №N», review B-31d). */
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("SELECT p FROM Project p WHERE p.id = :id")
+    java.util.Optional<Project> findByIdForUpdate(@Param("id") UUID id);
 
     // ---- dashboard metrics (aggregate, no entity loading) -----------------
 

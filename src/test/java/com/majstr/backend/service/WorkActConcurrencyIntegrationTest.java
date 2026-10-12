@@ -68,6 +68,7 @@ class WorkActConcurrencyIntegrationTest extends IntegrationTestBase {
     @Autowired WorkActService workActService;
     @Autowired WorkActReceiptService receiptService;
     @Autowired WorkActReceiptCreator receiptCreator;
+    @Autowired ProjectReceiptCreator projectReceiptCreator;
     @Autowired UserRepository userRepository;
     @Autowired ProjectRepository projectRepository;
     @Autowired EstimateRepository estimateRepository;
@@ -91,7 +92,7 @@ class WorkActConcurrencyIntegrationTest extends IntegrationTestBase {
         // The insert re-asks under the act's own lock, so the receipt is refused instead of landing
         // at 1 800 ₴ on a frozen document — unpriceable, undeletable, yet counted.
         assertThatThrownBy(() -> receiptCreator.attempt(f.actId, receiptId, "Епіцентр",
-                new BigDecimal("1800.00"), LocalDate.now(), "act-receipts/orphan.jpg", 0, null, null))
+                new BigDecimal("1800.00"), LocalDate.now(), "act-receipts/orphan.jpg", null, null))
                 .isInstanceOf(WorkActSignedException.class);
         assertThat(receiptRepository.findByWorkActIdNewestFirst(f.actId)).isEmpty();
     }
@@ -110,14 +111,72 @@ class WorkActConcurrencyIntegrationTest extends IntegrationTestBase {
         assertThat(receiptCreator.prepare(f.actId, f.ownerId, receiptId).replay()).isNull();
 
         receiptCreator.attempt(f.actId, receiptId, "Епіцентр", new BigDecimal("1800.00"),
-                LocalDate.now(), "act-receipts/a.jpg", 0, null, null);
+                LocalDate.now(), "act-receipts/a.jpg", null, null);
         assertThatThrownBy(() -> receiptCreator.attempt(f.actId, receiptId, "Епіцентр",
-                new BigDecimal("1800.00"), LocalDate.now(), "act-receipts/b.jpg", 0, null, null))
+                new BigDecimal("1800.00"), LocalDate.now(), "act-receipts/b.jpg", null, null))
                 .isInstanceOf(org.springframework.dao.DataIntegrityViolationException.class);
 
         assertThat(receiptRepository.findByWorkActIdNewestFirst(f.actId)).hasSize(1);
         assertThat(receiptCreator.replay(receiptId, f.actId)).isPresent()
                 .get().extracting(r -> r.id()).isEqualTo(receiptId);
+    }
+
+    /**
+     * Review B-31d: two unlabelled receipts uploaded to one act at once. The number is read under
+     * the act's lock, so the second upload — started while the first still holds it, uncommitted —
+     * waits, then counts the first: «Чек №1» and «Чек №2», never «Чек №1» twice.
+     */
+    @Test
+    void twoUnlabelledUploadsAtOnce_getTwoNumbers() throws Exception {
+        Fixture f = fixture("10.000");
+        List<String> labels = numberTwoConcurrently(
+                () -> receiptCreator.attempt(f.actId, UUID.randomUUID(), null, BigDecimal.ZERO,
+                        LocalDate.now(), "act-receipts/a.jpg", null, null).label(),
+                () -> receiptCreator.attempt(f.actId, UUID.randomUUID(), null, BigDecimal.ZERO,
+                        LocalDate.now(), "act-receipts/b.jpg", null, null).label());
+        assertThat(labels).containsExactly("Чек №1", "Чек №2");
+    }
+
+    /** The same on the object's «Чеки», whose insert locks the object row (B-31d). */
+    @Test
+    void twoUnlabelledObjectReceiptsAtOnce_getTwoNumbers() throws Exception {
+        Fixture f = fixture("10.000");
+        List<String> labels = numberTwoConcurrently(
+                () -> projectReceiptCreator.attempt(f.projectId, UUID.randomUUID(), null,
+                        BigDecimal.ZERO, LocalDate.now(), "object-receipts/a.jpg").label(),
+                () -> projectReceiptCreator.attempt(f.projectId, UUID.randomUUID(), null,
+                        BigDecimal.ZERO, LocalDate.now(), "object-receipts/b.jpg").label());
+        assertThat(labels).containsExactly("Чек №1", "Чек №2");
+    }
+
+    /** Runs {@code first} in a transaction held open until {@code second} has had time to block. */
+    private List<String> numberTwoConcurrently(java.util.concurrent.Callable<String> first,
+                                               java.util.concurrent.Callable<String> second)
+            throws Exception {
+        CountDownLatch inserted = new CountDownLatch(1);
+        CountDownLatch release = new CountDownLatch(1);
+        ExecutorService pool = Executors.newFixedThreadPool(2);
+        try {
+            Future<String> a = pool.submit(() -> new TransactionTemplate(txManager).execute(status -> {
+                try {
+                    String label = first.call();
+                    inserted.countDown();
+                    await(release);
+                    return label;
+                } catch (Exception e) {
+                    throw new IllegalStateException(e);
+                }
+            }));
+            assertThat(inserted.await(30, TimeUnit.SECONDS)).isTrue();
+            Future<String> b = pool.submit(second);
+            Thread.sleep(SETTLE_MS);
+            assertThat(b.isDone()).as("the second upload must wait for the first one's lock").isFalse();
+            release.countDown();
+            return List.of(a.get(30, TimeUnit.SECONDS), b.get(30, TimeUnit.SECONDS));
+        } finally {
+            release.countDown();
+            pool.shutdownNow();
+        }
     }
 
     @Test
