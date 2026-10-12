@@ -14,6 +14,7 @@ import com.majstr.backend.entity.ShoppingListItem;
 import com.majstr.backend.entity.ShoppingListItemSource;
 import com.majstr.backend.exception.ResourceNotFoundException;
 import com.majstr.backend.repository.EstimateRepository;
+import com.majstr.backend.repository.ProjectRepository;
 import com.majstr.backend.repository.ShoppingListItemRepository;
 import com.majstr.backend.repository.ShoppingListRepository;
 import lombok.RequiredArgsConstructor;
@@ -60,6 +61,7 @@ public class ShoppingListService {
 
     private final ShoppingListRepository listRepository;
     private final ShoppingListItemRepository itemRepository;
+    private final ProjectRepository projectRepository;
     private final EstimateRepository estimateRepository;
     private final ProjectService projectService;
     private final ShoppingListPdfService pdfService;
@@ -451,7 +453,15 @@ public class ShoppingListService {
         }
     }
 
+    /**
+     * Every write that may CREATE something on the list comes through here, so it locks the object
+     * row first (review B-13): two adds replaying one queued row — or a first add racing a first
+     * recalculation — used to both find nothing and both insert, and the loser died on a primary or
+     * unique key as a 500. Serialised, the second one finds the first one's row and is a replay.
+     */
     private ShoppingList getOrCreate(Project project) {
+        projectRepository.findByIdForUpdate(project.getId())
+                .orElseThrow(() -> new ResourceNotFoundException("Project not found"));
         return listRepository.findByProjectId(project.getId())
                 .orElseGet(() -> listRepository.save(ShoppingList.builder()
                         .projectId(project.getId())

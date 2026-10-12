@@ -16,10 +16,17 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import java.math.BigDecimal;
 import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -45,6 +52,7 @@ class ShoppingListIntegrationTest extends IntegrationTestBase {
     @Autowired ShoppingListService shoppingListService;
     @Autowired ProjectService projectService;
     @Autowired EstimateService estimateService;
+    @Autowired PlatformTransactionManager txManager;
 
     private UUID ownerId;
     private UUID projectId;
@@ -508,6 +516,48 @@ class ShoppingListIntegrationTest extends IntegrationTestBase {
         assertThat(replay.id()).isEqualTo(first.id());
         assertThat(shoppingListService.get(projectId, ownerId).items()).hasSize(1);
         assertThat(first.source()).isEqualTo(ShoppingListItemSource.MANUAL);
+    }
+
+    /**
+     * Review B-13: the SAME replay, but both uploads in flight at once. The first holds its
+     * transaction open; the second must wait for it and then answer with its row — not insert a
+     * second one and die on the primary key as a 500.
+     */
+    @Test
+    void twoConcurrentReplaysOfOneAdd_landOneRow() throws Exception {
+        UUID clientId = UUID.randomUUID();
+        ShoppingListItemRequest req = new ShoppingListItemRequest(
+                null, "Клей Ceresit", Unit.PIECE, new BigDecimal("4"), null);
+        CountDownLatch added = new CountDownLatch(1);
+        CountDownLatch release = new CountDownLatch(1);
+        ExecutorService pool = Executors.newFixedThreadPool(2);
+        try {
+            Future<ShoppingListItemResponse> first = pool.submit(() ->
+                    new TransactionTemplate(txManager).execute(status -> {
+                        ShoppingListItemResponse r =
+                                shoppingListService.addManual(projectId, ownerId, req, clientId);
+                        added.countDown();
+                        try {
+                            release.await(30, TimeUnit.SECONDS);
+                        } catch (InterruptedException e) {
+                            Thread.currentThread().interrupt();
+                        }
+                        return r;
+                    }));
+            assertThat(added.await(30, TimeUnit.SECONDS)).isTrue();
+            Future<ShoppingListItemResponse> second = pool.submit(() ->
+                    shoppingListService.addManual(projectId, ownerId, req, clientId));
+            Thread.sleep(1500);
+            assertThat(second.isDone()).as("the replay must wait for the add in flight").isFalse();
+            release.countDown();
+
+            assertThat(second.get(30, TimeUnit.SECONDS).id())
+                    .isEqualTo(first.get(30, TimeUnit.SECONDS).id());
+            assertThat(shoppingListService.get(projectId, ownerId).items()).hasSize(1);
+        } finally {
+            release.countDown();
+            pool.shutdownNow();
+        }
     }
 
     /**
