@@ -2660,7 +2660,7 @@ one-line summary — keep the item in the file as a record.
   third ladder rung. Option (b) is dropped, not deferred — no edit logging shipped. Ready to close
   as RESOLVED on the master's word; see `docs/iteration-material-calculator.md` §21.
 
-### Trade-by-trade review (`TRADES-REVIEW.md`) — batches 1-5 shipped, batches 6+ open
+### Trade-by-trade review (`TRADES-REVIEW.md`) — batches 1-6 shipped, batches 7+ open
 - **Status:** IN_PROGRESS — batch 1 (§4.1 + §1.8) shipped as **V146**, 2026-10-06, see
   [iteration-trades-review-batch-1.md](iteration-trades-review-batch-1.md); batch 2 (§4 item 1 —
   FLOORING's norms + the §3.5 dictionary) as **V147**, same day, see
@@ -2670,14 +2670,16 @@ one-line summary — keep the item in the file as a record.
   (§4 item 3 — BUILDER's first norms, 106 of 229 positions answered, 28 dictionary rows) as **V151**,
   2026-10-13, see [iteration-trades-review-builder-norms.md](iteration-trades-review-builder-norms.md);
   batch 5 (PLUMBING's first norms, 60 of 176 answered, plus the STEP basis) as **V152**, same day,
-  see [iteration-trades-review-plumbing-norms.md](iteration-trades-review-plumbing-norms.md).
+  see [iteration-trades-review-plumbing-norms.md](iteration-trades-review-plumbing-norms.md); batch 6
+  (ELECTRICAL's first norms, 92 of 177 answered) as **V153**, same day, see
+  [iteration-trades-review-electrical-norms.md](iteration-trades-review-electrical-norms.md).
 - **Since:** 2026-10-06, a trade-by-trade read of the catalog, the bundles and the norms across all
   nine trades against a clean V145 DB.
 - **Context:** batch 1 took only what buys the WRONG QUANTITY today — eleven data corrections plus
   the calculator-engine gaps of §1.8. Batch 2 took FLOORING from zero norms to 52 of 54 positions
   answered. What the review found and both batches deliberately left:
-  - **norms for the three trades that still have none at all** — ELECTRICAL, METAL, DEMOLITION
-    (BUILDER got its first set in V151, PLUMBING in V152; rebar waits for a «kg per m³» parameter) (the same gap the «Material calculators» item above tracks);
+  - **norms for the two trades that still have none at all** — METAL, DEMOLITION
+    (BUILDER got its first set in V151, PLUMBING in V152, ELECTRICAL in V153; rebar waits for a «kg per m³» parameter) (the same gap the «Material calculators» item above tracks);
   - **FLOORING's §3.3 — the new positions V148 did not need for a bundle** (V148 added 14 of them
     with norms), plus the new LINEAR_METER damper-tape row;
   - ~~template ordering + the protection and cleanup steps~~ — **done in V148**;
@@ -3709,6 +3711,12 @@ one-line summary — keep the item in the file as a record.
   The open decision is now **the shape, not the maths** — the deterministic calc + drawn-bus honesty
   are proven; what's unresolved is the UX/model that makes it worth a master's time. Details:
   [iteration-electrical-core.md](iteration-electrical-core.md).
+- **Update (2026-10-13, V153):** ELECTRICAL now has material norms, and the laying positions buy
+  **cable at 1,0 m per metre** («Кабель мідний» / «Кабель силовий»). While the measurements stay
+  parked the norm is the only cable source. **Re-enabling them must reconcile the two**: the plan's
+  `CABLE` lands as a MATERIAL line, which the calculator skips but does not subtract, so the same
+  cable would be offered twice — either the plan fills the laying line's QUANTITY, or the norm
+  steps aside when a CABLE line exists.
 ### Smart Sentry filter for client 4xx (mute external/bot, keep our own front-end)
 - **Status:** OPEN
 - **Since:** Multipart-415 fix (2026-07-19)
