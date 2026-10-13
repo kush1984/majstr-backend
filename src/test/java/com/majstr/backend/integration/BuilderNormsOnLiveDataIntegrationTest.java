@@ -57,7 +57,7 @@ class BuilderNormsOnLiveDataIntegrationTest extends IntegrationTestBase {
                                 WHERE n.owner_id IS NULL
                                   AND (n.trade = 'BUILDER' OR n.trade IS NULL)
                                   AND n.unit = t.unit AND n.name_key = """ + NAME_KEY + ")"))
-                .isEqualTo(106);
+                .isEqualTo(109); // V162: +2 normed additions, + the small screed copied from FLOORING
     }
 
     /**
@@ -92,7 +92,7 @@ class BuilderNormsOnLiveDataIntegrationTest extends IntegrationTestBase {
                    AND material_id IS NULL AND qty_per_unit IS NULL
                 """, String.class);
 
-        assertThat(verdicts).hasSize(13).contains(
+        assertThat(verdicts).hasSize(14).contains( // V162: the renamed site levelling, under both names
                 "приготування розчину для кладки без щебня",
                 "копання траншей ям котловану вручну",
                 "зворотня засипка траншеї");

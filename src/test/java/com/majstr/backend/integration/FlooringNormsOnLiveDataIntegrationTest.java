@@ -81,9 +81,10 @@ class FlooringNormsOnLiveDataIntegrationTest extends IntegrationTestBase {
      *  each of them is answered too (the test above). */
     @Test
     void theCatalogGrewOnlyByTheFourteenTheBundlesNeed() {
+        // + 7 from V161's catalog pass (docs/iteration-trades-review-catalog.md).
         assertThat(count("""
                 SELECT count(*) FROM catalog_templates WHERE trade = 'FLOORING' AND type = 'WORK'
-                """)).isEqualTo(54 + 14);
+                """)).isEqualTo(54 + 14 + 7);
     }
 
     /** «Checked, consumes nothing» is a RECORDED verdict and needs BOTH nulls together (V127's

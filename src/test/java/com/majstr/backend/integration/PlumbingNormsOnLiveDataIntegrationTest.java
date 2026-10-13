@@ -43,7 +43,7 @@ class PlumbingNormsOnLiveDataIntegrationTest extends IntegrationTestBase {
                                 WHERE n.owner_id IS NULL
                                   AND (n.trade = 'PLUMBING' OR n.trade IS NULL)
                                   AND n.unit = t.unit AND n.name_key = """ + NAME_KEY + ")"))
-                .isEqualTo(61);
+                .isEqualTo(63); // V164: + the air valve and the basin frame
     }
 
     /** Ruling 3: a mounting kit is normed, the appliance the client chooses is not. */
@@ -113,7 +113,7 @@ class PlumbingNormsOnLiveDataIntegrationTest extends IntegrationTestBase {
                 SELECT name_key FROM material_norm
                  WHERE owner_id IS NULL AND trade = 'PLUMBING'
                    AND material_id IS NULL AND qty_per_unit IS NULL
-                """, String.class)).hasSize(26)
+                """, String.class)).hasSize(28) // V164: both pressure tests under both names
                 .contains("перевірка системи водопроводу тиском", "штроблення в бетоні (вода)",
                         "запуск системи опалення");
     }

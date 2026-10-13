@@ -95,7 +95,7 @@ class MetalNormsOnLiveDataIntegrationTest extends IntegrationTestBase {
                 SELECT name_key FROM material_norm
                  WHERE owner_id IS NULL AND trade = 'METAL'
                    AND material_id IS NULL AND qty_per_unit IS NULL
-                """, String.class)).hasSize(7)
+                """, String.class)).hasSize(9) // V166: cutting and bending under both names
                 .contains("гаряче цинкування (послуга)", "різка металу", "демонтаж старого паркану");
     }
 

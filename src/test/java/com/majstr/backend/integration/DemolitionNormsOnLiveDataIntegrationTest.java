@@ -33,7 +33,7 @@ class DemolitionNormsOnLiveDataIntegrationTest extends IntegrationTestBase {
                                 WHERE n.owner_id IS NULL
                                   AND (n.trade = 'DEMOLITION' OR n.trade IS NULL)
                                   AND n.unit = t.unit AND n.name_key = """ + NAME_KEY + ")"))
-                .isEqualTo(44);
+                .isEqualTo(53); // V165: + 9 normed additions
     }
 
     /** Ruling 2: a 0,9×2,1 doorway with a 30 cm overlap on three sides. */
@@ -86,7 +86,7 @@ class DemolitionNormsOnLiveDataIntegrationTest extends IntegrationTestBase {
                 SELECT count(*) FROM material_norm
                  WHERE owner_id IS NULL AND trade = 'DEMOLITION'
                    AND material_id IS NULL AND qty_per_unit IS NULL
-                """)).isEqualTo(31);
+                """)).isEqualTo(46); // V165: + 8 new verdicts, + 7 renamed keys
         assertThat(count("""
                 SELECT count(*) FROM material_norm
                  WHERE owner_id IS NULL AND trade IS NULL AND material_id IS NULL

@@ -73,6 +73,8 @@ class BundlesAsJobSequencesOnLiveDataIntegrationTest extends IntegrationTestBase
 
         Flyway.configure().dataSource(url, user, pass)
                 .locations("classpath:db/migration")
+                // Up to V148, not to the head: this pins V148's outcome, and V158+ add catalog versions of their own.
+                .target(MigrationVersion.fromVersion("148"))
                 .load().migrate();
     }
 

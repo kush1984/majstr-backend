@@ -67,6 +67,8 @@ class CatalogOrderOnLiveDataIntegrationTest extends IntegrationTestBase {
 
         Flyway.configure().dataSource(url, user, pass)
                 .locations("classpath:db/migration")
+                // Up to V157, not to the head: V162 renames the masonry row this history seeds.
+                .target(MigrationVersion.fromVersion("157"))
                 .load().migrate();
     }
 

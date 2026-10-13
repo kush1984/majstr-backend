@@ -34,7 +34,7 @@ class ElectricalNormsOnLiveDataIntegrationTest extends IntegrationTestBase {
                                 WHERE n.owner_id IS NULL
                                   AND (n.trade = 'ELECTRICAL' OR n.trade IS NULL)
                                   AND n.unit = t.unit AND n.name_key = """ + NAME_KEY + ")"))
-                .isEqualTo(93);
+                .isEqualTo(95); // V163: + the hollow-wall box and the cable tray
     }
 
     /** Ruling 1: a metre of laying is a metre of cable, and of conduit where the name says so. */
@@ -99,7 +99,7 @@ class ElectricalNormsOnLiveDataIntegrationTest extends IntegrationTestBase {
                 SELECT name_key FROM material_norm
                  WHERE owner_id IS NULL AND trade = 'ELECTRICAL'
                    AND material_id IS NULL AND qty_per_unit IS NULL
-                """, String.class)).hasSize(41)
+                """, String.class)).hasSize(43) // V163: two renamed chase keys
                 .contains("штроблення під електрокабель 20х20 мм (в бетоні)",
                         "свердління наскрізних отворів у бетоні",
                         "вимірювання опору ізоляції кабельних ліній");

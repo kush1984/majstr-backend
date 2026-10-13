@@ -324,22 +324,23 @@ class TradeReviewBatchOneOnLiveDataIntegrationTest extends IntegrationTestBase {
      * waterproofing or the first adhesive — because the order IS the content, so appending it at the
      * end would be a different bug.</p>
      */
+    /** V159 renamed the step «Ґрунтівка поверхні» (a material) to «Ґрунтування поверхні» (the work). */
     @Test
     void theFiveTilingBundlesPrimeBeforeTheyStick() {
         for (String bundle : PRIMED_BUNDLES) {
             assertThat(count("""
                     SELECT count(*) FROM estimate_template_items i JOIN estimate_templates t ON t.id = i.template_id
                      WHERE t.owner_id IS NULL AND t.is_default AND t.trade = 'TILING' AND t.name = ?
-                       AND lower(trim(i.name)) = 'ґрунтівка поверхні'
+                       AND lower(trim(i.name)) = 'ґрунтування поверхні'
                     """, bundle)).as("%s primes exactly once", bundle).isEqualTo(1);
         }
 
         // V148 opened every bundle with protection and the demolition it needs, so the exact
         // positions moved; what is pinned is the place relative to the base it primes.
-        assertThat(sortOrder("Басейн та мозаїка", "ґрунтівка поверхні"))
+        assertThat(sortOrder("Басейн та мозаїка", "ґрунтування поверхні"))
                 .as("after the screed, before the pool's waterproofing")
                 .isGreaterThan(sortOrder("Басейн та мозаїка", "штукатурка, стяжка басейну"));
-        assertThat(sortOrder("Тераса, балкон, вулиця", "ґрунтівка поверхні"))
+        assertThat(sortOrder("Тераса, балкон, вулиця", "ґрунтування поверхні"))
                 .as("after the demolition and the screed")
                 .isGreaterThan(sortOrder("Тераса, балкон, вулиця",
                         "влаштування стяжки з ухилом (балкон, тераса)"));
@@ -349,7 +350,7 @@ class TradeReviewBatchOneOnLiveDataIntegrationTest extends IntegrationTestBase {
      *  poured ONTO a primed base, so priming belongs before it and not after. */
     @Test
     void aSelfLevellingFloorIsPouredOntoAPrimedBase() {
-        assertThat(sortOrder("Підлога великоформатом, керамограніт", "ґрунтівка поверхні"))
+        assertThat(sortOrder("Підлога великоформатом, керамограніт", "ґрунтування поверхні"))
                 .isLessThan(sortOrder("Підлога великоформатом, керамограніт",
                         "влаштування наливної підлоги"));
     }
@@ -427,7 +428,7 @@ class TradeReviewBatchOneOnLiveDataIntegrationTest extends IntegrationTestBase {
     @Test
     void theChaseIsClosedAfterTheTestAndBeforeTheStart() {
         String bundle = "Квартира — вузол вводу, розводка води й каналізації";
-        int test = sortOrder("PLUMBING", bundle, "перевірка системи водопроводу тиском");
+        int test = sortOrder("PLUMBING", bundle, "опресування (гідравлічне випробування) водопроводу"); // renamed in V164
         int chase = sortOrder("PLUMBING", bundle, "заробка штроб (сантехніка)");
         int start = sortOrder("PLUMBING", bundle, "запуск системи водопроводу");
 
@@ -445,7 +446,7 @@ class TradeReviewBatchOneOnLiveDataIntegrationTest extends IntegrationTestBase {
      */
     @Test
     void everyBundleLineV146WroteResolvesToACatalogPosition() {
-        for (String name : List.of("Ґрунтівка поверхні", "Приготування розчину для кладки без щебня")) {
+        for (String name : List.of("Ґрунтування поверхні", "Приготування розчину для кладки без щебня")) {
             assertThat(count("""
                     SELECT count(*) FROM catalog_templates WHERE lower(trim(name)) = lower(trim(?))
                     """, name)).as("«%s» must name a library position to be priced", name)

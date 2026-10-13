@@ -97,10 +97,14 @@ class MaterialCalculatorIntegrationTest extends IntegrationTestBase {
         List<String> orphaned = jdbc.queryForList("""
                 SELECT n.trade || ' · ' || n.name_key || ' [' || n.unit || ']' FROM material_norm n
                  WHERE n.owner_id IS NULL AND n.trade IS NOT NULL
+                   AND NOT EXISTS (SELECT 1 FROM catalog_renamed_position r
+                                    WHERE r.old_name_key = n.name_key AND r.unit = n.unit)
                    AND NOT EXISTS (SELECT 1 FROM catalog_templates t
                                     WHERE t.trade = n.trade AND t.type = 'WORK'
                                       AND t.unit = n.unit
                                       AND""" + " " + NAME_KEY + " = n.name_key)", String.class);
+        // A RENAMED position's old key keeps its norms on purpose — an estimate written before the
+        // rename still carries the old name (V158) — and is recorded in catalog_renamed_position.
         assertThat(orphaned).as("norms whose position the catalog no longer ships").isEmpty();
 
         // A norm carrying no trade answers for a position of ANY trade (§25), so it is orphaned
@@ -110,6 +114,8 @@ class MaterialCalculatorIntegrationTest extends IntegrationTestBase {
         List<String> orphanedGeneral = jdbc.queryForList("""
                 SELECT n.name_key || ' [' || n.unit || ']' FROM material_norm n
                  WHERE n.owner_id IS NULL AND n.trade IS NULL
+                   AND NOT EXISTS (SELECT 1 FROM catalog_renamed_position r
+                                    WHERE r.old_name_key = n.name_key AND r.unit = n.unit)
                    AND NOT EXISTS (SELECT 1 FROM catalog_templates t
                                     WHERE t.type = 'WORK' AND t.unit = n.unit
                                       AND""" + " " + NAME_KEY + " = n.name_key)", String.class);
@@ -491,7 +497,7 @@ class MaterialCalculatorIntegrationTest extends IntegrationTestBase {
      */
     @Test
     void aPaintedHiddenDoorBuysItsPaintPerLeafWithoutAsking() {
-        addWork("PAINTER", name("PAINTER", "фарбування дверей прих. монтажу (одна сторона)", "PIECE"),
+        addWork("PAINTER", name("PAINTER", "фарбування дверей прихованого монтажу (одна сторона)", "PIECE"),
                 "PIECE", "4");
 
         MaterialCalculationResponse result = calculate(BigDecimal.ZERO, null);

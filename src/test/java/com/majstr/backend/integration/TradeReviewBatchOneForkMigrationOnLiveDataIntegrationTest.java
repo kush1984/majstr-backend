@@ -64,6 +64,8 @@ class TradeReviewBatchOneForkMigrationOnLiveDataIntegrationTest extends Integrat
 
         Flyway.configure().dataSource(url, user, pass)
                 .locations("classpath:db/migration")
+                // Up to V157, not to the head: V158+ copy renamed positions' forks to the new key on purpose.
+                .target(MigrationVersion.fromVersion("157"))
                 .load().migrate();
     }
 
