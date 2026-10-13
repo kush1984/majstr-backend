@@ -34,7 +34,7 @@ class ElectricalNormsOnLiveDataIntegrationTest extends IntegrationTestBase {
                                 WHERE n.owner_id IS NULL
                                   AND (n.trade = 'ELECTRICAL' OR n.trade IS NULL)
                                   AND n.unit = t.unit AND n.name_key = """ + NAME_KEY + ")"))
-                .isEqualTo(95); // V163: + the hollow-wall box and the cable tray
+                .isEqualTo(84); // V163: + the hollow-wall box and the cable tray; V167: −11 duplicate wordings
     }
 
     /** Ruling 1: a metre of laying is a metre of cable, and of conduit where the name says so. */

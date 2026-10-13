@@ -57,7 +57,7 @@ class BuilderNormsOnLiveDataIntegrationTest extends IntegrationTestBase {
                                 WHERE n.owner_id IS NULL
                                   AND (n.trade = 'BUILDER' OR n.trade IS NULL)
                                   AND n.unit = t.unit AND n.name_key = """ + NAME_KEY + ")"))
-                .isEqualTo(109); // V162: +2 normed additions, + the small screed copied from FLOORING
+                .isEqualTo(103); // V162: +2 normed additions and the small screed; V167: −6 duplicate wordings
     }
 
     /**

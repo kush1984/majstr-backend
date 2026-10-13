@@ -2700,9 +2700,10 @@ one-line summary — keep the item in the file as a record.
     norms~~ — all normed by V155; still unpriced by a source: BUILDER's 1350 × 19 and 630 × 5,
     «Виготовлення терас веранд комплекс» 11 800/м², «Підйом будматеріалів на поверх» 263 (unit);
   - ~~catalog additions, renames and descriptions~~ — **done in V158-V166** (2026-10-13, see
-    [iteration-trades-review-catalog.md](iteration-trades-review-catalog.md)); **de-duplication is
-    still open** — it needs the owner's word against V112's «з позицій нічого не викидаємо»
-    (TRADES-REVIEW §3 item 4). Original note: catalog additions, de-duplication and descriptions, and the renames (FLOORING's own §1b:
+    [iteration-trades-review-catalog.md](iteration-trades-review-catalog.md)); ~~de-duplication~~ —
+    **V167**, 107 intra-trade pairs out of the library on the owner's word; cross-trade pairs (BUILDER
+    ↔ METAL fence/posts/stairs, PAINTER ↔ DRYWALL framed insulation, clinker, quartz primer) still
+    want a V116-shaped merge each. Original note: catalog additions, de-duplication and descriptions, and the renames (FLOORING's own §1b:
     «Монтаж утеплювача» says nothing about where, and the hidden skirting ships as a complex beside
     its two parts, so an estimate carrying all three double-buys);
   - **the shared-position re-filings beyond the ten** §7 took and the five §4 of V147 took.

@@ -148,10 +148,17 @@ ask only when critical; existing masters' data must never break. One push at the
 
 Test for V163-V166: `CatalogReviewLaterTradesOnLiveDataIntegrationTest`.
 
-## Waiting for the owner: duplicates
+## Duplicates — V167 (owner: «так, прибирай за списком», 2026-10-13)
 
-Every trade's report lists two wordings of one job (≈30 PAINTER, ≈30 ELECTRICAL, ≈22 PLUMBING, 28
-BUILDER, ≈9 FLOORING, ≈6 TILING, a few in DEMOLITION and METAL). Removing the loser from the LIBRARY
-(a master's copy stays; default bundle lines move to the survivor; norms stay on both keys) goes
-against V112's «з позицій нічого не викидаємо», which TRADES-REVIEW §3 item 4 asks the owner to
-revisit — so none of it is done here.
+107 pairs leave the LIBRARY (BUILDER 26, ELECTRICAL 27, PLUMBING 21, PAINTER 29, FLOORING 4) — the
+list the owner read before saying yes. The survivor is the row the bundles use, else the fuller
+wording. Nothing a master owns is deleted: his copy of the loser stays; if he does not own the
+survivor, his copy is RENAMED to it with his price (the default bundle line moved there, and a
+missing name prices at 0 ₴); his pending notice follows; default bundle lines move (or drop where
+the bundle already carries the survivor) and his forks' lines move where his catalog carries the
+survivor; the loser's norms stay on its key, the survivor takes them only if it had none, and the
+pair is recorded in `catalog_renamed_position`. Prices untouched. `price_insight_candidate` rows on
+a removed row cascade (V94). Not done: cross-trade pairs (V116-shaped merges), pairs in different
+units, pairs where the report could not say which is right, rollups beside their parts.
+Test: `CatalogDuplicatesOnLiveDataIntegrationTest` (a master with only the loser at his price, a
+master with both, a fork carrying the loser).
