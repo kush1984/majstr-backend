@@ -2660,7 +2660,7 @@ one-line summary — keep the item in the file as a record.
   third ladder rung. Option (b) is dropped, not deferred — no edit logging shipped. Ready to close
   as RESOLVED on the master's word; see `docs/iteration-material-calculator.md` §21.
 
-### Trade-by-trade review (`TRADES-REVIEW.md`) — batches 1-6 shipped, batches 7+ open
+### Trade-by-trade review (`TRADES-REVIEW.md`) — batches 1-7 shipped, batches 8+ open
 - **Status:** IN_PROGRESS — batch 1 (§4.1 + §1.8) shipped as **V146**, 2026-10-06, see
   [iteration-trades-review-batch-1.md](iteration-trades-review-batch-1.md); batch 2 (§4 item 1 —
   FLOORING's norms + the §3.5 dictionary) as **V147**, same day, see
@@ -2672,14 +2672,16 @@ one-line summary — keep the item in the file as a record.
   batch 5 (PLUMBING's first norms, 60 of 176 answered, plus the STEP basis) as **V152**, same day,
   see [iteration-trades-review-plumbing-norms.md](iteration-trades-review-plumbing-norms.md); batch 6
   (ELECTRICAL's first norms, 92 of 177 answered) as **V153**, same day, see
-  [iteration-trades-review-electrical-norms.md](iteration-trades-review-electrical-norms.md).
+  [iteration-trades-review-electrical-norms.md](iteration-trades-review-electrical-norms.md); batch 7
+  (DEMOLITION's norms, 44 of 55 answered, mostly recorded verdicts) as **V154**, same day, see
+  [iteration-trades-review-demolition-norms.md](iteration-trades-review-demolition-norms.md).
 - **Since:** 2026-10-06, a trade-by-trade read of the catalog, the bundles and the norms across all
   nine trades against a clean V145 DB.
 - **Context:** batch 1 took only what buys the WRONG QUANTITY today — eleven data corrections plus
   the calculator-engine gaps of §1.8. Batch 2 took FLOORING from zero norms to 52 of 54 positions
   answered. What the review found and both batches deliberately left:
-  - **norms for the two trades that still have none at all** — METAL, DEMOLITION
-    (BUILDER got its first set in V151, PLUMBING in V152, ELECTRICAL in V153; rebar waits for a «kg per m³» parameter) (the same gap the «Material calculators» item above tracks);
+  - **norms for the one trade that still has none at all** — METAL
+    (BUILDER got its first set in V151, PLUMBING in V152, ELECTRICAL in V153, DEMOLITION in V154; rebar waits for a «kg per m³» parameter) (the same gap the «Material calculators» item above tracks);
   - **FLOORING's §3.3 — the new positions V148 did not need for a bundle** (V148 added 14 of them
     with norms), plus the new LINEAR_METER damper-tape row;
   - ~~template ordering + the protection and cleanup steps~~ — **done in V148**;

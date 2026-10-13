@@ -33,8 +33,9 @@ class PlumbingNormsOnLiveDataIntegrationTest extends IntegrationTestBase {
 
     @Autowired JdbcTemplate jdbc;
 
+    /** 60 since V152; V154's trade-less verdict on «Демонтаж старих труб» answers here too. */
     @Test
-    void sixtyPlumbingPositionsAnswer() {
+    void sixtyOnePlumbingPositionsAnswer() {
         assertThat(count("""
                 SELECT count(*) FROM catalog_templates t
                  WHERE t.trade = 'PLUMBING' AND t.type = 'WORK'
@@ -42,7 +43,7 @@ class PlumbingNormsOnLiveDataIntegrationTest extends IntegrationTestBase {
                                 WHERE n.owner_id IS NULL
                                   AND (n.trade = 'PLUMBING' OR n.trade IS NULL)
                                   AND n.unit = t.unit AND n.name_key = """ + NAME_KEY + ")"))
-                .isEqualTo(60);
+                .isEqualTo(61);
     }
 
     /** Ruling 3: a mounting kit is normed, the appliance the client chooses is not. */

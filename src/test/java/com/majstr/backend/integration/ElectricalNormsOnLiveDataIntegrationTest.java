@@ -24,8 +24,9 @@ class ElectricalNormsOnLiveDataIntegrationTest extends IntegrationTestBase {
 
     @Autowired JdbcTemplate jdbc;
 
+    /** 92 since V153; V154's trade-less verdict on «Демонтаж старої електропроводки» answers here too. */
     @Test
-    void ninetyTwoElectricalPositionsAnswer() {
+    void ninetyThreeElectricalPositionsAnswer() {
         assertThat(count("""
                 SELECT count(*) FROM catalog_templates t
                  WHERE t.trade = 'ELECTRICAL' AND t.type = 'WORK'
@@ -33,7 +34,7 @@ class ElectricalNormsOnLiveDataIntegrationTest extends IntegrationTestBase {
                                 WHERE n.owner_id IS NULL
                                   AND (n.trade = 'ELECTRICAL' OR n.trade IS NULL)
                                   AND n.unit = t.unit AND n.name_key = """ + NAME_KEY + ")"))
-                .isEqualTo(92);
+                .isEqualTo(93);
     }
 
     /** Ruling 1: a metre of laying is a metre of cable, and of conduit where the name says so. */

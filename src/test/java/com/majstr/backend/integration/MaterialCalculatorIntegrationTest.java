@@ -42,7 +42,8 @@ class MaterialCalculatorIntegrationTest extends IntegrationTestBase {
             "lower(btrim(replace(replace(regexp_replace(t.name, '\\s+', ' ', 'g'), '( ', '('), ' )', ')')))";
 
     /** The trades the shipped norms answer for: DRYWALL (V127) and the two V137 added. */
-    private static final List<String> NORMED_TRADES = List.of("DRYWALL", "TILING", "PAINTER", "BUILDER", "PLUMBING", "ELECTRICAL");
+    private static final List<String> NORMED_TRADES = List.of("DRYWALL", "TILING", "PAINTER", "BUILDER", "PLUMBING", "ELECTRICAL",
+            "DEMOLITION");
 
     /** A position no shipped norm names — the point is that nothing anywhere answers for it. */
     private static final String UNKNOWN_WORK = "Робота якої немає в нормах";
