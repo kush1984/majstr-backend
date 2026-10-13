@@ -93,3 +93,26 @@ waits for «Не синхронізовано» instead of clicking a button tha
 Verified both ways: green with the fix, red at the original spot with `onSuccess` removed. CI still
 runs only `shell.spec` — `journey.spec` needs a backend on :8080. `offlinePersist.test.ts` pins
 `markRestoredStale` (a snapshot fresh by the clock comes back invalidated, nothing is fetched).
+
+## B-20 — the production database lower-cases Cyrillic (recorded 2026-10-13)
+
+The Java half shipped in Fix N (`NameKeys.of` and both catalog key builders on `Locale.ROOT`). What
+stayed open was confirming that the SQL half — `lower(btrim(name))` in V126 and every migration that
+builds a name key — folds Cyrillic the same way on production. Under a `C`/`POSIX` ctype `lower()`
+leaves Cyrillic untouched, and the two keys would quietly stop matching.
+
+Checked on the Railway production database (`railway`, PostgreSQL via `pg_database`):
+
+| provider | `lc_collate` | `lc_ctype` | `lower('ҐЄІЇ ЩЬЮЯ Шпаклювання')` |
+|---|---|---|---|
+| `c` (libc) | `en_US.utf8` | `en_US.utf8` | `ґєії щьюя шпаклювання` ✓ |
+
+So the SQL keys and the Java keys agree; no change. If the database is ever recreated (a new
+provider, a restore into another cluster), re-run the check — a `C` ctype would mean computing the
+keys on the Java side instead of in SQL:
+
+```sql
+SELECT d.datlocprovider, d.datcollate, d.datctype,
+       lower('ҐЄІЇ ЩЬЮЯ Шпаклювання') = 'ґєії щьюя шпаклювання' AS lower_ok
+  FROM pg_database d WHERE d.datname = current_database();
+```
