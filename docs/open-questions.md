@@ -1571,7 +1571,7 @@ one-line summary — keep the item in the file as a record.
   confirmed — no migration-shape question here.
 
 ### DRYWALL: cross-trade price contradictions found while rebuilding the catalog (V116)
-- **Status:** OPEN (items 2 and 3; items 1 and 4 RESOLVED by V120, 2026-09-01)
+- **Status:** OPEN (item 2; items 1 and 4 RESOLVED by V120, 2026-09-01; item 3 by V157, 2026-10-13)
 - **Since:** Drywall-catalog rebuild (V116, 2026-08-31)
 - **Context:** Auditing DRYWALL surfaced three pricing defects that live in OTHER trades, so V116
   deliberately did not touch them - a drywall migration silently editing PAINTER/ELECTRICAL rows is
@@ -1582,8 +1582,8 @@ one-line summary — keep the item in the file as a record.
      like: the framed rows had inherited the price of the *безкаркасна* variant beside them.
   2. **ELECTRICAL carries four near-duplicate «свердління по ГКЛ» pairs** (100 vs 90, 200 vs 90) -
      same job, two wordings, two prices, the same shape V116 merged inside DRYWALL.
-  3. **PAINTER «Захист вхідних дверей картоном» ships at 0.00 ₴**, unlike its floor/window siblings
-     (30 ₴/м², 200 ₴/шт).
+  3. ~~**PAINTER «Захист вхідних дверей картоном» ships at 0.00 ₴**~~ **RESOLVED** — V157 (2026-10-13)
+     raises it to DEMOLITION's 200 ₴ for the same wording, with PRICE_DRIFT notices.
   4. ~~**PAINTER «Армування стиків ГКЛ» = 75 ₴/м.п.**~~ **RESOLVED** - «беремо ... 100»
      (2026-09-01). V120 raises it to DRYWALL's 100 ₴/м.п. His own catalog row already read 100: he
      had re-priced it by hand before he said it, which is why that number was taken as the real one.
@@ -2677,7 +2677,9 @@ one-line summary — keep the item in the file as a record.
   [iteration-trades-review-demolition-norms.md](iteration-trades-review-demolition-norms.md); batch 8
   (METAL's first norms, 19 of 56 answered — every trade now has norms) as **V155**, same day, see
   [iteration-trades-review-metal-norms.md](iteration-trades-review-metal-norms.md); METAL's last
-  bundle («Антресоль / майданчик», V156 — the other six were already V148's), same file.
+  bundle («Антресоль / майданчик», V156 — the other six were already V148's), same file; the
+  price anomalies (14 library prices, nine anchored in our own catalog and five looked up) as
+  **V157**, see [iteration-trades-review-price-anomalies.md](iteration-trades-review-price-anomalies.md).
 - **Since:** 2026-10-06, a trade-by-trade read of the catalog, the bundles and the norms across all
   nine trades against a clean V145 DB.
 - **Context:** batch 1 took only what buys the WRONG QUANTITY today — eleven data corrections plus
@@ -2691,11 +2693,12 @@ one-line summary — keep the item in the file as a record.
   - ~~template ordering + the protection and cleanup steps~~ — **done in V148**;
   - **V148's leftovers:** the 141 new positions carry ORIENTIR prices (report midpoints; 40 ₴/м²
     cleanup, 600 ₴/м³ debris, 200 ₴/шт door protection outside TILING/PAINTER) to be settled by
-    `price_insight_candidate`; DEMOLITION's «Вантаження сміття в авто» (950/м³) may already include
-    haulage, which would double-count with the new «Вивезення сміття контейнером» in the same
-    bundle; METAL's «Виготовлення металевого каркасу сходів» at 900 ₴/шт only makes sense per step;
-    piles, ФБС, monolithic work and the mineral-wool facade have no BUILDER bundle (owner ruling 6);
-    the five trades still without norms now ship bundles whose lines answer nothing in «Матеріали»;
+    `price_insight_candidate`; ~~DEMOLITION's «Вантаження сміття в авто» (950/м³) double-counting
+    haulage~~ — 200 since V157; METAL's «Виготовлення металевого каркасу сходів» at 900 ₴/шт only
+    makes sense per step (a rename's job, V157 left it); piles, ФБС, monolithic work and the
+    mineral-wool facade have no BUILDER bundle (owner ruling 6); ~~the five trades still without
+    norms~~ — all normed by V155; still unpriced by a source: BUILDER's 1350 × 19 and 630 × 5,
+    «Виготовлення терас веранд комплекс» 11 800/м², «Підйом будматеріалів на поверх» 263 (unit);
   - **catalog additions, de-duplication and descriptions**, and the renames (FLOORING's own §1b:
     «Монтаж утеплювача» says nothing about where, and the hidden skirting ships as a complex beside
     its two parts, so an estimate carrying all three double-buys);
