@@ -2676,7 +2676,8 @@ one-line summary — keep the item in the file as a record.
   (DEMOLITION's norms, 44 of 55 answered, mostly recorded verdicts) as **V154**, same day, see
   [iteration-trades-review-demolition-norms.md](iteration-trades-review-demolition-norms.md); batch 8
   (METAL's first norms, 19 of 56 answered — every trade now has norms) as **V155**, same day, see
-  [iteration-trades-review-metal-norms.md](iteration-trades-review-metal-norms.md).
+  [iteration-trades-review-metal-norms.md](iteration-trades-review-metal-norms.md); METAL's last
+  bundle («Антресоль / майданчик», V156 — the other six were already V148's), same file.
 - **Since:** 2026-10-06, a trade-by-trade read of the catalog, the bundles and the norms across all
   nine trades against a clean V145 DB.
 - **Context:** batch 1 took only what buys the WRONG QUANTITY today — eleven data corrections plus

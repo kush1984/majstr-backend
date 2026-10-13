@@ -40,3 +40,12 @@ anchors), the sliding-gate footing, gate automation (the client's equipment), bl
   concrete per post on QUANTITY; anchors; fabrication and welding unnormed; 7 verdicts; 14 dictionary
   rows; zero waste.
 - `MaterialCalculatorIntegrationTest` — METAL joins `NORMED_TRADES`.
+
+## V156 — the bundles
+
+The report's §2 was written on V145; V148 had already rebuilt all seven METAL bundles in the order it
+asked for (foundations → fabrication → cleaning → primer → paint → erection → cladding / hardware).
+Of its four new bundles, V156 ships only **«Антресоль / майданчик»** (7 lines: embedded parts →
+mezzanine → cleaning → primer → paint → erection → base-plate anchors). The swing gate with a wicket
+already shipped in V148; the 3D-mesh fence (4 lines) and the stainless railing (2) fall under V148's
+floor of six lines and are left to the master. Test: `MetalMezzanineBundleOnLiveDataIntegrationTest`.
