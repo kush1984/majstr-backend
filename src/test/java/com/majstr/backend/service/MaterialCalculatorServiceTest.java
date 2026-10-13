@@ -5,6 +5,7 @@ import com.majstr.backend.dto.CalculatedMaterialRow;
 import com.majstr.backend.dto.MaterialApplyRequest;
 import com.majstr.backend.dto.MaterialCalculationResponse;
 import com.majstr.backend.dto.MaterialLineRequest;
+import com.majstr.backend.dto.PerPositionAnswers;
 import com.majstr.backend.dto.StoredMaterialParams;
 import com.majstr.backend.entity.Estimate;
 import com.majstr.backend.entity.EstimateItem;
@@ -738,7 +739,7 @@ class MaterialCalculatorServiceTest {
         given(floor, stepNorm(Trade.PLUMBING, "монтаж трубної системи тепла підлога з утеплювачем",
                 Unit.M2, pipe, "975", "150"));
         StoredMaterialParams stored = new StoredMaterialParams(null, Map.of(), Map.of(),
-                Map.of(floor.getId(), new BigDecimal("200")));
+                Map.of(floor.getId(), new BigDecimal("200")), Map.of(), Map.of(), Map.of());
 
         MaterialCalculationResponse result = calculateWithSteps(stored, null);
         assertThat(result.parameters()).isEmpty();
@@ -749,6 +750,68 @@ class MaterialCalculatorServiceTest {
                 floor.getId() + ":1500");
         assertThat(typo.parameters()).singleElement()
                 .satisfies(p -> assertThat(p.parameter()).isEqualTo("STEP"));
+    }
+
+    // --- LENGTH / REINFORCEMENT / CHASE_SECTION: three more per-position figures (V168) -------
+
+    /** A riser is sold per piece; its pipe is 2 risers × 3,0 m = 6 m, the length suggested. */
+    @Test
+    void aLengthNormMultipliesByTheMetresAndIsSuggested() {
+        Material pipe = material("PIPE_SEWER_110", "Труба каналізаційна", Unit.LINEAR_METER, null, null);
+        EstimateItem riser = item("Заміна стояка", Unit.PIECE, "2", Trade.PLUMBING);
+        given(riser, basisNorm(Trade.PLUMBING, "заміна стояка", Unit.PIECE, pipe, "1", NormBasis.LENGTH, "3.0"));
+
+        MaterialCalculationResponse asked = calculateWith(StoredMaterialParams.EMPTY, PerPositionAnswers.NONE);
+        assertThat(asked.materials()).isEmpty();
+        assertThat(asked.parameters()).singleElement().satisfies(p -> {
+            assertThat(p.parameter()).isEqualTo("LENGTH");
+            assertThat(p.suggested()).isEqualByComparingTo("3.0");
+        });
+
+        CalculatedMaterialLine line = only(calculateWith(StoredMaterialParams.EMPTY,
+                new PerPositionAnswers(null, null, null, riser.getId() + ":3", null, null)));
+        assertThat(line.baseQuantity()).isEqualByComparingTo("6");
+        assertThat(line.sources()).singleElement().satisfies(s -> {
+            assertThat(s.basis()).isEqualTo(NormBasis.LENGTH);
+            assertThat(s.param()).isEqualByComparingTo("3");
+        });
+    }
+
+    /** The design's number, never ours: asked with no suggestion, and an absurd ratio is ignored. */
+    @Test
+    void aRebarRatioIsAskedWithoutASuggestionAndMultipliesTheVolume() {
+        Material rebar = material("REBAR", "Арматура", Unit.KG, null, null);
+        EstimateItem slab = item("Фундаментна плита", Unit.M3, "12", Trade.BUILDER);
+        given(slab, basisNorm(Trade.BUILDER, "фундаментна плита", Unit.M3, rebar, "1", NormBasis.REINFORCEMENT, null));
+
+        assertThat(calculateWith(StoredMaterialParams.EMPTY, PerPositionAnswers.NONE).parameters())
+                .singleElement().satisfies(p -> {
+                    assertThat(p.parameter()).isEqualTo("REINFORCEMENT");
+                    assertThat(p.suggested()).isNull();
+                });
+        StoredMaterialParams stored = new StoredMaterialParams(null, Map.of(), Map.of(), Map.of(), Map.of(),
+                Map.of(slab.getId(), new BigDecimal("120")), Map.of());
+        assertThat(only(calculateWith(stored, PerPositionAnswers.NONE)).baseQuantity())
+                .isEqualByComparingTo("1440"); // 12 м³ × 120 кг/м³
+        assertThat(calculateWith(StoredMaterialParams.EMPTY,
+                new PerPositionAnswers(null, null, null, null, slab.getId() + ":1200", null)).parameters())
+                .singleElement().satisfies(p -> assertThat(p.parameter()).isEqualTo("REINFORCEMENT"));
+    }
+
+    /** A 40×40 chase is four 20×20 chases' worth of gypsum, which one SECTION sum could not say. */
+    @Test
+    void aChaseSectionMultipliesBySquareCentimetres() {
+        Material gypsum = material("GYPSUM_BUILDING", "Гіпс будівельний", Unit.KG, null, null);
+        EstimateItem chase = item("Закладення штроб", Unit.LINEAR_METER, "50", Trade.ELECTRICAL);
+        given(chase, basisNorm(Trade.ELECTRICAL, "закладення штроб", Unit.LINEAR_METER, gypsum, "0.1",
+                NormBasis.CHASE_SECTION, "4"));
+
+        assertThat(only(calculateWith(StoredMaterialParams.EMPTY,
+                new PerPositionAnswers(null, null, null, null, null, chase.getId() + ":4"))).baseQuantity())
+                .isEqualByComparingTo("20"); // 50 м × 4 см² × 0,1
+        assertThat(only(calculateWith(StoredMaterialParams.EMPTY,
+                new PerPositionAnswers(null, null, null, null, null, chase.getId() + ":16"))).baseQuantity())
+                .isEqualByComparingTo("80");
     }
 
     // --- THICKNESS: the millimetres are the bill (V137) ---------------------------------------
@@ -854,7 +917,7 @@ class MaterialCalculatorServiceTest {
         given(walls, thicknessNorm(Trade.PAINTER, "штукатурка стін (до 2 см)",
                 Unit.M2, plaster, "0.95", "15"));
         StoredMaterialParams stored = new StoredMaterialParams(
-                null, Map.of(), Map.of(walls.getId(), new BigDecimal("10")), Map.of());
+                null, Map.of(), Map.of(walls.getId(), new BigDecimal("10")), Map.of(), Map.of(), Map.of(), Map.of());
 
         MaterialCalculationResponse result = calculate(stored, NO_WASTE, null, null, null);
 
@@ -882,7 +945,7 @@ class MaterialCalculatorServiceTest {
         StoredMaterialParams stored = new StoredMaterialParams(null,
                 Map.of(straight.getId(), new BigDecimal("0.5"),
                         round.getId(), new BigDecimal("0.8")),
-                Map.of(), Map.of());
+                Map.of(), Map.of(), Map.of(), Map.of(), Map.of());
 
         CalculatedMaterialLine line = calculate(stored, NO_WASTE, null,
                 straight.getId() + ":1.2", null).materials().get(0);
@@ -900,7 +963,7 @@ class MaterialCalculatorServiceTest {
         given(item("Монтаж на стелю", Unit.M2, "20", Trade.DRYWALL),
                 perimeterNorm(Trade.DRYWALL, "монтаж на стелю", Unit.M2, track, "1.05"));
         StoredMaterialParams stored =
-                new StoredMaterialParams(new BigDecimal("20"), Map.of(), Map.of(), Map.of());
+                new StoredMaterialParams(new BigDecimal("20"), Map.of(), Map.of(), Map.of(), Map.of(), Map.of(), Map.of());
 
         MaterialCalculationResponse result = calculate(stored, NO_WASTE, null, null, null);
 
@@ -1198,12 +1261,14 @@ class MaterialCalculatorServiceTest {
                                                   BigDecimal perimeter, String sections,
                                                   String thicknesses) {
         when(paramService.load(ESTIMATE)).thenReturn(stored);
-        return service.calculate(ESTIMATE, OWNER, waste, perimeter, sections, thicknesses, null);
+        return service.calculate(ESTIMATE, OWNER, waste, perimeter,
+                new PerPositionAnswers(sections, thicknesses, null, null, null, null));
     }
 
     private MaterialCalculationResponse calculateWithSteps(StoredMaterialParams stored, String steps) {
         when(paramService.load(ESTIMATE)).thenReturn(stored);
-        return service.calculate(ESTIMATE, OWNER, NO_WASTE, null, null, null, steps);
+        return service.calculate(ESTIMATE, OWNER, NO_WASTE, null,
+                new PerPositionAnswers(null, null, steps, null, null, null));
     }
 
     private CalculatedMaterialLine only(MaterialCalculationResponse result) {
@@ -1312,6 +1377,19 @@ class MaterialCalculatorServiceTest {
     }
 
     /** {@code qty} is the figure at a 1 mm spacing; {@code defaultParam} is the suggestion, in mm. */
+    private MaterialNorm basisNorm(Trade trade, String nameKey, Unit unit, Material material, String qty,
+                                   NormBasis basis, String defaultParam) {
+        MaterialNorm norm = norm(trade, nameKey, unit, material, qty);
+        norm.setBasis(basis);
+        norm.setDefaultParam(defaultParam == null ? null : new BigDecimal(defaultParam));
+        return norm;
+    }
+
+    private MaterialCalculationResponse calculateWith(StoredMaterialParams stored, PerPositionAnswers answers) {
+        when(paramService.load(ESTIMATE)).thenReturn(stored);
+        return service.calculate(ESTIMATE, OWNER, NO_WASTE, null, answers);
+    }
+
     private MaterialNorm stepNorm(Trade trade, String nameKey, Unit unit, Material material,
                                   String qty, String defaultParam) {
         MaterialNorm norm = norm(trade, nameKey, unit, material, qty);

@@ -36,5 +36,9 @@ public record MaterialParamsRequest(
         Map<UUID, @NotNull @DecimalMin("0") @DecimalMax("5") @Digits(integer = 4, fraction = 3) BigDecimal> sections,
         Map<UUID, @NotNull @DecimalMin("0") @DecimalMax("150") @Digits(integer = 4, fraction = 3) BigDecimal> thicknesses,
         // A loop spacing in MILLIMETRES (V152) — the one figure that divides, bounded like the others.
-        Map<UUID, @NotNull @DecimalMin("0") @DecimalMax("500") @Digits(integer = 4, fraction = 3) BigDecimal> steps
+        Map<UUID, @NotNull @DecimalMin("0") @DecimalMax("500") @Digits(integer = 4, fraction = 3) BigDecimal> steps,
+        // V168: a riser's length in METRES, a concrete's rebar ratio in KG/M3, a chase's section in CM2.
+        Map<UUID, @NotNull @DecimalMin("0") @DecimalMax("100") @Digits(integer = 4, fraction = 3) BigDecimal> lengths,
+        Map<UUID, @NotNull @DecimalMin("0") @DecimalMax("300") @Digits(integer = 4, fraction = 3) BigDecimal> reinforcements,
+        Map<UUID, @NotNull @DecimalMin("0") @DecimalMax("200") @Digits(integer = 4, fraction = 3) BigDecimal> chaseSections
 ) {}

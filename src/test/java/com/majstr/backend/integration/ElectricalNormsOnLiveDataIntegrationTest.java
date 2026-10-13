@@ -54,7 +54,7 @@ class ElectricalNormsOnLiveDataIntegrationTest extends IntegrationTestBase {
         assertThat(qty("монтаж підрозетника", "BOX_FLUSH")).isEqualByComparingTo("1");
         assertThat(qty("монтаж підрозетника", "GYPSUM_BUILDING")).isEqualByComparingTo("0.15");
         assertThat(qty("монтаж розподільчої коробки в стіну", "GYPSUM_BUILDING")).isEqualByComparingTo("0.3");
-        assertThat(qty("заробка штроб", "GYPSUM_BUILDING")).isEqualByComparingTo("0.4");
+        assertThat(qty("заробка штроб", "GYPSUM_BUILDING")).isEqualByComparingTo("0.1"); // V168: per cm², 4 cm² suggested = 0,4
     }
 
     /** Ruling 3: a breaker is a breaker; the two spellings of one device buy the same material. */

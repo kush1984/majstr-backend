@@ -41,5 +41,22 @@ public enum NormBasis {
     PERIMETER,
     SECTION,
     THICKNESS,
-    STEP
+    STEP,
+    /**
+     * A length in METRES the position does not carry (V168): a riser is sold per piece, and its pipe
+     * is the storey's height. amount = quantity × m × qtyPerUnit, asked per POSITION, suggested.
+     */
+    LENGTH,
+    /**
+     * A reinforcement ratio in KG PER M3 (V168): a concrete volume buys its rebar as the volume times
+     * the ratio the design sets, so the coefficient is 1 kg per (kg/m³ × m³). Asked per POSITION and
+     * deliberately WITHOUT a suggestion — 60 kg/m³ for a strip footing and 150 for a slab is the
+     * engineer's number, not ours.
+     */
+    REINFORCEMENT,
+    /**
+     * A chase's CROSS-SECTION in CM2 (V168): width × depth, which one SECTION number (a box's
+     * розгортка, a sum) cannot say. amount = metres × cm² × qtyPerUnit (per cm² per metre).
+     */
+    CHASE_SECTION
 }

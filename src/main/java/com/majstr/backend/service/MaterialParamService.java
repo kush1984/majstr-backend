@@ -69,6 +69,9 @@ public class MaterialParamService {
         applyPerPosition(byKey, save, drop, estimateId, NormBasis.SECTION, req.sections());
         applyPerPosition(byKey, save, drop, estimateId, NormBasis.THICKNESS, req.thicknesses());
         applyPerPosition(byKey, save, drop, estimateId, NormBasis.STEP, req.steps());
+        applyPerPosition(byKey, save, drop, estimateId, NormBasis.LENGTH, req.lengths());
+        applyPerPosition(byKey, save, drop, estimateId, NormBasis.REINFORCEMENT, req.reinforcements());
+        applyPerPosition(byKey, save, drop, estimateId, NormBasis.CHASE_SECTION, req.chaseSections());
 
         if (!drop.isEmpty()) {
             repository.deleteAll(drop);
@@ -188,16 +191,23 @@ public class MaterialParamService {
         Map<UUID, BigDecimal> sections = new LinkedHashMap<>();
         Map<UUID, BigDecimal> thicknesses = new LinkedHashMap<>();
         Map<UUID, BigDecimal> steps = new LinkedHashMap<>();
+        Map<UUID, BigDecimal> lengths = new LinkedHashMap<>();
+        Map<UUID, BigDecimal> reinforcements = new LinkedHashMap<>();
+        Map<UUID, BigDecimal> chaseSections = new LinkedHashMap<>();
         for (EstimateMaterialParam param : params) {
             switch (param.getBasis()) {
                 case PERIMETER -> perimeter = param.getValue();
                 case SECTION -> sections.put(param.getEstimateItemId(), param.getValue());
                 case THICKNESS -> thicknesses.put(param.getEstimateItemId(), param.getValue());
                 case STEP -> steps.put(param.getEstimateItemId(), param.getValue());
+                case LENGTH -> lengths.put(param.getEstimateItemId(), param.getValue());
+                case REINFORCEMENT -> reinforcements.put(param.getEstimateItemId(), param.getValue());
+                case CHASE_SECTION -> chaseSections.put(param.getEstimateItemId(), param.getValue());
                 default -> { /* QUANTITY is read off the line and is never asked for */ }
             }
         }
-        return new StoredMaterialParams(perimeter, sections, thicknesses, steps);
+        return new StoredMaterialParams(perimeter, sections, thicknesses, steps, lengths, reinforcements,
+                chaseSections);
     }
 
     /** (position, question) — the pair the two partial unique indexes enforce. */

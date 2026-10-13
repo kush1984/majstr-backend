@@ -10,6 +10,7 @@ import com.majstr.backend.dto.MaterialLineRequest;
 import com.majstr.backend.dto.MaterialParamsRequest;
 import com.majstr.backend.dto.MaterialSourceLine;
 import com.majstr.backend.dto.MissingParameter;
+import com.majstr.backend.dto.PerPositionAnswers;
 import com.majstr.backend.dto.ShoppingListResponse;
 import com.majstr.backend.dto.StoredMaterialParams;
 import com.majstr.backend.entity.Estimate;
@@ -36,6 +37,7 @@ import java.math.RoundingMode;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Comparator;
+import java.util.EnumMap;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -174,6 +176,11 @@ public class MaterialCalculatorService {
     private static final BigDecimal MAX_SECTION_M = new BigDecimal("5");
     private static final BigDecimal MAX_THICKNESS_MM = new BigDecimal("150");
     private static final BigDecimal MAX_STEP_MM = new BigDecimal("500");
+    // V168: a riser is a storey or a few (100 m is a tower), rebar runs 40-200 kg/m³ in a house, and a
+    // chase is a few cm² (20×20 mm = 4) up to a pipe bundle's 50×250 = 125.
+    private static final BigDecimal MAX_LENGTH_M = new BigDecimal("100");
+    private static final BigDecimal MAX_REINFORCEMENT_KG_M3 = new BigDecimal("300");
+    private static final BigDecimal MAX_CHASE_SECTION_CM2 = new BigDecimal("200");
     public static final BigDecimal MAX_PERIMETER_M = new BigDecimal("1000");
 
     private final EstimateService estimateService;
@@ -187,8 +194,7 @@ public class MaterialCalculatorService {
     @Transactional(readOnly = true)
     public MaterialCalculationResponse calculate(UUID estimateId, UUID ownerId,
                                                  BigDecimal wastePercent, BigDecimal perimeter,
-                                                 String sections, String thicknesses,
-                                                 String steps) {
+                                                 PerPositionAnswers asked) {
         Habits habits = new Habits(ownerId);
         Estimate estimate = estimateService.loadOwned(estimateId, ownerId);
         // What he answered before, on whatever device he answered it on (V142). The query string is
@@ -207,9 +213,17 @@ public class MaterialCalculatorService {
             // profile on the list.
             perimeter = null;
         }
-        Map<UUID, BigDecimal> section = merged(stored.sections(), sections, MAX_SECTION_M);
-        Map<UUID, BigDecimal> thickness = merged(stored.thicknesses(), thicknesses, MAX_THICKNESS_MM);
-        Map<UUID, BigDecimal> step = merged(stored.steps(), steps, MAX_STEP_MM);
+        PerPositionAnswers given = asked == null ? PerPositionAnswers.NONE : asked;
+        Map<NormBasis, Map<UUID, BigDecimal>> perPosition = new EnumMap<>(NormBasis.class);
+        perPosition.put(NormBasis.SECTION, merged(stored.sections(), given.sections(), MAX_SECTION_M));
+        perPosition.put(NormBasis.THICKNESS,
+                merged(stored.thicknesses(), given.thicknesses(), MAX_THICKNESS_MM));
+        perPosition.put(NormBasis.STEP, merged(stored.steps(), given.steps(), MAX_STEP_MM));
+        perPosition.put(NormBasis.LENGTH, merged(stored.lengths(), given.lengths(), MAX_LENGTH_M));
+        perPosition.put(NormBasis.REINFORCEMENT,
+                merged(stored.reinforcements(), given.reinforcements(), MAX_REINFORCEMENT_KG_M3));
+        perPosition.put(NormBasis.CHASE_SECTION,
+                merged(stored.chaseSections(), given.chaseSections(), MAX_CHASE_SECTION_CM2));
         List<EstimateItem> buyable = buyableLines(itemRepository
                 .findByEstimateIdOrderBySortOrderAscIdAsc(estimateId));
         List<EstimateItem> works = priced(buyable);
@@ -255,15 +269,11 @@ public class MaterialCalculatorService {
                 BigDecimal quantity = item.getQuantity(); // non-null and positive — see workLines
                 BigDecimal per = coefficient(norm, material, habits);
                 NormBasis basis = norm.getBasis();
-                if (basis == NormBasis.SECTION || basis == NormBasis.THICKNESS
-                        || basis == NormBasis.STEP) {
+                Map<UUID, BigDecimal> answers = perPosition.get(basis);
+                if (answers != null) {
                     // Per POSITION, not per estimate: this box's own розгортка, this layer's own
-                    // millimetres, this loop's own spacing, or nothing at all.
-                    Map<UUID, BigDecimal> answers = switch (basis) {
-                        case SECTION -> section;
-                        case THICKNESS -> thickness;
-                        default -> step;
-                    };
+                    // millimetres, this loop's own spacing, this riser's own length, this slab's own
+                    // rebar ratio, this chase's own section — or nothing at all.
                     BigDecimal param = answers.get(item.getId());
                     if (param == null || param.signum() <= 0) {
                         parameters.add(new MissingParameter(basis.name(), material.displayName(),

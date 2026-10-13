@@ -43,7 +43,7 @@ class PlumbingNormsOnLiveDataIntegrationTest extends IntegrationTestBase {
                                 WHERE n.owner_id IS NULL
                                   AND (n.trade = 'PLUMBING' OR n.trade IS NULL)
                                   AND n.unit = t.unit AND n.name_key = """ + NAME_KEY + ")"))
-                .isEqualTo(56); // V164: + the air valve and the basin frame; V167: −7 duplicate wordings
+                .isEqualTo(57); // V164: + the air valve and the basin frame; V167: −7 duplicate wordings; V168: + the water riser
     }
 
     /** Ruling 3: a mounting kit is normed, the appliance the client chooses is not. */

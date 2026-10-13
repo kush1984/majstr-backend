@@ -2734,7 +2734,10 @@ one-line summary — keep the item in the file as a record.
   possibly the client-facing name/PDF. Its own iteration.
 
 ### The calculator bases the review asked for and batch 1 did not add
-- **Status:** OPEN
+- **Status:** RESOLVED (2026-10-13) — STEP shipped in V152; LENGTH, REINFORCEMENT and CHASE_SECTION
+  in **V168** ([iteration-calculator-bases-v168.md](iteration-calculator-bases-v168.md)). «Area from
+  mass» was dropped on purpose: METAL's bundles price primer and paint as their own m² positions, so
+  a norm on the kg position would buy them twice.
 - **Since:** `TRADES-REVIEW.md` §1.8 (2026-10-06)
 - **Context:** §1.8 named five engine gaps. Batch 1 shipped two of them (per-position waste, and the
   grout exemption for a norm written for a wide joint) plus the perimeter bound nothing was reading.

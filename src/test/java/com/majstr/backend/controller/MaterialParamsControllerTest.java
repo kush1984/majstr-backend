@@ -97,6 +97,20 @@ class MaterialParamsControllerTest {
         send("{\"steps\":{\"" + itemId + "\":600}}").andExpect(status().isBadRequest());
     }
 
+    /** V168: each new question has its own bound — metres, kg/m³, cm². */
+    @Test
+    void theV168QuestionsEachHaveTheirOwnBound() throws Exception {
+        given(calculatorService.saveParams(eq(estimateId), eq(userId), any()))
+                .willReturn(StoredMaterialParams.EMPTY);
+
+        send("{\"lengths\":{\"" + itemId + "\":3}}").andExpect(status().isOk());
+        send("{\"lengths\":{\"" + itemId + "\":101}}").andExpect(status().isBadRequest());
+        send("{\"reinforcements\":{\"" + itemId + "\":120}}").andExpect(status().isOk());
+        send("{\"reinforcements\":{\"" + itemId + "\":1200}}").andExpect(status().isBadRequest());
+        send("{\"chaseSections\":{\"" + itemId + "\":4}}").andExpect(status().isOk());
+        send("{\"chaseSections\":{\"" + itemId + "\":400}}").andExpect(status().isBadRequest());
+    }
+
     @Test
     void someoneElsesEstimateIsA404() throws Exception {
         given(calculatorService.saveParams(eq(estimateId), eq(userId), any()))

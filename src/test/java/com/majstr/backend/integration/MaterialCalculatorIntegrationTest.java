@@ -4,6 +4,7 @@ import com.majstr.backend.dto.CalculatedMaterialLine;
 import com.majstr.backend.dto.MaterialApplyRequest;
 import com.majstr.backend.dto.MaterialAvailabilityResponse;
 import com.majstr.backend.dto.MaterialCalculationResponse;
+import com.majstr.backend.dto.PerPositionAnswers;
 import com.majstr.backend.dto.MaterialLineRequest;
 import com.majstr.backend.dto.ShoppingListItemResponse;
 import com.majstr.backend.dto.ShoppingListResponse;
@@ -478,7 +479,8 @@ class MaterialCalculatorIntegrationTest extends IntegrationTestBase {
 
         UUID itemId = asked.parameters().get(0).estimateItemId();
         MaterialCalculationResponse answered = calculatorService.calculate(
-                estimateId, ownerId, BigDecimal.ZERO, null, itemId + ":0.10", null, null);
+                estimateId, ownerId, BigDecimal.ZERO, null,
+                new PerPositionAnswers(itemId + ":0.10", null, null, null, null, null));
 
         assertThat(answered.parameters()).isEmpty();
         // 30 м.п. × 0,10 м = 3 м² of розгортка; × 0,22 л/м² = 0,66 л of paint.
@@ -575,7 +577,7 @@ class MaterialCalculatorIntegrationTest extends IntegrationTestBase {
     // -------------------------------------------------------------------------------------------
 
     private MaterialCalculationResponse calculate(BigDecimal waste, BigDecimal perimeter) {
-        return calculatorService.calculate(estimateId, ownerId, waste, perimeter, null, null, null);
+        return calculatorService.calculate(estimateId, ownerId, waste, perimeter, PerPositionAnswers.NONE);
     }
 
     private CalculatedMaterialLine line(MaterialCalculationResponse result, String namePrefix) {
