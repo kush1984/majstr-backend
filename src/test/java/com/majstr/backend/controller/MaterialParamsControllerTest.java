@@ -87,6 +87,16 @@ class MaterialParamsControllerTest {
         send("{\"sections\":{\"" + itemId + "\":6}}").andExpect(status().isBadRequest());
     }
 
+    /** A loop spacing is millimetres (V152): 150 is an answer, 600 is a stray digit. */
+    @Test
+    void aStepIsRememberedAndOneOverItsBoundIsA400() throws Exception {
+        given(calculatorService.saveParams(eq(estimateId), eq(userId), any()))
+                .willReturn(StoredMaterialParams.EMPTY);
+
+        send("{\"steps\":{\"" + itemId + "\":150}}").andExpect(status().isOk());
+        send("{\"steps\":{\"" + itemId + "\":600}}").andExpect(status().isBadRequest());
+    }
+
     @Test
     void someoneElsesEstimateIsA404() throws Exception {
         given(calculatorService.saveParams(eq(estimateId), eq(userId), any()))

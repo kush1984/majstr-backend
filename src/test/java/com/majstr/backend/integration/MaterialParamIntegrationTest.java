@@ -73,13 +73,29 @@ class MaterialParamIntegrationTest extends IntegrationTestBase {
         UUID box = addWork("Монтаж короба V142", Unit.LINEAR_METER, "12");
 
         paramService.save(estimateId, new MaterialParamsRequest(new BigDecimal("14.5"),
-                Map.of(box, new BigDecimal("0.8")), Map.of(walls, new BigDecimal("15"))));
+                Map.of(box, new BigDecimal("0.8")), Map.of(walls, new BigDecimal("15")), null));
 
         StoredMaterialParams stored = paramService.load(estimateId);
         assertThat(stored.perimeter()).isEqualByComparingTo("14.5");
         assertThat(stored.sections()).containsOnlyKeys(box);
         assertThat(stored.sections().get(box)).isEqualByComparingTo("0.8");
         assertThat(stored.thicknesses().get(walls)).isEqualByComparingTo("15");
+    }
+
+    /** A loop spacing is a fourth question (V152): the CHECK accepts it, and one line may carry it
+     *  beside a thickness without either answer overwriting the other. */
+    @Test
+    void aLoopSpacingIsStoredBesideAThicknessOnTheSameLine() {
+        UUID floor = addWork("Тепла підлога V152", Unit.M2, "20");
+
+        paramService.save(estimateId, new MaterialParamsRequest(null, null,
+                Map.of(floor, new BigDecimal("50")), null));
+        StoredMaterialParams after = paramService.save(estimateId, new MaterialParamsRequest(null, null,
+                null, Map.of(floor, new BigDecimal("150"))));
+
+        assertThat(after.steps().get(floor)).isEqualByComparingTo("150");
+        assertThat(after.thicknesses().get(floor)).isEqualByComparingTo("50");
+        assertThat(paramService.load(estimateId).steps().get(floor)).isEqualByComparingTo("150");
     }
 
     /**
@@ -91,10 +107,10 @@ class MaterialParamIntegrationTest extends IntegrationTestBase {
     void aSecondAnswerLeavesTheOtherTwoQuestionsExactlyAsTheyWere() {
         UUID walls = addWork("Штукатурка стін V142", Unit.M2, "20");
         paramService.save(estimateId, new MaterialParamsRequest(
-                new BigDecimal("14.5"), null, Map.of(walls, new BigDecimal("15"))));
+                new BigDecimal("14.5"), null, Map.of(walls, new BigDecimal("15")), null));
 
         StoredMaterialParams after = paramService.save(estimateId,
-                new MaterialParamsRequest(new BigDecimal("18"), null, null));
+                new MaterialParamsRequest(new BigDecimal("18"), null, null, null));
 
         assertThat(after.perimeter()).isEqualByComparingTo("18");
         assertThat(after.thicknesses().get(walls)).as("не питаємо вдруге").isEqualByComparingTo("15");
@@ -105,10 +121,10 @@ class MaterialParamIntegrationTest extends IntegrationTestBase {
     void aClearedFieldForgetsTheAnswerRatherThanStoringZero() {
         UUID walls = addWork("Штукатурка стін V142", Unit.M2, "20");
         paramService.save(estimateId, new MaterialParamsRequest(
-                new BigDecimal("14.5"), null, Map.of(walls, new BigDecimal("15"))));
+                new BigDecimal("14.5"), null, Map.of(walls, new BigDecimal("15")), null));
 
         StoredMaterialParams after = paramService.save(estimateId, new MaterialParamsRequest(
-                BigDecimal.ZERO, null, Map.of(walls, BigDecimal.ZERO)));
+                BigDecimal.ZERO, null, Map.of(walls, BigDecimal.ZERO), null));
 
         assertThat(after.perimeter()).isNull();
         assertThat(after.thicknesses()).isEmpty();
@@ -126,7 +142,7 @@ class MaterialParamIntegrationTest extends IntegrationTestBase {
 
         StoredMaterialParams after = paramService.save(estimateId, new MaterialParamsRequest(
                 null, null, Map.of(walls, new BigDecimal("15"),
-                        UUID.randomUUID(), new BigDecimal("10"))));
+                        UUID.randomUUID(), new BigDecimal("10")), null));
 
         assertThat(after.thicknesses()).containsOnlyKeys(walls);
     }
@@ -196,7 +212,7 @@ class MaterialParamIntegrationTest extends IntegrationTestBase {
     void aDuplicateCarriesTheAnswersOverOntoItsOwnLines() {
         UUID box = addWork("Монтаж короба V142", Unit.LINEAR_METER, "12");
         paramService.save(estimateId, new MaterialParamsRequest(
-                new BigDecimal("14.5"), Map.of(box, new BigDecimal("0.8")), null));
+                new BigDecimal("14.5"), Map.of(box, new BigDecimal("0.8")), null, null));
 
         EstimateResponse copy = estimateService.duplicate(estimateId,
                 new EstimateDuplicateRequest(null, new BigDecimal("15"), false, null), ownerId);

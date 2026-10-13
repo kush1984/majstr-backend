@@ -50,7 +50,8 @@ import java.util.UUID;
  * every question the request is silent about, and {@code answers} comes back so the fields can open
  * with his own figures on a device that has never seen this estimate. {@code
  * perimeter} is one number for the whole estimate; {@code sections} (a короб's розгортка, in
- * metres) and {@code thicknesses} (a layer's thickness, in MILLIMETRES — V137) are per POSITION and
+ * metres), {@code thicknesses} (a layer's thickness, in MILLIMETRES — V137) and {@code steps} (an
+ * underfloor loop's spacing, in MILLIMETRES — V152) are per POSITION and
  * each arrives as one compact scalar — «uuid:0,4,uuid:0,55» — rather than a repeated parameter or a
  * request body, so asking for a переріз does not turn the calculation into a POST. Two parameters
  * and not one map: a single line can carry both questions, and a shared map would answer one of
@@ -78,9 +79,10 @@ public class MaterialCalculatorController {
             @RequestParam(required = false) BigDecimal perimeter,
             @RequestParam(required = false) String sections,
             @RequestParam(required = false) String thicknesses,
+            @RequestParam(required = false) String steps,
             @AuthenticationPrincipal UserPrincipal principal) {
         return calculatorService.calculate(
-                estimateId, principal.id(), wastePercent, perimeter, sections, thicknesses);
+                estimateId, principal.id(), wastePercent, perimeter, sections, thicknesses, steps);
     }
 
     @PutMapping("/params")

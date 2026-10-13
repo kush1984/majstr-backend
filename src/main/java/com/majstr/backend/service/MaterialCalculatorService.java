@@ -173,6 +173,7 @@ public class MaterialCalculatorService {
      */
     private static final BigDecimal MAX_SECTION_M = new BigDecimal("5");
     private static final BigDecimal MAX_THICKNESS_MM = new BigDecimal("150");
+    private static final BigDecimal MAX_STEP_MM = new BigDecimal("500");
     public static final BigDecimal MAX_PERIMETER_M = new BigDecimal("1000");
 
     private final EstimateService estimateService;
@@ -186,7 +187,8 @@ public class MaterialCalculatorService {
     @Transactional(readOnly = true)
     public MaterialCalculationResponse calculate(UUID estimateId, UUID ownerId,
                                                  BigDecimal wastePercent, BigDecimal perimeter,
-                                                 String sections, String thicknesses) {
+                                                 String sections, String thicknesses,
+                                                 String steps) {
         Habits habits = new Habits(ownerId);
         Estimate estimate = estimateService.loadOwned(estimateId, ownerId);
         // What he answered before, on whatever device he answered it on (V142). The query string is
@@ -207,6 +209,7 @@ public class MaterialCalculatorService {
         }
         Map<UUID, BigDecimal> section = merged(stored.sections(), sections, MAX_SECTION_M);
         Map<UUID, BigDecimal> thickness = merged(stored.thicknesses(), thicknesses, MAX_THICKNESS_MM);
+        Map<UUID, BigDecimal> step = merged(stored.steps(), steps, MAX_STEP_MM);
         List<EstimateItem> buyable = buyableLines(itemRepository
                 .findByEstimateIdOrderBySortOrderAscIdAsc(estimateId));
         List<EstimateItem> works = priced(buyable);
@@ -252,17 +255,25 @@ public class MaterialCalculatorService {
                 BigDecimal quantity = item.getQuantity(); // non-null and positive — see workLines
                 BigDecimal per = coefficient(norm, material, habits);
                 NormBasis basis = norm.getBasis();
-                if (basis == NormBasis.SECTION || basis == NormBasis.THICKNESS) {
+                if (basis == NormBasis.SECTION || basis == NormBasis.THICKNESS
+                        || basis == NormBasis.STEP) {
                     // Per POSITION, not per estimate: this box's own розгортка, this layer's own
-                    // millimetres, or nothing at all.
-                    Map<UUID, BigDecimal> answers = basis == NormBasis.SECTION ? section : thickness;
+                    // millimetres, this loop's own spacing, or nothing at all.
+                    Map<UUID, BigDecimal> answers = switch (basis) {
+                        case SECTION -> section;
+                        case THICKNESS -> thickness;
+                        default -> step;
+                    };
                     BigDecimal param = answers.get(item.getId());
                     if (param == null || param.signum() <= 0) {
                         parameters.add(new MissingParameter(basis.name(), material.displayName(),
                                 item.getId(), item.getName(), norm.getDefaultParam()));
                         continue;
                     }
-                    BigDecimal amount = quantity.multiply(param).multiply(per);
+                    // A spacing DIVIDES: the wider the loop, the less pipe per m².
+                    BigDecimal amount = basis == NormBasis.STEP
+                            ? quantity.multiply(per).divide(param, 10, RoundingMode.HALF_UP)
+                            : quantity.multiply(param).multiply(per);
                     bucket(buckets, material).add(norm, new MaterialSourceLine(
                             item.getId(), item.getName(), item.getUnit(), scaled(quantity),
                             per, norm.getId(), norm.getOwner() != null,

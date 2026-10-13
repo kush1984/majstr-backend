@@ -6,7 +6,7 @@ import java.util.UUID;
 
 /**
  * What the master has already answered on one estimate's calculator (V142) — the perimeter, and the
- * розгортка / thickness of each position that was asked for one.
+ * розгортка / thickness / loop spacing of each position that was asked for one.
  *
  * <p>Every value is positive: an unanswered question has no entry at all, because the calculation
  * reads a non-positive parameter as missing and «not answered» may only have one spelling.</p>
@@ -14,8 +14,9 @@ import java.util.UUID;
 public record StoredMaterialParams(
         BigDecimal perimeter,
         Map<UUID, BigDecimal> sections,
-        Map<UUID, BigDecimal> thicknesses
+        Map<UUID, BigDecimal> thicknesses,
+        Map<UUID, BigDecimal> steps
 ) {
     public static final StoredMaterialParams EMPTY =
-            new StoredMaterialParams(null, Map.of(), Map.of());
+            new StoredMaterialParams(null, Map.of(), Map.of(), Map.of());
 }

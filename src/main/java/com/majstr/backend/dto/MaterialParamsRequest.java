@@ -10,11 +10,11 @@ import java.util.Map;
 import java.util.UUID;
 
 /**
- * The master's answer to one of the calculator's three questions (V142).
+ * The master's answer to one of the calculator's questions (V142, V152).
  *
  * <p><b>A PATCH, one question at a time.</b> Each card on the screen has its own «Порахувати», so a
- * request carries the kind that button owns and leaves the other two alone — an omitted field
- * changes nothing. Sending all three would store the THICKNESS suggestions still sitting pre-filled
+ * request carries the kind that button owns and leaves the others alone — an omitted field
+ * changes nothing. Sending them all would store the THICKNESS suggestions still sitting pre-filled
  * and unconfirmed in their fields (V137: pre-filled visibly, never applied silently) the moment he
  * answered the perimeter.</p>
  *
@@ -34,5 +34,7 @@ public record MaterialParamsRequest(
         // 0.0004 rounded to 0 there and failed `CHECK (value > 0)` as a 500.
         @DecimalMin("0") @DecimalMax("1000") @Digits(integer = 4, fraction = 3) BigDecimal perimeter,
         Map<UUID, @NotNull @DecimalMin("0") @DecimalMax("5") @Digits(integer = 4, fraction = 3) BigDecimal> sections,
-        Map<UUID, @NotNull @DecimalMin("0") @DecimalMax("150") @Digits(integer = 4, fraction = 3) BigDecimal> thicknesses
+        Map<UUID, @NotNull @DecimalMin("0") @DecimalMax("150") @Digits(integer = 4, fraction = 3) BigDecimal> thicknesses,
+        // A loop spacing in MILLIMETRES (V152) — the one figure that divides, bounded like the others.
+        Map<UUID, @NotNull @DecimalMin("0") @DecimalMax("500") @Digits(integer = 4, fraction = 3) BigDecimal> steps
 ) {}

@@ -2660,7 +2660,7 @@ one-line summary — keep the item in the file as a record.
   third ladder rung. Option (b) is dropped, not deferred — no edit logging shipped. Ready to close
   as RESOLVED on the master's word; see `docs/iteration-material-calculator.md` §21.
 
-### Trade-by-trade review (`TRADES-REVIEW.md`) — batches 1-4 shipped, batches 5+ open
+### Trade-by-trade review (`TRADES-REVIEW.md`) — batches 1-5 shipped, batches 6+ open
 - **Status:** IN_PROGRESS — batch 1 (§4.1 + §1.8) shipped as **V146**, 2026-10-06, see
   [iteration-trades-review-batch-1.md](iteration-trades-review-batch-1.md); batch 2 (§4 item 1 —
   FLOORING's norms + the §3.5 dictionary) as **V147**, same day, see
@@ -2668,14 +2668,16 @@ one-line summary — keep the item in the file as a record.
   (§4 item 4 — every default bundle as a job sequence, 115 → 102, 141 positions added) as **V148**,
   2026-10-07, see [iteration-trades-review-bundles.md](iteration-trades-review-bundles.md); batch 4
   (§4 item 3 — BUILDER's first norms, 106 of 229 positions answered, 28 dictionary rows) as **V151**,
-  2026-10-13, see [iteration-trades-review-builder-norms.md](iteration-trades-review-builder-norms.md).
+  2026-10-13, see [iteration-trades-review-builder-norms.md](iteration-trades-review-builder-norms.md);
+  batch 5 (PLUMBING's first norms, 60 of 176 answered, plus the STEP basis) as **V152**, same day,
+  see [iteration-trades-review-plumbing-norms.md](iteration-trades-review-plumbing-norms.md).
 - **Since:** 2026-10-06, a trade-by-trade read of the catalog, the bundles and the norms across all
   nine trades against a clean V145 DB.
 - **Context:** batch 1 took only what buys the WRONG QUANTITY today — eleven data corrections plus
   the calculator-engine gaps of §1.8. Batch 2 took FLOORING from zero norms to 52 of 54 positions
   answered. What the review found and both batches deliberately left:
-  - **norms for the four trades that still have none at all** — PLUMBING, ELECTRICAL, METAL,
-    DEMOLITION (BUILDER got its first set in V151; rebar waits for a «kg per m³» parameter) (the same gap the «Material calculators» item above tracks);
+  - **norms for the three trades that still have none at all** — ELECTRICAL, METAL, DEMOLITION
+    (BUILDER got its first set in V151, PLUMBING in V152; rebar waits for a «kg per m³» parameter) (the same gap the «Material calculators» item above tracks);
   - **FLOORING's §3.3 — the new positions V148 did not need for a bundle** (V148 added 14 of them
     with norms), plus the new LINEAR_METER damper-tape row;
   - ~~template ordering + the protection and cleanup steps~~ — **done in V148**;
@@ -2702,12 +2704,27 @@ one-line summary — keep the item in the file as a record.
   «Установка кранів», «Установка змішувача прихованого типу для душа (біде)»), and a renamed
   position without its lines prices them at 0 ₴.
 
+### The calculator's per-position figure entered on the estimate line itself
+- **Status:** OPEN
+- **Since:** 2026-10-13, the owner's idea while batch 5 was planned
+- **Context:** a thickness, a section and (since V152) a loop spacing are asked on the «Матеріали»
+  screen, per estimate line, and stored in `estimate_material_param` (V142). The owner asked for the
+  same figure as a field (or a dropdown with «свій») right in the line editor, so one position
+  covers every variant and the master enters it once while pricing.
+- **Notes / options:** no new storage — the editor would write the same `estimate_material_param`
+  row the calculator already reads, shown only on lines whose norm has a THICKNESS / SECTION / STEP
+  basis. Caveats: the PRICE does not follow the figure (a 30 mm plaster is dearer than 15 mm, and the
+  line has one price), so it drives materials, not money; tile FORMAT stays separate positions
+  because masters price large formats differently. Touches the PWA editor, the offline outbox and
+  possibly the client-facing name/PDF. Its own iteration.
+
 ### The calculator bases the review asked for and batch 1 did not add
 - **Status:** OPEN
 - **Since:** `TRADES-REVIEW.md` §1.8 (2026-10-06)
 - **Context:** §1.8 named five engine gaps. Batch 1 shipped two of them (per-position waste, and the
   grout exemption for a norm written for a wide joint) plus the perimeter bound nothing was reading.
-  Four are still open, and each is a new `NormBasis` or close to one:
+  Four were still open, and each is a new `NormBasis` or close to one. **inverse-to-step shipped
+  as `NormBasis.STEP` in V152** (underfloor pipe and clips); the other three remain:
   - **LENGTH** — a riser (стояк) is bought by the metre of pipe, not by the position's own unit;
   - **rebar in kg/m³** — a concrete volume times a reinforcement ratio, which is a norm whose basis
     is ANOTHER material's quantity;

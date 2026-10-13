@@ -22,7 +22,7 @@ import java.util.UUID;
 import java.util.stream.Collectors;
 
 /**
- * The three figures the material calculator has to ASK for, kept where the estimate is (V142).
+ * The figures the material calculator has to ASK for, kept where the estimate is (V142, V152).
  *
  * <p>{@code MaterialCalculatorService} still stores nothing: it derives every number it prints from
  * the estimate's own lines. What lives here is the other half — the perimeter, the розгортка and
@@ -49,10 +49,10 @@ public class MaterialParamService {
     }
 
     /**
-     * Store one card's answer, leaving the other two questions exactly as they were.
+     * Store one card's answer, leaving the other questions exactly as they were.
      *
      * <p>Answers with the WHOLE resulting set, not with what it was handed: the request is a PATCH,
-     * so what the screen has to know afterwards is the state of all three questions — and a cleared
+     * so what the screen has to know afterwards is the state of every question — and a cleared
      * field is a row that is gone, which an echo of the request could not express.</p>
      */
     @Transactional
@@ -68,6 +68,7 @@ public class MaterialParamService {
         }
         applyPerPosition(byKey, save, drop, estimateId, NormBasis.SECTION, req.sections());
         applyPerPosition(byKey, save, drop, estimateId, NormBasis.THICKNESS, req.thicknesses());
+        applyPerPosition(byKey, save, drop, estimateId, NormBasis.STEP, req.steps());
 
         if (!drop.isEmpty()) {
             repository.deleteAll(drop);
@@ -186,15 +187,17 @@ public class MaterialParamService {
         BigDecimal perimeter = null;
         Map<UUID, BigDecimal> sections = new LinkedHashMap<>();
         Map<UUID, BigDecimal> thicknesses = new LinkedHashMap<>();
+        Map<UUID, BigDecimal> steps = new LinkedHashMap<>();
         for (EstimateMaterialParam param : params) {
             switch (param.getBasis()) {
                 case PERIMETER -> perimeter = param.getValue();
                 case SECTION -> sections.put(param.getEstimateItemId(), param.getValue());
                 case THICKNESS -> thicknesses.put(param.getEstimateItemId(), param.getValue());
+                case STEP -> steps.put(param.getEstimateItemId(), param.getValue());
                 default -> { /* QUANTITY is read off the line and is never asked for */ }
             }
         }
-        return new StoredMaterialParams(perimeter, sections, thicknesses);
+        return new StoredMaterialParams(perimeter, sections, thicknesses, steps);
     }
 
     /** (position, question) — the pair the two partial unique indexes enforce. */

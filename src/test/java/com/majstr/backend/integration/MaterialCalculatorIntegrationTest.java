@@ -42,7 +42,7 @@ class MaterialCalculatorIntegrationTest extends IntegrationTestBase {
             "lower(btrim(replace(replace(regexp_replace(t.name, '\\s+', ' ', 'g'), '( ', '('), ' )', ')')))";
 
     /** The trades the shipped norms answer for: DRYWALL (V127) and the two V137 added. */
-    private static final List<String> NORMED_TRADES = List.of("DRYWALL", "TILING", "PAINTER", "BUILDER");
+    private static final List<String> NORMED_TRADES = List.of("DRYWALL", "TILING", "PAINTER", "BUILDER", "PLUMBING");
 
     /** A position no shipped norm names — the point is that nothing anywhere answers for it. */
     private static final String UNKNOWN_WORK = "Робота якої немає в нормах";
@@ -471,7 +471,7 @@ class MaterialCalculatorIntegrationTest extends IntegrationTestBase {
 
         UUID itemId = asked.parameters().get(0).estimateItemId();
         MaterialCalculationResponse answered = calculatorService.calculate(
-                estimateId, ownerId, BigDecimal.ZERO, null, itemId + ":0.10", null);
+                estimateId, ownerId, BigDecimal.ZERO, null, itemId + ":0.10", null, null);
 
         assertThat(answered.parameters()).isEmpty();
         // 30 м.п. × 0,10 м = 3 м² of розгортка; × 0,22 л/м² = 0,66 л of paint.
@@ -568,7 +568,7 @@ class MaterialCalculatorIntegrationTest extends IntegrationTestBase {
     // -------------------------------------------------------------------------------------------
 
     private MaterialCalculationResponse calculate(BigDecimal waste, BigDecimal perimeter) {
-        return calculatorService.calculate(estimateId, ownerId, waste, perimeter, null, null);
+        return calculatorService.calculate(estimateId, ownerId, waste, perimeter, null, null, null);
     }
 
     private CalculatedMaterialLine line(MaterialCalculationResponse result, String namePrefix) {

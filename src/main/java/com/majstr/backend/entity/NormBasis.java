@@ -28,10 +28,18 @@ package com.majstr.backend.entity;
  *
  * <p>Unlike a короб's розгортка, a thickness HAS an honest suggestion, which
  * {@link MaterialNorm#getDefaultParam()} carries so the app can pre-fill the field visibly.</p>
+ *
+ * <p>{@link #STEP} — the one basis that DIVIDES. An underfloor-heating pipe is laid in loops at a
+ * spacing the name does not carry, and the pipe per m2 falls as the spacing grows (Purmo: 9,5 /
+ * 6,5 / 5,0 m/m2 at 100 / 150 / 200 mm), as do the clips holding it. Asked per POSITION in
+ * millimetres, like a thickness, but amount = quantity × qtyPerUnit ÷ mm, so the coefficient is the
+ * figure at a 1 mm spacing (6,5 × 150 = 975 for the pipe, V152). Three positions «…крок 100 / 150 /
+ * 200» would have said the same thing three times and left every other spacing unanswered.</p>
  */
 public enum NormBasis {
     QUANTITY,
     PERIMETER,
     SECTION,
-    THICKNESS
+    THICKNESS,
+    STEP
 }

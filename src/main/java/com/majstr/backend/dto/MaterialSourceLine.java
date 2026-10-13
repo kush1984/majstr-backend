@@ -14,12 +14,13 @@ import java.util.UUID;
  * {@code quantity} and {@link NormBasis#PERIMETER} as its basis, so the screen can say where the
  * number came from instead of showing an unexplained figure.</p>
  *
- * <p>{@code param} is the third factor of the two per-position bases and null everywhere else, and
+ * <p>{@code param} is the third factor of the per-position bases and null everywhere else, and
  * {@code basis} says which question it answered and therefore what unit it is in: METRES for a
  * {@link NormBasis#SECTION} («12 м.п. × переріз 0,4 м × 2,2 = 10,56 м²»), MILLIMETRES for a
- * {@link NormBasis#THICKNESS} («20 м² × 15 мм × 0,95 = 285 кг», V137). One field rather than two,
- * because no row is ever both — but it is NOT called {@code section} any more: a field named after
- * one of its two meanings is how a millimetre gets read as a metre. It is carried separately rather
+ * {@link NormBasis#THICKNESS} («20 м² × 15 мм × 0,95 = 285 кг», V137) and for a
+ * {@link NormBasis#STEP}, where it DIVIDES («20 м² × 975 ÷ крок 150 мм = 130 м», V152). One field,
+ * because no row is ever two of them — but it is NOT called {@code section} any more: a field named
+ * after one of its meanings is how a millimetre gets read as a metre. It is carried separately rather
  * than folded into {@code qtyPerUnit} because the master may correct the coefficient on this very
  * row, and a coefficient premultiplied by his own figure is not the norm he would be editing.</p>
  *

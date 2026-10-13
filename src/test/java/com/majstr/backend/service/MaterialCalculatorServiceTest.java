@@ -682,6 +682,75 @@ class MaterialCalculatorServiceTest {
                 .satisfies(p -> assertThat(p.parameter()).isEqualTo("SECTION"));
     }
 
+    // --- STEP: the one basis that divides (V152) ---------------------------------------------
+
+    /**
+     * An underfloor loop is laid at a spacing the name does not carry, so it is asked per position
+     * with the norm's suggestion pre-filled visibly — like a thickness, never applied silently.
+     */
+    @Test
+    void aStepNormIsAskedForWithItsSuggestion() {
+        Material pipe = material("UFH_PIPE", "Труба для теплої підлоги", Unit.LINEAR_METER, null, null);
+        EstimateItem floor = item("Монтаж трубної системи тепла підлога з утеплювачем", Unit.M2, "20",
+                Trade.PLUMBING);
+        given(floor, stepNorm(Trade.PLUMBING, "монтаж трубної системи тепла підлога з утеплювачем",
+                Unit.M2, pipe, "975", "150"));
+
+        MaterialCalculationResponse result = calculate(NO_WASTE, null, null);
+
+        assertThat(result.materials()).isEmpty();
+        assertThat(result.parameters()).singleElement().satisfies(p -> {
+            assertThat(p.parameter()).isEqualTo("STEP");
+            assertThat(p.estimateItemId()).isEqualTo(floor.getId());
+            assertThat(p.suggested()).isEqualByComparingTo("150");
+        });
+    }
+
+    /** «20 м² × 975 ÷ 150 мм = 130 м», and a tighter loop buys more pipe, not less. */
+    @Test
+    void aStepNormDividesByTheSpacingTheMasterTyped() {
+        Material pipe = material("UFH_PIPE", "Труба для теплої підлоги", Unit.LINEAR_METER, null, null);
+        EstimateItem floor = item("Монтаж трубної системи тепла підлога з утеплювачем", Unit.M2, "20",
+                Trade.PLUMBING);
+        given(floor, stepNorm(Trade.PLUMBING, "монтаж трубної системи тепла підлога з утеплювачем",
+                Unit.M2, pipe, "975", "150"));
+
+        CalculatedMaterialLine at150 = only(calculateWithSteps(StoredMaterialParams.EMPTY,
+                floor.getId() + ":150"));
+        assertThat(at150.baseQuantity()).isEqualByComparingTo("130");
+        assertThat(at150.sources()).singleElement().satisfies(s -> {
+            assertThat(s.basis()).isEqualTo(NormBasis.STEP);
+            assertThat(s.param()).isEqualByComparingTo("150");
+            assertThat(s.qtyPerUnit()).isEqualByComparingTo("975");
+        });
+
+        CalculatedMaterialLine at100 = only(calculateWithSteps(StoredMaterialParams.EMPTY,
+                floor.getId() + ":100"));
+        assertThat(at100.baseQuantity()).isEqualByComparingTo("195");
+    }
+
+    /** A spacing answered on another device rides back, and one above the bound is ignored. */
+    @Test
+    void aStoredStepAnswersAndAnAbsurdOneIsIgnored() {
+        Material pipe = material("UFH_PIPE", "Труба для теплої підлоги", Unit.LINEAR_METER, null, null);
+        EstimateItem floor = item("Монтаж трубної системи тепла підлога з утеплювачем", Unit.M2, "10",
+                Trade.PLUMBING);
+        given(floor, stepNorm(Trade.PLUMBING, "монтаж трубної системи тепла підлога з утеплювачем",
+                Unit.M2, pipe, "975", "150"));
+        StoredMaterialParams stored = new StoredMaterialParams(null, Map.of(), Map.of(),
+                Map.of(floor.getId(), new BigDecimal("200")));
+
+        MaterialCalculationResponse result = calculateWithSteps(stored, null);
+        assertThat(result.parameters()).isEmpty();
+        assertThat(only(result).baseQuantity()).isEqualByComparingTo("48.75"); // 10 × 975 ÷ 200
+        assertThat(result.answers().steps()).containsEntry(floor.getId(), new BigDecimal("200"));
+
+        MaterialCalculationResponse typo = calculateWithSteps(StoredMaterialParams.EMPTY,
+                floor.getId() + ":1500");
+        assertThat(typo.parameters()).singleElement()
+                .satisfies(p -> assertThat(p.parameter()).isEqualTo("STEP"));
+    }
+
     // --- THICKNESS: the millimetres are the bill (V137) ---------------------------------------
 
     /**
@@ -785,7 +854,7 @@ class MaterialCalculatorServiceTest {
         given(walls, thicknessNorm(Trade.PAINTER, "штукатурка стін (до 2 см)",
                 Unit.M2, plaster, "0.95", "15"));
         StoredMaterialParams stored = new StoredMaterialParams(
-                null, Map.of(), Map.of(walls.getId(), new BigDecimal("10")));
+                null, Map.of(), Map.of(walls.getId(), new BigDecimal("10")), Map.of());
 
         MaterialCalculationResponse result = calculate(stored, NO_WASTE, null, null, null);
 
@@ -813,7 +882,7 @@ class MaterialCalculatorServiceTest {
         StoredMaterialParams stored = new StoredMaterialParams(null,
                 Map.of(straight.getId(), new BigDecimal("0.5"),
                         round.getId(), new BigDecimal("0.8")),
-                Map.of());
+                Map.of(), Map.of());
 
         CalculatedMaterialLine line = calculate(stored, NO_WASTE, null,
                 straight.getId() + ":1.2", null).materials().get(0);
@@ -831,7 +900,7 @@ class MaterialCalculatorServiceTest {
         given(item("Монтаж на стелю", Unit.M2, "20", Trade.DRYWALL),
                 perimeterNorm(Trade.DRYWALL, "монтаж на стелю", Unit.M2, track, "1.05"));
         StoredMaterialParams stored =
-                new StoredMaterialParams(new BigDecimal("20"), Map.of(), Map.of());
+                new StoredMaterialParams(new BigDecimal("20"), Map.of(), Map.of(), Map.of());
 
         MaterialCalculationResponse result = calculate(stored, NO_WASTE, null, null, null);
 
@@ -1129,7 +1198,12 @@ class MaterialCalculatorServiceTest {
                                                   BigDecimal perimeter, String sections,
                                                   String thicknesses) {
         when(paramService.load(ESTIMATE)).thenReturn(stored);
-        return service.calculate(ESTIMATE, OWNER, waste, perimeter, sections, thicknesses);
+        return service.calculate(ESTIMATE, OWNER, waste, perimeter, sections, thicknesses, null);
+    }
+
+    private MaterialCalculationResponse calculateWithSteps(StoredMaterialParams stored, String steps) {
+        when(paramService.load(ESTIMATE)).thenReturn(stored);
+        return service.calculate(ESTIMATE, OWNER, NO_WASTE, null, null, null, steps);
     }
 
     private CalculatedMaterialLine only(MaterialCalculationResponse result) {
@@ -1233,6 +1307,15 @@ class MaterialCalculatorServiceTest {
                                        String qty, String defaultParam) {
         MaterialNorm norm = norm(trade, nameKey, unit, material, qty);
         norm.setBasis(NormBasis.THICKNESS);
+        norm.setDefaultParam(new BigDecimal(defaultParam));
+        return norm;
+    }
+
+    /** {@code qty} is the figure at a 1 mm spacing; {@code defaultParam} is the suggestion, in mm. */
+    private MaterialNorm stepNorm(Trade trade, String nameKey, Unit unit, Material material,
+                                  String qty, String defaultParam) {
+        MaterialNorm norm = norm(trade, nameKey, unit, material, qty);
+        norm.setBasis(NormBasis.STEP);
         norm.setDefaultParam(new BigDecimal(defaultParam));
         return norm;
     }
