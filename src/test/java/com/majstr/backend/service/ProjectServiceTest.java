@@ -47,6 +47,7 @@ class ProjectServiceTest {
     @Mock com.majstr.backend.repository.ProjectMessageFileRepository messageFileRepository;
     @Mock ProjectDeleteGuard deleteGuard;
     @Mock StorageCleanup cleanup;
+    @Mock com.majstr.backend.repository.SignedDocumentRepository signedDocumentRepository;
     // updateStatus archives/unarchives the object's shopping list, so this one must not be null.
     @Mock com.majstr.backend.repository.ShoppingListRepository shoppingListRepository;
     @Mock com.majstr.backend.repository.ShoppingListItemRepository shoppingListItemRepository;

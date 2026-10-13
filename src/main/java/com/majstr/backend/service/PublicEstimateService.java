@@ -57,6 +57,7 @@ import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 
@@ -90,6 +91,7 @@ public class PublicEstimateService {
     private final MaterialRefundCalculator refundCalculator;
     private final MessageSource messages;
     private final AfterCommit afterCommit;
+    private final SignedDocumentService signedDocuments;
 
     /**
      * The SIGNED estimate this one replaces, or {@code null} when nothing is superseded — and a 409
@@ -457,6 +459,10 @@ public class PublicEstimateService {
         if (project.getStatus() != ProjectStatus.IN_PROGRESS && project.getStatus() != ProjectStatus.COMPLETED) {
             project.setStatus(ProjectStatus.IN_PROGRESS);
         }
+        // What the client just signed is frozen (B-76): the portal, the PDF and every later read
+        // show it as it stood at this moment, whatever the master edits in his requisites after.
+        signedDocuments.freezeEstimate(estimate,
+                itemRepository.findByEstimateIdOrderBySortOrderAscIdAsc(estimate.getId()));
         // Notify the contractor in real time (fail-soft — never breaks signing).
         // Contractor notifications always use the product language (uk base bundle).
         Totals totals = totalsOf(estimate);
@@ -607,7 +613,10 @@ public class PublicEstimateService {
                           BigDecimal markupPercent, BigDecimal discountPercent) {}
 
     private Totals totalsOf(Estimate estimate) {
-        List<EstimateItem> items = itemRepository.findByEstimateIdOrderBySortOrderAscIdAsc(estimate.getId());
+        return totalsOf(estimate, itemRepository.findByEstimateIdOrderBySortOrderAscIdAsc(estimate.getId()));
+    }
+
+    private Totals totalsOf(Estimate estimate, List<EstimateItem> items) {
         BigDecimal works = BigDecimal.ZERO.setScale(MONEY_SCALE, MONEY_ROUNDING);
         BigDecimal materials = BigDecimal.ZERO.setScale(MONEY_SCALE, MONEY_ROUNDING);
         List<PublicEstimateItemView> itemViews = items.stream()
@@ -677,8 +686,11 @@ public class PublicEstimateService {
                 markup, discount, markupPercent, discountPercent);
     }
 
-    private PublicPortalView.Section sectionOf(Estimate estimate) {
-        Totals t = totalsOf(estimate);
+    private PublicPortalView.Section sectionOf(Estimate live) {
+        // A signed estimate's section reads as it was signed (B-76).
+        Optional<SignedDocumentService.FrozenEstimate> frozen = signedDocuments.estimate(live);
+        Estimate estimate = frozen.map(SignedDocumentService.FrozenEstimate::estimate).orElse(live);
+        Totals t = frozen.map(f -> totalsOf(f.estimate(), f.items())).orElseGet(() -> totalsOf(live));
         return new PublicPortalView.Section(
                 estimate.getId(),
                 // The heading the client reads. A markup copy used to be named «… +20%» by default,
@@ -700,10 +712,14 @@ public class PublicEstimateService {
                 estimate.getVersion());
     }
 
-    private PublicEstimateView buildView(Estimate estimate) {
+    private PublicEstimateView buildView(Estimate live) {
+        // The single-estimate link shows ONE document, so a signed one is read whole from its
+        // snapshot — the master's name and logo, the object, the client (B-76).
+        Optional<SignedDocumentService.FrozenEstimate> frozen = signedDocuments.estimate(live);
+        Estimate estimate = frozen.map(SignedDocumentService.FrozenEstimate::estimate).orElse(live);
         Project project = estimate.getProject();
         Client client = project.getClient();
-        Totals t = totalsOf(estimate);
+        Totals t = frozen.map(f -> totalsOf(f.estimate(), f.items())).orElseGet(() -> totalsOf(live));
 
         List<PublicEstimateView.SharedPhoto> sharedPhotos = projectPhotoService.sharedPhotos(project.getId())
                 .stream()

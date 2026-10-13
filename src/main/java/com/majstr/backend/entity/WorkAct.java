@@ -148,9 +148,15 @@ public class WorkAct {
     @Column(name = "signed_offline", nullable = false)
     private boolean signedOffline = false;
 
-    /** SHA-256 of the final signed PDF — a cheap tamper-evidence stamp (set at portal-sign, Prompt 5). */
+    /** Tamper-evidence stamp set at signing. Since V150 the SHA-256 of the stored snapshot (B-76);
+     *  before it, of PDF bytes no render could reproduce — left as stored. */
     @Column(name = "doc_hash", length = 64)
     private String docHash;
+
+    /** The snapshot this signature froze (V150, B-76); null for a document signed before it,
+     *  which keeps rendering live. */
+    @Column(name = "signed_document_id")
+    private UUID signedDocumentId;
 
     /** The auto-created «Додаткові роботи до акта № N» estimate, if this act was signed with
      *  additional positions. {@code ON DELETE SET NULL}. */

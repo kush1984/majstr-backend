@@ -41,6 +41,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.UUID;
 
 /**
@@ -67,6 +68,7 @@ public class PublicActPortalService {
     private final ActAddendumCreator addendumCreator;
     private final ActReceiptReconciler receiptReconciler;
     private final ActSignedCopyService signedCopy;
+    private final SignedDocumentService signedDocuments;
     private final ActReceiptCompleteness receiptCompleteness;
     private final AfterCommit afterCommit;
     private final ActReceiptDuplicateGuard receiptDuplicateGuard;
@@ -84,7 +86,7 @@ public class PublicActPortalService {
      * The client confirms acceptance of the works — a simple electronic signature (NOT a qualified
      * one): honest wording is enforced in the UI, never «юридично рівнозначно власноручному». Records
      * signer name/phone/ip/user-agent, stamps the act SIGNED, computes a {@code doc_hash} (SHA-256 of
-     * the canonical PDF) as tamper evidence, notifies the master (push, fail-soft) and emails the
+     * the signed snapshot, V150) as tamper evidence, notifies the master (push, fail-soft) and emails the
      * client a PDF copy (independent external trace, fail-soft).
      */
     // rollbackFor = Exception (review B-81): Spring rolls back on a RuntimeException and COMMITS on
@@ -151,12 +153,9 @@ public class PublicActPortalService {
         // Tamper stamp + client copy — the SAME artifacts the offline path produces (review fix:
         // extracted into ActSignedCopyService so neither path can drift from the other).
         List<WorkActReceipt> receipts = receiptRepository.findByWorkActIdNewestFirst(act.getId());
-        List<WorkActPdfService.ReceiptRow> receiptRows = receipts.stream()
-                .map(WorkActPdfService.ReceiptRow::from).toList();
-        act.setDocHash(signedCopy.computeDocHash(act, items, receiptRows));
+        signedCopy.freezeAndSend(act, items, receipts);
         notifyContractor(act, items);
-        signedCopy.emailClientCopy(act, items, receiptRows);
-        return toView(act, items, receipts);
+        return toView(act, items, receipts, estimateNames(items));
     }
 
     @Transactional
@@ -181,6 +180,10 @@ public class PublicActPortalService {
     @Transactional(readOnly = true)
     public byte[] pdf(String token) throws IOException, DocumentException {
         WorkAct act = resolveShareableAct(token);
+        Optional<SignedDocumentService.FrozenAct> frozen = signedDocuments.act(act);
+        if (frozen.isPresent()) {
+            return pdfService.render(frozen.get().pdfModel());
+        }
         List<WorkActItem> items = itemRepository.findByWorkActIdOrderBySortOrderAscIdAsc(act.getId());
         List<WorkActPdfService.ReceiptRow> receipts = receiptRepository
                 .findByWorkActIdNewestFirst(act.getId()).stream()
@@ -230,12 +233,18 @@ public class PublicActPortalService {
     // ---- view building ----------------------------------------------------
 
     private PublicActView toView(WorkAct act) {
-        return toView(act, itemRepository.findByWorkActIdOrderBySortOrderAscIdAsc(act.getId()),
-                receiptRepository.findByWorkActIdNewestFirst(act.getId()));
+        // A signed act reads as it was signed (B-76): the object's name, the master's, the client's.
+        Optional<SignedDocumentService.FrozenAct> frozen = signedDocuments.act(act);
+        if (frozen.isPresent()) {
+            SignedDocumentService.FrozenAct f = frozen.get();
+            return toView(f.act(), f.items(), f.receipts(), f.estimateNames());
+        }
+        List<WorkActItem> items = itemRepository.findByWorkActIdOrderBySortOrderAscIdAsc(act.getId());
+        return toView(act, items, receiptRepository.findByWorkActIdNewestFirst(act.getId()), estimateNames(items));
     }
 
-    private PublicActView toView(WorkAct act, List<WorkActItem> items, List<WorkActReceipt> receipts) {
-        Map<UUID, String> names = estimateNames(items);
+    private PublicActView toView(WorkAct act, List<WorkActItem> items, List<WorkActReceipt> receipts,
+                                 Map<UUID, String> names) {
         BigDecimal total = BigDecimal.ZERO.setScale(MONEY_SCALE, ROUNDING);
         List<PublicActView.Item> itemViews = new ArrayList<>(items.size());
         for (WorkActItem it : items) {

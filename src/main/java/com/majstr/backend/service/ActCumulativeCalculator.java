@@ -21,9 +21,9 @@ import java.util.UUID;
  * both PDF-render paths (owner download and the public act portal).
  *
  * <p>Returns {@code null} whenever the block must not render: the master left it off, or this is the
- * first act (nothing to accumulate against yet). The figures are object-wide and are excluded from
- * the canonical (hashed) PDF — see {@link WorkActPdfService.PdfModel} — because they are not part of
- * what the signature certifies.</p>
+ * first act (nothing to accumulate against yet). For an act signed since V150 the figures computed
+ * at the signature are FROZEN into its snapshot and hashed with it (B-76) — they used to be left out
+ * of the stamp only because the stamp was taken over a live render.</p>
  *
  * <p><b>Two different questions, by status</b> (review B-77). While the act is open the block answers
  * «what will this object stand at once this act is accepted», so the act's own lines and receipts are

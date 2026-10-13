@@ -140,6 +140,11 @@ public class Estimate {
     @Column(name = "signed_at")
     private Instant signedAt;
 
+    /** The snapshot this signature froze (V150, B-76); null for a document signed before it,
+     *  which keeps rendering live. */
+    @Column(name = "signed_document_id")
+    private UUID signedDocumentId;
+
     @Column(name = "signer_name", length = 255)
     private String signerName;
 

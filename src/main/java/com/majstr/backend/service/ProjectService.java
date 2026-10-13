@@ -12,6 +12,7 @@ import com.majstr.backend.entity.User;
 import com.majstr.backend.exception.ResourceNotFoundException;
 import com.majstr.backend.feature.Limit;
 import com.majstr.backend.feature.LimitService;
+import com.majstr.backend.repository.SignedDocumentRepository;
 import com.majstr.backend.repository.ProjectMessageRepository;
 import com.majstr.backend.repository.EstimateRepository;
 import com.majstr.backend.repository.ProjectPhotoRepository;
@@ -55,6 +56,7 @@ public class ProjectService {
     private final WorkActReceiptRepository workActReceiptRepository;
     private final ProjectDeleteGuard deleteGuard;
     private final StorageCleanup cleanup;
+    private final SignedDocumentRepository signedDocumentRepository;
     private final ShoppingListRepository shoppingListRepository;
     /** Bulk queries only, like {@link ShoppingListRepository#updateArchivedAt}: this service must
      *  not depend on {@code ShoppingListService}, which depends on it back. */
@@ -182,7 +184,10 @@ public class ProjectService {
                                 .map(ProjectPhoto::getStorageKey),
                         projectReceiptRepository.findStorageKeysByProjectId(id).stream(),
                         workActReceiptRepository.findStorageKeysByProjectId(id).stream(),
-                        messageFileRepository.findStorageKeysByProjectId(id).stream())
+                        messageFileRepository.findStorageKeysByProjectId(id).stream(),
+                        // A signature's stored PDF and logo copy (B-76): an object holding a live
+                        // signature is never deleted, but a REOPENED estimate keeps its snapshots.
+                        signedDocumentRepository.findStorageKeysByProjectId(id).stream())
                 .flatMap(s -> s)
                 .filter(k -> k != null && !k.isBlank())
                 .toList();

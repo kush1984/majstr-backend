@@ -392,7 +392,8 @@ one-line summary — keep the item in the file as a record.
 - **Resolution:** Fix F — one grouped query `EstimateQuestionRepository.countUnreadByProjectIds` (a row per project that has unread, absent when zero) folded into the list, mirroring the latest-estimate-summary pattern; single-project views use the derived `countByEstimateProjectIdAndReadFalse`. Backed by a partial index `idx_estimate_questions_unread ON estimate_questions(estimate_id) WHERE is_read = FALSE` (V22). Revisit only at very large per-contractor question volumes.
 
 ### A photo's blob outlives the row when the upload transaction rolls back (B-111)
-- **Status:** OPEN
+- **Status:** RESOLVED (2026-10-09) — `StorageCleanup.onRollback` deletes a just-stored photo when the
+  transaction rolls back, at the save or at commit. See [iteration-money-audit-4.md](iteration-money-audit-4.md) Part 2.
 - **Since:** review round 4 §4 (2026-10-06), untouched by the trade-review batch 1
 - **Context:** `StorageCleanup.afterCommit` is the rule for DELETES — the blob goes after the row,
   never before (B-25). The UPLOAD side has no mirror of it: `ProjectPhotoService` writes the blob to
@@ -405,7 +406,8 @@ one-line summary — keep the item in the file as a record.
   not a norm or a quantity, and batch 1 was scoped to what buys the wrong material.
 
 ### A first material parameter saved twice at once answers 500 (B-112)
-- **Status:** OPEN
+- **Status:** RESOLVED (2026-10-09) — a params save takes the estimate's row lock first, so concurrent
+  first saves serialise; values carry `@Digits(4, 3)`. See [iteration-money-audit-4.md](iteration-money-audit-4.md) Part 2.
 - **Since:** review round 4 §4 (2026-10-06)
 - **Context:** `estimate_material_param` is keyed by (position, basis) under two PARTIAL unique
   indexes (V142). `MaterialParamService` reads «is there a row» and then inserts, with no recovery
@@ -3218,7 +3220,10 @@ one-line summary — keep the item in the file as a record.
   sign of money is an `@NotNull` wrapper, never a primitive.
 
 ### `doc_hash` cannot be reproduced, so nothing can verify it (B-76)
-- **Status:** OPEN — the analysis is settled, the fix is an iteration of its own (2026-10-01).
+- **Status:** RESOLVED (2026-10-12, V150) — a signature stores a canonical JSON snapshot of every
+  printed value, `doc_hash` = SHA-256 of that stored text, the stamped PDF is kept, and signed acts
+  AND estimates render from the snapshot; documents signed before V150 stay live-rendered with their
+  stamp as stored. See [iteration-signed-snapshots.md](iteration-signed-snapshots.md).
 - **Since:** review round 3 §4.
 - **Context:** the stamp is SHA-256 of the canonical PDF BYTES, and two identical renders 1,1 s apart
   differ: OpenPDF writes a time-based `/ID` and `CreationDate`. The canonical render also reads LIVE
@@ -3230,6 +3235,15 @@ one-line summary — keep the item in the file as a record.
   snapshot, keeping the stamped PDF in storage. That is a new column, a second render path for two
   document types, and a decision about the hashes already stored — and a partial version would leave
   two notions of what the hash certifies. Deliberately not half-built with the §4 should-fixes.
+
+### The portal shows no diff between two signed snapshots of one document
+- **Status:** OPEN
+- **Since:** 2026-10-12, out of the B-76 snapshot iteration
+- **Context:** once every signature stores a canonical snapshot (B-76), «what changed since the
+  client last signed» is a comparison of two stored snapshots, not a reconstruction. The older item
+  «"What changed" highlighting on re-sign» waited for exactly this.
+- **Notes / options:** show added/removed/changed lines on the portal's re-sign screen, read from the
+  previous SIGNED snapshot of the same estimate. Deliberately not built in the snapshot iteration.
 
 ### The crew margin cannot tell a crew sheet from a premium variant (B-73 remainder)
 - **Status:** OPEN — needs a question on a screen, not a column (2026-10-01).

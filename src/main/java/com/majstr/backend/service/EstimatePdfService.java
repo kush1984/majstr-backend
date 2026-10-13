@@ -72,6 +72,7 @@ public class EstimatePdfService {
             addItemsTable(document, "МАТЕРІАЛИ", model.materialItems());
             addTotals(document, model);
             addNotesAndSignatures(document, model);
+            addDocHashFooter(document, model);
             addReceipts(document, model.receiptImages());
         } finally {
             document.close();
@@ -80,6 +81,18 @@ public class EstimatePdfService {
     }
 
     // ------------------------------------------------------------------- sections
+
+    /** The SHA-256 of the snapshot a signature stored (V150, B-76) — printed only on a signed one. */
+    private void addDocHashFooter(Document doc, PdfModel model) throws DocumentException {
+        String hash = model.docHash();
+        if (hash == null || hash.isBlank()) {
+            return;
+        }
+        Paragraph p = new Paragraph("Цифровий відбиток документа (SHA-256): " + hash,
+                fonts.regular(7));
+        p.setSpacingBefore(14);
+        doc.add(p);
+    }
 
     private void addHeader(Document doc, PdfModel model) throws DocumentException, IOException {
         PdfPTable header = new PdfPTable(2);
@@ -98,7 +111,8 @@ public class EstimatePdfService {
         // Logo lives behind the BRANDED_PDF feature flag — if the user is
         // on a plan without it, render the rest of the PDF normally and
         // skip the logo. Throws are intentionally NOT used here.
-        if (featureGuard.isEnabled(model.contractor(), Feature.BRANDED_PDF)) {
+        if (model.branded() != null ? model.branded()
+                : featureGuard.isEnabled(model.contractor(), Feature.BRANDED_PDF)) {
             tryLoadLogo(model.contractor().getLogoUrl()).ifPresent(image -> {
                 image.scaleToFit(80, 60);
                 logoCell.addElement(image);
@@ -449,8 +463,17 @@ public class EstimatePdfService {
             Estimate estimate,
             List<EstimateItem> items,
             /** Receipt photo bytes to append as a «ЧЕКИ» section; empty for the portal / no-receipt path. */
-            List<byte[]> receiptImages
+            List<byte[]> receiptImages,
+            /** SHA-256 of a signature's snapshot (B-76), printed in the footer; null when unsigned. */
+            String docHash,
+            /** The logo decision a signature froze; null asks the feature guard. */
+            Boolean branded
     ) {
+        public PdfModel(User contractor, Project project, Client client, Estimate estimate,
+                        List<EstimateItem> items, List<byte[]> receiptImages) {
+            this(contractor, project, client, estimate, items, receiptImages, null, null);
+        }
+
         public List<EstimateItem> workItems() {
             return items.stream().filter(i -> i.getType() == ItemType.WORK).toList();
         }

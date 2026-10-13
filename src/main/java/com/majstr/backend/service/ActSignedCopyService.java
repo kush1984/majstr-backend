@@ -1,20 +1,17 @@
 package com.majstr.backend.service;
 
-import com.lowagie.text.DocumentException;
 import com.majstr.backend.email.EmailService;
 import com.majstr.backend.entity.Client;
-import com.majstr.backend.entity.Project;
 import com.majstr.backend.entity.User;
 import com.majstr.backend.entity.WorkAct;
 import com.majstr.backend.entity.WorkActItem;
+import com.majstr.backend.entity.WorkActReceipt;
 import com.majstr.backend.repository.EstimateRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
-import java.io.IOException;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
@@ -25,45 +22,44 @@ import java.util.UUID;
  * stamp and the client no independent copy):
  *
  * <ul>
- *   <li>{@link #computeDocHash} — SHA-256 of the CANONICAL PDF (no doc-hash footer, no live
- *       «ДОВІДКОВО» block, so a later signing on the object never invalidates this act's stamp);</li>
- *   <li>{@link #emailClientCopy} — the stamped PDF mailed to the client, fail-soft: the signature
- *       already landed, the emailed copy is a bonus evidence trail.</li>
+ *   <li>the FREEZE ({@link SignedDocumentService#freezeAct}, V150, B-76) — every printed value
+ *       snapshotted, {@code doc_hash} = SHA-256 of that snapshot's canonical text, the stamped PDF
+ *       rendered from it and kept in storage;</li>
+ *   <li>{@link #emailClientCopy} — that same stamped PDF mailed to the client, fail-soft: the
+ *       signature already landed, the emailed copy is a bonus evidence trail.</li>
  * </ul>
  */
 @Component
 @RequiredArgsConstructor
 class ActSignedCopyService {
 
-    private final WorkActPdfService pdfService;
     private final ActCumulativeCalculator cumulativeCalculator;
     private final EstimateRepository estimateRepository;
     private final EmailService emailService;
     private final AfterCommit afterCommit;
+    private final SignedDocumentService signedDocuments;
 
-    /** Must be called AFTER the signer fields are set — they are part of what the hash certifies. */
-    String computeDocHash(WorkAct act, java.util.List<WorkActItem> items,
-                          java.util.List<WorkActPdfService.ReceiptRow> receipts)
-            throws IOException, DocumentException {
-        byte[] canonical = pdfService.render(model(act, items, receipts, null, null));
-        return sha256Hex(canonical);
+    /**
+     * Must be called AFTER the signer fields are set — they are part of what the hash certifies.
+     * Sets {@code doc_hash} and {@code signed_document_id} on the act and schedules the client's
+     * copy for after the commit.
+     */
+    void freezeAndSend(WorkAct act, List<WorkActItem> items, List<WorkActReceipt> receipts) {
+        List<WorkActPdfService.ReceiptRow> rows = receipts.stream().map(WorkActPdfService.ReceiptRow::from).toList();
+        // «ДОВІДКОВО» as of this signature (B-94) is part of what is frozen: it used to be left out
+        // of the hash only because the hash was taken over a live render.
+        SignedDocumentService.Frozen frozen = signedDocuments.freezeAct(act, items, receipts,
+                estimateNames(items), cumulativeCalculator.forDownload(act, items, receiptsTotal(rows)));
+        emailClientCopy(act, frozen.stampedPdf());
     }
 
     /**
-     * The stamped copy for the client: RENDERED now, MAILED after the commit (review B-81).
-     *
-     * <p>The split is the whole point. Rendering needs the entities and the live «ДОВІДКОВО»
-     * figures, so it has to happen inside the signing transaction; sending is irreversible, so it
-     * must not happen until that transaction has actually committed. It used to send from inside,
-     * which meant a signature that lost its optimistic lock — two clients tapping at once, a
-     * receipt landing mid-sign — still put a «signed» PDF in the client's inbox. Everything the
-     * send needs is copied out to locals first: afterwards the entities are detached.</p>
-     *
-     * <p>Fail-soft on both halves: the signature has landed either way and the emailed copy is a
-     * bonus evidence trail.</p>
+     * The stamped copy for the client, MAILED after the commit (review B-81): sending is
+     * irreversible, so it must not happen until the signing transaction has actually committed —
+     * a signature that lost its optimistic lock used to put a «signed» PDF in the client's inbox.
+     * Everything the send needs is copied out to locals first: afterwards the entities are detached.
      */
-    void emailClientCopy(WorkAct act, java.util.List<WorkActItem> items,
-                         java.util.List<WorkActPdfService.ReceiptRow> receipts) {
+    private void emailClientCopy(WorkAct act, byte[] stamped) {
         Client client = act.getProject().getClient();
         if (client == null || client.getEmail() == null || client.getEmail().isBlank()) {
             return;
@@ -72,13 +68,6 @@ class ActSignedCopyService {
         String clientName = client.getFullName();
         String contractor = contractorName(act.getProject().getOwner());
         String number = act.getNumber();
-        byte[] stamped;
-        try {
-            stamped = pdfService.render(model(act, items, receipts, act.getDocHash(),
-                    cumulativeCalculator.forDownload(act, items, receiptsTotal(receipts))));
-        } catch (Exception e) {
-            return; // nothing to send; the signature itself is unaffected
-        }
         afterCommit.run(() -> {
             try {
                 emailService.sendSignedActCopyEmail(email, clientName, contractor, number, stamped);
@@ -88,17 +77,12 @@ class ActSignedCopyService {
         });
     }
 
-    private WorkActPdfService.PdfModel model(WorkAct act, java.util.List<WorkActItem> items,
-                                             java.util.List<WorkActPdfService.ReceiptRow> receipts,
-                                             String docHash, WorkActPdfService.CumulativeReference cumulative) {
-        Project project = act.getProject();
+    private Map<UUID, String> estimateNames(List<WorkActItem> items) {
         Map<UUID, String> names = new HashMap<>();
         items.stream().map(WorkActItem::getEstimateId).filter(Objects::nonNull).distinct().forEach(id ->
                 estimateRepository.findById(id).ifPresent(e ->
                         names.put(id, e.getName() == null || e.getName().isBlank() ? "Кошторис" : e.getName().trim())));
-        return new WorkActPdfService.PdfModel(
-                project.getOwner(), project, project.getClient(), act, items, receipts, names, docHash,
-                cumulative);
+        return names;
     }
 
     /**
@@ -121,18 +105,5 @@ class ActSignedCopyService {
         if (owner.getCompanyName() != null && !owner.getCompanyName().isBlank()) return owner.getCompanyName().trim();
         if (owner.getLegalName() != null && !owner.getLegalName().isBlank()) return owner.getLegalName().trim();
         return owner.getFullName();
-    }
-
-    private static String sha256Hex(byte[] bytes) {
-        try {
-            byte[] digest = MessageDigest.getInstance("SHA-256").digest(bytes);
-            StringBuilder sb = new StringBuilder(digest.length * 2);
-            for (byte b : digest) {
-                sb.append(Character.forDigit((b >> 4) & 0xF, 16)).append(Character.forDigit(b & 0xF, 16));
-            }
-            return sb.toString();
-        } catch (NoSuchAlgorithmException e) {
-            throw new IllegalStateException("SHA-256 unavailable", e); // never on a standard JRE
-        }
     }
 }

@@ -82,6 +82,9 @@ class EstimateServiceTest {
     @Mock private com.majstr.backend.feature.FeatureGuard featureGuard;
     @Mock private MeasurementService measurementService;
     @Mock private EstimatePdfService pdfService;
+    @Mock private SignedDocumentService signedDocuments;
+    @Mock private com.majstr.backend.repository.SignedDocumentRepository signedDocumentRepository;
+    @Mock private StorageCleanup storageCleanup;
     @Mock private ProjectPhotoRepository photoRepository;
     @Mock private StorageService storage;
     @Mock private WorkActItemRepository workActItemRepository;

@@ -72,6 +72,7 @@ class PublicEstimateServiceTest {
     @Mock private FeatureGuard featureGuard;
     @Mock private PushService pushService;
     @Mock private WorkActItemRepository workActItemRepository;
+    @Mock private SignedDocumentService signedDocuments;
 
     private PublicEstimateService publicService;
 
@@ -89,7 +90,7 @@ class PublicEstimateServiceTest {
         publicService = new PublicEstimateService(shareLinkRepository, projectShareLinkRepository,
                 projectPaymentRepository, paymentReceiptRepository, estimateRepository, itemRepository,
                 messageRepository, estimateService, projectPhotoService, featureGuard, pushService,
-                workActItemRepository, refundCalculator, messages, new AfterCommit());
+                workActItemRepository, refundCalculator, messages, new AfterCommit(), signedDocuments);
     }
 
     @Test

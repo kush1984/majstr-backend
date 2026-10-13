@@ -41,6 +41,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.UUID;
 
 /**
@@ -73,6 +74,7 @@ public class WorkActService {
     private final ActCumulativeCalculator cumulativeCalculator;
     private final ActAddendumCreator addendumCreator;
     private final ActSignedCopyService signedCopy;
+    private final SignedDocumentService signedDocuments;
     private final ActReceiptCompleteness receiptCompleteness;
     private final ActLineBinder lineBinder;
     private final ActFinalGuard finalGuard;
@@ -111,6 +113,11 @@ public class WorkActService {
     @Transactional(readOnly = true)
     public byte[] renderPdf(UUID id, UUID ownerId) throws IOException, DocumentException {
         WorkAct act = loadOwned(id, ownerId);
+        // A signed act is printed from what was signed (B-76), not from today's requisites.
+        Optional<SignedDocumentService.FrozenAct> frozen = signedDocuments.act(act);
+        if (frozen.isPresent()) {
+            return pdfService.render(frozen.get().pdfModel());
+        }
         List<WorkActItem> items = itemRepository.findByWorkActIdOrderBySortOrderAscIdAsc(id);
         Map<UUID, String> names = new HashMap<>();
         items.stream().map(WorkActItem::getEstimateId).filter(Objects::nonNull).distinct().forEach(estId ->
@@ -344,9 +351,7 @@ public class WorkActService {
         act.setSignedOffline(true);
         act.setSignedAt(Instant.now());
         List<WorkActItem> items = itemRepository.findByWorkActIdOrderBySortOrderAscIdAsc(id);
-        List<WorkActPdfService.ReceiptRow> receipts = receiptRows(id);
-        act.setDocHash(signedCopy.computeDocHash(act, items, receipts));
-        signedCopy.emailClientCopy(act, items, receipts);
+        signedCopy.freezeAndSend(act, items, receiptRepository.findByWorkActIdNewestFirst(id));
         return responseFactory.build(act);
     }
 

@@ -42,6 +42,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.BDDMockito.willAnswer;
 import static org.mockito.Mockito.verify;
 
 @ExtendWith(MockitoExtension.class)
@@ -64,6 +65,7 @@ class PublicActPortalServiceTest {
     @Mock ActReceiptCompleteness receiptCompleteness;
     @Mock ActLineBinder lineBinder;
     @Mock ActReceiptDuplicateGuard receiptDuplicateGuard;
+    @Mock SignedDocumentService signedDocuments;
     /** Real, not a mock: the sign path registers its push through it, and «the master is told only
      *  after the commit» (review B-81) is worth asserting rather than stubbing away. With no
      *  transaction in progress it runs the action at once, which is what this unit test wants. */
@@ -185,7 +187,10 @@ class PublicActPortalServiceTest {
         WorkAct a = act(WorkActStatus.SENT);
         stubSignToken(a);
         given(itemRepository.findByWorkActIdOrderBySortOrderAscIdAsc(a.getId())).willReturn(List.of(item(a)));
-        given(signedCopy.computeDocHash(any(), any(), any())).willReturn("a".repeat(64));
+        willAnswer(i -> {
+            ((WorkAct) i.getArgument(0)).setDocHash("a".repeat(64));
+            return null;
+        }).given(signedCopy).freezeAndSend(any(), any(), any());
         given(messages.getMessage(anyString(), any(), any())).willReturn("підписано");
 
         PublicActView view = service.sign(TOKEN, new SignRequest("Олена", "+380671112233", 0L), "1.2.3.4", "UA");

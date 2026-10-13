@@ -91,8 +91,9 @@ public class WorkActPdfService {
 
     // ---- sections ---------------------------------------------------------
 
-    /** Tamper-evidence stamp for a SIGNED act — the SHA-256 of the canonical (unstamped) PDF. A
-     *  verifier re-renders the unstamped document and compares; a changed byte changes the hash. */
+    /** Tamper-evidence stamp for a SIGNED act — the SHA-256 of the canonical JSON snapshot the
+     *  signature stored (V150, B-76); a verifier hashes that text. A legacy act's stamp was taken
+     *  over PDF bytes and is printed as it was stored. */
     private void addDocHashFooter(Document doc, PdfModel model) throws DocumentException {
         String hash = model.docHash();
         if (hash == null || hash.isBlank()) {
@@ -135,7 +136,8 @@ public class WorkActPdfService {
         PdfPCell logoCell = new PdfPCell();
         logoCell.setBorder(0);
         logoCell.setHorizontalAlignment(Element.ALIGN_RIGHT);
-        if (featureGuard.isEnabled(model.contractor(), Feature.BRANDED_PDF)) {
+        if (model.branded() != null ? model.branded()
+                : featureGuard.isEnabled(model.contractor(), Feature.BRANDED_PDF)) {
             tryLoadLogo(model.contractor().getLogoUrl()).ifPresent(image -> {
                 image.scaleToFit(80, 60);
                 logoCell.addElement(image);
@@ -653,11 +655,13 @@ public class WorkActPdfService {
     }
 
     /** Input bundle. {@code client} may be null; {@code estimateNames} maps each referenced estimate
-     *  id to its display name for the group headers. {@code docHash} (SHA-256 of the canonical,
-     *  unstamped PDF) is set only for a SIGNED act — a cheap tamper-evidence stamp in the footer.
-     *  {@code cumulative} is the «ДОВІДКОВО» reference or null (block off / first act / hashed render);
-     *  it is intentionally excluded from the canonical (hashed) PDF because its figures are live and
-     *  object-wide, so a later signing must not break an earlier act's stored hash. */
+     *  id to its display name for the group headers. {@code docHash} is set only for a SIGNED act and
+     *  printed in the footer — since V150 the SHA-256 of the act's stored snapshot (B-76), which a
+     *  signed act is rendered FROM, «ДОВІДКОВО» figures included. {@code cumulative} is that block or
+     *  null (block off / first act).
+     *
+     *  <p>{@code branded} is the logo decision a SIGNED act froze (B-76): the plan of the day the
+     *  client signed, not today's. {@code null} asks the feature guard, as every live render does.</p> */
     public record PdfModel(
             User contractor,
             Project project,
@@ -667,8 +671,15 @@ public class WorkActPdfService {
             List<ReceiptRow> receipts,
             Map<UUID, String> estimateNames,
             String docHash,
-            CumulativeReference cumulative
+            CumulativeReference cumulative,
+            Boolean branded
     ) {
+        public PdfModel(User contractor, Project project, Client client, WorkAct act,
+                        List<WorkActItem> items, List<ReceiptRow> receipts,
+                        Map<UUID, String> estimateNames, String docHash, CumulativeReference cumulative) {
+            this(contractor, project, client, act, items, receipts, estimateNames, docHash, cumulative, null);
+        }
+
         public PdfModel {
             // An act is always a document for the CLIENT, so the group headers are stripped of a
             // trailing markup rate here rather than at each of the three call sites (review B-74).

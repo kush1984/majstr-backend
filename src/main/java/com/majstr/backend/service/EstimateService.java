@@ -35,6 +35,7 @@ import com.majstr.backend.exception.WorkActConflictException;
 import com.majstr.backend.feature.Feature;
 import com.majstr.backend.feature.FeatureGuard;
 import com.majstr.backend.feature.LimitService;
+import com.majstr.backend.repository.SignedDocumentRepository;
 import com.majstr.backend.repository.CatalogItemRepository;
 import com.majstr.backend.repository.EstimateItemRepository;
 import com.majstr.backend.repository.EstimateRepository;
@@ -62,6 +63,7 @@ import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Locale;
 import java.util.Set;
 import java.util.UUID;
@@ -95,6 +97,9 @@ public class EstimateService {
     private final CatalogFiling catalogFiling;
     private final CatalogItemRepository catalogItemRepository;
     private final EstimatePdfService pdfService;
+    private final SignedDocumentService signedDocuments;
+    private final SignedDocumentRepository signedDocumentRepository;
+    private final StorageCleanup storageCleanup;
     private final LimitService limitService;
     /** The crew margin is PRO-tier like the economy panel it mirrors (review B-75). */
     private final FeatureGuard featureGuard;
@@ -616,7 +621,11 @@ public class EstimateService {
         // did not delete. What he bought or corrected by hand stays on his list, as his own row.
         shoppingListItemRepository.deleteUntouchedByEstimate(estimateId);
         shoppingListItemRepository.detachFromEstimate(estimateId);
+        // A reopened estimate keeps the snapshots of its earlier signatures; the rows cascade with
+        // it, so their stored PDF and logo copy are collected first and go after the commit (B-76).
+        List<String> signedBlobs = signedDocumentRepository.findStorageKeysByEstimateId(estimateId);
         estimateRepository.delete(estimate);
+        storageCleanup.afterCommit(signedBlobs);
         projectRepository.incrementEstimatesDeleted(projectId); // lifetime churn counter
     }
 
@@ -654,6 +663,8 @@ public class EstimateService {
      */
     void applyReopen(Estimate estimate, UUID reopenedBy) {
         estimate.setStatus(EstimateStatus.DRAFT);
+        // The signature's snapshot stays as history (B-76); the estimate just stops being it.
+        estimate.setSignedDocumentId(null);
         estimate.setSignedAt(null);
         estimate.setSignerName(null);
         estimate.setSignerPhone(null);
@@ -732,6 +743,11 @@ public class EstimateService {
 
     private byte[] renderPdf(Estimate estimate, List<byte[]> receiptImages)
             throws IOException, DocumentException {
+        // A signed estimate is printed from what was signed (B-76), stamp included.
+        Optional<SignedDocumentService.FrozenEstimate> frozen = signedDocuments.estimate(estimate);
+        if (frozen.isPresent()) {
+            return pdfService.render(frozen.get().pdfModel(receiptImages));
+        }
         Project project = estimate.getProject();
         List<EstimateItem> items = itemRepository.findByEstimateIdOrderBySortOrderAscIdAsc(estimate.getId());
         return pdfService.render(new EstimatePdfService.PdfModel(
