@@ -37,7 +37,7 @@ class BuilderNormsOnLiveDataIntegrationTest extends IntegrationTestBase {
             "армування укосів сітка перетяжка", "монтаж пінопласта клей дюбель",
             "монтаж вати клей дюбель", "утеплення укосів пінопластом", "утеплення укосів ватою",
             "утеплення цоколя пінополістиролом", "монтаж стартової планки",
-            "облицювання клінкерною плиткою", "гідроізоляція плівкова");
+            "облицювання фасаду клінкерною плиткою", "гідроізоляція плівкова"); // V169 merged the short clinker row into the facade one
 
     /** V148 put these FLOORING-normed positions into BUILDER's screed bundle; V151 re-files them. */
     private static final List<String> REFILED_FROM_FLOORING = List.of(

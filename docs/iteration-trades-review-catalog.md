@@ -162,3 +162,39 @@ a removed row cascade (V94). Not done: cross-trade pairs (V116-shaped merges), p
 units, pairs where the report could not say which is right, rollups beside their parts.
 Test: `CatalogDuplicatesOnLiveDataIntegrationTest` (a master with only the loser at his price, a
 master with both, a fork carrying the loser).
+
+## Cross-trade duplicates and shared norms — V169 (owner: «беремо 1 і 6», 2026-10-14)
+
+V167 could only delete a losing wording because its survivor lived in the same trade. Across trades
+that would take the job out of the loser trade altogether, so V169 works per library row of the
+loser: a trade that already ships the survivor loses the row; any other trade's row is **renamed in
+place** to the survivor (its price, category and order kept, the survivor's description taken), so
+both trades now ship one shared position. Everything a master owns follows V167 verbatim (his
+LIBRARY copy renamed at his price when he lacks the survivor, his notice and forked norms follow,
+both copies kept when he has both, default bundle lines move, a fork's line moves where his catalog
+carries the survivor; the loser's key is recorded in `catalog_renamed_position`). Prices untouched.
+
+Eleven pairs: PAINTER's two «Каркасна звукоізоляція ГКЛ два слоя …» → DRYWALL's wordings (PAINTER
+masters now get DRYWALL's eight/ten norms); «Облицювання клінкерною плиткою» (BUILDER + PAINTER) →
+«Облицювання фасаду клінкерною плиткою»; BUILDER's stone facade → PAINTER's «…натуральним або
+штучним каменем»; «Грунтовка поверхні кварцгрунтом» (BUILDER + PAINTER) → «Грунтування кварцгрунтом»
+(BUILDER's two facade bundles moved); BUILDER's two-colour marking and both facade-insulation
+«комплекс» rows → PAINTER's wordings; BUILDER «Монтаж профнастилу на паркан до 2м» → METAL's row
+(and its norms); DEMOLITION «Демонтаж електрощита» → ELECTRICAL «Демонтаж старого електрощита»;
+PAINTER «Збирання сміття в мішки після демонтажу» → «Фасування сміття в мішки». Found by the
+reports plus a trigram sweep of the V168 library.
+
+**Shared norms (TRADES-REVIEW §1.2).** Every norm on a (name, unit) the library ships under two or
+more trades is re-filed to `trade = NULL`, forks in the same statement, a trade-bound row with a
+trade-less twin dropped (B-107). Before V169 only the three DRYWALL «consumes nothing» verdicts
+PAINTER shares (дефектування, мікрошліфування, вологе обезпилювання) were still trade-bound; the
+merged survivors joined them. 77 shared keys, none trade-bound after.
+
+Not done (content differs, the owner's to say): METAL posts vs BUILDER «дерев'яного або металевого
+стовпа» (wood, concreting), the stair frame per step vs BUILDER's straight/turning step (900 vs
+1350), «Армування стиків ГКЛ» vs DRYWALL's two joint rows, the bathroom fan in ELECTRICAL vs
+PLUMBING, «Винесення» vs «Винесення та вивезення» (haulage included); different units («Підйом
+будматеріалів» PIECE vs «Підняття матеріалу» T). Price gaps a shared row now shows side by side:
+clinker 650 / 250, stone 250 / 1500, quartz primer 25 / 90, two-colour marking 300 / 100,
+profiled sheet 180 / 250, old switchboard 200 / 400 — `price_insight_candidate` territory.
+Test: `CrossTradeDuplicatesOnLiveDataIntegrationTest`.

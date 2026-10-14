@@ -2660,7 +2660,7 @@ one-line summary — keep the item in the file as a record.
   third ladder rung. Option (b) is dropped, not deferred — no edit logging shipped. Ready to close
   as RESOLVED on the master's word; see `docs/iteration-material-calculator.md` §21.
 
-### Trade-by-trade review (`TRADES-REVIEW.md`) — batches 1-8 shipped, batches 9+ open
+### Trade-by-trade review (`TRADES-REVIEW.md`) — batches 1-8 shipped, batches 9+ open (V169 last)
 - **Status:** IN_PROGRESS — batch 1 (§4.1 + §1.8) shipped as **V146**, 2026-10-06, see
   [iteration-trades-review-batch-1.md](iteration-trades-review-batch-1.md); batch 2 (§4 item 1 —
   FLOORING's norms + the §3.5 dictionary) as **V147**, same day, see
@@ -2701,12 +2701,16 @@ one-line summary — keep the item in the file as a record.
     «Виготовлення терас веранд комплекс» 11 800/м², «Підйом будматеріалів на поверх» 263 (unit);
   - ~~catalog additions, renames and descriptions~~ — **done in V158-V166** (2026-10-13, see
     [iteration-trades-review-catalog.md](iteration-trades-review-catalog.md)); ~~de-duplication~~ —
-    **V167**, 107 intra-trade pairs out of the library on the owner's word; cross-trade pairs (BUILDER
-    ↔ METAL fence/posts/stairs, PAINTER ↔ DRYWALL framed insulation, clinker, quartz primer) still
-    want a V116-shaped merge each. Original note: catalog additions, de-duplication and descriptions, and the renames (FLOORING's own §1b:
+    **V167**, 107 intra-trade pairs out of the library on the owner's word; ~~cross-trade pairs~~ —
+    **V169** (2026-10-14), eleven pairs merged by renaming the loser trade's row in place (PAINTER ↔
+    DRYWALL framed insulation, clinker, stone, quartz primer, BUILDER ↔ METAL profiled sheet, …);
+    METAL posts and the stair frame stay apart (their content differs) with the other leftovers in
+    [iteration-trades-review-catalog.md](iteration-trades-review-catalog.md). Original note: catalog additions, de-duplication and descriptions, and the renames (FLOORING's own §1b:
     «Монтаж утеплювача» says nothing about where, and the hidden skirting ships as a complex beside
     its two parts, so an estimate carrying all three double-buys);
-  - **the shared-position re-filings beyond the ten** §7 took and the five §4 of V147 took.
+  - ~~the shared-position re-filings beyond the ten~~ — **done in V169**: every norm on a position
+    two or more trades ship is trade-less (77 keys; the last trade-bound ones were three DRYWALL
+    verdicts PAINTER shares).
 - **Notes / options:** the owner's two rulings from batch 1 stand for the later ones — grout is the
   «гібрид» (it stays on the laying positions; a grouting step that follows laying is a recorded
   «consumes nothing» verdict) and the deep primer belongs to the standalone «Грунтування» position
