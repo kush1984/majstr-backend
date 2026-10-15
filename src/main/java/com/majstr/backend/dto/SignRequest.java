@@ -14,9 +14,18 @@ import jakarta.validation.constraints.Size;
  * signature on «whatever it says now», which is precisely what may not be accepted — so the field
  * is {@code @NotNull} on a WRAPPER (a primitive would make an omitted value a 400 about malformed
  * JSON instead of a named, translatable one) and a mismatch answers 409 «перегляньте ще раз».</p>
+ *
+ * <p>{@code clientPhone} is OPTIONAL (owner's ruling, 2026-10-15): a required phone with no visible
+ * cue was why a client pressed «Підписати» and nothing happened. The name is what signs.</p>
  */
 public record SignRequest(
         @NotBlank @Size(max = 255) String clientName,
-        @NotBlank @Size(max = 50) String clientPhone,
+        @Size(max = 50) String clientPhone,
         @NotNull Long version
-) {}
+) {
+
+    /** The phone as stored with the signature — null when he left it blank. */
+    public String phoneOrNull() {
+        return clientPhone == null || clientPhone.isBlank() ? null : clientPhone.trim();
+    }
+}

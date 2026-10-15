@@ -255,6 +255,21 @@ class PublicEstimateServiceTest {
                 contains("/projects/"));
     }
 
+    /** The phone is optional (2026-10-15): the name signs, a blank phone is stored as no phone. */
+    @Test
+    void sign_withoutAPhoneSignsAndStoresNone() {
+        Estimate estimate = sampleEstimate();
+        given(shareLinkRepository.findByToken(token)).willReturn(Optional.of(usableLink(estimate)));
+        given(itemRepository.findByEstimateIdOrderBySortOrderAscIdAsc(estimate.getId()))
+                .willReturn(List.of(workItem(estimate)));
+
+        publicService.sign(token, new SignRequest("Олена Іваненко", "  ", 0L), "203.0.113.42");
+
+        assertThat(estimate.getStatus()).isEqualTo(EstimateStatus.SIGNED);
+        assertThat(estimate.getSignerName()).isEqualTo("Олена Іваненко");
+        assertThat(estimate.getSignerPhone()).isNull();
+    }
+
     @Test
     void sign_rejectsAlreadySignedEstimateWith409Semantics() {
         Estimate estimate = sampleEstimate();

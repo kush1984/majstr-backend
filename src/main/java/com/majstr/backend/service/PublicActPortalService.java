@@ -145,7 +145,7 @@ public class PublicActPortalService {
         act.setStatus(WorkActStatus.SIGNED);
         act.setSignedAt(Instant.now());
         act.setSignerName(req.clientName().trim());
-        act.setSignerPhone(req.clientPhone().trim());
+        act.setSignerPhone(req.phoneOrNull());
         act.setSignerIp(clientIp);
         act.setSignerUserAgent(truncate(userAgent, 512));
         act.setSignedOffline(false);

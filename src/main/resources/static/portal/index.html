@@ -576,6 +576,16 @@
             background: var(--white);
         }
         dialog textarea { min-height: 120px; resize: vertical; }
+        /* Required fields: a star beside the label, and on a press with the field empty a red
+           frame, a red star and the reason under the field (requireFields). */
+        .req { color: var(--muted); font-weight: 700; }
+        label.invalid .req { color: #b42318; }
+        input[aria-invalid="true"], textarea[aria-invalid="true"] {
+            border-color: #b42318 !important;
+            box-shadow: 0 0 0 3px rgba(180, 35, 24, 0.15);
+        }
+        .field-error { margin: 6px 0 0; font-size: 0.85rem; font-weight: 600; color: #b42318; }
+        .act-sign-label { display: block; margin: 4px 0 5px; font-size: 0.85rem; font-weight: 600; color: var(--muted); }
         dialog .dialog-actions {
             display: flex;
             gap: 10px;
@@ -632,10 +642,10 @@
 
 <dialog id="signDialog">
     <h3 style="margin-top:0">Підписати кошторис</h3>
-    <label for="signName">Ваше ім'я</label>
-    <input id="signName" type="text" maxlength="255" required>
-    <label for="signPhone">Телефон</label>
-    <input id="signPhone" type="tel" maxlength="50" required>
+    <label for="signName">Ваше ім'я <span class="req" aria-hidden="true">*</span></label>
+    <input id="signName" type="text" maxlength="255" required aria-required="true">
+    <label for="signPhone">Телефон (необов'язково)</label>
+    <input id="signPhone" type="tel" maxlength="50">
     <div class="dialog-actions">
         <button type="button" data-close="signDialog">Скасувати</button>
         <button type="button" id="signSubmit" class="primary">Підписати</button>
@@ -648,8 +658,8 @@
     <input id="qName" type="text" maxlength="255">
     <label for="qPhone">Телефон (необов'язково)</label>
     <input id="qPhone" type="tel" maxlength="50">
-    <label for="qMessage">Повідомлення</label>
-    <textarea id="qMessage" maxlength="2000" required></textarea>
+    <label for="qMessage">Повідомлення <span class="req" aria-hidden="true">*</span></label>
+    <textarea id="qMessage" maxlength="2000" required aria-required="true"></textarea>
     <div class="dialog-actions">
         <button type="button" data-close="questionDialog">Скасувати</button>
         <button type="button" id="qSubmit" class="primary">Надіслати</button>
@@ -1381,6 +1391,43 @@
     function openDialog(id) { document.getElementById(id).showModal(); }
     function closeDialog(id) { document.getElementById(id).close(); }
 
+    // A required field left empty used to be a silent `return`: no request, no message, and the
+    // dialog just sat there — reported from prod as «натискаю Підписати, нічого не відбувається».
+    // The fields are not in a <form>, so `required` alone shows nothing either. Say what is
+    // missing under the field and put the caret in it.
+    function requireFields(fields) {
+        let first = null;
+        for (const [id, message] of fields) {
+            const input = document.getElementById(id);
+            const empty = !input.value.trim();
+            setFieldError(input, empty ? message : null);
+            if (empty && !first) first = input;
+        }
+        if (first) first.focus();
+        return !first;
+    }
+
+    function setFieldError(input, text) {
+        let hint = input.nextElementSibling;
+        if (!hint || !hint.classList.contains('field-error')) {
+            if (!text) return;
+            hint = document.createElement('p');
+            hint.className = 'field-error';
+            input.after(hint);
+        }
+        if (text) input.setAttribute('aria-invalid', 'true');
+        else input.removeAttribute('aria-invalid');
+        // The field's own label carries the star — it turns red with the field.
+        const label = document.querySelector('label[for="' + input.id + '"]');
+        if (label) label.classList.toggle('invalid', !!text);
+        hint.textContent = text || '';
+        hint.hidden = !text;
+    }
+
+    document.addEventListener('input', (e) => {
+        if (e.target.getAttribute && e.target.getAttribute('aria-invalid')) setFieldError(e.target, null);
+    });
+
     document.querySelectorAll('[data-close]').forEach(b => {
         b.addEventListener('click', () => closeDialog(b.getAttribute('data-close')));
     });
@@ -1454,8 +1501,10 @@
                </div>`
             : `<div class="card">
                    <h3 style="margin:0 0 8px">Підтвердити приймання робіт</h3>
-                   <input id="actSignName" placeholder="Ваше ім'я" style="width:100%;box-sizing:border-box;margin-bottom:8px">
-                   <input id="actSignPhone" placeholder="Телефон" style="width:100%;box-sizing:border-box;margin-bottom:8px">
+                   <label for="actSignName" class="act-sign-label">Ваше ім'я <span class="req" aria-hidden="true">*</span></label>
+                   <input id="actSignName" required aria-required="true" style="width:100%;box-sizing:border-box;margin-bottom:8px">
+                   <label for="actSignPhone" class="act-sign-label">Телефон (необов'язково)</label>
+                   <input id="actSignPhone" type="tel" style="width:100%;box-sizing:border-box;margin-bottom:8px">
                    <button id="actSignBtn" class="primary" style="width:100%">Підтвердити приймання робіт</button>
                    <p style="font-size:12px;color:var(--muted);margin:8px 0 0">
                      Підтвердження за посиланням — проста електронна форма згоди, а не кваліфікований
@@ -1497,9 +1546,11 @@
         `;
         if (!signed) {
             document.getElementById('actSignBtn').addEventListener('click', async () => {
+                if (!requireFields([
+                    ['actSignName', 'Введіть ваше ім\'я — воно буде в підписі.']
+                ])) return;
                 const clientName = document.getElementById('actSignName').value.trim();
                 const clientPhone = document.getElementById('actSignPhone').value.trim();
-                if (!clientName || !clientPhone) return;
                 const btn = document.getElementById('actSignBtn');
                 btn.disabled = true;
                 btn.textContent = 'Надсилаємо…';
@@ -1556,9 +1607,11 @@
     }
 
     document.getElementById('signSubmit').addEventListener('click', async () => {
+        if (!requireFields([
+            ['signName', 'Введіть ваше ім\'я — воно буде в підписі.']
+        ])) return;
         const clientName = document.getElementById('signName').value.trim();
         const clientPhone = document.getElementById('signPhone').value.trim();
-        if (!clientName || !clientPhone) return;
         let resp;
         try {
             resp = await fetch(sectionApi(dialogTarget) + '/sign', {
@@ -1586,8 +1639,8 @@
     });
 
     document.getElementById('qSubmit').addEventListener('click', async () => {
+        if (!requireFields([['qMessage', 'Напишіть повідомлення.']])) return;
         const message = document.getElementById('qMessage').value.trim();
-        if (!message) return;
         const body = {
             authorName: document.getElementById('qName').value.trim() || null,
             authorPhone: document.getElementById('qPhone').value.trim() || null,

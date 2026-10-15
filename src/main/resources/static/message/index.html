@@ -63,6 +63,15 @@
         }
         label { display: block; font-size: 0.85rem; font-weight: 600; margin: 14px 0 5px; }
         label .opt { font-weight: 400; color: var(--muted); }
+        /* Required fields — the portal's rule: a star, and when empty a red frame, a red star and the
+           reason under the field. */
+        .req { color: var(--muted); font-weight: 700; }
+        label.invalid .req { color: #b42318; }
+        input[aria-invalid="true"], textarea[aria-invalid="true"] {
+            border-color: #b42318 !important;
+            box-shadow: 0 0 0 3px rgba(180, 35, 24, 0.15);
+        }
+        .field-error { margin: 6px 0 0; font-size: 0.85rem; font-weight: 600; color: #b42318; }
         input, textarea {
             width: 100%;
             font-family: var(--sans);
@@ -163,14 +172,14 @@
 
         <form id="form" class="card" novalidate>
             <h2>Повідомлення майстру</h2>
-            <label for="name">Ваше ім'я</label>
+            <label for="name">Ваше ім'я <span class="req" aria-hidden="true">*</span></label>
             <input id="name" name="name" type="text" maxlength="100" autocomplete="name" required>
 
             <label for="phone">Телефон <span class="opt">— не обов'язково</span></label>
             <input id="phone" name="phone" type="tel" maxlength="30" autocomplete="tel"
                    inputmode="tel" placeholder="+380">
 
-            <label for="message">Повідомлення</label>
+            <label for="message">Повідомлення <span class="req" aria-hidden="true">*</span></label>
             <textarea id="message" name="message" maxlength="2000" required></textarea>
             <div class="counter"><span id="count">0</span> / 2000</div>
 
@@ -282,6 +291,29 @@
         box.hidden = false;
     }
 
+    /** Mark one field wrong (text) or right again (null); returns whether it is fine. */
+    function fieldError(id, text) {
+        const input = el(id);
+        let hint = input.nextElementSibling;
+        if (!hint || !hint.classList.contains('field-error')) {
+            if (!text) return true;
+            hint = document.createElement('p');
+            hint.className = 'field-error';
+            input.after(hint);
+        }
+        if (text) input.setAttribute('aria-invalid', 'true');
+        else input.removeAttribute('aria-invalid');
+        const label = document.querySelector('label[for="' + id + '"]');
+        if (label) label.classList.toggle('invalid', !!text);
+        hint.textContent = text || '';
+        hint.hidden = !text;
+        return !text;
+    }
+
+    el('form').addEventListener('input', (e) => {
+        if (e.target.getAttribute && e.target.getAttribute('aria-invalid')) fieldError(e.target.id, null);
+    });
+
     el('form').addEventListener('submit', async (e) => {
         e.preventDefault();
         el('error').hidden = true;
@@ -289,9 +321,13 @@
         const authorName = el('name').value.trim();
         const message = el('message').value.trim();
         // Checked here as well as on the server: a blank-but-not-empty name would otherwise come back
-        // as a 400 with nothing pointing at which field is wrong.
-        if (!authorName) return fail('Вкажіть, будь ласка, ваше ім\'я.');
-        if (!message) return fail('Напишіть повідомлення.');
+        // as a 400 with nothing pointing at which field is wrong. Said under the field itself.
+        const nameOk = fieldError('name', authorName ? null : 'Введіть ваше ім\'я.');
+        const messageOk = fieldError('message', message ? null : 'Напишіть повідомлення.');
+        if (!nameOk || !messageOk) {
+            el(nameOk ? 'message' : 'name').focus();
+            return;
+        }
         const problem = filesProblem();
         if (problem) return fail(problem);
 

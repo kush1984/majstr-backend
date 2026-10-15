@@ -426,7 +426,7 @@ public class PublicEstimateService {
         estimate.setStatus(EstimateStatus.SIGNED);
         estimate.setSignedAt(Instant.now());
         estimate.setSignerName(req.clientName().trim());
-        estimate.setSignerPhone(req.clientPhone().trim());
+        estimate.setSignerPhone(req.phoneOrNull());
         estimate.setSignerIp(clientIp);
         // Economy counting is default-on and owner-curated (a signed consolidated
         // must stay excluded), so signing no longer force-sets the flag.

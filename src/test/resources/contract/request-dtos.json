@@ -422,7 +422,7 @@
   },
   "SignRequest": {
     "clientName": "string",
-    "clientPhone": "string",
+    "clientPhone": "string?",
     "version": "number"
   },
   "SketchCommitRequest": {
