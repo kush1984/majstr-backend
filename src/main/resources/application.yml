@@ -169,6 +169,11 @@ app:
     # dictation stops working. A master dictating a whole flat's estimate is nowhere near 60.
     dictation:
       max-per-hour: ${DICTATION_MAX_PER_HOUR:60}
+    # Per IP, the public calculators (/api/public/materials/calc). Its own counter, NOT the portal's:
+    # a visitor trying tile formats must never use up the budget of a client signing an estimate
+    # from the same address.
+    public-calc:
+      max-per-minute: ${PUBLIC_CALC_MAX_PER_MINUTE:30}
   fiscal-qr:
     # Lookup for the QR printed on every Ukrainian fiscal receipt (ДПС Electronic Cabinet). The QR
     # itself already gives the total and the date with no network call at all; this only adds the

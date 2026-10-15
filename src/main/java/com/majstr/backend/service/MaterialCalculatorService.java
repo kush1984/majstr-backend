@@ -22,6 +22,7 @@ import com.majstr.backend.entity.Material;
 import com.majstr.backend.entity.MaterialNorm;
 import com.majstr.backend.entity.MaterialPrefKey;
 import com.majstr.backend.entity.NormBasis;
+import com.majstr.backend.entity.PercentBaseKind;
 import com.majstr.backend.entity.Trade;
 import com.majstr.backend.entity.Unit;
 import com.majstr.backend.repository.EstimateItemRepository;
@@ -38,12 +39,15 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Comparator;
 import java.util.EnumMap;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
+import java.util.function.Supplier;
 import java.util.Locale;
 
 /**
@@ -145,6 +149,22 @@ public class MaterialCalculatorService {
     private static final String PAINT_CODE_PREFIX = "PAINT_";
     private static final String GROUT_CODE = "TILE_GROUT";
 
+    /** The tile itself, one material per format packaged by the piece (V171). */
+    private static final String CERAMIC_TILE_PREFIX = "CERAMIC_TILE_";
+
+    /**
+     * A diagonal course needs more tile however carefully it is cut — the same 1,05 V147 wrote for
+     * diagonal laminate, one figure for both coverings ({@code PublicMaterialCalculatorIntegrationTest}
+     * pins that the two agree). Laminate has a diagonal POSITION of its own; tile is priced as a «%»
+     * line riding on the format position, so the figure lives here and scales only the tile of the
+     * position that line points at.
+     */
+    public static final BigDecimal DIAGONAL_LAYOUT = new BigDecimal("1.05");
+
+    /** The catalog's diagonal surcharge, as a name key — see {@link #laidDiagonally}. */
+    private static final String DIAGONAL_TILE_KEY =
+            NameKeys.of("Укладання плитки по діагоналі (плюс % до м.кв.)");
+
     /** Square metres one litre covers in ONE coat, and how many coats — the shipped 0,22 л/м². */
     public static final BigDecimal DEFAULT_PAINT_COVERAGE = new BigDecimal("9");
     public static final BigDecimal DEFAULT_PAINT_COATS = new BigDecimal("2");
@@ -224,19 +244,127 @@ public class MaterialCalculatorService {
                 merged(stored.reinforcements(), given.reinforcements(), MAX_REINFORCEMENT_KG_M3));
         perPosition.put(NormBasis.CHASE_SECTION,
                 merged(stored.chaseSections(), given.chaseSections(), MAX_CHASE_SECTION_CM2));
-        List<EstimateItem> buyable = buyableLines(itemRepository
-                .findByEstimateIdOrderBySortOrderAscIdAsc(estimateId));
+        List<EstimateItem> items = itemRepository.findByEstimateIdOrderBySortOrderAscIdAsc(estimateId);
+        List<EstimateItem> buyable = buyableLines(items);
         List<EstimateItem> works = priced(buyable);
+        Set<UUID> diagonal = laidDiagonally(items);
         // Nothing to count because nothing has a quantity yet — the ordinary state of an estimate
         // straight out of a bundle. The screen says that instead of «we know no norms for this
         // work», which is a different sentence and, here, a false one.
         boolean quantitiesMissing = works.isEmpty() && !buyable.isEmpty();
 
-        Map<String, List<MaterialNorm>> byKey = normsByKey(works, ownerId);
-
         // Read BEFORE the loop because the allowance is applied PER POSITION now (§1.8): it is the
         // fallback each norm without an allowance of its own uses, not a figure for the whole line.
         BigDecimal effectiveWaste = effectiveWaste(ownerId, wastePercent);
+
+        Computed computed = compute(works.stream().map(i -> CalcLine.of(i, diagonal)).toList(),
+                ownerId, habits, effectiveWaste, perimeter, perPosition,
+                () -> sheetArea(pref(ownerId, MaterialPrefKey.GKL_SHEET)), null, null);
+
+        return new MaterialCalculationResponse(
+                computed.materials(),
+                new MaterialCoverage(computed.trades().stream().map(Trade::name).toList(),
+                        computed.otherWorks()),
+                computed.parameters(),
+                effectiveWaste,
+                computed.havePerimeter() ? scaled(perimeter) : null,
+                estimate.getStatus() == EstimateStatus.SIGNED,
+                quantitiesMissing,
+                stored);
+    }
+
+    /**
+     * The same calculation for positions that are not an estimate's — the public calculators on the
+     * site (`PublicMaterialCalculatorService`). <b>One arithmetic, two doors</b>: the estimate screen
+     * and the page a visitor finds through search run through {@link #compute}, so the page can
+     * never show a figure the app would not.
+     *
+     * <p>Anonymous by construction: no owner, so only the LIBRARY's norms (`owner IS NULL`) are
+     * read, no habit of any master rescales them, and the sheet keeps the dictionary's package. The
+     * one figure a visitor states that a master would state as a habit — the tile joint — is passed
+     * in as {@code jointMm} and goes through the very same grout rescaling. {@code tileBoxArea} is
+     * the m² printed on the visitor's box: the tile is then also counted in boxes. Nothing is stored.</p>
+     */
+    @Transactional(readOnly = true)
+    public Computed calculateLines(List<CalcLine> lines, BigDecimal wastePercent, BigDecimal perimeter,
+                                   Map<NormBasis, Map<UUID, BigDecimal>> perPosition, BigDecimal jointMm,
+                                   BigDecimal tileBoxArea, OwnNorm ownNorm) {
+        BigDecimal effectiveWaste = effectiveWaste(null, wastePercent);
+        return compute(lines, null, Habits.anonymous(this, jointMm), effectiveWaste, perimeter,
+                perPosition == null ? Map.of() : perPosition, () -> null, tileBoxArea, ownNorm);
+    }
+
+    /**
+     * A visitor's figure read off his own package, standing in for the library's coefficient of the
+     * materials whose code starts with {@code materialCodePrefix}. It is applied exactly as a
+     * master's own norm is: it replaces the coefficient, is never rescaled by a habit, and the
+     * arithmetic line says it was his ({@code ownNorm}).
+     */
+    public record OwnNorm(String materialCodePrefix, BigDecimal qtyPerUnit) {
+        boolean covers(Material material) {
+            return material.getCode() != null && material.getCode().startsWith(materialCodePrefix);
+        }
+    }
+
+    /** The library's coefficient a visitor's own norm would replace — what his figure is bounded by. */
+    @Transactional(readOnly = true)
+    public Optional<BigDecimal> libraryCoefficient(List<CalcLine> lines, String materialCodePrefix) {
+        Map<String, List<MaterialNorm>> byKey = normsByKey(lines, null);
+        return lines.stream()
+                .flatMap(line -> normsFor(line, byKey).stream())
+                .filter(n -> n.getMaterial() != null && n.getMaterial().getCode() != null
+                        && n.getMaterial().getCode().startsWith(materialCodePrefix))
+                .map(MaterialNorm::getQtyPerUnit)
+                .findFirst();
+    }
+
+    /** What {@link #compute} found: the buying lines, what it still has to ask, and what it read. */
+    public record Computed(List<CalculatedMaterialLine> materials, List<MissingParameter> parameters,
+                           Set<Trade> trades, boolean otherWorks, boolean havePerimeter) {}
+
+    /**
+     * One position the calculation reads — an estimate line, or a position a public calculator
+     * names. Only what the arithmetic needs: which norms (name + unit + the position's trade), how
+     * much, an id the per-position answers are keyed by, and whether the tile is laid diagonally.
+     */
+    public record CalcLine(UUID id, String name, Unit unit, Trade trade, BigDecimal quantity,
+                           boolean diagonal) {
+        static CalcLine of(EstimateItem item, Set<UUID> diagonal) {
+            return new CalcLine(item.getId(), item.getName(), item.getUnit(), item.getTrade(),
+                    item.getQuantity(), diagonal.contains(item.getId()));
+        }
+    }
+
+    /**
+     * The positions a «Укладання плитки по діагоналі» line rides on. A POSITION-based line names its
+     * one position; a TOTAL-based one prices the whole estimate's laying as diagonal, so it marks
+     * every line. No such line — or a renamed one — and the course is straight: the layout is read
+     * off what the estimate already says, never asked as a new question.
+     */
+    private static Set<UUID> laidDiagonally(List<EstimateItem> items) {
+        Set<UUID> ids = new HashSet<>();
+        for (EstimateItem item : items) {
+            if (item.getUnit() != Unit.PERCENT || !DIAGONAL_TILE_KEY.equals(NameKeys.of(item.getName()))) {
+                continue;
+            }
+            if (item.getPercentBaseKind() == PercentBaseKind.POSITION && item.getPercentBaseItemId() != null) {
+                ids.add(item.getPercentBaseItemId());
+            } else if (item.getPercentBaseKind() == PercentBaseKind.TOTAL) {
+                items.forEach(i -> ids.add(i.getId()));
+            }
+        }
+        return ids;
+    }
+
+    /**
+     * The calculation itself, shared by {@link #calculate} and {@link #calculateLines}. Every rule
+     * below — a norm per position, a perimeter applied once per material, the allowance grown per
+     * position, rounding UP to a package — lives here and nowhere else.
+     */
+    private Computed compute(List<CalcLine> works, UUID ownerId, Habits habits, BigDecimal effectiveWaste,
+                             BigDecimal perimeter, Map<NormBasis, Map<UUID, BigDecimal>> perPosition,
+                             Supplier<BigDecimal> sheetAreaRead, BigDecimal tileBoxArea, OwnNorm ownNorm) {
+        Map<String, List<MaterialNorm>> byKey = normsByKey(works, ownerId);
 
         Map<UUID, Bucket> buckets = new LinkedHashMap<>();
         Map<UUID, PerimeterDemand> perimeterDemand = new LinkedHashMap<>();
@@ -244,17 +372,17 @@ public class MaterialCalculatorService {
         Set<Trade> countedTrades = new LinkedHashSet<>();
         boolean otherWorks = false;
 
-        for (EstimateItem item : works) {
+        for (CalcLine item : works) {
             List<MaterialNorm> norms = normsFor(item, byKey);
             if (norms.isEmpty()) {
                 continue;
             }
             // The POSITION's trade, not the norm's: a norm filed under no trade answers for anyone,
             // and naming ITS trade would then answer «Гіпсокартон» for a line that is not one.
-            if (item.getTrade() == null) {
+            if (item.trade() == null) {
                 otherWorks = true;
             } else {
-                countedTrades.add(item.getTrade());
+                countedTrades.add(item.trade());
             }
             for (MaterialNorm norm : norms) {
                 Material material = norm.getMaterial();
@@ -266,18 +394,20 @@ public class MaterialCalculatorService {
                             PerimeterDemand::larger);
                     continue;
                 }
-                BigDecimal quantity = item.getQuantity(); // non-null and positive — see workLines
-                BigDecimal per = coefficient(norm, material, habits);
+                BigDecimal quantity = item.quantity(); // non-null and positive — see workLines
+                boolean visitors = ownNorm != null && ownNorm.covers(material);
+                BigDecimal per = visitors ? ownNorm.qtyPerUnit() : coefficient(norm, material, habits, item.diagonal());
+                boolean own = visitors || norm.getOwner() != null;
                 NormBasis basis = norm.getBasis();
                 Map<UUID, BigDecimal> answers = perPosition.get(basis);
-                if (answers != null) {
+                if (basis != NormBasis.QUANTITY) {
                     // Per POSITION, not per estimate: this box's own розгортка, this layer's own
                     // millimetres, this loop's own spacing, this riser's own length, this slab's own
                     // rebar ratio, this chase's own section — or nothing at all.
-                    BigDecimal param = answers.get(item.getId());
+                    BigDecimal param = answers == null ? null : answers.get(item.id());
                     if (param == null || param.signum() <= 0) {
                         parameters.add(new MissingParameter(basis.name(), material.displayName(),
-                                item.getId(), item.getName(), norm.getDefaultParam()));
+                                item.id(), item.name(), norm.getDefaultParam()));
                         continue;
                     }
                     // A spacing DIVIDES: the wider the loop, the less pipe per m².
@@ -285,15 +415,15 @@ public class MaterialCalculatorService {
                             ? quantity.multiply(per).divide(param, 10, RoundingMode.HALF_UP)
                             : quantity.multiply(param).multiply(per);
                     bucket(buckets, material).add(norm, new MaterialSourceLine(
-                            item.getId(), item.getName(), item.getUnit(), scaled(quantity),
-                            per, norm.getId(), norm.getOwner() != null,
+                            item.id(), item.name(), item.unit(), scaled(quantity),
+                            per, norm.getId(), own,
                             basis, scaled(param), scaled(amount)), amount, effectiveWaste);
                     continue;
                 }
                 BigDecimal amount = quantity.multiply(per);
                 bucket(buckets, material).add(norm, new MaterialSourceLine(
-                        item.getId(), item.getName(), item.getUnit(), scaled(quantity),
-                        per, norm.getId(), norm.getOwner() != null,
+                        item.id(), item.name(), item.unit(), scaled(quantity),
+                        per, norm.getId(), own,
                         NormBasis.QUANTITY, null, scaled(amount)), amount, effectiveWaste);
             }
         }
@@ -314,22 +444,15 @@ public class MaterialCalculatorService {
                     NormBasis.PERIMETER, null, scaled(amount)), amount, effectiveWaste);
         }
 
-        BigDecimal sheetArea = sheetArea(pref(ownerId, MaterialPrefKey.GKL_SHEET));
+        // Read AFTER the positions, as it always was: the sheet habit is asked only once there is
+        // something to package.
+        BigDecimal sheetArea = sheetAreaRead.get();
         List<CalculatedMaterialLine> materials = buckets.values().stream()
                 .sorted(Comparator.<Bucket>comparingInt(Bucket::rank)
                         .thenComparing(b -> b.material.getName()))
-                .map(b -> line(b, effectiveWaste, sheetArea))
+                .map(b -> line(b, effectiveWaste, sheetArea, tileBoxArea))
                 .toList();
-
-        return new MaterialCalculationResponse(
-                materials,
-                new MaterialCoverage(countedTrades.stream().map(Trade::name).toList(), otherWorks),
-                parameters,
-                effectiveWaste,
-                havePerimeter ? scaled(perimeter) : null,
-                estimate.getStatus() == EstimateStatus.SIGNED,
-                quantitiesMissing,
-                stored);
+        return new Computed(materials, parameters, countedTrades, otherWorks, havePerimeter);
     }
 
     /**
@@ -371,13 +494,14 @@ public class MaterialCalculatorService {
         estimateService.loadOwned(estimateId, ownerId);
         List<EstimateItem> works = buyableLines(itemRepository
                 .findByEstimateIdOrderBySortOrderAscIdAsc(estimateId));
-        Map<String, List<MaterialNorm>> byKey = normsByKey(works, ownerId);
+        List<CalcLine> lines = works.stream().map(i -> CalcLine.of(i, Set.of())).toList();
+        Map<String, List<MaterialNorm>> byKey = normsByKey(lines, ownerId);
         // The calculation's own lookup, so the probe and the result screen can never disagree —
         // plus the one condition the probe alone has: the norm must BUY something. A «checked,
         // consumes nothing» verdict (material_id IS NULL, V127) is a complete answer for the
         // coverage line, but an estimate whose every norm is one of those has nothing to show, and
         // the master met exactly that: the «Матеріали» button opened a screen with no materials.
-        boolean any = works.stream().anyMatch(item ->
+        boolean any = lines.stream().anyMatch(item ->
                 normsFor(item, byKey).stream().anyMatch(n -> n.getMaterial() != null));
         return new MaterialAvailabilityResponse(any);
     }
@@ -403,9 +527,9 @@ public class MaterialCalculatorService {
      * The norm lookup, shared by the calculation and the availability probe so the two can never
      * disagree about whether this estimate has an answer.
      */
-    private Map<String, List<MaterialNorm>> normsByKey(List<EstimateItem> works, UUID ownerId) {
+    private Map<String, List<MaterialNorm>> normsByKey(List<CalcLine> works, UUID ownerId) {
         Map<String, List<MaterialNorm>> byKey = new LinkedHashMap<>();
-        List<String> keys = works.stream().map(i -> NameKeys.of(i.getName())).distinct().toList();
+        List<String> keys = works.stream().map(i -> NameKeys.of(i.name())).distinct().toList();
         if (keys.isEmpty()) {
             return byKey;
         }
@@ -488,16 +612,16 @@ public class MaterialCalculatorService {
      * so the position is skipped and names no trade. {@code MaterialCalculatorIntegrationTest} pins
      * that the shipped catalog contains no such collision in the first place.</p>
      */
-    private List<MaterialNorm> normsFor(EstimateItem item, Map<String, List<MaterialNorm>> byKey) {
-        List<MaterialNorm> candidates = byKey.getOrDefault(NameKeys.of(item.getName()), List.of())
+    private List<MaterialNorm> normsFor(CalcLine item, Map<String, List<MaterialNorm>> byKey) {
+        List<MaterialNorm> candidates = byKey.getOrDefault(NameKeys.of(item.name()), List.of())
                 .stream()
-                .filter(n -> n.getUnit() == item.getUnit())
+                .filter(n -> n.getUnit() == item.unit())
                 .toList();
-        if (item.getTrade() == null) {
+        if (item.trade() == null) {
             return spansSeveralTrades(candidates) ? List.of() : candidates;
         }
         return candidates.stream()
-                .filter(n -> n.getTrade() == null || n.getTrade() == item.getTrade())
+                .filter(n -> n.getTrade() == null || n.getTrade() == item.trade())
                 .toList();
     }
 
@@ -520,7 +644,8 @@ public class MaterialCalculatorService {
         return buckets.computeIfAbsent(material.getId(), k -> new Bucket(material));
     }
 
-    private CalculatedMaterialLine line(Bucket bucket, BigDecimal effectiveWaste, BigDecimal sheetArea) {
+    private CalculatedMaterialLine line(Bucket bucket, BigDecimal effectiveWaste, BigDecimal sheetArea,
+                                        BigDecimal tileBoxArea) {
         // Already grown position by position (see Bucket#add); the percent is only what that came to.
         BigDecimal percent = bucket.blendedWaste(effectiveWaste);
         BigDecimal withWaste = bucket.withWaste;
@@ -536,11 +661,21 @@ public class MaterialCalculatorService {
         } else {
             quantity = withWaste.setScale(0, RoundingMode.CEILING);
         }
+        // A tile box is the product's, not the dictionary's (0,72 to 1,44 m² for one format), so it is
+        // counted only when someone read it off the box — the same UP rounding, of the same m².
+        Integer boxes = null;
+        boolean tile = bucket.material.getCode() != null
+                && bucket.material.getCode().startsWith(CERAMIC_TILE_PREFIX);
+        if (tile && tileBoxArea != null && tileBoxArea.signum() > 0) {
+            boxes = withWaste.divide(tileBoxArea, 0, RoundingMode.CEILING)
+                    .min(BigDecimal.valueOf(Integer.MAX_VALUE)).intValue();
+        }
         return new CalculatedMaterialLine(
                 bucket.material.getId(), bucket.material.displayName(), bucket.material.getUnit(),
                 scaled(bucket.total), scaled(quantity), percent,
                 packageSize == null ? null : scaled(packageSize),
-                bucket.material.getPackageName(), packages, bucket.sources);
+                bucket.material.getPackageName(), packages,
+                boxes == null ? null : scaled(tileBoxArea), boxes, bucket.sources);
     }
 
     /**
@@ -554,12 +689,17 @@ public class MaterialCalculatorService {
      * told us the number he buys against; multiplying his answer by his own habit would apply the
      * same opinion twice, and he has no way to see that it happened.</p>
      */
-    private BigDecimal coefficient(MaterialNorm norm, Material material, Habits habits) {
+    private BigDecimal coefficient(MaterialNorm norm, Material material, Habits habits, boolean diagonal) {
         BigDecimal per = norm.getQtyPerUnit();
+        String code = material.getCode();
+        if (diagonal && code != null && code.startsWith(CERAMIC_TILE_PREFIX)) {
+            // Before the owned-norm return: the layout is the JOB's, not an opinion of his, so a
+            // master who corrected his tile figure still lays this course diagonally.
+            return scaleBy(per, DIAGONAL_LAYOUT);
+        }
         if (norm.getOwner() != null) {
             return per;
         }
-        String code = material.getCode();
         if (code == null) {
             return per;
         }
@@ -607,6 +747,15 @@ public class MaterialCalculatorService {
 
         private Habits(UUID ownerId) {
             this.ownerId = ownerId;
+        }
+
+        /** Nobody's habits: no paint rescale, and the joint the visitor typed (null = the shipped one). */
+        private static Habits anonymous(MaterialCalculatorService outer, BigDecimal jointMm) {
+            Habits habits = outer.new Habits(null);
+            habits.paintRead = true;
+            habits.jointRead = true;
+            habits.joint = jointMm != null && jointMm.signum() > 0 ? jointMm : null;
+            return habits;
         }
 
         private BigDecimal paint() {
@@ -709,6 +858,9 @@ public class MaterialCalculatorService {
     }
 
     private String pref(UUID ownerId, MaterialPrefKey key) {
+        if (ownerId == null) {
+            return null; // the public calculators: nobody's habits
+        }
         return prefRepository.findByUserIdAndPrefKey(ownerId, key)
                 .map(MasterMaterialPref::getPrefValue)
                 .orElse(null);

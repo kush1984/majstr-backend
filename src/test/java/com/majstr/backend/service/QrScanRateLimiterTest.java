@@ -27,7 +27,8 @@ class QrScanRateLimiterTest {
                 new RateLimitProperties.Question(5, 10),
                 new RateLimitProperties.ReceiptScan(scanPerHour),
                 new RateLimitProperties.QrScan(qrPerHour),
-                new RateLimitProperties.Dictation(60));
+                new RateLimitProperties.Dictation(60),
+                new RateLimitProperties.PublicCalc(30));
     }
 
     @Test

@@ -27,7 +27,8 @@ class DictationRateLimiterTest {
                 new RateLimitProperties.Question(5, 10),
                 new RateLimitProperties.ReceiptScan(scanPerHour),
                 new RateLimitProperties.QrScan(120),
-                new RateLimitProperties.Dictation(dictationPerHour));
+                new RateLimitProperties.Dictation(dictationPerHour),
+                new RateLimitProperties.PublicCalc(30));
     }
 
     @Test

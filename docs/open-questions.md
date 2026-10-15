@@ -24,6 +24,29 @@ one-line summary — keep the item in the file as a record.
 
 ## Architecture & operations
 
+### Profile packaging: metres on the list, bars in the shop
+- **Status:** OPEN
+- **Since:** 2026-10-14, the SEO calculators (owner's ruling while scoping them)
+- **Context:** `PROFILE_CD/UD/CW/UW` carry no `package_size`, so the calculator — in the app and on
+  the public page — answers in м.п. Profile is sold in 3 m and 4 m bars, and how many bars a job
+  needs depends on the ceiling height and the room (offcuts under the height, joins), not on
+  metres ÷ 3. The page says so in one line and points at the shopping list.
+- **Notes / options:** a `package_size` of 3 would round to bars but buy the wrong count for a
+  2,7 m wall (one 3 m bar per stud, 0,3 m wasted each). Needs its own decision for the app; no
+  migration in the SEO iteration.
+
+### Tile in the app: boxes and the other layouts
+- **Status:** OPEN
+- **Since:** 2026-10-15, the tile addendum to the SEO calculators (V171)
+- **Context:** the app's «Матеріали» now lists the tile per format (м², pieces), and the diagonal
+  surcharge line adds `DIAGONAL_LAYOUT` (1,05). Two things the public page has and the app does
+  not: the master is never asked the **m² per box**, so the app shows no box count (the engine
+  takes `tileBoxArea`, only the public door passes it); and **«ялинкою»** and the other layout
+  «%» lines add nothing, because no figure was decided for them.
+- **Notes / options:** a box size is a property of the PRODUCT on one position, so it is a
+  per-position answer (V142's `estimate_material_param`), not a habit. Herringbone needs its own
+  checked figure before it gets one; do not reuse 1,05.
+
 ### Album takeoff has no entry point and no job runner to host it
 - **Status:** OPEN
 - **Since:** Catch-up review (2026-07-27)

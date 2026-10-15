@@ -397,6 +397,13 @@ public class GlobalExceptionHandler {
         return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(body);
     }
 
+    @ExceptionHandler(PublicCalcValidationException.class)
+    public ResponseEntity<ErrorResponse> handlePublicCalc(PublicCalcValidationException ex, HttpServletRequest req) {
+        ErrorResponse body = ErrorResponse.coded(HttpStatus.BAD_REQUEST.value(),
+                HttpStatus.BAD_REQUEST.getReasonPhrase(), msg(ex.getMessage()), req.getRequestURI(), "PUBLIC_CALC_INVALID");
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(body);
+    }
+
     @ExceptionHandler(MaterialNormValidationException.class)
     public ResponseEntity<ErrorResponse> handleMaterialNorm(MaterialNormValidationException ex, HttpServletRequest req) {
         ErrorResponse body = ErrorResponse.coded(HttpStatus.BAD_REQUEST.value(),

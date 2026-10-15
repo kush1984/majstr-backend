@@ -13,6 +13,8 @@ import java.util.UUID;
  * @param quantity     what to buy: base + waste, rounded UP to a whole package or a whole unit
  * @param packages     how many packages that is, or null when the material is sold loose
  * @param packageName  «лист», «мішок» — what the master asks for at the counter
+ * @param boxSize      the m² in one box of tile, when someone read it off the box; else null
+ * @param boxes        how many such boxes the same m² come to, or null
  * @param sources      every position that contributed, so the screen can show the multiplication
  */
 public record CalculatedMaterialLine(
@@ -25,5 +27,7 @@ public record CalculatedMaterialLine(
         BigDecimal packageSize,
         String packageName,
         Integer packages,
+        BigDecimal boxSize,
+        Integer boxes,
         List<MaterialSourceLine> sources
 ) {}

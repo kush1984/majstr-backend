@@ -17,7 +17,8 @@ public record RateLimitProperties(
         Question question,
         ReceiptScan receiptScan,
         QrScan qrScan,
-        Dictation dictation
+        Dictation dictation,
+        PublicCalc publicCalc
 ) {
     public record Login(
             @Positive int maxAttempts,
@@ -98,5 +99,13 @@ public record RateLimitProperties(
      */
     public record Dictation(
             @Positive int maxPerHour
+    ) {}
+
+    /**
+     * Per IP, the public calculators on the site. Anonymous and free, so nothing but this bounds
+     * them; a visitor trying formats is a handful a minute, a scraper is hundreds.
+     */
+    public record PublicCalc(
+            @Positive int maxPerMinute
     ) {}
 }

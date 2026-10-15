@@ -24,6 +24,8 @@ import java.nio.charset.StandardCharsets;
 public class PublicPortalRateLimitFilter extends OncePerRequestFilter {
 
     private static final String PATH_PREFIX = "/api/public/";
+    /** The public calculators count on their own bucket — see {@code PublicCalcRateLimiter}. */
+    private static final String CALC_PREFIX = "/api/public/materials/";
 
     private final PortalRateLimiter rateLimiter;
     private final ObjectMapper objectMapper;
@@ -31,29 +33,21 @@ public class PublicPortalRateLimitFilter extends OncePerRequestFilter {
 
     @Override
     protected boolean shouldNotFilter(HttpServletRequest request) {
-        return !request.getRequestURI().startsWith(PATH_PREFIX);
+        String uri = request.getRequestURI();
+        return !uri.startsWith(PATH_PREFIX) || uri.startsWith(CALC_PREFIX);
     }
 
     @Override
     protected void doFilterInternal(HttpServletRequest request,
                                     HttpServletResponse response,
                                     FilterChain chain) throws ServletException, IOException {
-        String ip = clientIp(request);
+        String ip = ClientIp.of(request);
         PortalRateLimiter.ConsumeResult result = rateLimiter.tryConsume(ip);
         if (!result.allowed()) {
             writeRateLimited(request, response, result.retryAfterSeconds());
             return;
         }
         chain.doFilter(request, response);
-    }
-
-    private String clientIp(HttpServletRequest request) {
-        String forwarded = request.getHeader("X-Forwarded-For");
-        if (forwarded != null && !forwarded.isBlank()) {
-            int comma = forwarded.indexOf(',');
-            return (comma > 0 ? forwarded.substring(0, comma) : forwarded).trim();
-        }
-        return request.getRemoteAddr();
     }
 
     private void writeRateLimited(HttpServletRequest request, HttpServletResponse response,
