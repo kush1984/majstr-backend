@@ -376,7 +376,10 @@
                 fail('Не вдалося надіслати. Спробуйте ще раз.');
             }
         } catch {
-            fail('Немає зв\'язку. Спробуйте ще раз.');
+            // Not always his internet — the server may be down or redeploying.
+            fail(navigator.onLine
+                ? 'Сервіс тимчасово недоступний. Спробуйте за хвилину.'
+                : 'Немає зв\'язку. Перевірте інтернет і спробуйте ще раз.');
         } finally {
             btn.disabled = false;
             btn.textContent = 'Надіслати';

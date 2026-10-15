@@ -1388,6 +1388,14 @@
     let dialogTarget = null;
     let dialogVersion = null;
 
+    // A failed fetch is not always the client's internet: the server may be down or redeploying,
+    // and «перевірте інтернет» then sends him looking for a problem he does not have.
+    function networkFailure() {
+        return navigator.onLine
+            ? 'Сервіс тимчасово недоступний. Спробуйте за хвилину.'
+            : 'Немає з\'єднання. Перевірте інтернет і спробуйте ще раз.';
+    }
+
     function openDialog(id) { document.getElementById(id).showModal(); }
     function closeDialog(id) { document.getElementById(id).close(); }
 
@@ -1579,7 +1587,7 @@
                 } catch (e) {
                     btn.disabled = false;
                     btn.textContent = 'Підтвердити приймання робіт';
-                    alert('Не вдалося підписати. Перевірте інтернет і спробуйте ще раз.');
+                    alert('Не вдалося підписати. ' + networkFailure());
                 }
             });
         }
@@ -1620,7 +1628,7 @@
                 body: JSON.stringify({ clientName, clientPhone, version: dialogVersion })
             });
         } catch (e) {
-            alert('Немає з\'єднання. Перевірте інтернет і спробуйте ще раз.');
+            alert(networkFailure());
             return;
         }
         if (resp.ok) {
@@ -1655,7 +1663,7 @@
             });
         } catch (e) {
             // The typed message stays in the dialog — nothing is lost.
-            alert('Немає з\'єднання. Перевірте інтернет і спробуйте ще раз.');
+            alert(networkFailure());
             return;
         }
         if (resp.ok) {
@@ -1716,7 +1724,7 @@
                 render((portalToken || economyToken) ? data : adaptLegacy(data));
             }
         } catch (e) {
-            showError('Не вдалося завантажити кошторис. Перевірте інтернет-з\'єднання і спробуйте ще раз.', true);
+            showError('Не вдалося завантажити кошторис. ' + networkFailure(), true);
         }
     }
 
