@@ -31,3 +31,6 @@ data/
 
 .DS_Store
 Thumbs.db
+
+# Local scratch output from Claude sessions — never part of the repo.
+Claude outputs/
