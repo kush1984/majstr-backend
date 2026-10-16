@@ -37,4 +37,11 @@ mockup in `majstr-pwa/docs/landing-mockup/` (not committed).
   fading into the page. The big phone and `HAS_HERO_PHOTO` are gone.
 - «Кошторис за 5 хвилин» is Caveat text plus an SVG arrow placed in % of the photo box — the crop
   keeps the phone at about (57 %, 59 %) of it at 390, 768 and 1440 px.
-- The full nav now starts at `lg`: at 768 it wrapped. Card photos and `pro-bg` wait for their files.
+- The full nav now starts at `lg`: at 768 it wrapped.
+- **Card photos and `pro-bg` (2026-10-16):** the three «Для кожного» cards carry the owner's photos
+  instead of phone crops — 16:10 in one column (a 240 px strip across a tablet cut the phone out of
+  the brigade shot), a level 240 px in the three-card row; each card lists only the widths the script
+  could make (it never upscales; the originals run 694-1536 px) and its own `object-position`.
+  `pro-bg` is the blurred site photo behind the two real screens in «Професійний вигляд», `alt=""`.
+  `card-master.png` shows a made-up app UI on its phone — legible at no size the card renders, but
+  the one place on the page where a phone does not carry a real screen.
