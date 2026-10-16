@@ -1,5 +1,7 @@
 package com.majstr.backend.service;
 
+import com.majstr.backend.config.BackgroundErrors;
+import io.sentry.SentryLevel;
 import com.majstr.backend.entity.ProjectMessageFile;
 import com.majstr.backend.entity.User;
 import com.majstr.backend.push.PushService;
@@ -127,6 +129,7 @@ public class MessageFileRetentionService {
                 // whole batch, and the master was told this file is gone.
                 log.warn("Retention could not delete stored attachment {}: {}",
                         file.getStorageKey(), e.getMessage());
+                BackgroundErrors.capture("retention:delete-file", e, SentryLevel.WARNING);
             }
         }
         fileRepository.deleteAll(due);
@@ -156,6 +159,7 @@ public class MessageFileRetentionService {
             // also carries the warning in the app itself, so the master still sees it on the object.
             log.warn("Could not warn master {} about {} expiring files: {}",
                     owner.getId(), files.size(), e.getMessage());
+            BackgroundErrors.capture("retention:warn-master", e, SentryLevel.WARNING);
         }
     }
 

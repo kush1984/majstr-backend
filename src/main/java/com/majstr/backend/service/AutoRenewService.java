@@ -1,5 +1,6 @@
 package com.majstr.backend.service;
 
+import com.majstr.backend.config.BackgroundErrors;
 import com.majstr.backend.config.BillingProperties;
 import com.majstr.backend.email.EmailService;
 import com.majstr.backend.entity.BillingPeriod;
@@ -94,6 +95,7 @@ public class AutoRenewService {
                 billingService.chargeAutoRenew(user.getId());
             } catch (Exception e) {
                 log.error("Auto-renew charge failed to start for {}: {}", user.getEmail(), e.getMessage());
+                BackgroundErrors.capture("auto-renew", e);
             }
         }
     }

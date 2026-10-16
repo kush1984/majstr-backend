@@ -1,5 +1,6 @@
 package com.majstr.backend.email;
 
+import com.majstr.backend.config.BackgroundErrors;
 import com.majstr.backend.config.EmailProperties;
 import com.majstr.backend.config.HttpClients;
 import com.majstr.backend.config.LocalizationConfig;
@@ -112,6 +113,7 @@ public class ResendEmailService implements EmailService {
             log.info("Signed-act copy sent to {} (act {})", toEmail, actNumber);
         } catch (Exception e) {
             log.error("Failed to send signed-act copy to {} (act {}): {}", toEmail, actNumber, e.getMessage());
+            BackgroundErrors.capture("email:signed-act", e);
         }
     }
 
@@ -192,6 +194,7 @@ public class ResendEmailService implements EmailService {
             log.info("Email sent to {} (subject: {})", toEmail, subject);
         } catch (Exception e) {
             log.error("Failed to send email to {} (subject: {}): {}", toEmail, subject, e.getMessage());
+            BackgroundErrors.capture("email", e);
         }
     }
 

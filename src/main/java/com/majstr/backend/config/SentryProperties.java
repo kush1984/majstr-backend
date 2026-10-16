@@ -16,7 +16,13 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 public record SentryProperties(
         String dsn,
         String environment,
-        Double tracesSampleRate
+        Double tracesSampleRate,
+        /*
+         * The DSN the CLIENT pages (portal) report to — a browser project, not this one, so a
+         * client's failed signature is not filed among server stack traces. Blank = they report
+         * nothing. See MonitoringController.
+         */
+        String browserDsn
 ) {
     public boolean isConfigured() {
         return dsn != null && !dsn.isBlank();

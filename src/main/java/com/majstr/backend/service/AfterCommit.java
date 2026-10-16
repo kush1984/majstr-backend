@@ -1,5 +1,6 @@
 package com.majstr.backend.service;
 
+import com.majstr.backend.config.BackgroundErrors;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.support.TransactionSynchronization;
@@ -46,6 +47,7 @@ public class AfterCommit {
             // The commit already happened; throwing here would turn a successful write into a 500
             // over a notification. Every caller treats its own side effect as fail-soft anyway.
             log.warn("After-commit action failed: {}", e.getMessage());
+            BackgroundErrors.capture("after-commit", e);
         }
     }
 }

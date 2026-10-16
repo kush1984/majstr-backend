@@ -668,6 +668,71 @@
 
 <script>
 (function () {
+    // Error reports to Sentry (the server's SENTRY_BROWSER_DSN; off when blank). No SDK: the page
+    // posts one envelope itself, so nothing third-party loads on the page a client signs on. What
+    // leaves is the error and a SCRUBBED location — the link's token is the client's key to his
+    // documents, so it never goes out — and nothing the client typed: his name and phone are not
+    // read here. Asked for only once something has gone wrong; at most five reports per page.
+    const monitoring = (function () {
+        let config;          // undefined = not asked yet, null = reporting is off
+        let sent = 0;
+        const scrub = (s) => String(s == null ? '' : s)
+            .replace(/([?&](?:p|e|a|t|m)=)[^&#\s"']*/g, '$1[token]')
+            .replace(/(\/api\/public\/(?:portal|estimates|economy|act|messages?)\/)[^/?#\s"']+/g, '$1[token]');
+
+        async function endpoint() {
+            if (config === undefined) {
+                try {
+                    const r = await fetch('/api/public/monitoring');
+                    config = r.status === 200 ? await r.json() : null;
+                } catch (e) {
+                    config = null;
+                }
+            }
+            return config;
+        }
+
+        async function report(kind, message, extra) {
+            if (sent >= 5) return;
+            sent++;
+            const c = await endpoint();
+            if (!c) return;
+            const id = (window.crypto && crypto.randomUUID
+                ? crypto.randomUUID() : Date.now() + '' + Math.random()).replace(/[^0-9a-f]/gi, '').slice(0, 32);
+            const now = new Date().toISOString();
+            // `platform: 'other'` and a null ip_address: for a 'javascript' event Sentry fills in the
+            // sender's IP and city by itself, and the client's IP is not ours to hand over.
+            const event = {
+                event_id: id, timestamp: now, platform: 'other', level: 'error', logger: 'portal',
+                user: { ip_address: null },
+                environment: c.environment, tags: { surface: 'portal', kind: kind },
+                exception: { values: [{ type: kind, value: scrub(message) }] },
+                request: { url: scrub(location.origin + location.pathname + location.search) },
+                extra: extra ? JSON.parse(scrub(JSON.stringify(extra))) : undefined
+            };
+            try {
+                // A plain-text body keeps this a simple request: no CORS preflight to Sentry.
+                await fetch(c.endpoint, {
+                    method: 'POST', keepalive: true,
+                    body: JSON.stringify({ event_id: id, sent_at: now }) + '\n'
+                        + JSON.stringify({ type: 'event' }) + '\n' + JSON.stringify(event)
+                });
+            } catch (e) { /* nowhere left to report to */ }
+        }
+
+        window.addEventListener('error', (e) => report('error', e.message,
+            { stack: e.error && e.error.stack, source: e.filename, line: e.lineno, column: e.colno }));
+        window.addEventListener('unhandledrejection', (e) => report('unhandledrejection',
+            (e.reason && e.reason.message) || String(e.reason), { stack: e.reason && e.reason.stack }));
+
+        return {
+            // The server answered, and not with what the page can handle (a 409 is handled).
+            failed: (action, status) => report('http-' + status, action + ' answered HTTP ' + status),
+            // No answer at all while the browser is online: the server, not the client's internet.
+            unreachable: (action) => { if (navigator.onLine) report('unreachable', action + ': no response'); }
+        };
+    })();
+
     // Three token families: ?p= is the SIGNATURE portal (any-status estimates, a section per
     // shared one, for signing); ?e= is the ECONOMY portal (SIGNED acts only, read-only, plus an
     // optional payments card); ?t= is the legacy per-estimate link (URLs already sent to clients
@@ -1580,6 +1645,7 @@
                             load();
                             return;
                         }
+                        monitoring.failed('act-sign', resp.status);
                         alert('Не вдалося підписати. Спробуйте ще раз.');
                         return;
                     }
@@ -1587,6 +1653,7 @@
                 } catch (e) {
                     btn.disabled = false;
                     btn.textContent = 'Підтвердити приймання робіт';
+                    monitoring.unreachable('act-sign');
                     alert('Не вдалося підписати. ' + networkFailure());
                 }
             });
@@ -1628,6 +1695,7 @@
                 body: JSON.stringify({ clientName, clientPhone, version: dialogVersion })
             });
         } catch (e) {
+            monitoring.unreachable('estimate-sign');
             alert(networkFailure());
             return;
         }
@@ -1642,6 +1710,7 @@
             alert(await apiMessage(resp) || 'Кошторис змінився або вже підписаний — перегляньте ще раз.');
             load();
         } else {
+            monitoring.failed('estimate-sign', resp.status);
             alert(await apiMessage(resp) || 'Не вдалося підписати. Спробуйте пізніше.');
         }
     });
@@ -1712,6 +1781,7 @@
                 return;
             }
             if (!resp.ok) {
+                monitoring.failed('load', resp.status);
                 showError('Не вдалося завантажити кошторис. Спробуйте ще раз за хвилину.', true);
                 return;
             }
@@ -1724,6 +1794,7 @@
                 render((portalToken || economyToken) ? data : adaptLegacy(data));
             }
         } catch (e) {
+            monitoring.unreachable('load');
             showError('Не вдалося завантажити кошторис. ' + networkFailure(), true);
         }
     }

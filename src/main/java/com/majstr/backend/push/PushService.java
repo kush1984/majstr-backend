@@ -1,5 +1,6 @@
 package com.majstr.backend.push;
 
+import com.majstr.backend.config.BackgroundErrors;
 import com.majstr.backend.config.VapidProperties;
 import com.majstr.backend.entity.PushSubscription;
 import com.majstr.backend.entity.User;
@@ -101,6 +102,7 @@ public class PushService {
             }
         } catch (Exception e) {
             log.error("Failed to push to subscription {} (title: {}): {}", sub.getId(), title, e.getMessage());
+            BackgroundErrors.capture("push", e);
         }
     }
 
@@ -125,6 +127,7 @@ public class PushService {
                         nativePushService = service;
                     } catch (Exception e) {
                         log.error("Invalid VAPID configuration — push disabled: {}", e.getMessage());
+                        BackgroundErrors.capture("push:vapid-config", e);
                         return null;
                     }
                 }
