@@ -1,5 +1,6 @@
 package com.majstr.backend.exception;
 
+import com.majstr.backend.config.LocalizationConfig;
 import com.majstr.backend.dto.ErrorResponse;
 import com.majstr.backend.feature.FeatureNotAvailableException;
 import com.majstr.backend.feature.Limit;
@@ -336,7 +337,10 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(EstimateSignedException.class)
     public ResponseEntity<ErrorResponse> handleEstimateSigned(EstimateSignedException ex, HttpServletRequest req) {
         ErrorResponse body = ErrorResponse.coded(HttpStatus.CONFLICT.value(),
-                HttpStatus.CONFLICT.getReasonPhrase(), msg("error.estimate.signed"), req.getRequestURI(), "ESTIMATE_SIGNED");
+                HttpStatus.CONFLICT.getReasonPhrase(),
+                // The owner's text says «Створіть новий кошторис» — an instruction for the MASTER.
+                msg(LocalizationConfig.isPublic(req) ? "error.portal.estimate-already-signed" : "error.estimate.signed"),
+                req.getRequestURI(), "ESTIMATE_SIGNED");
         return ResponseEntity.status(HttpStatus.CONFLICT).body(body);
     }
 
@@ -348,7 +352,9 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(WorkActSignedException.class)
     public ResponseEntity<ErrorResponse> handleWorkActSigned(WorkActSignedException ex, HttpServletRequest req) {
         ErrorResponse body = ErrorResponse.coded(HttpStatus.CONFLICT.value(),
-                HttpStatus.CONFLICT.getReasonPhrase(), msg("error.work-act.signed"), req.getRequestURI(), "WORK_ACT_SIGNED");
+                HttpStatus.CONFLICT.getReasonPhrase(),
+                msg(LocalizationConfig.isPublic(req) ? "error.portal.act-already-signed" : "error.work-act.signed"),
+                req.getRequestURI(), "WORK_ACT_SIGNED");
         return ResponseEntity.status(HttpStatus.CONFLICT).body(body);
     }
 

@@ -37,9 +37,17 @@ public record RateLimitProperties(
             @Positive int windowMinutes
     ) {}
 
+    /**
+     * The public portal: {@code maxAttempts} is the per-IP CEILING across every link (the env
+     * override APP_RATELIMIT_PORTAL_MAXATTEMPTS keeps meaning that); {@code perLinkMaxAttempts} and
+     * {@code writeMaxAttempts} are per IP + link token, for reads and for POSTs. See
+     * {@code PortalRateLimiter}.
+     */
     public record Portal(
             @Positive int maxAttempts,
-            @Positive int windowMinutes
+            @Positive int windowMinutes,
+            @Positive int perLinkMaxAttempts,
+            @Positive int writeMaxAttempts
     ) {}
 
     /** Cooldown between verification-email resends, per user. */

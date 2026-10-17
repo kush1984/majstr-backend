@@ -10,6 +10,7 @@ import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.MessageSource;
 import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
@@ -42,12 +43,22 @@ public class PublicPortalRateLimitFilter extends OncePerRequestFilter {
                                     HttpServletResponse response,
                                     FilterChain chain) throws ServletException, IOException {
         String ip = ClientIp.of(request);
-        PortalRateLimiter.ConsumeResult result = rateLimiter.tryConsume(ip);
+        PortalRateLimiter.ConsumeResult result = rateLimiter.tryConsume(ip, linkToken(request.getRequestURI()),
+                HttpMethod.POST.matches(request.getMethod()));
         if (!result.allowed()) {
             writeRateLimited(request, response, result.retryAfterSeconds());
             return;
         }
         chain.doFilter(request, response);
+    }
+
+    /**
+     * The link a request is about: {@code /api/public/<kind>/<token>/…} — portal, estimates, economy,
+     * act, message-link alike. Null for a route that names no link ({@code /api/public/monitoring}).
+     */
+    static String linkToken(String uri) {
+        String[] parts = uri.substring(PATH_PREFIX.length()).split("/");
+        return parts.length >= 2 && !parts[1].isBlank() ? parts[1] : null;
     }
 
     private void writeRateLimited(HttpServletRequest request, HttpServletResponse response,

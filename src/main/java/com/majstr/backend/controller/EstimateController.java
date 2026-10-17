@@ -3,6 +3,7 @@ package com.majstr.backend.controller;
 import com.majstr.backend.dto.AddCatalogItemsBatchRequest;
 import com.majstr.backend.dto.CountInEconomyRequest;
 import com.majstr.backend.dto.EstimateConsolidateRequest;
+import com.majstr.backend.dto.TemplateLineRequest;
 import com.majstr.backend.dto.EstimateCreateRequest;
 import com.majstr.backend.dto.EstimateDuplicateRequest;
 import com.majstr.backend.dto.EstimateItemsDeleteRequest;
@@ -194,6 +195,19 @@ public class EstimateController {
             @AuthenticationPrincipal UserPrincipal principal) {
         return ResponseEntity.status(HttpStatus.CREATED)
                 .body(estimateService.addItem(estimateId, req, principal.id(), entityId));
+    }
+
+    @Operation(summary = "Add one line of a bundle applied offline",
+            description = "Quantity is 0 and the price may be 0 — what the online bundle application "
+                    + "creates. Idempotent on the X-Entity-Uuid header, like every offline add.")
+    @PostMapping("/api/estimates/{estimateId}/items/template-line")
+    public ResponseEntity<EstimateItemResponse> addTemplateLine(
+            @PathVariable UUID estimateId,
+            @Valid @RequestBody TemplateLineRequest req,
+            @RequestHeader(value = "X-Entity-Uuid", required = false) UUID entityId,
+            @AuthenticationPrincipal UserPrincipal principal) {
+        return ResponseEntity.status(HttpStatus.CREATED)
+                .body(estimateService.addItem(estimateId, req.toItemRequest(), principal.id(), entityId));
     }
 
     @Operation(summary = "Add a line item by copying from a catalog entry",

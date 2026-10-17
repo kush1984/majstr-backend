@@ -1,6 +1,7 @@
 package com.majstr.backend.config;
 
 import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.context.MessageSource;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -53,11 +54,30 @@ public class LocalizationConfig {
         return source;
     }
 
+    /** The client pages' API: every answer there is Ukrainian, whatever the phone's own language. */
+    public static final String PUBLIC_API_PREFIX = "/api/public/";
+
     @Bean
     public LocaleResolver localeResolver() {
-        AcceptHeaderLocaleResolver resolver = new AcceptHeaderLocaleResolver();
-        resolver.setDefaultLocale(UKRAINIAN);
-        return resolver;
+        AcceptHeaderLocaleResolver byHeader = new AcceptHeaderLocaleResolver();
+        byHeader.setDefaultLocale(UKRAINIAN);
+        // The portal is a Ukrainian page for a Ukrainian client: an English-language phone turned its
+        // error texts English while every word around them stayed Ukrainian.
+        return new LocaleResolver() {
+            @Override
+            public Locale resolveLocale(HttpServletRequest request) {
+                return isPublic(request) ? UKRAINIAN : byHeader.resolveLocale(request);
+            }
+
+            @Override
+            public void setLocale(HttpServletRequest request, HttpServletResponse response, Locale locale) {
+                byHeader.setLocale(request, response, locale);
+            }
+        };
+    }
+
+    public static boolean isPublic(HttpServletRequest request) {
+        return request.getRequestURI() != null && request.getRequestURI().startsWith(PUBLIC_API_PREFIX);
     }
 
     /**
@@ -67,6 +87,9 @@ public class LocalizationConfig {
      * English on a server — so default to Ukrainian explicitly.
      */
     public static Locale requestLocale(HttpServletRequest request) {
+        if (isPublic(request)) {
+            return UKRAINIAN;
+        }
         return request.getHeader(HttpHeaders.ACCEPT_LANGUAGE) != null ? request.getLocale() : UKRAINIAN;
     }
 }

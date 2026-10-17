@@ -135,9 +135,16 @@ app:
     forgot:
       max-attempts: 5
       window-minutes: 60
+    # The public portal, per minute, refilled smoothly (PortalRateLimiter). A meetup hall's Wi-Fi or a
+    # carrier's CGNAT is ONE IP for dozens of people on the same link, so the old flat 30/IP turned
+    # most of a room away. max-attempts is the per-IP ceiling across all links (the defence against
+    # walking tokens — they are 32 random bytes); per-link is one person on one link: the view, its
+    # photos, a PDF, a few reloads; writes (sign, question) are a real client acting once or twice.
     portal:
-      max-attempts: 30
+      max-attempts: ${PORTAL_MAX_PER_IP:300}
       window-minutes: 1
+      per-link-max-attempts: ${PORTAL_MAX_PER_LINK:120}
+      write-max-attempts: ${PORTAL_MAX_WRITES_PER_LINK:10}
     verification:
       cooldown-seconds: 60
     estimate-email:

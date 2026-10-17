@@ -105,6 +105,8 @@ class IdorMatrixIntegrationTest extends IntegrationTestBase {
     private static final String B_COUNT_IN_ECONOMY = "{\"countInEconomy\":true}";
     private static final String B_ESTIMATE_ITEM =
             "{\"name\":\"Робота\",\"type\":\"WORK\",\"unit\":\"M2\",\"quantity\":1,\"unitPrice\":100}";
+    private static final String B_TEMPLATE_LINE =
+            "{\"name\":\"Робота з шаблону\",\"type\":\"WORK\",\"unit\":\"M2\",\"unitPrice\":0}";
     private static final String B_ITEM_FROM_CATALOG = "{\"quantity\":1}";
     private static final String B_DUPLICATE = "{\"discount\":false,\"markupPercent\":0}";
     private static final String B_SAVE_AS_TEMPLATE = "{\"name\":\"Набір\"}";
@@ -341,6 +343,7 @@ class IdorMatrixIntegrationTest extends IntegrationTestBase {
         c.add(json("POST", "/api/estimates/{id}/save-as-template", B_SAVE_AS_TEMPLATE, a.estimate));
         c.add(json("POST", "/api/estimates/{estimateId}/duplicate", B_DUPLICATE, a.estimate));
         c.add(json("POST", "/api/estimates/{estimateId}/items", B_ESTIMATE_ITEM, a.estimate));
+        c.add(json("POST", "/api/estimates/{estimateId}/items/template-line", B_TEMPLATE_LINE, a.estimate));
         c.add(json("POST", "/api/estimates/{estimateId}/items/from-catalog/{catalogItemId}",
                 B_ITEM_FROM_CATALOG, a.estimate, a.catalogItem));
         c.add(json("POST", "/api/estimates/{estimateId}/items/batch",

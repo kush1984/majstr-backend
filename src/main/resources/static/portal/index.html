@@ -512,6 +512,16 @@
             font-weight: 600;
             font-size: 1.02rem;
         }
+        /* «Дякуємо! … підписано» — said once the signature landed, above the signed document. */
+        .signed-notice {
+            margin: 0 0 16px;
+            padding: 14px 16px;
+            border-radius: 12px;
+            background: #e8f5e9;
+            color: #1b5e20;
+            font-weight: 600;
+            line-height: 1.4;
+        }
         /* Loading text (the script sets #root to a bare <p> while fetching). */
         #root > p { text-align: center; color: var(--muted); padding: 40px 0; }
         /* Shared object photos gallery. */
@@ -1461,6 +1471,42 @@
             : 'Немає з\'єднання. Перевірте інтернет і спробуйте ще раз.';
     }
 
+    // After a signature, what the client just did, said plainly above the document (review P0-2):
+    // the page used to re-fetch and say nothing — and if that re-fetch failed, a client whose
+    // signature had LANDED read «Не вдалося завантажити кошторис».
+    function showSigned(what) {
+        const old = document.getElementById('signedNotice');
+        if (old) old.remove();
+        const box = document.createElement('div');
+        box.id = 'signedNotice';
+        box.className = 'signed-notice';
+        box.setAttribute('role', 'status');
+        // The Ukrainian date already ends in «р.» — no second full stop after it.
+        const date = dateFormat.format(new Date());
+        box.textContent = 'Дякуємо! ' + what + ' ' + date + (date.endsWith('.') ? '' : '.')
+            + ' Майстер уже отримав сповіщення.';
+        root.prepend(box);
+        box.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+
+    // The machine-readable `code` of an error answer (ESTIMATE_SIGNED, …), or null. Read from a
+    // clone, so the body is still there for apiMessage.
+    async function errorCode(resp) {
+        try {
+            const data = await resp.clone().json();
+            return data && data.code ? data.code : null;
+        } catch (e) {
+            return null;
+        }
+    }
+
+    // Seconds a 429 asks us to wait — the server's Retry-After, bounded so a bad header never
+    // freezes the page.
+    function retryAfter(resp) {
+        const n = parseInt(resp.headers.get('Retry-After'), 10);
+        return n > 0 ? Math.min(n, 60) : 5;
+    }
+
     function openDialog(id) { document.getElementById(id).showModal(); }
     function closeDialog(id) { document.getElementById(id).close(); }
 
@@ -1636,13 +1682,22 @@
                     if (!resp.ok) {
                         btn.disabled = false;
                         btn.textContent = 'Підтвердити приймання робіт';
+                        if (resp.status === 409 && await errorCode(resp) === 'WORK_ACT_SIGNED') {
+                            // Already confirmed — a double tap's twin or another tab: the success
+                            // he was after (review P0-3).
+                            await load();
+                            showSigned('Приймання робіт підтверджено');
+                            return;
+                        }
                         if (resp.status === 409) {
-                            // Already signed, or the master changed the act while the client was
-                            // reading it (B-61). Either way what he is looking at is stale, so
-                            // re-fetch: the message says to review it again, and the reload is
-                            // what gives him something to review.
-                            alert(await apiMessage(resp) || 'Акт змінився або вже підписаний — перегляньте ще раз.');
+                            // The master changed the act while the client was reading it (B-61):
+                            // re-fetch, so there is something to review.
+                            alert(await apiMessage(resp) || 'Акт змінився — перегляньте ще раз.');
                             load();
+                            return;
+                        }
+                        if (resp.status === 429) {
+                            alert('Забагато людей одночасно — спробуйте ще раз за ' + retryAfter(resp) + ' с.');
                             return;
                         }
                         monitoring.failed('act-sign', resp.status);
@@ -1650,6 +1705,7 @@
                         return;
                     }
                     renderAct(await resp.json());
+                    showSigned('Приймання робіт підтверджено');
                 } catch (e) {
                     btn.disabled = false;
                     btn.textContent = 'Підтвердити приймання робіт';
@@ -1687,6 +1743,16 @@
         ])) return;
         const clientName = document.getElementById('signName').value.trim();
         const clientPhone = document.getElementById('signPhone').value.trim();
+        // A double tap sent two signatures; the second came back 409 with a sentence written for
+        // the master (review P0-3). One request at a time, and the button says so.
+        const submit = document.getElementById('signSubmit');
+        if (submit.disabled) return;
+        submit.disabled = true;
+        submit.textContent = 'Підписуємо…';
+        const done = () => {
+            submit.disabled = false;
+            submit.textContent = 'Підписати';
+        };
         let resp;
         try {
             resp = await fetch(sectionApi(dialogTarget) + '/sign', {
@@ -1695,21 +1761,42 @@
                 body: JSON.stringify({ clientName, clientPhone, version: dialogVersion })
             });
         } catch (e) {
+            done();
             monitoring.unreachable('estimate-sign');
             alert(networkFailure());
             return;
         }
         if (resp.ok) {
+            // The answer IS the signed page — render it, rather than a second GET that can fail
+            // after the signature already landed.
+            const data = await resp.json().catch(() => null);
+            done();
             closeDialog('signDialog');
-            load();
+            if (data) {
+                render(portalToken ? data : adaptLegacy(data));
+            } else {
+                await load();
+            }
+            showSigned('Кошторис підписано');
+        } else if (resp.status === 409 && await errorCode(resp) === 'ESTIMATE_SIGNED') {
+            // Already signed — by this very tap's twin, or in another tab. For the client that is
+            // the success he was after, not an error.
+            done();
+            closeDialog('signDialog');
+            await load();
+            showSigned('Кошторис підписано');
         } else if (resp.status === 409) {
-            // Already signed (two tabs), or changed while he was reading it (B-61). Both get the
-            // same answer, and it is the one that was always right here: reload, so what he sees
-            // next is the estimate as it really stands — signature banner or new figures.
+            // Changed while he was reading it (B-61): reload, so what he sees next is the estimate
+            // as it really stands.
+            done();
             closeDialog('signDialog');
-            alert(await apiMessage(resp) || 'Кошторис змінився або вже підписаний — перегляньте ще раз.');
+            alert(await apiMessage(resp) || 'Кошторис змінився — перегляньте ще раз.');
             load();
+        } else if (resp.status === 429) {
+            done();
+            alert('Забагато людей одночасно — спробуйте ще раз за ' + retryAfter(resp) + ' с.');
         } else {
+            done();
             monitoring.failed('estimate-sign', resp.status);
             alert(await apiMessage(resp) || 'Не вдалося підписати. Спробуйте пізніше.');
         }
@@ -1773,11 +1860,34 @@
         };
     }
 
+    // «Забагато людей одночасно — пробуємо ще раз за N с», counting down, then load() again.
+    function waitAndRetry(seconds) {
+        closeInfoPopover();
+        root.innerHTML = '<div class="card"><p class="error">Забагато людей одночасно — пробуємо ще раз за '
+            + '<span id="retryIn">' + seconds + '</span> с</p></div>';
+        let left = seconds;
+        const timer = setInterval(() => {
+            left -= 1;
+            const el = document.getElementById('retryIn');
+            if (el) el.textContent = String(Math.max(left, 0));
+            if (left <= 0) {
+                clearInterval(timer);
+                load();
+            }
+        }, 1000);
+    }
+
     async function load() {
         try {
             const resp = await fetch(apiBase);
             if (resp.status === 404) {
                 showError('Посилання недійсне або прострочене. Зверніться до вашого майстра за новим посиланням.', false);
+                return;
+            }
+            if (resp.status === 429) {
+                // A hall of people on one Wi-Fi share one address: wait what the server asks and
+                // try again by itself, instead of a dead «не вдалося» (review P0-1).
+                waitAndRetry(retryAfter(resp));
                 return;
             }
             if (!resp.ok) {

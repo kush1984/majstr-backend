@@ -35,6 +35,25 @@ one-line summary — keep the item in the file as a record.
   2,7 m wall (one 3 m bar per stud, 0,3 m wasted each). Needs its own decision for the app; no
   migration in the SEO iteration.
 
+### Does `ClientIp` see the real client address on Railway?
+- **Status:** OPEN
+- **Since:** 2026-10-17, P0 before the meetup (review-golden-path P0-1)
+- **Context:** `ClientIp` takes the FIRST `X-Forwarded-For` value (prod runs
+  `forward-headers-strategy: framework`). If Railway's edge hands every request the same address,
+  every portal visitor shares one per-IP ceiling; and the first value is whatever the client sent, so
+  a caller can also pick his own bucket. Not verifiable without the prod DB.
+- **Notes / options:** run `SELECT signer_ip, count(*) FROM estimates WHERE signer_ip IS NOT NULL
+  GROUP BY 1 ORDER BY 2 DESC LIMIT 10;` on prod. One or two addresses for everyone → read the
+  address Railway itself appends (the LAST hop it adds) instead of the first.
+
+### «Майстер уже отримав сповіщення» is a promise push may not keep
+- **Status:** OPEN
+- **Since:** 2026-10-17, P0 before the meetup (wording from the prompt)
+- **Context:** the portal says it right after a signature, but the push is fail-soft and needs the
+  master's permission; email is the other channel and is not always on either.
+- **Notes / options:** «Майстер отримає сповіщення», or say it only when the sign response reports a
+  push was sent.
+
 ### Tile in the app: boxes and the other layouts
 - **Status:** OPEN
 - **Since:** 2026-10-15, the tile addendum to the SEO calculators (V171)
