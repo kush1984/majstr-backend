@@ -24,6 +24,57 @@ one-line summary — keep the item in the file as a record.
 
 ## Architecture & operations
 
+### Address, company name and phone optional — після мітапу
+- **Status:** OPEN
+- **Since:** 2026-10-18, P1 before the meetup (review-golden-path P1-3, P1-6)
+- **Context:** the owner kept them REQUIRED for the meetup and took the front-only half (object
+  first, client folded; company copies the full name until edited). Making them optional means NULL in
+  the DB and a fallback everywhere they are printed or read.
+- **Notes / options:** the places found: `EstimatePdfService`, `WorkActPdfService`,
+  `PublicEstimateService`, `PublicActPortalService`, `ProjectPortalService`, `ShareLinkService`,
+  `MessageLinkService`, `ActSignedCopyService`, `SignedDocumentService` (the snapshot),
+  `ShoppingListPdfService`, `AdminUserService` + `UserResponse` + `AdminUserSummary`. Empty address →
+  print nothing invented; empty company → the full name.
+
+### An act still turns SENT when its share sheet opens — після мітапу
+- **Status:** OPEN
+- **Since:** 2026-10-18, P1 before the meetup (review-golden-path P1-9)
+- **Context:** estimates and the object portal now turn SENT only when the link leaves the app
+  (`…/mark-sent`). `PUT /api/acts/{id}/share` still publishes AND flips DRAFT→SENT on open — the
+  owner scoped item 9 to estimates and the object portal.
+- **Notes / options:** same shape as the estimate: publish without a status change + an idempotent
+  `POST /api/acts/{id}/share/mark-sent`, queued offline. The act's DRAFT→SENT also gates what the
+  portal serves (a DRAFT is 404), so the mark must come BEFORE the client can open the link — i.e.
+  publishing would have to make the act servable without calling it SENT.
+
+### The admin funnel's «shared» step still counts minted links — після мітапу
+- **Status:** OPEN
+- **Since:** 2026-10-18, P1 before the meetup
+- **Context:** PostHog's `estimate_shared` now fires only when a link left the app, but the backend
+  funnel's `shared` (`findSharedOwnerIds`) still counts the existence of a link row, minted when the
+  sheet opens. The two figures will drift apart from 2026-10-18.
+- **Notes / options:** count owners with an estimate that reached SENT/SIGNED instead, or keep the
+  link-row definition and say so on the admin screen.
+
+### A sheet that navigates as it saves leaves one dead «Назад» — після мітапу
+- **Status:** OPEN
+- **Since:** 2026-10-18, P1 before the meetup (review-golden-path P1-1)
+- **Context:** an open `Modal` owns one history entry. When its own button navigates (save → the new
+  screen), the navigation is pushed above that entry and taking it out would undo the navigation, so it
+  stays: one Back later lands on the same screen again.
+- **Notes / options:** `navigate(..., { replace: true })` from inside a sheet replaces the entry and
+  avoids it; or let `modalHistory` remember stale entries and skip them on the next popstate.
+
+### PDF on a real iPhone, and the P2 list — після мітапу
+- **Status:** OPEN
+- **Since:** 2026-10-18, P1 before the meetup (review-golden-path P1-12, P2)
+- **Context:** the iOS PDF path (a tab reserved before any await; `<a download>` in the installed app)
+  is covered by unit tests with a stubbed user agent only — no device run. The P2 list was not started:
+  FREE-limit «(ви створили N)», portal `og:*` tags and the act page's own title, 44 px tap targets on
+  the path, `.trim()`/`maxLength` in the zod schemas.
+- **Notes / options:** the golden-path checklist, steps 3–10 and 13, on Android and an iPhone from the
+  home-screen icon.
+
 ### Profile packaging: metres on the list, bars in the shop
 - **Status:** OPEN
 - **Since:** 2026-10-14, the SEO calculators (owner's ruling while scoping them)

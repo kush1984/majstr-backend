@@ -103,6 +103,20 @@ class EmailVerificationServiceTest {
                 .isInstanceOf(InvalidVerificationTokenException.class);
     }
 
+    /** Review P1-15: a second tap on the mail link of an address already confirmed is a success. */
+    @Test
+    void verify_usedOrExpiredToken_ofAnAlreadyVerifiedUser_succeeds() {
+        User user = User.builder().id(UUID.randomUUID()).emailVerified(true).build();
+        EmailVerificationToken used = EmailVerificationToken.builder()
+                .user(user).tokenHash(TokenHash.of("again")).expiresAt(Instant.now().minusSeconds(60))
+                .usedAt(Instant.now().minusSeconds(120)).build();
+        given(tokenRepository.findByTokenHash(TokenHash.of("again"))).willReturn(Optional.of(used));
+
+        service.verify("again");
+
+        assertThat(user.isEmailVerified()).isTrue();
+    }
+
     @Test
     void verify_unknownToken_throws() {
         given(tokenRepository.findByTokenHash(TokenHash.of("nope"))).willReturn(Optional.empty());

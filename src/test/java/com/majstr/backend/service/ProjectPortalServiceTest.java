@@ -101,7 +101,7 @@ class ProjectPortalServiceTest {
     }
 
     @Test
-    void update_setsExactVisibleSet_flipsNewDraftsToSent_andMintsOneLink() {
+    void update_setsExactVisibleSet_leavesStatusesAlone_andMintsOneLink() {
         Project p = project(true, null);
         Estimate wanted = estimate(p, EstimateStatus.DRAFT, false);
         Estimate other = estimate(p, EstimateStatus.SENT, true);
@@ -117,7 +117,8 @@ class ProjectPortalServiceTest {
         PortalStateResponse state = portalService.update(projectId, List.of(wanted.getId()), ownerId);
 
         assertThat(wanted.isPortalVisible()).isTrue();
-        assertThat(wanted.getStatus()).isEqualTo(EstimateStatus.SENT); // DRAFT flipped on publish
+        // Publishing happens as the sheet OPENS — no longer a send (review P1-13); markSent is.
+        assertThat(wanted.getStatus()).isEqualTo(EstimateStatus.DRAFT);
         assertThat(other.isPortalVisible()).isFalse();                 // unticked → hidden
         assertThat(state.url()).startsWith("https://majstr.pro/portal/index.html?p=");
         assertThat(state.paymentsVisible()).isFalse(); // SIGNATURE portal never has a payments card
@@ -298,6 +299,24 @@ class ProjectPortalServiceTest {
 
         assertThatThrownBy(() -> portalService.sendEmail(projectId, ownerId))
                 .isInstanceOf(ClientEmailMissingException.class);
+    }
+
+    @Test
+    void markSent_flipsTheVisibleDraftsOnly_andIsIdempotent() {
+        Project p = project(true, null);
+        Estimate visibleDraft = estimate(p, EstimateStatus.DRAFT, true);
+        Estimate hiddenDraft = estimate(p, EstimateStatus.DRAFT, false);
+        Estimate signed = estimate(p, EstimateStatus.SIGNED, false);
+        given(projectService.loadOwned(projectId, ownerId)).willReturn(p);
+        given(estimateRepository.findByProjectIdOrderByCreatedAtDesc(projectId))
+                .willReturn(List.of(visibleDraft, hiddenDraft, signed));
+
+        portalService.markSent(projectId, ownerId);
+        portalService.markSent(projectId, ownerId);
+
+        assertThat(visibleDraft.getStatus()).isEqualTo(EstimateStatus.SENT);
+        assertThat(hiddenDraft.getStatus()).isEqualTo(EstimateStatus.DRAFT);
+        assertThat(signed.getStatus()).isEqualTo(EstimateStatus.SIGNED);
     }
 
     @Test

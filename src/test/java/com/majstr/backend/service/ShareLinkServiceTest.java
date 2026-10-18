@@ -63,8 +63,9 @@ class ShareLinkServiceTest {
 
     // ---- create -----------------------------------------------------------
 
+    /** Review P1-13: the sheet asks for the link as it OPENS — a look is not a send. */
     @Test
-    void create_flipsDraftToSent() {
+    void create_leavesADraftADraft() {
         Estimate estimate = estimateWithStatus(EstimateStatus.DRAFT, true);
         given(estimateService.loadOwned(estimateId, ownerId)).willReturn(estimate);
         given(repository.save(any(EstimateShareLink.class))).willAnswer(inv -> inv.getArgument(0));
@@ -72,7 +73,29 @@ class ShareLinkServiceTest {
 
         shareLinkService.create(estimateId, ownerId);
 
+        assertThat(estimate.getStatus()).isEqualTo(EstimateStatus.DRAFT);
+    }
+
+    @Test
+    void markSent_flipsADraftToSent_andARepeatChangesNothing() {
+        Estimate estimate = estimateWithStatus(EstimateStatus.DRAFT, true);
+        given(estimateService.loadOwned(estimateId, ownerId)).willReturn(estimate);
+
+        shareLinkService.markSent(estimateId, ownerId);
         assertThat(estimate.getStatus()).isEqualTo(EstimateStatus.SENT);
+
+        shareLinkService.markSent(estimateId, ownerId);
+        assertThat(estimate.getStatus()).isEqualTo(EstimateStatus.SENT);
+    }
+
+    @Test
+    void markSent_leavesASignedEstimateSigned() {
+        Estimate estimate = estimateWithStatus(EstimateStatus.SIGNED, true);
+        given(estimateService.loadOwned(estimateId, ownerId)).willReturn(estimate);
+
+        shareLinkService.markSent(estimateId, ownerId);
+
+        assertThat(estimate.getStatus()).isEqualTo(EstimateStatus.SIGNED);
     }
 
     @Test

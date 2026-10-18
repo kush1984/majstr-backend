@@ -54,10 +54,24 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(MethodArgumentNotValidException.class)
     public ResponseEntity<ErrorResponse> handleValidation(MethodArgumentNotValidException ex, HttpServletRequest req) {
-        String message = ex.getBindingResult().getFieldErrors().stream()
-                .map(this::formatFieldError)
-                .collect(Collectors.joining("; "));
-        return build(HttpStatus.BAD_REQUEST, message.isBlank() ? msg("error.validation-failed") : message, req);
+        // Never «fullName: must not be blank» in front of a master (review P1-22): the field's own
+        // Ukrainian name where the bundle has one, the generic sentence otherwise. The raw detail
+        // stays in the log.
+        log.debug("Validation failed at {}: {}", req.getRequestURI(), ex.getBindingResult().getFieldErrors().stream()
+                .map(this::formatFieldError).collect(Collectors.joining("; ")));
+        java.util.List<String> labels = ex.getBindingResult().getFieldErrors().stream()
+                .map(err -> fieldLabel(err.getField()))
+                .distinct()
+                .toList();
+        String message;
+        if (labels.isEmpty() || labels.contains(null)) {
+            message = msg("error.validation-failed");
+        } else if (labels.size() == 1) {
+            message = msg("error.validation-field", labels.getFirst());
+        } else {
+            message = msg("error.validation-fields", String.join(", ", labels));
+        }
+        return build(HttpStatus.BAD_REQUEST, message, req);
     }
 
     @ExceptionHandler(ConstraintViolationException.class)
@@ -561,6 +575,14 @@ public class GlobalExceptionHandler {
         if (mod10 == 1 && mod100 != 11) return prefix + ".one";
         if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) return prefix + ".few";
         return prefix + ".many";
+    }
+
+    /** «Ім'я» for {@code fullName} — the bundle's {@code field.<name>}, or null when it has none. */
+    private String fieldLabel(String field) {
+        String leaf = field.substring(field.lastIndexOf('.') + 1).replaceAll("\\[\\d+]$", "");
+        String key = "field." + leaf;
+        String label = messages.getMessage(key, null, null, LocaleContextHolder.getLocale());
+        return label == null || label.equals(key) ? null : label;
     }
 
     private String formatFieldError(FieldError err) {

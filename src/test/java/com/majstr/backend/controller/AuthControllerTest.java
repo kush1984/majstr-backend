@@ -183,6 +183,21 @@ class AuthControllerTest {
                 .andExpect(jsonPath("$.status", is(400)));
     }
 
+    /** Review P1-22: a field error reaches the master in his language, never «fullName: must not be blank». */
+    @Test
+    void register_aBlankNameIsSaidInWords_notAsAJavaFieldName() throws Exception {
+        RegisterRequest blankName = new RegisterRequest(
+                "john@example.com", "Sup3r-Secret!", "   ", Set.of(Trade.GENERAL), null,
+                "+15551234567", "Company", true, null, null, null, null, null);
+
+        mockMvc.perform(post("/api/auth/register")
+                        .header("Accept-Language", "uk")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(blankName)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message", is("Перевірте поле «Ім'я».")));
+    }
+
     @Test
     void register_rejectsZeroTradesSystemAndCustomBothEmpty() throws Exception {
         // isTradeChosen() requires at least ONE of system trades / custom trade names.

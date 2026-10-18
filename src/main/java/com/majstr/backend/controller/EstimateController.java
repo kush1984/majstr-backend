@@ -162,6 +162,15 @@ public class EstimateController {
                 .body(shareLinkService.create(id, principal.id()));
     }
 
+    @Operation(summary = "The share link really left (shared or copied): a DRAFT estimate becomes SENT",
+            description = "Idempotent. Creating the link (POST …/share) no longer changes the status.")
+    @PostMapping("/api/estimates/{id}/share/mark-sent")
+    public ResponseEntity<Void> markShareSent(@PathVariable UUID id,
+                                              @AuthenticationPrincipal UserPrincipal principal) {
+        shareLinkService.markSent(id, principal.id());
+        return ResponseEntity.noContent().build();
+    }
+
     @Operation(summary = "Email the share link to the estimate's client (creates a link if none yet; rate-limited)")
     @PostMapping("/api/estimates/{id}/share/send-email")
     public ResponseEntity<ShareLinkResponse> sendShareEmail(@PathVariable UUID id,

@@ -73,6 +73,11 @@ public class EmailVerificationService {
         EmailVerificationToken token = tokenRepository.findByTokenHash(TokenHash.of(rawToken))
                 .orElseThrow(() -> new InvalidVerificationTokenException(INVALID_MSG));
         if (token.getUsedAt() != null || token.getExpiresAt().isBefore(Instant.now())) {
+            // The address IS confirmed — a second tap on the same mail link (or a mail app that
+            // pre-opened it) is a success, not «не вдалося» (review P1-15).
+            if (token.getUser().isEmailVerified()) {
+                return;
+            }
             throw new InvalidVerificationTokenException(INVALID_MSG);
         }
         token.setUsedAt(Instant.now());

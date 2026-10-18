@@ -339,6 +339,7 @@ class IdorMatrixIntegrationTest extends IntegrationTestBase {
         c.add(get("/api/estimates/{id}/pdf", a.estimate));
         c.add(post("/api/estimates/{id}/share", a.estimate));
         c.add(post("/api/estimates/{id}/share/send-email", a.estimate));
+        c.add(post("/api/estimates/{id}/share/mark-sent", a.estimate));
         c.add(del("/api/estimates/{id}/share/{linkId}", a.estimate, a.estimateShareLink));
         c.add(json("POST", "/api/estimates/{id}/save-as-template", B_SAVE_AS_TEMPLATE, a.estimate));
         c.add(json("POST", "/api/estimates/{estimateId}/duplicate", B_DUPLICATE, a.estimate));
@@ -455,6 +456,7 @@ class IdorMatrixIntegrationTest extends IntegrationTestBase {
         c.add(get("/api/projects/{projectId}/portal", a.project));
         c.add(json("PUT", "/api/projects/{projectId}/portal", B_PORTAL, a.project));
         c.add(post("/api/projects/{projectId}/portal/send-email", a.project));
+        c.add(post("/api/projects/{projectId}/portal/mark-sent", a.project));
         c.add(get("/api/projects/{projectId}/portal/economy", a.project));
         c.add(json("PUT", "/api/projects/{projectId}/portal/economy", B_ECONOMY, a.project));
         c.add(del("/api/projects/{projectId}/portal/economy", a.project));

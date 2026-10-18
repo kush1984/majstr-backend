@@ -89,8 +89,9 @@ public class ProjectPortalService {
     /**
      * Publishes the SIGNATURE portal: the given estimates become visible for signing, every
      * other estimate of the object is hidden from it. Mints the link on first use and reuses it
-     * afterwards (idempotent — one live URL per object per kind). Newly visible DRAFTs flip to
-     * SENT, same as the legacy share. Never touches payments — the SIGNATURE portal does not
+     * afterwards (idempotent — one live URL per object per kind). Publishing changes NO status:
+     * a DRAFT becomes SENT only when the link leaves the app ({@link #markSent}, review P1-9).
+     * Never touches payments — the SIGNATURE portal does not
      * have a payments card, so there is nothing here to toggle. A SIGNED id is coerced to hidden
      * regardless of what was requested — it has "moved" to ECONOMY, the SIGNATURE portal is not a
      * second place to show it (defense-in-depth; the picker never offers one to tick in the first
@@ -101,24 +102,41 @@ public class ProjectPortalService {
         Project project = projectService.loadOwned(projectId, ownerId);
         requireSharable(project.getOwner());
 
-        applyVisibility(projectId, estimateIds, (estimate, visible) -> {
-            boolean actualVisible = visible && estimate.getStatus() != EstimateStatus.SIGNED;
-            if (actualVisible && estimate.getStatus() == EstimateStatus.DRAFT) {
-                estimate.setStatus(EstimateStatus.SENT);
-            }
-            estimate.setPortalVisible(actualVisible);
-        });
+        // Publishing no longer flips DRAFT to SENT (review P1-13): the sheet publishes as it OPENS.
+        // markSent / sendEmail do, once the link really left.
+        applyVisibility(projectId, estimateIds, (estimate, visible) ->
+                estimate.setPortalVisible(visible && estimate.getStatus() != EstimateStatus.SIGNED));
 
         ProjectShareLink link = mintOrReuse(project, ShareLinkKind.PORTAL);
         return stateOf(project, Optional.of(link), ShareLinkKind.PORTAL, ProjectPortalService::isSignaturePortalVisible);
     }
 
+    /**
+     * The SIGNATURE portal's link really left (shared or copied): every estimate visible on it that
+     * is still a DRAFT becomes SENT. Idempotent — a repeat finds nothing left to flip.
+     */
+    @Transactional
+    public void markSent(UUID projectId, UUID ownerId) {
+        Project project = projectService.loadOwned(projectId, ownerId);
+        requireSharable(project.getOwner());
+        flipVisibleDraftsToSent(projectId);
+    }
+
+    private void flipVisibleDraftsToSent(UUID projectId) {
+        for (Estimate estimate : estimateRepository.findByProjectIdOrderByCreatedAtDesc(projectId)) {
+            if (estimate.isPortalVisible() && estimate.getStatus() == EstimateStatus.DRAFT) {
+                estimate.setStatus(EstimateStatus.SENT);
+            }
+        }
+    }
+
     /** Emails the SIGNATURE portal link. Requires a published link — the PWA always PUTs first. */
-    @Transactional(readOnly = true)
+    @Transactional
     public PortalStateResponse sendEmail(UUID projectId, UUID ownerId) {
         Project project = projectService.loadOwned(projectId, ownerId);
         requireSharable(project.getOwner());
         ProjectShareLink link = requireUsableLink(projectId, ShareLinkKind.PORTAL);
+        flipVisibleDraftsToSent(projectId);
         emailLink(project, buildUrl(link.getToken(), ShareLinkKind.PORTAL));
         return stateOf(project, Optional.of(link), ShareLinkKind.PORTAL, ProjectPortalService::isSignaturePortalVisible);
     }

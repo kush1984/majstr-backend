@@ -61,14 +61,27 @@ public class ShareLinkService {
     public ShareLinkResponse create(UUID estimateId, UUID ownerId) {
         Estimate estimate = estimateService.loadOwned(estimateId, ownerId);
         requireSharable(estimate);
-        flipToSentIfDraft(estimate);
+        // No status change here (review P1-13): the share sheet asks for the link the moment it
+        // OPENS, so this flipped DRAFT to «Надіслано» for a master who only looked and closed it.
+        // The flip is now {@link #markSent}, called once the link really left — shared or copied.
         EstimateShareLink link = usableLink(estimateId).orElseGet(() -> repository.save(newLink(estimate)));
         return ShareLinkResponse.from(link, buildUrl(link.getToken()));
     }
 
     /**
-     * Email the estimate's portal link to its client. Same gate + DRAFT->SENT
-     * flip as {@code create}, but reuses an existing active link if there is
+     * The link really left — shared through the phone's sheet, or copied. DRAFT becomes SENT; any
+     * other status is left alone, so a repeat (a second copy, an offline replay) changes nothing.
+     */
+    @Transactional
+    public void markSent(UUID estimateId, UUID ownerId) {
+        Estimate estimate = estimateService.loadOwned(estimateId, ownerId);
+        requireSharable(estimate);
+        flipToSentIfDraft(estimate);
+    }
+
+    /**
+     * Email the estimate's portal link to its client. Same gate as {@code create}; the mail IS the
+     * link leaving, so this marks DRAFT->SENT itself. Reuses an existing active link if there is
      * one. Requires the client to have an email on file.
      */
     @Transactional

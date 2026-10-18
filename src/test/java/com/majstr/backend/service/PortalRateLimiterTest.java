@@ -33,14 +33,20 @@ class PortalRateLimiterTest {
     void sixHundredDifferentLinksFromOneAddressHitTheCeiling() {
         PortalRateLimiter limiter = limiter();
         int allowed = 0;
-        PortalRateLimiter.ConsumeResult last = null;
+        PortalRateLimiter.ConsumeResult firstRefusal = null;
         for (int i = 0; i < 600; i++) {
-            last = limiter.tryConsume("203.0.113.7", "token-" + i, false);
-            if (last.allowed()) allowed++;
+            PortalRateLimiter.ConsumeResult r = limiter.tryConsume("203.0.113.7", "token-" + i, false);
+            if (r.allowed()) {
+                allowed++;
+            } else if (firstRefusal == null) {
+                firstRefusal = r;
+            }
         }
-        assertThat(allowed).isEqualTo(300);
-        assertThat(last.allowed()).isFalse();
-        assertThat(last.retryAfterSeconds()).isBetween(1L, 60L);
+        // The refill is GREEDY — one more token every 200 ms at 300/min — so a slow machine running
+        // this loop legitimately earns a few beyond the 300 (CI did). The ceiling still bites.
+        assertThat(allowed).isBetween(300, 330);
+        assertThat(firstRefusal).isNotNull();
+        assertThat(firstRefusal.retryAfterSeconds()).isBetween(1L, 60L);
         // Another address is untouched by it.
         assertThat(limiter.tryConsume("198.51.100.9", "token-0", false).allowed()).isTrue();
     }

@@ -10,6 +10,7 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -42,6 +43,15 @@ public class ProjectPortalController {
                                       @Valid @RequestBody PortalUpdateRequest req,
                                       @AuthenticationPrincipal UserPrincipal principal) {
         return portalService.update(projectId, req.estimateIds(), principal.id());
+    }
+
+    @Operation(summary = "The portal link really left (shared or copied): its visible DRAFT estimates become SENT",
+            description = "Idempotent. Publishing (PUT) no longer changes any status.")
+    @PostMapping("/mark-sent")
+    public ResponseEntity<Void> markSent(@PathVariable UUID projectId,
+                                         @AuthenticationPrincipal UserPrincipal principal) {
+        portalService.markSent(projectId, principal.id());
+        return ResponseEntity.noContent().build();
     }
 
     @Operation(summary = "Email the SIGNATURE portal link to the object's client")
