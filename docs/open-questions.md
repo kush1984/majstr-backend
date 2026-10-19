@@ -24,6 +24,15 @@ one-line summary — keep the item in the file as a record.
 
 ## Architecture & operations
 
+### The FREE cap counts every object ever made — після мітапу
+- **Status:** OPEN
+- **Since:** 2026-10-19, objects-list (PWA)
+- **Context:** `users.lifetime_project_count` (V107) never decrements. A newcomer who «tries it out»
+  after the meetup on a test object and signs it himself loses one of his two free objects for good,
+  and B-70 will not let him delete it.
+- **Notes / options:** don't count objects deleted without a signature or money; a trial object
+  outside the cap; or lean on the PRO trial. The owner's decision.
+
 ### Address, company name and phone optional — після мітапу
 - **Status:** OPEN
 - **Since:** 2026-10-18, P1 before the meetup (review-golden-path P1-3, P1-6)
@@ -3876,6 +3885,10 @@ one-line summary — keep the item in the file as a record.
 - **Since:** step 2
 - **Context:** All deletes are hard. No "trash" / undo.
 - **Notes / options:** Add `deleted_at` columns + repository scoping. Defer until someone deletes the wrong thing in anger.
+  **2026-10-19 (objects-list), після мітапу:** the owner wants an object holding a signature or money
+  gone from sight ENTIRELY — out of the archive too (today B-70 keeps it, and the PWA only explains
+  the 409). Option: a soft delete that hides it everywhere, and does not count against the FREE cap
+  when the object never had money.
 
 ### METAL trade default prices are orientative
 - **Status:** OPEN
