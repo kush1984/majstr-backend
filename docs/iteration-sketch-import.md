@@ -99,3 +99,19 @@ calculator (previous iteration) became the safety net for the LLM.
   nullable unions); shape/mode/type/unit/confidence are validated in Java, not by the schema.
 - `MeasurementCalc` catches invalid geometry → the sketch maps that to "flagged, blank field",
   which is exactly the "don't guess an unreadable size" requirement.
+
+## Follow-up — an L-shaped room (2026-10-20)
+A master's кроки of an L-shaped «Вітальня» came back as a rectangle of its gabarits. Nothing
+broken in the geometry: `Shapes` and the PWA editor have had `lshape` (A×B gabarits, a×b step)
+all along, but the sketch flow never offered it — absent from the prompt's shape list, from the
+`values` schema (which had no capital A/B) and from `SHAPES`, so even a model that answered
+«lshape» would have had the plane dropped as unknown. All three now carry it.
+- The prompt names the L-room's rules: floor and ceiling are ONE `lshape` plane; a chained side
+  is the SUM of its segments; the room has SIX walls; chains that do not close are reported as
+  read with low confidence, never adjusted to agree.
+- A struck-through figure is superseded on a hand-drawn sheet too (the rule used to live only in
+  the passport section), and a room height written once is every wall's height.
+- Not verified against a live model here (no API key in the session); the tests pin the mapping
+  (`54,48 m²` for 9,50×6,00 minus 0,90×2,80) and that the prompt + schema offer the shape.
+- The printed-plan path (`ProjectImportService`) has its own widthMm/lengthMm + perimeter model
+  and is unchanged.

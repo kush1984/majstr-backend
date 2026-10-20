@@ -122,6 +122,44 @@ class SketchImportServiceTest {
     }
 
     @Test
+    void anLShapedFloorKeepsItsShapeInsteadOfBecomingTheGabaritsRectangle() {
+        // The master's «Вітальня»: 9,50 × 6,00 overall with a 0,90 × 2,80 corner stepped in.
+        // Read as a rect of the gabarits it was 57 m² — the corner's 2,52 m² billed as floor.
+        SketchParseResponse resp = parseWith("""
+                {"sheetKind":"HAND_DRAWN","rooms":[{"name":"Вітальня","confidence":"high","items":[
+                  {"type":"SURFACE","name":"Підлога","unit":"M2","confidence":"high","note":"",
+                   "planes":[{"shape":"lshape","mode":"","values":{"A":9.5,"B":6,"a":0.9,"b":2.8,"c":0,"d":0,"h":0}}],
+                   "openings":[]}
+                ]}],"unitGuess":"м","warnings":[]}""");
+
+        SketchParseResponse.Item item = resp.rooms().get(0).items().get(0);
+        assertThat(item.result()).isEqualByComparingTo("54.480"); // 9,5×6 − 0,9×2,8
+        assertThat(item.confidence()).isEqualTo("high");
+        Map<?, ?> seg = (Map<?, ?>) ((List<?>) mapper.convertValue(item.payload(), Map.class)
+                .get("segments")).get(0);
+        assertThat(seg.get("shape")).isEqualTo("lshape");
+        @SuppressWarnings("unchecked")
+        Map<String, Object> values = (Map<String, Object>) seg.get("values");
+        // Capital gabarits and the lowercase step both survive — the editor's four L fields.
+        assertThat(values).containsOnlyKeys("A", "B", "a", "b");
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void theModelIsOfferedTheLShapeInBothThePromptAndTheSchema() {
+        // Without it the model had no way to say «Г-подібна» and drew the gabarits rectangle.
+        parseWith("""
+                {"sheetKind":"HAND_DRAWN","rooms":[],"unitGuess":"м","warnings":[]}""");
+        ArgumentCaptor<String> prompt = ArgumentCaptor.forClass(String.class);
+        ArgumentCaptor<Map<String, Object>> schema = ArgumentCaptor.forClass(Map.class);
+        verify(extractor).requestJson(anyList(), prompt.capture(), schema.capture());
+
+        assertThat(prompt.getValue()).contains("\"lshape\"").contains("SIX walls");
+        String schemaText = mapper.writeValueAsString(schema.getValue());
+        assertThat(schemaText).contains("\"A\"").contains("\"B\"");
+    }
+
+    @Test
     void aGroupedWallsElementBecomesOneElementPerWallSoAnEstimateLineCanPickTwoOfThem() {
         SketchParseResponse resp = parseWith("""
                 {"sheetKind":"HAND_DRAWN","rooms":[{"name":"Кухня","confidence":"high","items":[
