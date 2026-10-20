@@ -146,11 +146,9 @@ public class SketchImportService {
             if (roomName == null) roomName = "Кімната " + roomNo;
 
             List<SketchParseResponse.Item> items = new ArrayList<>();
-            for (Object io : asList(rm.get("items"))) {
-                if (io instanceof Map<?, ?> im) {
-                    SketchParseResponse.Item item = mapItem((Map<String, Object>) im, unitGuess, factor);
-                    if (item != null) items.add(item);
-                }
+            for (Map<String, Object> im : splitWalls(asList(rm.get("items")))) {
+                SketchParseResponse.Item item = mapItem(im, unitGuess, factor);
+                if (item != null) items.add(item);
             }
             rooms.add(new SketchParseResponse.Room(roomName, conf(rm.get("confidence")), items));
         }
@@ -166,6 +164,41 @@ public class SketchImportService {
         String kind = "HAND_DRAWN".equalsIgnoreCase(String.valueOf(str(root.get("sheetKind"))))
                 ? "HAND_DRAWN" : "PRINTED_PLAN";
         return new SketchParseResponse(kind, rooms, unitGuess, warnings);
+    }
+
+    /**
+     * A grouped «Стіни» element — one plane per wall — becomes one element PER WALL, «Стіна N».
+     * An element is the smallest thing an estimate line can pick, so a grouped one leaves the
+     * master unable to plaster two walls and tile the third. The prompt already asks for one
+     * element per wall; this is the guarantee when the model groups them anyway. Only the PLURAL
+     * name splits: «Стіна торцева» drawn as rect + tri is one wall made of two figures. The group's
+     * openings ride on its first wall, as they do in the project import's package.
+     */
+    @SuppressWarnings("unchecked")
+    static List<Map<String, Object>> splitWalls(List<Object> rawItems) {
+        List<Map<String, Object>> out = new ArrayList<>();
+        int wallNo = 0;
+        for (Object io : rawItems) {
+            if (!(io instanceof Map<?, ?> m)) continue;
+            Map<String, Object> im = (Map<String, Object>) m;
+            List<Object> planes = asList(im.get("planes"));
+            String name = str(im.get("name"));
+            boolean grouped = parseType(str(im.get("type"))) == MeasurementType.SURFACE
+                    && name != null && name.toLowerCase(Locale.ROOT).startsWith("стіни")
+                    && planes.size() > 1;
+            if (!grouped) {
+                out.add(im);
+                continue;
+            }
+            for (int i = 0; i < planes.size(); i++) {
+                Map<String, Object> wall = new LinkedHashMap<>(im);
+                wall.put("name", "Стіна " + (++wallNo));
+                wall.put("planes", List.of(planes.get(i)));
+                if (i > 0) wall.put("openings", List.of());
+                out.add(wall);
+            }
+        }
+        return out;
     }
 
     @SuppressWarnings("unchecked")
@@ -478,7 +511,13 @@ public class SketchImportService {
             For each element return:
               - type: "SURFACE" (a wall/ceiling/floor area, m²), "PARTITION" (a free-standing partition
                 measured by faces), or "LINEAR" (reveals/skirting run, linear metres). Most are SURFACE.
-              - name: "Стеля", "Стіни", "Підлога", "Відкоси", … (Ukrainian; "" if unnamed).
+              - name: "Стеля", "Стіна 1", "Підлога", "Відкоси", … (Ukrainian; "" if unnamed).
+                WALLS ARE ONE ELEMENT EACH: «Стіна 1», «Стіна 2», … (or the sheet's own label for a
+                wall, if it writes one), each with that wall's planes and the windows/doors IN THAT
+                wall. Never one «Стіни» element with a plane per wall — the master prices walls
+                apart (plasters two, tiles the third), and an element is the smallest thing an
+                estimate line can pick. Several planes in one wall element only when they are ONE
+                wall (a gable: rect + tri).
               - unit: "M2" for SURFACE/PARTITION, "LINEAR_METER" for LINEAR.
               - confidence: high/medium/low. Anything you inferred or half-read → low.
               - note: a short Ukrainian note when you guessed or a size was unreadable (else "").

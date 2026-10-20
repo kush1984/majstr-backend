@@ -122,6 +122,42 @@ class SketchImportServiceTest {
     }
 
     @Test
+    void aGroupedWallsElementBecomesOneElementPerWallSoAnEstimateLineCanPickTwoOfThem() {
+        SketchParseResponse resp = parseWith("""
+                {"sheetKind":"HAND_DRAWN","rooms":[{"name":"Кухня","confidence":"high","items":[
+                  {"type":"SURFACE","name":"Стіни","unit":"M2","confidence":"high","note":"",
+                   "planes":[{"shape":"rect","mode":"","values":{"a":300,"b":250}},
+                             {"shape":"rect","mode":"","values":{"a":400,"b":250}},
+                             {"shape":"rect","mode":"","values":{"a":300,"b":250}}],
+                   "openings":[{"w":100,"h":150}]}
+                ]}],"unitGuess":"см","warnings":[]}""");
+
+        List<SketchParseResponse.Item> items = resp.rooms().get(0).items();
+        assertThat(items).extracting(SketchParseResponse.Item::name)
+                .containsExactly("Стіна 1", "Стіна 2", "Стіна 3");
+        // The group's window rides on the first wall: 3×2.5 − 1×1.5.
+        assertThat(items.get(0).result()).isEqualByComparingTo("6.000");
+        assertThat(items.get(1).result()).isEqualByComparingTo("10.000");
+        assertThat(items.get(2).result()).isEqualByComparingTo("7.500");
+    }
+
+    @Test
+    void oneWallMadeOfTwoFiguresStaysOneElement() {
+        // A gable: a rectangle under a triangle is ONE wall — only the plural «Стіни» splits.
+        SketchParseResponse resp = parseWith("""
+                {"sheetKind":"HAND_DRAWN","rooms":[{"name":"Мансарда","confidence":"high","items":[
+                  {"type":"SURFACE","name":"Стіна торцева","unit":"M2","confidence":"high","note":"",
+                   "planes":[{"shape":"rect","mode":"","values":{"a":400,"b":100}},
+                             {"shape":"tri","mode":"bh","values":{"b":400,"h":200}}],
+                   "openings":[]}
+                ]}],"unitGuess":"см","warnings":[]}""");
+
+        List<SketchParseResponse.Item> items = resp.rooms().get(0).items();
+        assertThat(items).extracting(SketchParseResponse.Item::name).containsExactly("Стіна торцева");
+        assertThat(items.get(0).result()).isEqualByComparingTo("8.000");
+    }
+
+    @Test
     void unreadableSizeLeavesResultNullAndForcesLowConfidence() {
         SketchParseResponse resp = parseWith("""
                 {"sheetKind":"HAND_DRAWN","rooms":[{"name":"","confidence":"high","items":[
