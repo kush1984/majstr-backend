@@ -75,7 +75,7 @@ public class AnthropicJsonExtractor implements JsonExtractor {
             throw new AiExtractionException("error.ai.unavailable", e);
         }
         logCacheUse(resp);
-        return firstTextBlock(resp);
+        return answerText(resp);
     }
 
     /**
@@ -157,8 +157,17 @@ public class AnthropicJsonExtractor implements JsonExtractor {
      * Anthropic puts the answer in the first text block. Unlike OpenAI's {@code output} array this
      * position is stable, but a 200 with no text block at all still has to fail loudly rather than
      * hand an empty string to a parser.
+     *
+     * <p>{@code stop_reason = max_tokens} is checked first: the text block is then half a JSON
+     * document, and handing it on surfaces as an anonymous parse failure in the caller — the log has
+     * to say "raise the cap", not "the model returned garbage".</p>
      */
-    private String firstTextBlock(Map<String, Object> resp) {
+    String answerText(Map<String, Object> resp) {
+        if (resp != null && "max_tokens".equals(resp.get("stop_reason"))) {
+            log.error("Anthropic answer truncated at max_tokens={} ({}) — raise ANTHROPIC_MAX_TOKENS",
+                    props.maxTokens(), providerName());
+            throw new AiExtractionException("error.ai.unavailable");
+        }
         Object content = resp == null ? null : resp.get("content");
         if (content instanceof List<?> blocks) {
             for (Object block : blocks) {

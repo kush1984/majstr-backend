@@ -39,9 +39,13 @@ public final class HttpClients {
         return RestClient.builder().requestFactory(factory).build();
     }
 
-    /** LLM calls (vision over a drawing/PDF page) — minutes are normal, forever is not. */
+    /**
+     * LLM calls (vision over a drawing/PDF page) — minutes are normal, forever is not. Sized to
+     * write {@code app.anthropic.max-tokens} (16k) in full, and kept under the PWA's own
+     * {@code LLM_TIMEOUT_MS} (180 s) so the client never abandons a call that is still working.
+     */
     public static RestClient forLlm() {
-        return withTimeouts(Duration.ofSeconds(120));
+        return withTimeouts(Duration.ofSeconds(170));
     }
 
     /** Payment API — called inside the webhook transaction, so it must fail fast. */

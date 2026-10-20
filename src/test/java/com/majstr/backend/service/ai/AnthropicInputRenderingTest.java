@@ -1,6 +1,7 @@
 package com.majstr.backend.service.ai;
 
 import com.majstr.backend.config.AnthropicProperties;
+import com.majstr.backend.exception.AiExtractionException;
 import org.junit.jupiter.api.Test;
 
 import java.nio.charset.StandardCharsets;
@@ -8,6 +9,7 @@ import java.util.List;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
  * The Anthropic side of the same translation.
@@ -92,6 +94,27 @@ class AnthropicInputRenderingTest {
                 "the shared prompt", Map.of()).get("system");
 
         assertThat(first).isEqualTo(second);
+    }
+
+    @Test
+    void aTruncatedAnswerFailsBeforeItReachesAParser() {
+        // Half a JSON document is still a non-blank text block; without the stop_reason check it
+        // was handed on and surfaced as an anonymous parse failure in the caller.
+        Map<String, Object> resp = Map.of(
+                "stop_reason", "max_tokens",
+                "content", List.of(Map.of("type", "text", "text", "{\"rooms\": [{\"name\"")));
+
+        assertThatThrownBy(() -> extractor().answerText(resp))
+                .isInstanceOf(AiExtractionException.class);
+    }
+
+    @Test
+    void aCompleteAnswerIsItsFirstTextBlock() {
+        Map<String, Object> resp = Map.of(
+                "stop_reason", "end_turn",
+                "content", List.of(Map.of("type", "text", "text", "{\"rooms\": []}")));
+
+        assertThat(extractor().answerText(resp)).isEqualTo("{\"rooms\": []}");
     }
 
     private static AnthropicJsonExtractor extractor() {

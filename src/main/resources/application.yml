@@ -267,7 +267,10 @@ app:
     # is chosen for table/number OCR accuracy; the uploaded file is never persisted.
     api-key: ${ANTHROPIC_API_KEY:}
     model: ${ANTHROPIC_MODEL:claude-sonnet-5}
-    max-tokens: ${ANTHROPIC_MAX_TOKENS:8000}
+    # A CAP, not a budget — billed only for what is written. 8000 truncated a dense sketch mid-JSON
+    # (~90 s of output thrown away as a 503); keep HttpClients.forLlm's read timeout above the time
+    # it takes to write this many.
+    max-tokens: ${ANTHROPIC_MAX_TOKENS:16000}
   sentry:
     # Error monitoring. DSN is env only and blank in local dev (then Sentry is
     # disabled — nothing is sent, no noise). PII is never sent (send-default-pii
