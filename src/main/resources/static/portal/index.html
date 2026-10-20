@@ -637,6 +637,33 @@
             td.center, th.center { font-size: 0.72rem; }
             .actions button, .actions a.btn { width: 100%; text-align: center; }
         }
+        /* The act's lines have SIX columns, a «№» first, so the nth-child widths above — written
+           for the estimate table, where «Назва» is column 1 — handed the act's NAME the unit's
+           10 % and its headers piled on top of each other on a phone. Its own widths, by class;
+           the name takes whatever the figures leave. */
+        table.act-lines th:nth-child(1), table.act-lines td:nth-child(1) { width: 7%; }
+        table.act-lines th:nth-child(2), table.act-lines td:nth-child(2) {
+            width: auto;
+            white-space: normal;
+            /* Hyphenate a long word before splitting it at a random letter («внутрішньог/о»). */
+            hyphens: auto;
+            overflow-wrap: break-word;
+        }
+        table.act-lines th:nth-child(3), table.act-lines td:nth-child(3) { width: 11%; }
+        table.act-lines th:nth-child(4), table.act-lines td:nth-child(4) { width: 12%; }
+        table.act-lines th:nth-child(5), table.act-lines td:nth-child(5) { width: 18%; }
+        table.act-lines th:nth-child(6), table.act-lines td:nth-child(6) { width: 20%; }
+        /* After the block above, not inside the earlier phone query: same specificity, so the
+           later rule wins. The figures shrink a step so «2 875,00» fits its column. */
+        @media (max-width: 480px) {
+            table.act-lines th:nth-child(1), table.act-lines td:nth-child(1) { width: 5%; }
+            table.act-lines th:nth-child(3), table.act-lines td:nth-child(3) { width: 10%; }
+            table.act-lines th:nth-child(4), table.act-lines td:nth-child(4) { width: 12%; }
+            table.act-lines th:nth-child(5), table.act-lines td:nth-child(5) { width: 19%; }
+            table.act-lines th:nth-child(6), table.act-lines td:nth-child(6) { width: 21%; }
+            table.act-lines td:nth-child(n+3) { font-size: 0.78rem; }
+            table.act-lines thead th { letter-spacing: 0; }
+        }
     </style>
 </head>
 <body>
@@ -1642,9 +1669,9 @@
                 ${a.clientName ? `<p style="margin:2px 0 0">Замовник: ${escapeHtml(a.clientName)}</p>` : ''}
             </div>
             <div class="card">
-                <table style="width:100%;border-collapse:collapse;font-size:14px">
+                <table class="act-lines" style="width:100%;border-collapse:collapse;font-size:14px">
                     <thead><tr style="text-align:left;color:var(--muted)">
-                        <th></th><th>Найменування</th><th style="text-align:center">Од.</th>
+                        <th></th><th>Назва</th><th style="text-align:center">Од.</th>
                         <th style="text-align:right">К-сть</th><th style="text-align:right">Ціна</th><th style="text-align:right">Сума, грн</th>
                     </tr></thead>
                     <tbody>${rows}</tbody>
