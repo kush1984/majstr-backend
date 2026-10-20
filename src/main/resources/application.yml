@@ -234,21 +234,21 @@ app:
     #   AI_FLOW_PROJECT_DOCS=anthropic:claude-opus-4-8
     flows:
       estimate: ${AI_FLOW_ESTIMATE:}
-      receipt: ${AI_FLOW_RECEIPT:anthropic:claude-sonnet-5}
+      receipt: ${AI_FLOW_RECEIPT:anthropic:claude-sonnet-5-5}
       # Date + total off a receipt footer for the act's «Чеки та рахунки» — three fields, read many
       # times a day: the small model earns its keep here (positions mode uses `receipt` above).
-      act-receipt: ${AI_FLOW_ACT_RECEIPT:anthropic:claude-haiku-4-5-20251001}
+      act-receipt: ${AI_FLOW_ACT_RECEIPT:anthropic:claude-haiku-5-5}
       sketch: ${AI_FLOW_SKETCH:}
       electrical: ${AI_FLOW_ELECTRICAL:}
       project-docs: ${AI_FLOW_PROJECT_DOCS:}
       # Reads titles from text, never a drawing — the first flow worth pointing at a cheap model.
-      triage: ${AI_FLOW_TRIAGE:anthropic:claude-haiku-4-5-20251001}
+      triage: ${AI_FLOW_TRIAGE:anthropic:claude-haiku-5-5}
       # Free text → positions. Text-only and short, so a cheap model is tempting; it stays on the
       # default for now because a mis-split Ukrainian sentence answers the wrong question about
       # whether dictation is worth having at all. Opus would be paying drawing money to split a
       # sentence. PINNED rather than left blank: blank follows `model`/ANTHROPIC_MODEL, so raising
       # the default for the drawing flows would silently raise this one too.
-      dictation: ${AI_FLOW_DICTATION:anthropic:claude-sonnet-5}
+      dictation: ${AI_FLOW_DICTATION:anthropic:claude-sonnet-5-5}
   openai:
     # Inert unless `provider` above selects it. Key is env only, same rule as the Anthropic one.
     api-key: ${OPENAI_API_KEY:}
@@ -266,7 +266,7 @@ app:
     # "unavailable" (503) instead of running, since the call is synchronous. Opus 4.8
     # is chosen for table/number OCR accuracy; the uploaded file is never persisted.
     api-key: ${ANTHROPIC_API_KEY:}
-    model: ${ANTHROPIC_MODEL:claude-sonnet-5}
+    model: ${ANTHROPIC_MODEL:claude-sonnet-5-5}
     # A CAP, not a budget — billed only for what is written. 8000 truncated a dense sketch mid-JSON
     # (~90 s of output thrown away as a 503); keep HttpClients.forLlm's read timeout above the time
     # it takes to write this many.
