@@ -519,3 +519,23 @@ items box opens the upsell, leaves the box unticked, and never calls `onTransfer
 The PRO chip + upsell were **not opened in a browser** at 375 × 812. The chip is an inline
 `text-[10px]` span inside a `flex-wrap` label, so it wraps rather than pushing the row wide, but no
 visual check was run.
+
+## Follow-up — a receipt's money, as a master read it (2026-10-21)
+A master attached an Епіцентр slip to act № 7 and found it nowhere in «Мої гроші». The footer
+«14-11-25» had been read as a 2014 date, and every expense the act writes was dated by the paper —
+so the spend sat eleven years back. Decisions:
+- **An act receipt's spend is dated by the day it was ADDED to the act** (`ActAddendumCreator.addedOn`,
+  the posted `object_expenses.spent_at` and the out-of-pocket ACT_RECEIPT row alike). The paper's
+  date stays on the act, its PDF and the portal, where it is a requisite. Object receipts keep the
+  paper date: their row in «Мої гроші» is editable and the edit writes that date. Existing
+  expenses are not rewritten.
+- The recognition prompt no longer takes «the largest bottom figure»: «ГОТІВКА / ОТРИМАНО /
+  КАРТКА» and «РЕШТА / ЗДАЧА» are cash handed over and change, never the total (the slip read
+  СУМА 204.90, ГОТІВКА 210.00), and the «DD-MM-YY» footer is always day-first.
+- An act's period must run forwards (400 `WORK_ACT_PERIOD_ORDER`, both create and header update):
+  «з 20.10 по 19.10» had reached two signed acts.
+- `EstimateResponse.kind` is exposed so the editor drops «Створити акт» on an ADDENDUM — its lines
+  were accepted by the act that wrote it and `ActLineBinder` refuses to close them again.
+- PWA: a receipt dated more than 60 days before «Роботи з» is flagged in the act editor (not
+  blocked); «За договором» names what acts added to it; the advance hint says receipts are covered
+  by it like works; a month row in «Мої гроші» leaves out a side with nothing on it.

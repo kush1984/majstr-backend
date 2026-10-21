@@ -1597,7 +1597,8 @@ public class EstimateService {
                 // Null on everything but a markup duplicate, so an ordinary estimate pays only the
                 // two null checks inside. The act half is asked for only when there IS a margin —
                 // a draft copy has no signed acts against it, and an ordinary estimate no margin.
-                crewMargin(estimate, items)
+                crewMargin(estimate, items),
+                estimate.getKind()
         );
     }
 

@@ -335,7 +335,7 @@ public class CashFlowService {
         List<ProjectReceipt> tillReceipts = projectReceiptRepository
                 .findOutOfPocketByOwnerAndPeriod(ownerId, from, to, fromTs, toTs);
         List<WorkActReceipt> actReceipts = actReceiptRepository
-                .findOutOfPocketByOwnerAndPeriod(ownerId, from, to, fromTs, toTs);
+                .findOutOfPocketByOwnerAndPeriod(ownerId, fromTs, toTs);
 
         // `ObjectExpense` and `ProjectReceipt` carry a bare objectId and no association, so the
         // names come in one lookup over exactly the objects this period touched — not over every
@@ -441,7 +441,9 @@ public class CashFlowService {
                 r.getId(), CashEntryKind.ACT_RECEIPT, CashDirection.EXPENSE, r.billedAmount(),
                 CashCategory.MATERIALS,
                 "Чек до акта № " + r.getWorkAct().getNumber() + ": " + r.getLabel(),
-                r.getIssuedAt() != null ? r.getIssuedAt() : dayOf(r.getCreatedAt()), null,
+                // The day it was ADDED, as the expense the act posts with the flag ON — see
+                // ActAddendumCreator.addedOn. The paper's date stays on the document.
+                ActAddendumCreator.addedOn(r), null,
                 project.getId(), project.getName(), false, true, true);
     }
 

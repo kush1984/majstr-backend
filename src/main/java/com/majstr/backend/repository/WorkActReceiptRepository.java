@@ -7,7 +7,6 @@ import org.springframework.data.repository.query.Param;
 
 import java.math.BigDecimal;
 import java.time.Instant;
-import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -150,13 +149,10 @@ public interface WorkActReceiptRepository extends JpaRepository<WorkActReceipt, 
               AND NOT EXISTS (SELECT pr.id FROM ProjectReceipt pr
                               WHERE pr.billedOnActId = wa.id
                                 AND pr.fiscalFn = r.fiscalFn AND pr.fiscalId = r.fiscalId)
-              AND ((r.issuedAt IS NOT NULL AND r.issuedAt BETWEEN :from AND :to)
-                OR (r.issuedAt IS NULL AND r.createdAt >= :fromTs AND r.createdAt < :toTs))
+              AND r.createdAt >= :fromTs AND r.createdAt < :toTs
             ORDER BY r.createdAt DESC
             """)
     List<WorkActReceipt> findOutOfPocketByOwnerAndPeriod(@Param("ownerId") UUID ownerId,
-                                                         @Param("from") LocalDate from,
-                                                         @Param("to") LocalDate to,
                                                          @Param("fromTs") Instant fromTs,
                                                          @Param("toTs") Instant toTs);
 

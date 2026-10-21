@@ -524,8 +524,8 @@ class CashFlowServiceTest {
         when(cashRepository.findByOwnerAndPeriod(eq(OWNER), any(), any())).thenReturn(own);
         when(projectReceiptRepository.findOutOfPocketByOwnerAndPeriod(eq(OWNER), any(), any(), any(),
                 any())).thenReturn(till);
-        when(actReceiptRepository.findOutOfPocketByOwnerAndPeriod(eq(OWNER), any(), any(), any(),
-                any())).thenReturn(actReceipts);
+        when(actReceiptRepository.findOutOfPocketByOwnerAndPeriod(eq(OWNER), any(), any()))
+                .thenReturn(actReceipts);
         when(projectRepository.findAllById(any())).thenReturn(List.of(project()));
     }
 

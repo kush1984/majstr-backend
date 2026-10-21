@@ -110,5 +110,26 @@ class ActReceiptExtractorTest {
             verify(extractors).forFlow(AiFlow.ACT_RECEIPT);
             assertThat(read.total()).isEqualByComparingTo("482.75");
         }
+
+        /**
+         * A master's Епіцентр slip: СУМА 204.90, ГОТІВКА 210.00, РЕШТА 5.10. «The largest bottom
+         * figure» was the rule, so the cash handed over became the total and the client was billed
+         * for the change. The prompt now names tendered cash and change as never-the-total, and the
+         * footer «DD-MM-YY» as day-first.
+         */
+        @Test
+        void thePromptTellsTheModelCashHandedOverIsNotTheTotal_andTheFooterIsDayFirst() {
+            modelAnswers(AiFlow.ACT_RECEIPT, "{\"label\": \"\", \"issuedAt\": \"\", \"total\": 0}");
+
+            full.extractMeta("image/jpeg", PHOTO);
+
+            org.mockito.ArgumentCaptor<String> prompt = org.mockito.ArgumentCaptor.forClass(String.class);
+            verify(json).requestJson(anyList(), prompt.capture(), anyMap());
+            assertThat(prompt.getValue())
+                    .contains("«ГОТІВКА» / «ОТРИМАНО» / «КАРТКА» and «РЕШТА» / «ЗДАЧА»")
+                    .contains("the total is 204.90")
+                    .contains("«14-11-25» is")
+                    .doesNotContain("the largest bottom figure");
+        }
     }
 }

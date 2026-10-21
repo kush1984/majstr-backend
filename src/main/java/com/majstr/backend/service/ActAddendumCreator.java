@@ -146,10 +146,22 @@ class ActAddendumCreator {
                     .category(ExpenseCategory.MATERIALS)
                     .source(ExpenseSource.RECEIPT)
                     .note("Чек до акта № " + act.getNumber() + ": " + r.getLabel())
-                    .spentAt(r.getIssuedAt() == null ? LocalDate.now(LocalizationConfig.ZONE) : r.getIssuedAt())
+                    .spentAt(addedOn(r))
                     .build());
         }
         expenseRepository.saveAll(expenses);
+    }
+
+    /**
+     * The day the master ADDED the receipt to the act — not the date printed on the paper (master
+     * decision). Dated by the paper, an old slip or a misread year («14-11-25» read as 2014) sent
+     * the expense to a month nobody looks at, and «Мої гроші» seemed never to have received it.
+     * The paper's own date stays on the act, its PDF and the portal, where it is a requisite.
+     */
+    static LocalDate addedOn(WorkActReceipt r) {
+        return r.getCreatedAt() == null
+                ? LocalDate.now(LocalizationConfig.ZONE)
+                : LocalDate.ofInstant(r.getCreatedAt(), LocalizationConfig.ZONE);
     }
 
     private static String addendumName(WorkAct act, List<WorkActItem> additional, List<WorkActReceipt> receipts) {
