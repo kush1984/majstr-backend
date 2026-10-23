@@ -88,7 +88,7 @@ class ShoppingListIntegrationTest extends IntegrationTestBase {
     }
 
     private CalculatedMaterialRow row(String name, String qty) {
-        return new CalculatedMaterialRow(null, name, Unit.PIECE, new BigDecimal(qty), null);
+        return new CalculatedMaterialRow(null, name, Unit.PIECE, new BigDecimal(qty), null, null, null);
     }
 
     private ShoppingListItemResponse only(ShoppingListResponse list, String name) {
@@ -449,7 +449,7 @@ class ShoppingListIntegrationTest extends IntegrationTestBase {
                 """, itemId, estimateA);
 
         shoppingListService.applyCalculated(projectId, ownerId, estimateA, List.of(
-                new CalculatedMaterialRow(null, PUTTY, Unit.KG, new BigDecimal("25"), itemId)));
+                new CalculatedMaterialRow(null, PUTTY, Unit.KG, new BigDecimal("25"), itemId, null, null)));
 
         jdbc.update("DELETE FROM estimate_items WHERE id = ?", itemId);
 
@@ -729,5 +729,94 @@ class ShoppingListIntegrationTest extends IntegrationTestBase {
         assertThat(jdbc.queryForObject(
                 "SELECT COUNT(*) FROM shopping_list_item WHERE id = ?", Integer.class, itemId))
                 .isZero();
+    }
+
+    // --- V174: the package rides the row ----------------------------------------------------
+
+    private CalculatedMaterialRow packaged(String name, String qty, String size, String packageName) {
+        return new CalculatedMaterialRow(null, name, Unit.KG, new BigDecimal(qty), null,
+                new BigDecimal(size), packageName);
+    }
+
+    @Test
+    void aCalculatedRowFreezesThePackageItWasRoundedTo() {
+        ShoppingListResponse list = shoppingListService.applyCalculated(projectId, ownerId, estimateA,
+                List.of(packaged("Клей для плитки", "150", "25", "мішок")));
+
+        ShoppingListItemResponse row = only(list, "Клей для плитки");
+        assertThat(row.packageSize()).isEqualByComparingTo("25");
+        assertThat(row.packageName()).isEqualTo("мішок");
+        // Read back from the table, not just echoed by the response.
+        assertThat(jdbc.queryForObject(
+                "SELECT package_name FROM shopping_list_item WHERE id = ?", String.class, row.id()))
+                .isEqualTo("мішок");
+    }
+
+    @Test
+    void aHandWrittenRowHasNoPackage() {
+        ShoppingListItemResponse row = shoppingListService.addManual(projectId, ownerId,
+                new ShoppingListItemRequest(null, "Саморізи 25 мм", Unit.PIECE, new BigDecimal("1000"), null),
+                null);
+
+        assertThat(row.packageSize()).isNull();
+        assertThat(row.packageName()).isNull();
+    }
+
+    @Test
+    void aRecalculationKeepsTheMastersNumberButTakesTheNewPackage() {
+        ShoppingListResponse first = shoppingListService.applyCalculated(projectId, ownerId, estimateA,
+                List.of(packaged("Лист ГКЛ", "30", "3", "лист")));
+        UUID id = only(first, "Лист ГКЛ").id();
+        shoppingListService.update(projectId, ownerId, id,
+                new ShoppingListItemUpdateRequest(new BigDecimal("33"), null, null, null));
+
+        // He switched to 1200×3000 sheets: the package is not his number, so it follows the run.
+        ShoppingListResponse after = shoppingListService.applyCalculated(projectId, ownerId, estimateA,
+                List.of(packaged("Лист ГКЛ", "36", "3.6", "лист")));
+
+        ShoppingListItemResponse row = only(after, "Лист ГКЛ");
+        assertThat(row.quantity()).isEqualByComparingTo("33");
+        assertThat(row.suggestedQuantity()).isEqualByComparingTo("36");
+        assertThat(row.packageSize()).isEqualByComparingTo("3.6");
+    }
+
+    @Test
+    void theSchemaRefusesASizeWithoutAName() {
+        shoppingListService.applyCalculated(projectId, ownerId, estimateA, List.of(row(PUTTY, "12")));
+
+        assertThatThrownBy(() -> jdbc.update(
+                "UPDATE shopping_list_item SET package_size = 25 WHERE name = ?", PUTTY))
+                .isInstanceOf(DataIntegrityViolationException.class);
+    }
+
+    /**
+     * V174's backfill, re-run on rows written the way they were before it: every dictionary row
+     * takes its package, bought ones included (a caption, no quantity moves), except the sheet,
+     * whose package is the master's own size and is left to the next recalculation.
+     */
+    @Test
+    void theBackfillCaptionsDictionaryRowsButLeavesTheSheetToTheNextRun() throws Exception {
+        UUID screed = jdbc.queryForObject("SELECT id FROM material WHERE code = 'SCREED_CEMENT'", UUID.class);
+        UUID sheet = jdbc.queryForObject("SELECT id FROM material WHERE code = 'GKL_SHEET'", UUID.class);
+        UUID film = jdbc.queryForObject("SELECT id FROM material WHERE code = 'PE_FILM'", UUID.class);
+        ShoppingListResponse list = shoppingListService.applyCalculated(projectId, ownerId, estimateA, List.of(
+                new CalculatedMaterialRow(screed, "Стяжка цементна", Unit.KG, new BigDecimal("1000"), null, null, null),
+                new CalculatedMaterialRow(sheet, "Лист ГКЛ", Unit.M2, new BigDecimal("30"), null, null, null),
+                new CalculatedMaterialRow(film, "Плівка", Unit.M2, new BigDecimal("23"), null, null, null)));
+        shoppingListService.setBought(projectId, ownerId, only(list, "Стяжка цементна").id(), true);
+
+        String migration = new String(getClass().getResourceAsStream(
+                "/db/migration/V174__shopping_list_item_package.sql").readAllBytes(),
+                java.nio.charset.StandardCharsets.UTF_8);
+        jdbc.update(migration.substring(migration.indexOf("UPDATE shopping_list_item")));
+
+        ShoppingListResponse after = shoppingListService.get(projectId, ownerId);
+        ShoppingListItemResponse bag = only(after, "Стяжка цементна");
+        assertThat(bag.bought()).isTrue();
+        assertThat(bag.quantity()).isEqualByComparingTo("1000");
+        assertThat(bag.packageSize()).isEqualByComparingTo("25");
+        assertThat(bag.packageName()).isEqualTo("мішок");
+        assertThat(only(after, "Лист ГКЛ").packageSize()).isNull();
+        assertThat(only(after, "Плівка").packageSize()).isNull();
     }
 }

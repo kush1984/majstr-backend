@@ -90,7 +90,7 @@ class ShoppingListControllerTest {
     private ShoppingListItemResponse item() {
         return new ShoppingListItemResponse(itemId, null, "Шпаклівка фінішна", Unit.KG,
                 new BigDecimal("25.000"), false, null, false, null, false,
-                ShoppingListItemSource.MANUAL, null, null, 1);
+                ShoppingListItemSource.MANUAL, null, null, 1, null, null);
     }
 
     @Test

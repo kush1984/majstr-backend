@@ -82,6 +82,45 @@ class ShoppingListPdfServiceTest {
         assertThat(text).doesNotContain("Ціни не вказано");
     }
 
+    @Test
+    void render_printsThePackagesBesideTheQuantity() throws Exception {
+        String text = textOf(pdfService.render(model(list(
+                packaged("Клей для плитки", Unit.KG, "150", false, null, "25", "мішок"),
+                packaged("Штукатурка гіпсова", Unit.KG, "300", true, null, "30", "мішок"),
+                row("Плівка поліетиленова", Unit.M2, "23", false, null)), false)));
+
+        assertThat(text).contains("6 × мішок по 25 кг");
+        // A bought row is still a row the client reads — same caption in the settled section.
+        assertThat(text).contains("10 × мішок по 30 кг");
+        // Nothing sold by the package: no caption at all, not «0 × …».
+        assertThat(text).doesNotContain("× null").doesNotContain(" 0 × ").doesNotContain("\n0 × ");
+        assertThat(text).containsOnlyOnce("6 × ").containsOnlyOnce("10 × ");
+    }
+
+    @Test
+    void render_countsThePackagesFromTheQuantityTheMasterCorrected() throws Exception {
+        // 150 corrected to 140 by hand: still 6 bags, never a stored 6 that would go stale.
+        String text = textOf(pdfService.render(model(list(
+                packaged("Клей для плитки", Unit.KG, "126", false, null, "25", "мішок")), false)));
+
+        assertThat(text).contains("6 × мішок по 25 кг");
+    }
+
+    @Test
+    void packageCount_roundsUpAndIsExactOnAWholeDivision() {
+        // The PWA's float arithmetic gives 2,1 / 0,3 = 7,000…01 and needs its 1e-9; BigDecimal is exact.
+        assertThat(ShoppingListPdfService.packageCount(new BigDecimal("2.1"), new BigDecimal("0.3")))
+                .isEqualByComparingTo("7");
+        assertThat(ShoppingListPdfService.packageCount(new BigDecimal("150"), new BigDecimal("25")))
+                .isEqualByComparingTo("6");
+        assertThat(ShoppingListPdfService.packageCount(new BigDecimal("150.001"), new BigDecimal("25")))
+                .isEqualByComparingTo("7");
+        assertThat(ShoppingListPdfService.packageCount(new BigDecimal("0.3"), new BigDecimal("25")))
+                .isEqualByComparingTo("1");
+        assertThat(ShoppingListPdfService.packageCount(BigDecimal.ZERO, new BigDecimal("25"))).isNull();
+        assertThat(ShoppingListPdfService.packageCount(new BigDecimal("5"), BigDecimal.ZERO)).isNull();
+    }
+
     // ---- fixtures ---------------------------------------------------------
 
     private ShoppingListPdfService.PdfModel model(ShoppingListResponse list, boolean unsignedSource) {
@@ -109,9 +148,15 @@ class ShoppingListPdfServiceTest {
 
     private ShoppingListItemResponse row(String name, Unit unit, String quantity,
                                          boolean bought, String note) {
+        return packaged(name, unit, quantity, bought, note, null, null);
+    }
+
+    private ShoppingListItemResponse packaged(String name, Unit unit, String quantity, boolean bought,
+                                              String note, String packageSize, String packageName) {
         return new ShoppingListItemResponse(UUID.randomUUID(), null, name, unit,
                 new BigDecimal(quantity), bought, null, false, null, false,
-                ShoppingListItemSource.CALCULATOR, null, note, 0);
+                ShoppingListItemSource.CALCULATOR, null, note, 0,
+                packageSize == null ? null : new BigDecimal(packageSize), packageName);
     }
 
     private static String textOf(byte[] pdf) throws Exception {

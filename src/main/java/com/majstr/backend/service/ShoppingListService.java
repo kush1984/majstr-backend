@@ -260,8 +260,10 @@ public class ShoppingListService {
             if (open != null && open.isEdited()) {
                 // His number, not ours — but park ours beside it. Dropping it silently made the
                 // one case where our arithmetic had improved look exactly like the case where it
-                // had not, and only he can tell those apart.
+                // had not, and only he can tell those apart. The package is not his number, so it
+                // follows the recalculation.
                 open.setSuggestedQuantity(differs(remaining, open.getQuantity()) ? remaining : null);
+                applyPackage(open, entry.getValue());
                 continue;
             }
             if (remaining.signum() <= 0) {
@@ -279,6 +281,7 @@ public class ShoppingListService {
             if (open != null) {
                 open.setQuantity(remaining);
                 open.setEstimateItemId(entry.getValue().estimateItemId());
+                applyPackage(open, entry.getValue());
             } else {
                 CalculatedMaterialRow row = entry.getValue();
                 itemRepository.save(ShoppingListItem.builder()
@@ -290,6 +293,8 @@ public class ShoppingListService {
                         .source(ShoppingListItemSource.CALCULATOR)
                         .sourceEstimateId(estimateId)
                         .estimateItemId(row.estimateItemId())
+                        .packageSize(row.packageSize())
+                        .packageName(row.packageName())
                         .sortOrder(nextSortOrder++)
                         .build());
             }
@@ -329,9 +334,16 @@ public class ShoppingListService {
         for (CalculatedMaterialRow row : rows) {
             String key = ShoppingListItem.dedupKey(row.materialId(), row.name(), row.unit());
             merged.merge(key, row, (a, b) -> new CalculatedMaterialRow(
-                    a.materialId(), a.name(), a.unit(), a.quantity().add(b.quantity()), a.estimateItemId()));
+                    a.materialId(), a.name(), a.unit(), a.quantity().add(b.quantity()), a.estimateItemId(),
+                    a.packageSize(), a.packageName()));
         }
         return merged;
+    }
+
+    /** The frozen package follows every recalculation that rewrites the row (V174). */
+    private void applyPackage(ShoppingListItem item, CalculatedMaterialRow row) {
+        item.setPackageSize(row.packageSize());
+        item.setPackageName(row.packageName());
     }
 
     /** At most one, guaranteed by {@code ux_shopping_list_item_open}. */

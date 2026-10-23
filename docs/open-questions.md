@@ -3986,6 +3986,26 @@ one-line summary — keep the item in the file as a record.
   back and return get a coat is the fitter's habit, and the profile is usually anodised aluminium,
   which wants an adhesion primer we do not carry.
 
+### Cement-lime plaster: 1,4 or 1,6 kg/m² per mm?
+- **Status:** OPEN
+- **Since:** 2026-10-23, the plaster/screed calculators' reconnaissance
+  ([iteration-calc-packages.md](iteration-calc-packages.md))
+- **Context:** one material, `PLASTER_CEMENT_LIME`, carries two coefficients: 1,4 under PAINTER's
+  «Штукатурка стін цементно-вапняною сумішшю (санвузли, укоси, фасади)» and the facade position, 1,6
+  under TILING's «Штукатурка маякова цементна» and «Штукатурка, стяжка басейну». The public plaster
+  calculator uses the PAINTER position, so it answers 1,4.
+- **Notes / options:** one figure off the datasheets, or a recorded reason why a beacon plaster under
+  tile consumes more. Not touched in the calculators iteration (no new norms).
+
+### «Наливна підлога — вирівнювальний шар 10–50 мм» suggests 5 mm
+- **Status:** OPEN
+- **Since:** 2026-10-23, same reconnaissance
+- **Context:** V161 renamed «Наливна підлога самовирівнююча» to the «10–50 мм» name, and the norm
+  kept its `default_param` of 5 — below the range the position's own name states. The master is
+  pre-filled a thickness his position rules out.
+- **Notes / options:** a suggestion of 10 (or the range's typical value) in a correction migration,
+  re-filing the forks with it. The public screed calculator does not use this position.
+
 ### Material norms deliberately refused after a second look (epoxy grout, decorative plasters)
 
 - **Status:** OPEN — refused, with the evidence recorded so nobody repeats the search.

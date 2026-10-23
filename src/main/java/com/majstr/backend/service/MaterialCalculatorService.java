@@ -514,9 +514,21 @@ public class MaterialCalculatorService {
     @Transactional
     public ShoppingListResponse toShoppingList(UUID estimateId, UUID ownerId, MaterialApplyRequest req) {
         Estimate estimate = estimateService.loadOwned(estimateId, ownerId);
+        Map<Material, BigDecimal> resolved = resolve(req);
+        // The package the result screen rounded to, by the same rule — so the sheet is the master's
+        // own size. Read only when a sheet is on its way, as the calculation itself does.
+        BigDecimal sheetArea = resolved.keySet().stream().anyMatch(m -> GKL_SHEET_CODE.equals(m.getCode()))
+                ? sheetArea(pref(ownerId, MaterialPrefKey.GKL_SHEET))
+                : null;
         List<CalculatedMaterialRow> rows = new ArrayList<>();
-        resolve(req).forEach((material, quantity) -> rows.add(new CalculatedMaterialRow(
-                material.getId(), material.displayName(), material.getUnit(), quantity, null)));
+        resolved.forEach((material, quantity) -> {
+            BigDecimal size = packageSize(material, sheetArea);
+            boolean packaged = size != null && size.signum() > 0 && material.getPackageName() != null;
+            rows.add(new CalculatedMaterialRow(
+                    material.getId(), material.displayName(), material.getUnit(), quantity, null,
+                    packaged ? size.setScale(3, RoundingMode.HALF_UP) : null,
+                    packaged ? material.getPackageName() : null));
+        });
         return shoppingListService.applyCalculated(
                 estimate.getProject().getId(), ownerId, estimateId, rows);
     }

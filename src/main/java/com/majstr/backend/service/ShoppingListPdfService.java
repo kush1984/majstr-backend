@@ -20,6 +20,7 @@ import org.springframework.stereotype.Service;
 import java.awt.Color;
 import java.io.ByteArrayOutputStream;
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
@@ -117,7 +118,7 @@ public class ShoppingListPdfService {
 
         PdfPTable table = new PdfPTable(5);
         table.setWidthPercentage(100);
-        table.setWidths(new int[]{4, 40, 10, 12, 6});
+        table.setWidths(new int[]{4, 36, 8, 20, 5});
         header(table, "№");
         header(table, "Найменування");
         header(table, "Од.");
@@ -129,7 +130,9 @@ public class ShoppingListPdfService {
             cell(table, String.valueOf(n++), Element.ALIGN_CENTER);
             cell(table, itemName(item), Element.ALIGN_LEFT);
             cell(table, UnitLabel.ua(item.unit()), Element.ALIGN_CENTER);
-            cell(table, quantity(item.quantity()), Element.ALIGN_RIGHT);
+            String packages = packagesText(item);
+            cell(table, packages == null ? quantity(item.quantity())
+                    : quantity(item.quantity()) + "\n" + packages, Element.ALIGN_RIGHT);
             cell(table, item.bought() ? "✓" : "", Element.ALIGN_CENTER);
         }
         doc.add(table);
@@ -163,6 +166,30 @@ public class ShoppingListPdfService {
         return notBlank(item.note())
                 ? item.name() + " — " + item.note().trim()
                 : item.name();
+    }
+
+    /**
+     * «6 × мішок по 25 кг» — the package frozen on the row (V174), counted from the row's CURRENT
+     * quantity, because the master may have corrected it. Null when the row is not sold by the package.
+     */
+    static String packagesText(ShoppingListItemResponse item) {
+        if (item.packageSize() == null || item.packageName() == null || item.quantity() == null) {
+            return null;
+        }
+        BigDecimal count = packageCount(item.quantity(), item.packageSize());
+        if (count == null) {
+            return null;
+        }
+        return count.toPlainString() + " × " + item.packageName() + " по "
+                + item.packageSize().stripTrailingZeros().toPlainString() + " " + UnitLabel.ua(item.unit());
+    }
+
+    /** Whole packages, always UP — the PWA's {@code packageCount} is the same rule. Null for nothing to count. */
+    static BigDecimal packageCount(BigDecimal quantity, BigDecimal packageSize) {
+        if (quantity == null || packageSize == null || quantity.signum() <= 0 || packageSize.signum() <= 0) {
+            return null;
+        }
+        return quantity.divide(packageSize, 0, RoundingMode.CEILING);
     }
 
     /** Quantities are stored scaled; a whole number prints as one, «12» not «12.000». */

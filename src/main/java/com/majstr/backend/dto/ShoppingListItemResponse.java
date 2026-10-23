@@ -29,7 +29,10 @@ public record ShoppingListItemResponse(
         ShoppingListItemSource source,
         UUID sourceEstimateId,
         String note,
-        int sortOrder
+        int sortOrder,
+        // The package frozen on the row (V174); the count is derived from `quantity` by the reader.
+        BigDecimal packageSize,
+        String packageName
 ) {
     public static ShoppingListItemResponse from(ShoppingListItem item, boolean topUp) {
         return new ShoppingListItemResponse(
@@ -46,6 +49,8 @@ public record ShoppingListItemResponse(
                 item.getSource(),
                 item.getSourceEstimateId(),
                 item.getNote(),
-                item.getSortOrder());
+                item.getSortOrder(),
+                item.getPackageSize(),
+                item.getPackageName());
     }
 }

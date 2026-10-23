@@ -1220,6 +1220,65 @@ class MaterialCalculatorServiceTest {
                 .satisfies(r -> assertThat(r.quantity()).isEqualByComparingTo("24"));
     }
 
+    /**
+     * The list keeps the package the result screen rounded to (V174) — frozen on the row, so a
+     * dictionary change later cannot relabel what the master is holding in the shop.
+     */
+    @Test
+    void theShoppingListRowCarriesTheDictionaryPackage() {
+        Material adhesive = material("TILE_ADHESIVE_C1", "Клей для плитки", Unit.KG, "25", "мішок");
+        Material film = material("PE_FILM", "Плівка поліетиленова", Unit.M2, null, null);
+        Estimate estimate = new Estimate();
+        Project project = new Project();
+        project.setId(UUID.randomUUID());
+        estimate.setProject(project);
+        when(estimateService.loadOwned(ESTIMATE, OWNER)).thenReturn(estimate);
+        when(materialRepository.findById(adhesive.getId())).thenReturn(Optional.of(adhesive));
+        when(materialRepository.findById(film.getId())).thenReturn(Optional.of(film));
+
+        service.toShoppingList(ESTIMATE, OWNER, new MaterialApplyRequest(List.of(
+                new MaterialLineRequest(adhesive.getId(), new BigDecimal("150")),
+                new MaterialLineRequest(film.getId(), new BigDecimal("23")))));
+
+        ArgumentCaptor<List<CalculatedMaterialRow>> rows = ArgumentCaptor.captor();
+        org.mockito.Mockito.verify(shoppingListService)
+                .applyCalculated(any(), any(), any(), rows.capture());
+        assertThat(rows.getValue()).hasSize(2);
+        assertThat(rows.getValue().get(0).packageSize()).isEqualByComparingTo("25");
+        assertThat(rows.getValue().get(0).packageName()).isEqualTo("мішок");
+        // Not sold by the package: no caption, rather than a made-up one.
+        assertThat(rows.getValue().get(1).packageSize()).isNull();
+        assertThat(rows.getValue().get(1).packageName()).isNull();
+        // Nothing on this list is a sheet, so the sheet habit is never asked.
+        org.mockito.Mockito.verify(prefRepository, org.mockito.Mockito.never())
+                .findByUserIdAndPrefKey(OWNER, MaterialPrefKey.GKL_SHEET);
+    }
+
+    /** The sheet is the master's own size on the list too, never the dictionary's 3,0 m². */
+    @Test
+    void theShoppingListSheetIsTheMastersOwnSheetSize() {
+        Material sheet = material("GKL_SHEET", "Лист ГКЛ", Unit.M2, "3.0", "лист");
+        Estimate estimate = new Estimate();
+        Project project = new Project();
+        project.setId(UUID.randomUUID());
+        estimate.setProject(project);
+        when(estimateService.loadOwned(ESTIMATE, OWNER)).thenReturn(estimate);
+        when(materialRepository.findById(sheet.getId())).thenReturn(Optional.of(sheet));
+        when(prefRepository.findByUserIdAndPrefKey(OWNER, MaterialPrefKey.GKL_SHEET))
+                .thenReturn(Optional.of(pref(MaterialPrefKey.GKL_SHEET, "1200x3000")));
+
+        service.toShoppingList(ESTIMATE, OWNER, new MaterialApplyRequest(
+                List.of(new MaterialLineRequest(sheet.getId(), new BigDecimal("36")))));
+
+        ArgumentCaptor<List<CalculatedMaterialRow>> rows = ArgumentCaptor.captor();
+        org.mockito.Mockito.verify(shoppingListService)
+                .applyCalculated(any(), any(), any(), rows.capture());
+        assertThat(rows.getValue()).singleElement().satisfies(r -> {
+            assertThat(r.packageSize()).isEqualByComparingTo("3.6");
+            assertThat(r.packageName()).isEqualTo("лист");
+        });
+    }
+
     /** Zeroing a row out on the screen is a removal, not an order for nothing. */
     @Test
     void aRowTheMasterZeroedOutIsNotSent() {

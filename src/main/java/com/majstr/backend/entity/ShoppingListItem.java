@@ -87,6 +87,17 @@ public class ShoppingListItem {
     @Column(name = "suggested_quantity", precision = 15, scale = 3)
     private BigDecimal suggestedQuantity;
 
+    /**
+     * One package in {@link #unit} (25 for «мішок по 25 кг»), FROZEN like the name (V174): the
+     * package count is derived from the current quantity, never stored. Null on a hand-written row
+     * and for anything not sold by the package; null exactly when {@link #packageName} is.
+     */
+    @Column(name = "package_size", precision = 15, scale = 3)
+    private BigDecimal packageSize;
+
+    @Column(name = "package_name", length = 40)
+    private String packageName;
+
     @Enumerated(EnumType.STRING)
     @Column(name = "source", nullable = false, length = 20)
     private ShoppingListItemSource source;
