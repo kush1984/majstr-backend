@@ -61,6 +61,7 @@ public class PublicMaterialCalculatorService {
     static final String DRYWALL_WALL = "Монтаж гіпсокартону на стіни";
     static final String DRYWALL_PARTITION_1 = "Монтаж конструкцій (перегородки 2 сторони) із гіпсокартону в 1 шар";
     static final String DRYWALL_PARTITION_2 = "Монтаж конструкцій (перегородки 2 сторони) із гіпсокартону в 2 шари";
+    private static final BigDecimal PARTITION_FACES = BigDecimal.valueOf(2);
 
     /** The tile calculator's main material — whichever adhesive class the format takes. */
     static final String TILE_MAIN_MATERIAL = "TILE_ADHESIVE_";
@@ -142,7 +143,10 @@ public class PublicMaterialCalculatorService {
             case WALL -> DRYWALL_WALL;
             case PARTITION -> layers == 2 ? DRYWALL_PARTITION_2 : DRYWALL_PARTITION_1;
         };
-        return List.of(line(position, Trade.DRYWALL, in.area(), false));
+        // A «перегородки 2 сторони» position is priced and normed per m² of SHEATHING, both faces
+        // already in it (V127 decision 1); the visitor types the partition's own area, one face.
+        BigDecimal quantity = in.work() == DrywallWork.PARTITION ? in.area().multiply(PARTITION_FACES) : in.area();
+        return List.of(line(position, Trade.DRYWALL, quantity, false));
     }
 
     private static CalcLine line(String name, Trade trade, BigDecimal quantity, boolean diagonal) {

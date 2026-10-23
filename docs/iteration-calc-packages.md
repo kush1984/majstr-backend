@@ -1,7 +1,8 @@
 # Packages on the shopping list, and the plaster and screed calculators
 
-**Status:** stage 1 done 2026-10-23 (backend V174 + PWA 1.58.0); stages 2-3 next.
-**Source:** `C:\Work\prompts\calc-packages-and-new-calculators-prompt.md`. **Migration:** V174.
+**Status:** stage 1 and the norms round done 2026-10-23 (backend V174 + V175, PWA 1.58.0, not
+pushed); stages 2-3 next. **Source:** `C:\Work\prompts\calc-packages-and-new-calculators-prompt.md`
+plus the owner's norms review the same day. **Migrations:** V174, V175.
 
 ## Stage 1 — the list keeps the package
 
@@ -43,3 +44,39 @@ package, the CHECK, the backfill re-run on real rows), `MaterialCalculatorServic
 package, the master's sheet), `ShoppingListPdfServiceTest` (caption, corrected quantity,
 2,1 / 0,3 = 7); PWA `packages.test.ts`, `ShoppingListPage.test.tsx` (with/without, corrected,
 top-up, bought, offer, old cache).
+
+## Norms round — before the pages (owner's review against the technical sheets)
+
+- **P0, the public partition.** The «перегородки 2 сторони» positions are normed per m² of
+  SHEATHING, both faces in it (V127 decision 1), while the page asks for the partition's own area.
+  `PublicMaterialCalculatorService` now sends `area × 2` for PARTITION; norms and the app are
+  untouched. The page's area field reads «Площа перегородки (з одного боку), м²» with «Довжина ×
+  висота.» when the partition is chosen (`data-for` takes a list of jobs). `seo-calc-cases` needed
+  no edit: «Перегородка 12 м²» was the right label all along, the figures behind it were not.
+- **V175, library rows only:**
+  - TILE_ADHESIVE_C2 8,5 → 7,0 for 600×600, 800×800, 1000×1000 (both keys); 600×1200 and up keep 8,5;
+  - PLASTER_GYPSUM 1,0 → 0,9 in every position;
+  - recorded as checked, not changed: PLASTER_GYPSUM_MACHINE 0,95 and cement-lime 1,4 / 1,6 (the
+    open question is resolved).
+
+  Sources are in the migration header; `AdhesiveAndPlasterNormsOnLiveDataIntegrationTest` pins all of it.
+- **Snapshot rows that move** once the backend is deployed and `seo:snapshot` re-run (nothing else
+  on the two live pages changes — the tile lead example is 300×600, C1):
+
+  | Case | Before | After |
+  |---|---|---|
+  | Перегородка 12 м², один шар | ГКЛ 15 м² (5 листів), CW 14, UW 5, стрічка 7 | ГКЛ 27 м² (9), CW 27, UW 10, стрічка 14 |
+  | Перегородка 12 м², два шари | ГКЛ 27 м² (9), CW 14, UW 5, стрічка 7 | ГКЛ 54 м² (18), CW 27, UW 10, стрічка 14 |
+  | 20 м² керамограніту 600×600 | клей C2 200 кг (8 мішків) | 175 кг (7 мішків) |
+
+  Screws and dowels stay one package each (1000 / 100 pieces cover the doubled count).
+
+### Carried into stages 2-3
+
+- PLASTER `CEMENT_LIME` → «Штукатурка маякова цементна» (1,6, hand-applied), not the PAINTER 1,4 one.
+- Cement screed thickness bound **10-100 mm** (was 30-100); empty still suggests the position's 40,
+  shown on the page as the figure for a screed over insulation.
+- «Як ми рахуємо», screed: minimum cement screed 10 mm on a rigid base, 40 mm over insulation, 25 mm
+  above underfloor-heating pipes; movement joints in rooms over 20 m².
+- «Як ми рахуємо», plaster: gypsum on walls 8-50 mm in one coat, on a ceiling up to 15 mm; thicker
+  goes in several coats.

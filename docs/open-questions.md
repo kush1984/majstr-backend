@@ -3987,7 +3987,10 @@ one-line summary — keep the item in the file as a record.
   which wants an adhesion primer we do not carry.
 
 ### Cement-lime plaster: 1,4 or 1,6 kg/m² per mm?
-- **Status:** OPEN
+- **Status:** RESOLVED (2026-10-23) — not an error: Kreisel's sheets give 1,1-1,4 kg/m² per mm for the
+  machine-applied cement-lime plaster and 1,5-1,7 for the hand-applied one, so both figures stand
+  (recorded in V175's header). The public plaster calculator applies by hand, so its CEMENT_LIME
+  variant takes the 1,6 position («Штукатурка маякова цементна»).
 - **Since:** 2026-10-23, the plaster/screed calculators' reconnaissance
   ([iteration-calc-packages.md](iteration-calc-packages.md))
 - **Context:** one material, `PLASTER_CEMENT_LIME`, carries two coefficients: 1,4 under PAINTER's

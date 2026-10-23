@@ -101,6 +101,29 @@ class PublicMaterialCalculatorIntegrationTest extends IntegrationTestBase {
         assertSameAsEstimate(drywall(DrywallWork.PARTITION, "12", null, 2), "DRYWALL", null);
     }
 
+    /**
+     * The visitor types the partition's own area — one face — while the position is normed per m² of
+     * sheathing, both faces in it (V127 decision 1). Taken at face value, 12 m² bought 15 m² of board
+     * with the allowance where the wall needs about 26.
+     */
+    @Test
+    void aPartitionIsSheathedOnBothFaces() {
+        PublicMaterialCalcResponse res = publicService.calculate(drywall(DrywallWork.PARTITION, "12", null, 1));
+
+        CalculatedMaterialLine board = res.materials().stream()
+                .filter(m -> m.name().startsWith("Лист ГКЛ")).findFirst().orElseThrow();
+        CalculatedMaterialLine studs = res.materials().stream()
+                .filter(m -> m.name().contains("CW")).findFirst().orElseThrow();
+        assertThat(board.baseQuantity()).isGreaterThanOrEqualTo(new BigDecimal("24"));
+        assertThat(studs.baseQuantity()).isEqualByComparingTo("24");
+        assertThat(board.sources().getFirst().quantity()).isEqualByComparingTo("24");
+
+        // Two layers: twice the board again, the frame unchanged.
+        PublicMaterialCalcResponse two = publicService.calculate(drywall(DrywallWork.PARTITION, "12", null, 2));
+        assertThat(two.materials().stream().filter(m -> m.name().startsWith("Лист ГКЛ")).findFirst()
+                .orElseThrow().baseQuantity()).isEqualByComparingTo("48");
+    }
+
     /** Every white-listed position still names a library norm that buys something — a rename would silently answer nothing. */
     @Test
     void everyWhiteListedPositionStillBuysSomething() {
