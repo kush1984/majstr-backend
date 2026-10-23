@@ -318,6 +318,19 @@ public class MaterialCalculatorService {
                 .findFirst();
     }
 
+    /**
+     * The figure the library suggests for one of a position's questions ({@code default_param}) —
+     * what a public calculator applies when the visitor leaves the field empty, exactly as the
+     * estimate screen pre-fills it. Empty when no library norm of that basis answers the position.
+     */
+    @Transactional(readOnly = true)
+    public Optional<BigDecimal> librarySuggestion(CalcLine line, NormBasis basis) {
+        return normsFor(line, normsByKey(List.of(line), null)).stream()
+                .filter(n -> n.getBasis() == basis && n.getDefaultParam() != null)
+                .map(MaterialNorm::getDefaultParam)
+                .findFirst();
+    }
+
     /** What {@link #compute} found: the buying lines, what it still has to ask, and what it read. */
     public record Computed(List<CalculatedMaterialLine> materials, List<MissingParameter> parameters,
                            Set<Trade> trades, boolean otherWorks, boolean havePerimeter) {}

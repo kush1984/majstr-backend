@@ -6,6 +6,9 @@ import com.majstr.backend.dto.PerPositionAnswers;
 import com.majstr.backend.dto.PublicMaterialCalcRequest;
 import com.majstr.backend.dto.PublicMaterialCalcRequest.DrywallWork;
 import com.majstr.backend.dto.PublicMaterialCalcRequest.Inputs;
+import com.majstr.backend.dto.PublicMaterialCalcRequest.PlasterKind;
+import com.majstr.backend.dto.PublicMaterialCalcRequest.PlasterMethod;
+import com.majstr.backend.dto.PublicMaterialCalcRequest.ScreedKind;
 import com.majstr.backend.dto.PublicMaterialCalcRequest.PublicCalculator;
 import com.majstr.backend.dto.PublicMaterialCalcRequest.TileFormat;
 import com.majstr.backend.dto.PublicMaterialCalcRequest.TileLayout;
@@ -263,6 +266,187 @@ class PublicMaterialCalculatorIntegrationTest extends IntegrationTestBase {
         assertThat(MaterialCalculatorService.DIAGONAL_LAYOUT).isEqualByComparingTo(laminate);
     }
 
+    // ---- plaster and screed --------------------------------------------------------------------
+
+    /**
+     * Every variant the two pages can ask names a position the library still SHIPS, and that
+     * position buys its own material — a rename would otherwise leave a page answering nothing.
+     */
+    @Test
+    void everyPlasterAndScreedVariantStandsOnALivePositionThatBuysItsMix() {
+        record Case(PublicMaterialCalcRequest req, String position, String material) {}
+        List<Case> cases = List.of(
+                new Case(plaster(PlasterKind.GYPSUM, null, "10", "15"), "Штукатурка стін ручна до 2см", "Штукатурка гіпсова"),
+                new Case(plaster(PlasterKind.GYPSUM, null, "10", "20"), "Штукатурка стін ручна до 2см", "Штукатурка гіпсова"),
+                new Case(plaster(PlasterKind.GYPSUM, null, "10", "30"), "Штукатурка стін ручна від 2см", "Штукатурка гіпсова"),
+                new Case(plaster(PlasterKind.GYPSUM, null, "10", "50"), "Штукатурка стін ручна від 2см", "Штукатурка гіпсова"),
+                new Case(plaster(PlasterKind.GYPSUM, null, "10", "55"),
+                        "Штукатурка стін ручна понад 5 см (у кілька шарів, по сітці)", "Штукатурка гіпсова"),
+                new Case(plaster(PlasterKind.GYPSUM, PlasterMethod.MACHINE, "10", "15"),
+                        "Штукатурка стін машинкою до 2см", "Штукатурка гіпсова машинна"),
+                new Case(plaster(PlasterKind.GYPSUM, PlasterMethod.MACHINE, "10", "30"),
+                        "Штукатурка стін машинкою понад 2см", "Штукатурка гіпсова машинна"),
+                new Case(plaster(PlasterKind.CEMENT_LIME, PlasterMethod.MANUAL, "10", "20"),
+                        "Штукатурка маякова цементна", "Штукатурка цементно-вапняна"),
+                new Case(screed(ScreedKind.CEMENT, "15", "50", null, null, null),
+                        "Цементно-піщана стяжка до 20м2", "Стяжка цементна"),
+                new Case(screed(ScreedKind.CEMENT, "25", "50", null, null, null),
+                        "Цементно-піщана стяжка понад 20м2", "Стяжка цементна"),
+                new Case(screed(ScreedKind.SELF_LEVELLING, "20", "5", null, null, null),
+                        "Вирівнювання підлоги самовирівнюючим розчином", "Суміш самовирівнювальна"));
+        for (Case c : cases) {
+            assertThat(shipped(c.position())).as("%s is in the library", c.position()).isTrue();
+            CalculatedMaterialLine mix = only(publicService.calculate(c.req()), c.material());
+            assertThat(mix.quantity()).as("%s", c.position()).isPositive();
+            assertThat(mix.sources()).singleElement().satisfies(s -> assertThat(s.name()).isEqualTo(c.position()));
+        }
+        for (String step : new String[]{"Грунтування основи перед штукатуркою, армуванням",
+                "Ґрунтування основи під стяжку", "Армування підлоги сіткою під стяжку",
+                "Плівкова ізоляція під стяжку", "Монтаж демпферної стрічки"}) {
+            assertThat(shipped(step)).as("%s is in the library", step).isTrue();
+        }
+    }
+
+    /** Area × layer × the figure per mm, plus the allowance — the per-mm figure is never pre-multiplied. */
+    @Test
+    void aLayerIsAreaTimesMillimetresTimesTheFigurePerMillimetre() {
+        // V175: hand gypsum is 0,9 kg/m² per mm (Knauf Rotband 8,5 at 10 mm).
+        CalculatedMaterialLine gypsum = only(publicService.calculate(
+                plaster(PlasterKind.GYPSUM, null, "10", "10", "0")), "Штукатурка гіпсова");
+        assertThat(gypsum.baseQuantity()).isEqualByComparingTo("90");
+        assertThat(gypsum.packages()).isEqualTo(3); // 30 kg bags
+
+        CalculatedMaterialLine screed = only(publicService.calculate(
+                screed(ScreedKind.CEMENT, "10", "50", null, null, null)), "Стяжка цементна");
+        assertThat(screed.baseQuantity()).isEqualByComparingTo("1000"); // 10 × 50 × 2,0
+        assertThat(screed.quantity()).isEqualByComparingTo("1100");      // +10 %: 44 bags of 25
+    }
+
+    @Test
+    void anEmptyThicknessTakesThePositionsOwnSuggestion() {
+        assertThat(layerOf(plaster(PlasterKind.GYPSUM, null, "10", null), "Штукатурка гіпсова"))
+                .isEqualByComparingTo("15");
+        assertThat(layerOf(plaster(PlasterKind.GYPSUM, PlasterMethod.MACHINE, "10", null), "Штукатурка гіпсова машинна"))
+                .isEqualByComparingTo("15");
+        assertThat(layerOf(plaster(PlasterKind.CEMENT_LIME, null, "10", null), "Штукатурка цементно-вапняна"))
+                .isEqualByComparingTo("20");
+        assertThat(layerOf(screed(ScreedKind.CEMENT, "10", null, null, null, null), "Стяжка цементна"))
+                .isEqualByComparingTo("40");
+        assertThat(layerOf(screed(ScreedKind.SELF_LEVELLING, "10", null, null, null, null), "Суміш самовирівнювальна"))
+                .isEqualByComparingTo("5");
+        assertThat(publicService.calculate(plaster(PlasterKind.GYPSUM, null, "10", null)).missing()).isEmpty();
+    }
+
+    /** No plaster or screed position carries a primer since V145, so the step is added once — never twice. */
+    @Test
+    void thePrimerIsOneStepNeverTwo() {
+        for (PublicMaterialCalcRequest req : List.of(
+                plaster(PlasterKind.GYPSUM, null, "10", "15"),
+                plaster(PlasterKind.CEMENT_LIME, null, "10", "20"),
+                screed(ScreedKind.CEMENT, "10", "50", true, true, "13"),
+                screed(ScreedKind.SELF_LEVELLING, "10", "5", null, null, "13"))) {
+            List<CalculatedMaterialLine> primers = publicService.calculate(req).materials().stream()
+                    .filter(m -> m.name().startsWith("Ґрунт")).toList();
+            assertThat(primers).as("%s", req).singleElement()
+                    .satisfies(p -> assertThat(p.sources()).hasSize(1));
+        }
+    }
+
+    @Test
+    void meshAndFilmOnlyWhenTickedAndOnlyUnderACementScreed() throws Exception {
+        List<String> plain = names(publicService.calculate(screed(ScreedKind.CEMENT, "10", "50", null, null, null)));
+        assertThat(plain).noneMatch(n -> n.startsWith("Сітка") || n.startsWith("Плівка"));
+
+        PublicMaterialCalcResponse both = publicService.calculate(screed(ScreedKind.CEMENT, "10", "50", true, true, null));
+        assertThat(only(both, "Сітка армувальна для стяжки").baseQuantity()).isEqualByComparingTo("11");  // 1,1 m²/m²
+        assertThat(only(both, "Плівка поліетиленова").baseQuantity()).isEqualByComparingTo("11.5");       // 1,15 m²/m²
+
+        assertThat(post("""
+                {"calculator":"SCREED","inputs":{"area":10,"screed":"SELF_LEVELLING","withMesh":true}}
+                """, null).statusCode()).isEqualTo(400);
+    }
+
+    @Test
+    void theDamperTapeIsCountedOnlyWhenThePerimeterIsGiven() {
+        PublicMaterialCalcResponse without = publicService.calculate(screed(ScreedKind.CEMENT, "15", "50", null, null, null));
+        assertThat(names(without)).noneMatch(n -> n.startsWith("Стрічка демпферна"));
+        assertThat(without.missing()).isEmpty();
+
+        PublicMaterialCalcResponse with = publicService.calculate(
+                screed(ScreedKind.SELF_LEVELLING, "15", "5", null, null, "16"));
+        assertThat(only(with, "Стрічка демпферна").baseQuantity()).isEqualByComparingTo("16.8"); // 16 m × 1,05
+        assertThat(with.missing()).isEmpty();
+    }
+
+    @Test
+    void eachKindHasItsOwnThicknessBound_inUkrainian() throws Exception {
+        record Bound(String calculator, String inputs, int status) {}
+        for (Bound b : List.of(
+                new Bound("PLASTER", "\"plaster\":\"GYPSUM\",\"thicknessMm\":4", 400),
+                new Bound("PLASTER", "\"plaster\":\"GYPSUM\",\"thicknessMm\":5", 200),
+                new Bound("PLASTER", "\"plaster\":\"GYPSUM\",\"thicknessMm\":60", 200),
+                new Bound("PLASTER", "\"plaster\":\"GYPSUM\",\"thicknessMm\":61", 400),
+                new Bound("PLASTER", "\"plaster\":\"CEMENT_LIME\",\"thicknessMm\":40", 200),
+                new Bound("PLASTER", "\"plaster\":\"CEMENT_LIME\",\"thicknessMm\":41", 400),
+                new Bound("SCREED", "\"screed\":\"CEMENT\",\"thicknessMm\":9", 400),
+                new Bound("SCREED", "\"screed\":\"CEMENT\",\"thicknessMm\":10", 200),
+                new Bound("SCREED", "\"screed\":\"CEMENT\",\"thicknessMm\":100", 200),
+                new Bound("SCREED", "\"screed\":\"CEMENT\",\"thicknessMm\":101", 400),
+                new Bound("SCREED", "\"screed\":\"SELF_LEVELLING\",\"thicknessMm\":1", 400),
+                new Bound("SCREED", "\"screed\":\"SELF_LEVELLING\",\"thicknessMm\":2", 200),
+                new Bound("SCREED", "\"screed\":\"SELF_LEVELLING\",\"thicknessMm\":30", 200),
+                new Bound("SCREED", "\"screed\":\"SELF_LEVELLING\",\"thicknessMm\":31", 400))) {
+            String json = "{\"calculator\":\"" + b.calculator() + "\",\"inputs\":{\"area\":10," + b.inputs() + "}}";
+            assertThat(post(json, null).statusCode()).as(json).isEqualTo(b.status());
+        }
+        HttpResponse<String> refused = post("""
+                {"calculator":"PLASTER","inputs":{"area":10,"plaster":"GYPSUM","thicknessMm":61}}
+                """, null);
+        assertThat(refused.body()).contains("Товщина гіпсової штукатурки — від 5 до 60 мм");
+    }
+
+    @Test
+    void aMachineIsForGypsumOnly_andAKindMustBeChosen() throws Exception {
+        HttpResponse<String> machine = post("""
+                {"calculator":"PLASTER","inputs":{"area":10,"plaster":"CEMENT_LIME","method":"MACHINE"}}
+                """, null);
+        assertThat(machine.statusCode()).isEqualTo(400);
+        assertThat(machine.body()).contains("Машинне нанесення рахуємо лише для гіпсової штукатурки");
+        assertThat(post("""
+                {"calculator":"PLASTER","inputs":{"area":10}}
+                """, null).statusCode()).isEqualTo(400);
+        assertThat(post("""
+                {"calculator":"SCREED","inputs":{"area":10}}
+                """, null).statusCode()).isEqualTo(400);
+    }
+
+    /** kg/m² per mm off the bag: 0,9 at 10 mm on 10 m² is 90 kg before the allowance, and marked as his. */
+    @Test
+    void aVisitorsBagFigureIsPerMillimetreAndBoundedLikeTheAdhesive() throws Exception {
+        PublicMaterialCalcRequest own = new PublicMaterialCalcRequest(PublicCalculator.PLASTER, new Inputs(
+                new BigDecimal("10"), BigDecimal.ZERO, null, null, null, null, new BigDecimal("0.9"), null, null, null,
+                PlasterKind.GYPSUM, PlasterMethod.MACHINE, null, new BigDecimal("10"), null, null));
+        CalculatedMaterialLine mix = only(publicService.calculate(own), "Штукатурка гіпсова машинна");
+        assertThat(mix.baseQuantity()).isEqualByComparingTo("90");
+        assertThat(mix.sources()).allMatch(s -> s.ownNorm());
+
+        // Ours is 0,95 per mm for machine gypsum: 0,09 is below a tenth, 9,6 past ten times.
+        assertThat(post("""
+                {"calculator":"PLASTER","inputs":{"area":10,"plaster":"GYPSUM","method":"MACHINE","ownNorm":0.09}}
+                """, null).statusCode()).isEqualTo(400);
+        assertThat(post("""
+                {"calculator":"PLASTER","inputs":{"area":10,"plaster":"GYPSUM","method":"MACHINE","ownNorm":9.6}}
+                """, null).statusCode()).isEqualTo(400);
+        assertThat(post("""
+                {"calculator":"SCREED","inputs":{"area":10,"screed":"CEMENT","ownNorm":1.8}}
+                """, null).statusCode()).isEqualTo(200);
+        HttpResponse<String> drywall = post("""
+                {"calculator":"DRYWALL","inputs":{"area":10,"work":"WALL","ownNorm":1.6}}
+                """, null);
+        assertThat(drywall.statusCode()).isEqualTo(400);
+        assertThat(drywall.body()).contains("для гіпсокартону її немає");
+    }
+
     // ---- over HTTP: anonymous, bounded, limited -------------------------------------------------
 
     @Test
@@ -382,24 +566,67 @@ class PublicMaterialCalculatorIntegrationTest extends IntegrationTestBase {
     private static PublicMaterialCalcRequest tile(TileFormat format, String area, String waste, String joint) {
         return new PublicMaterialCalcRequest(PublicCalculator.TILE, new Inputs(new BigDecimal(area),
                 waste == null ? null : new BigDecimal(waste), format,
-                joint == null ? null : new BigDecimal(joint), null, null, null, null, null, null));
+                joint == null ? null : new BigDecimal(joint), null, null, null, null, null, null,
+                null, null, null, null, null, null));
     }
 
     private static PublicMaterialCalcRequest tile(TileFormat format, String area, String waste,
                                                   TileLayout layout, String boxArea) {
         return new PublicMaterialCalcRequest(PublicCalculator.TILE, new Inputs(new BigDecimal(area),
                 waste == null ? null : new BigDecimal(waste), format, null, layout,
-                boxArea == null ? null : new BigDecimal(boxArea), null, null, null, null));
+                boxArea == null ? null : new BigDecimal(boxArea), null, null, null, null,
+                null, null, null, null, null, null));
     }
 
     private static PublicMaterialCalcRequest tileWithOwnNorm(TileFormat format, String area, String ownNorm) {
         return new PublicMaterialCalcRequest(PublicCalculator.TILE, new Inputs(new BigDecimal(area),
-                new BigDecimal("10"), format, null, null, null, new BigDecimal(ownNorm), null, null, null));
+                new BigDecimal("10"), format, null, null, null, new BigDecimal(ownNorm), null, null, null,
+                null, null, null, null, null, null));
     }
 
     private static PublicMaterialCalcRequest drywall(DrywallWork work, String area, String perimeter, Integer layers) {
         return new PublicMaterialCalcRequest(PublicCalculator.DRYWALL, new Inputs(new BigDecimal(area), null,
-                null, null, null, null, null, work, perimeter == null ? null : new BigDecimal(perimeter), layers));
+                null, null, null, null, null, work, perimeter == null ? null : new BigDecimal(perimeter), layers,
+                null, null, null, null, null, null));
+    }
+
+    private static PublicMaterialCalcRequest plaster(PlasterKind kind, PlasterMethod method, String area, String mm) {
+        return plaster(kind, method, area, mm, "10");
+    }
+
+    private static PublicMaterialCalcRequest plaster(PlasterKind kind, PlasterMethod method, String area, String mm,
+                                                     String waste) {
+        return new PublicMaterialCalcRequest(PublicCalculator.PLASTER, new Inputs(new BigDecimal(area),
+                new BigDecimal(waste), null, null, null, null, null, null, null, null,
+                kind, method, null, mm == null ? null : new BigDecimal(mm), null, null));
+    }
+
+    private static PublicMaterialCalcRequest screed(ScreedKind kind, String area, String mm, Boolean mesh,
+                                                    Boolean film, String perimeter) {
+        return new PublicMaterialCalcRequest(PublicCalculator.SCREED, new Inputs(new BigDecimal(area),
+                new BigDecimal("10"), null, null, null, null, null, null,
+                perimeter == null ? null : new BigDecimal(perimeter), null,
+                null, null, kind, mm == null ? null : new BigDecimal(mm), mesh, film));
+    }
+
+    private static CalculatedMaterialLine only(PublicMaterialCalcResponse res, String namePrefix) {
+        List<CalculatedMaterialLine> found = res.materials().stream()
+                .filter(m -> m.name().startsWith(namePrefix)).toList();
+        assertThat(found).as("a line named %s in %s", namePrefix, names(res)).hasSize(1);
+        return found.getFirst();
+    }
+
+    private static List<String> names(PublicMaterialCalcResponse res) {
+        return res.materials().stream().map(CalculatedMaterialLine::name).toList();
+    }
+
+    private BigDecimal layerOf(PublicMaterialCalcRequest req, String material) {
+        return only(publicService.calculate(req), material).sources().getFirst().param();
+    }
+
+    private boolean shipped(String position) {
+        Integer n = jdbc.queryForObject("SELECT count(*) FROM catalog_templates WHERE name = ?", Integer.class, position);
+        return n != null && n > 0;
     }
 
     private HttpResponse<String> post(String json, String authorization) throws Exception {

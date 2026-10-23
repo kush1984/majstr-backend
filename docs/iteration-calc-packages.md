@@ -1,7 +1,7 @@
 # Packages on the shopping list, and the plaster and screed calculators
 
-**Status:** stage 1 and the norms round done 2026-10-23 (backend V174 + V175, PWA 1.58.0, not
-pushed); stages 2-3 next. **Source:** `C:\Work\prompts\calc-packages-and-new-calculators-prompt.md`
+**Status:** stage 1 and the norms round shipped 2026-10-23 (backend V174 + V175, PWA 1.60.0);
+stage 2 (backend PLASTER + SCREED) done, not committed; stage 3 (the pages) next. **Source:** `C:\Work\prompts\calc-packages-and-new-calculators-prompt.md`
 plus the owner's norms review the same day. **Migrations:** V174, V175.
 
 ## Stage 1 — the list keeps the package
@@ -80,3 +80,48 @@ top-up, bought, offer, old cache).
   above underfloor-heating pipes; movement joints in rooms over 20 m².
 - «Як ми рахуємо», plaster: gypsum on walls 8-50 mm in one coat, on a ceiling up to 15 mm; thicker
   goes in several coats.
+
+## Stage 2 — the public PLASTER and SCREED calculators (backend)
+
+`PublicCalculator { TILE, DRYWALL, PLASTER, SCREED }`; new inputs `plaster`, `method`, `screed`,
+`thicknessMm` (≤ 150, the library bound), `withMesh`, `withFilm`; `perimeter` is reused by SCREED.
+The request names the calculator, the server names the positions:
+
+| Variant | Position | Mix | Per mm | Empty field |
+|---|---|---|---|---|
+| Gypsum, by hand, ≤ 20 mm | Штукатурка стін ручна до 2см | PLASTER_GYPSUM (30 kg) | 0,9 | 15 |
+| Gypsum, by hand, 20-50 mm | Штукатурка стін ручна від 2см | 〃 | 0,9 | — |
+| Gypsum, by hand, > 50 mm | …ручна понад 5 см (у кілька шарів, по сітці) | 〃 | 0,9 | — |
+| Gypsum, machine, ≤ 20 / > 20 mm | Штукатурка стін машинкою до 2см / понад 2см | PLASTER_GYPSUM_MACHINE (30 kg) | 0,95 | 15 |
+| Cement-lime, by hand | Штукатурка маякова цементна | PLASTER_CEMENT_LIME (25 kg) | 1,6 | 20 |
+| Cement screed, area ≤ 20 / > 20 m² | Цементно-піщана стяжка до 20м2 / понад 20м2 | SCREED_CEMENT (25 kg) | 2,0 | 40 |
+| Self-levelling | Вирівнювання підлоги самовирівнюючим розчином | SELF_LEVELLING (25 kg) | 1,8 | 5 |
+
+- **Bounds per kind** (400, Ukrainian, one key each): gypsum 5-60, cement-lime 5-40, cement screed
+  10-100 (owner's ruling: 10 mm on a rigid base), self-levelling 2-30. A machine on cement-lime is a 400
+  (the library has no such position).
+- **An empty thickness is the position's `default_param`** (`MaterialCalculatorService.librarySuggestion`)
+  — without it a THICKNESS norm asks and buys nothing, which is what the public door did before.
+- **Primer is its own line** — no plaster/screed position carries one since V145: «Грунтування основи
+  перед штукатуркою, армуванням» (0,15 l/m²) and «Ґрунтування основи під стяжку» (0,2 l/m²). A test
+  pins exactly one primer line per answer.
+- **Mesh and film** (cement only, else 400): «Армування підлоги сіткою під стяжку» 1,1 m²/m², «Плівкова
+  ізоляція під стяжку» 1,15 m²/m², in m² (no package). **Damper tape** only when a perimeter is given:
+  «Монтаж демпферної стрічки», 1,05 m per m. **Beacons have no norm** and are not counted.
+- **«Своя норма»** now covers the plaster and screed mix, in kg/m² **per mm**, bounded 0,1-10× ours;
+  DRYWALL is refused with `error.public-calc.own-norm-unsupported` (renamed from `own-norm-tile-only`,
+  no alias — nothing else read it).
+- **A zero-quantity line is filtered** on the public door; none of the four calculators produces one today.
+- `request-dtos.json` refreshed — copy it to the PWA with stage 3.
+
+Answers from the code (10 % allowance):
+
+| Case | Mix | Primer |
+|---|---|---|
+| Кімната 34 м², гіпсова, вручну, 15 мм | 510 кг (17 × 30 кг) | 10 л (2 каністри) |
+| Ванна 18 м², цементно-вапняна, 20 мм | 650 кг (26 × 25 кг) | 5 л |
+| 150 м², гіпсова, машиною, 15 мм | 2370 кг (79 × 30 кг) | 25 л |
+| 40 м², гіпсова, 30 мм | 1200 кг (40 × 30 кг) | 10 л |
+| Стяжка 15 м², цементна, 50 мм | 1650 кг (66 × 25 кг) | 5 л |
+| Наливна 20 м², 5 мм | 200 кг (8 × 25 кг) | 5 л |
+| Стяжка 15 м², порожня товщина (→ 40), сітка + плівка, периметр 16 м | 1325 кг (53 мішки); сітка 19 м², плівка 19 м², стрічка 19 м | 5 л |

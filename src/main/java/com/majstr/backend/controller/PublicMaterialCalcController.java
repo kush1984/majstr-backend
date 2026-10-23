@@ -31,7 +31,7 @@ public class PublicMaterialCalcController {
     private final PublicMaterialCalculatorService calculatorService;
     private final PublicCalcRateLimiter rateLimiter;
 
-    @Operation(summary = "Materials for a TILE or DRYWALL job, by the app's own norms. Stores and "
+    @Operation(summary = "Materials for a TILE, DRYWALL, PLASTER or SCREED job, by the app's own norms. Stores and "
             + "logs nothing; rate-limited per IP")
     @PostMapping("/calc")
     public PublicMaterialCalcResponse calc(@Valid @RequestBody PublicMaterialCalcRequest req,
