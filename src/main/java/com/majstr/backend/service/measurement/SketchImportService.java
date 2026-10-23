@@ -50,7 +50,7 @@ import java.util.UUID;
 public class SketchImportService {
 
     /** The shapes the schema module knows — the LLM must return one of these or the plane is dropped. */
-    private static final Set<String> SHAPES = Set.of("rect", "trap", "attic", "tri", "cut");
+    private static final Set<String> SHAPES = Set.of("rect", "lshape", "trap", "attic", "tri", "cut");
 
     private final FeatureGuard featureGuard;
     private final UserRepository userRepository;
@@ -217,7 +217,8 @@ public class SketchImportService {
                     if (shape == null || !SHAPES.contains(shape)) continue; // unknown shape → skip
                     Map<String, Object> values = new LinkedHashMap<>();
                     if (pm.get("values") instanceof Map<?, ?> vm) {
-                        for (String key : List.of("a", "b", "c", "d", "h")) {
+                        // Capitals are the L-shape's gabarits (A×B); the rest are lowercase.
+                        for (String key : List.of("A", "B", "a", "b", "c", "d", "h")) {
                             Double v = dbl(vm.get(key));
                             if (v != null && v > 0) values.put(key, v); // omit unreadable → blank field
                         }
@@ -522,12 +523,37 @@ public class SketchImportService {
               - confidence: high/medium/low. Anything you inferred or half-read → low.
               - note: a short Ukrainian note when you guessed or a size was unreadable (else "").
               - planes (SURFACE only): the figures the surface is made of. Each plane:
-                  shape: one of "rect" (rectangle a×b), "trap" (trapezoid a=top,b=bottom,h),
+                  shape: one of "rect" (rectangle a×b),
+                         "lshape" (an L-shaped room — a rectangle with one corner stepped in:
+                                   A = the overall length, B = the overall width, i.e. the two
+                                   LONG outer sides; a = the step's length measured along A,
+                                   b = its depth measured along B. CAPITAL A and B are the
+                                   gabarits, lowercase a and b the cut-out corner),
+                         "trap" (trapezoid a=top,b=bottom,h),
                          "attic" (mansard a=width,b=side wall,h=apex), "tri" (triangle b=base,h=height),
                          "cut" (cut corner a,b,c,d). Use the SIMPLEST shape that fits.
                   mode: "" normally; for "attic" use "sym" or "asym"; for "tri" use "bh" or "sss".
-                  values: {a,b,c,d,h} — fill ONLY the letters that shape uses; put 0 for any size you
-                          cannot read. A rectangular room ceiling = one "rect" plane {a,b}.
+                  values: {A,B,a,b,c,d,h} — fill ONLY the letters that shape uses; put 0 for any
+                          size you cannot read. A rectangular room ceiling = one "rect" plane {a,b}.
+
+            AN L-SHAPED ROOM (Г-подібна) — a plan whose outline has SIX corners, one of them
+            stepped inwards — is the commonest non-rectangular room on кроки, and drawing it as a
+            rectangle overstates the floor by the whole missing corner:
+              - «Підлога» and «Стеля» are ONE "lshape" plane each, never a "rect" of the gabarits
+                and never two rectangles.
+              - A side written as a chain of segments (4,75 + 4,75) is their SUM — the gabarit A is
+                9,50, not 4,75. The step's own sides are a and b; when only the outer chains are
+                written, a = the long side minus the short side opposite it (likewise b).
+              - It has SIX walls, not four: «Стіна 1» … «Стіна 6», each one wall's length × the
+                room height, with the windows and doors in THAT wall.
+              - If the chains do not close (the short sides plus the step do not add up to the
+                gabarit), do NOT adjust any number to make them agree: write each size as read, set
+                the room's confidence low and say in the note which sides disagree.
+
+            ON A HAND-DRAWN SHEET TOO, a figure that is struck through with another written beside
+            it is SUPERSEDED: take the new one, never the crossed-out one, and say so in the note.
+            A room height written once for the room («висота 2,85», «h=2,85») is the height of
+            every wall in it.
               - openings (SURFACE only): windows/doors to subtract, each {w,h}. None → [].
               - partition (PARTITION only): {H,W,D, faces:{left,right,end,top}} — sizes as written.
               - linear (LINEAR only): {H,W, sides:{left,right,top,bottom}, qty} — sizes as written.
@@ -559,8 +585,9 @@ public class SketchImportService {
     }
 
     private static final Map<String, Object> VALUES = obj(
-            List.of("a", "b", "c", "d", "h"),
-            Map.of("a", NUMBER, "b", NUMBER, "c", NUMBER, "d", NUMBER, "h", NUMBER));
+            List.of("A", "B", "a", "b", "c", "d", "h"),
+            Map.of("A", NUMBER, "B", NUMBER, "a", NUMBER, "b", NUMBER,
+                    "c", NUMBER, "d", NUMBER, "h", NUMBER));
 
     private static final Map<String, Object> PLANE = obj(
             List.of("shape", "mode", "values"),

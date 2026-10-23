@@ -284,6 +284,25 @@ class CashFlowIntegrationTest extends IntegrationTestBase {
     }
 
     /**
+     * A master's act carried an Епіцентр slip whose footer «14-11-25» the recognition took for a
+     * 2014 date. Dated by the paper, the spend landed eleven years back and «Мої гроші» seemed never
+     * to have received it. It is dated by the day it was ADDED to the act (master decision); the
+     * paper's own date stays on the document.
+     */
+    @Test
+    void anActReceiptIsDatedByTheDayItWasAdded_notByThePaper() {
+        LocalDate day = LocalDate.now(com.majstr.backend.config.LocalizationConfig.ZONE);
+        UUID actId = insertSignedAct(false);
+        insertActReceipt(actId, "204.90", "0.00");
+        jdbc.update("UPDATE work_act_receipt SET issued_at = DATE '2014-11-25' WHERE work_act_id = ?", actId);
+
+        CashFlowResponse flow = flow(day);
+
+        assertThat(flow.expense()).isEqualByComparingTo("204.90");
+        assertThat(flow.entries()).extracting(CashFlowResponse.Entry::happenedOn).containsExactly(day);
+    }
+
+    /**
      * The same paper in both tables (V134): the object receipt was reconciled onto the act, so the
      * act's copy and the object's copy are one purchase. The NOT EXISTS twin check is what keeps
      * the feed from billing the master for it twice.

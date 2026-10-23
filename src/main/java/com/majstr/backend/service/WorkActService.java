@@ -36,6 +36,7 @@ import java.io.IOException;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -171,6 +172,7 @@ public class WorkActService {
      * retry with a fresh number. Idempotency (X-Entity-Uuid) and every gate live inside the attempt.
      */
     public WorkActResponse create(UUID projectId, WorkActCreateRequest req, UUID ownerId, UUID requestedId) {
+        requirePeriodInOrder(req.periodFrom(), req.periodTo());
         int attempts = 0;
         while (true) {
             try {
@@ -185,11 +187,20 @@ public class WorkActService {
         }
     }
 
+    /** «Роботи виконано в період: з 20.10 по 19.10» reached signed acts, their PDF and the client's
+     *  portal — nothing checked the order. A one-day period (from = to) is the ordinary case. */
+    static void requirePeriodInOrder(LocalDate from, LocalDate to) {
+        if (from != null && to != null && from.isAfter(to)) {
+            throw new WorkActValidationException("error.work-act.period-order", "WORK_ACT_PERIOD_ORDER");
+        }
+    }
+
     // ---- writes (immutable once signed) -----------------------------------
 
     @Transactional
     public WorkActResponse updateHeader(UUID id, WorkActUpdateRequest req, UUID ownerId) {
         WorkAct act = requireNotSigned(loadOwnedForUpdate(id, ownerId));
+        requirePeriodInOrder(req.periodFrom(), req.periodTo());
         act.setKind(req.kind());
         act.setTitle(trim(req.title()));
         act.setIssuedAt(req.issuedAt());

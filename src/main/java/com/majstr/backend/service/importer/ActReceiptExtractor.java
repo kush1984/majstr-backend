@@ -140,11 +140,16 @@ public class ActReceiptExtractor {
               - issuedAt: the receipt's own date as ISO "YYYY-MM-DD". Ukrainian receipts print it
                 DD.MM.YYYY, and cash registers often print a footer line "DD-MM-YY HH:MM:SS № NNNN"
                 just above ФН / «ФІСКАЛЬНИЙ ЧЕК» — in that footer the FIRST pair is the day and the
-                two-digit year is 20YY. Convert whatever you find. Return "" only when no date is
-                printed at all or the digits are unreadable: a date you can read is wanted even if
-                the receipt is years old.
-              - total: the FINAL amount paid, as a number with kopecks (e.g. 483.50). Look for
-                «СУМА», «ДО СПЛАТИ», «ВСЬОГО», the card-slip amount, or the largest bottom figure.
+                two-digit year is 20YY. That footer is ALWAYS day-month-year: «14-11-25» is
+                2025-11-14, never 2014-11-25. Convert whatever you find. Return "" only when no
+                date is printed at all or the digits are unreadable: a date you can read is wanted
+                even if the receipt is years old.
+              - total: the PURCHASE total — what the goods cost — as a number with kopecks (e.g.
+                483.50). It is the figure by «СУМА», «ДО СПЛАТИ», «ВСЬОГО», or the card-slip
+                amount. Below it a cash receipt prints what the customer HANDED OVER and the
+                CHANGE: «ГОТІВКА» / «ОТРИМАНО» / «КАРТКА» and «РЕШТА» / «ЗДАЧА». Those are never
+                the total, even though «ГОТІВКА» is often the largest number on the slip — on a
+                slip reading СУМА 204.90, ГОТІВКА 210.00, РЕШТА 5.10 the total is 204.90.
                 Never invent it: 0 if unreadable.
 
             Use the sentinels ("" / 0) for anything you cannot read confidently — a wrong figure is

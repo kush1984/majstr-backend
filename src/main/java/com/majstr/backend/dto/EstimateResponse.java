@@ -1,5 +1,6 @@
 package com.majstr.backend.dto;
 
+import com.majstr.backend.entity.EstimateKind;
 import com.majstr.backend.entity.EstimateStatus;
 
 import java.math.BigDecimal;
@@ -39,5 +40,8 @@ public record EstimateResponse(
          *  about to send BEFORE he sends it. Same figures the economy panel reports once it is
          *  signed, and null on anything but a markup duplicate. Owner-only: see
          *  {@link CrewMarginResponse}. */
-        CrewMarginResponse crewMargin
+        CrewMarginResponse crewMargin,
+        /** REGULAR, or ADDENDUM — «Матеріали за чеками / Додатково до акта № N», written by a signed
+         *  act. The editor reads it to drop «Створити акт»: those lines were accepted by that act. */
+        EstimateKind kind
 ) {}
