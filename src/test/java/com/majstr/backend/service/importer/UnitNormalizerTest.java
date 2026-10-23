@@ -16,6 +16,8 @@ class UnitNormalizerTest {
         assertThat(UnitNormalizer.normalize("пог.м")).isEqualTo(Unit.LINEAR_METER);
         assertThat(UnitNormalizer.normalize("м.п.")).isEqualTo(Unit.LINEAR_METER);
         assertThat(UnitNormalizer.normalize("мп")).isEqualTo(Unit.LINEAR_METER);
+        assertThat(UnitNormalizer.normalize("м.пог")).isEqualTo(Unit.LINEAR_METER);
+        assertThat(UnitNormalizer.normalize("м. пог.")).isEqualTo(Unit.LINEAR_METER);
         assertThat(UnitNormalizer.normalize("шт.")).isEqualTo(Unit.PIECE);
         assertThat(UnitNormalizer.normalize("м³")).isEqualTo(Unit.M3);
         assertThat(UnitNormalizer.normalize("куб.м")).isEqualTo(Unit.M3);

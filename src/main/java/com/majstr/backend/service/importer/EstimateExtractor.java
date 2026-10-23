@@ -57,6 +57,15 @@ public class EstimateExtractor {
               - depositAmount: use 0 when the document states no prepayment.
               - Skip totals / subtotals / section-header rows (Разом, Всього, Загальна вартість, …) —
                 those are not positions. A section header may still be used as a row's category.
+              - A row with a name and a unit price but NO quantity (an empty cell or 0) — and so a
+                line total of 0 — IS a position: it is a price-list line the contractor has not
+                counted yet on this job. Return it with quantity 0. Never skip a priced row because
+                its quantity or its total is empty or zero; only the totals above are skipped.
+              - The unit is not always in its own column: it may be in a neighbouring cell
+                ("м.пог", "кількість", "км.") or at the end of the name ("…, штук"). Take it from
+                there and drop that trailing unit word from the name. If the unit cell holds a note
+                rather than a unit (e.g. "50% від вартості БЖ"), return unit "" — the row still
+                counts.
               - Ignore the залишок / balance line — it is derived, not a position.
               - Keep the original order of the positions.
             """;

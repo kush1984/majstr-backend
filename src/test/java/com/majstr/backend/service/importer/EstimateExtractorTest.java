@@ -45,6 +45,54 @@ class EstimateExtractorTest {
                     new AnthropicProperties("", "m", 1), new OpenAiProperties("", "m", 1, null), NO_PROVIDER),
             JsonMapper.builder().build());
 
+    /**
+     * A price sheet lists every job the contractor offers, priced, with the quantity left empty for
+     * what this job does not need yet — «Освітлення врізне кругле більше 10 см, штук · 200 грн · 0,00».
+     * The model read the 0,00 total as an empty row and dropped them; the master then had to type
+     * back positions that were on his own photo. The prompt says so in words, and a row at quantity 0
+     * survives the mapping (the review screen keeps it, P-35).
+     */
+    @Test
+    void aPricedRowWithNoQuantityIsAskedForAndKept() {
+        java.util.concurrent.atomic.AtomicReference<String> sent = new java.util.concurrent.atomic.AtomicReference<>();
+        JsonExtractor recording = new JsonExtractor() {
+            @Override
+            public String requestJson(java.util.List<AiInput> input, String systemPrompt,
+                                     java.util.Map<String, Object> schema) {
+                sent.set(systemPrompt);
+                return """
+                        {"items": [
+                          {"name": "Освітлення врізне кругле до 10 см", "unit": "шт", "quantity": 10, "unitPrice": 180, "type": "WORK", "category": ""},
+                          {"name": "Освітлення врізне кругле більше 10 см", "unit": "шт", "quantity": 0, "unitPrice": 200, "type": "WORK", "category": ""},
+                          {"name": "Монтаж блоку живлення", "unit": "", "quantity": 0, "unitPrice": 0, "type": "WORK", "category": ""}
+                        ], "depositAmount": 0}
+                        """;
+            }
+
+            @Override
+            public String providerName() {
+                return "test";
+            }
+        };
+        EstimateExtractor withProvider = new EstimateExtractor(
+                new AiExtractors(new AiFlowsProperties(null, null, null),
+                        new AnthropicProperties("", "m", 1), new OpenAiProperties("", "m", 1, null), recording),
+                JsonMapper.builder().build());
+
+        Extracted result = withProvider.extractFromImage("image/jpeg", new byte[]{1});
+
+        assertThat(sent.get())
+                .contains("NO quantity")
+                .contains("Return it with quantity 0")
+                .contains("Never skip a priced row");
+        assertThat(result.items()).extracting(Extracted.Line::name).containsExactly(
+                "Освітлення врізне кругле до 10 см",
+                "Освітлення врізне кругле більше 10 см",
+                "Монтаж блоку живлення");
+        assertThat(result.items().get(1).quantity()).isEqualByComparingTo("0");
+        assertThat(result.items().get(2).unit()).isNull(); // a note in the unit cell → picked on review
+    }
+
     @Test
     void parsesItemsAndDeposit() {
         String json = """

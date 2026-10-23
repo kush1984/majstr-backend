@@ -36,6 +36,8 @@ public final class UnitNormalizer {
             Map.entry("мп", Unit.LINEAR_METER), Map.entry("погм", Unit.LINEAR_METER),
             Map.entry("пм", Unit.LINEAR_METER), Map.entry("рм", Unit.LINEAR_METER),
             Map.entry("lm", Unit.LINEAR_METER),
+            // "м.пог" / "м. пог." — the order a stretch-ceiling price sheet writes it in
+            Map.entry("мпог", Unit.LINEAR_METER),
             // plain metre
             Map.entry("м", Unit.M), Map.entry("метр", Unit.M), Map.entry("метрів", Unit.M),
             Map.entry("m", Unit.M),
