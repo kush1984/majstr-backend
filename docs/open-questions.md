@@ -4009,6 +4009,16 @@ one-line summary — keep the item in the file as a record.
 - **Notes / options:** a suggestion of 10 (or the range's typical value) in a correction migration,
   re-filing the forks with it. The public screed calculator does not use this position.
 
+### Public putty calculator (`/kalkulyator-shpaklivky`) — after the meetup
+- **Status:** OPEN
+- **Since:** 2026-10-25, stage 3 of the calculators iteration
+  ([iteration-calc-packages.md](iteration-calc-packages.md))
+- **Context:** stage 4 of the prompt: `PUTTY` = the starter coat (THICKNESS, «шпаклювання стін
+  (старт, за потреби)») + the finish coat (QUANTITY, «шпаклівка стін під фарбування» / стелі), walls
+  or ceiling, a page on the plaster page's template. Not started before the 4.11 freeze.
+- **Notes / options:** same white-list shape as PLASTER; the page needs the same list sites (vite,
+  `sw.ts`, sitemap, llms, five footers, OG card).
+
 ### Material norms deliberately refused after a second look (epoxy grout, decorative plasters)
 
 - **Status:** OPEN — refused, with the evidence recorded so nobody repeats the search.

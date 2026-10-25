@@ -125,3 +125,35 @@ Answers from the code (10 % allowance):
 | Стяжка 15 м², цементна, 50 мм | 1650 кг (66 × 25 кг) | 5 л |
 | Наливна 20 м², 5 мм | 200 кг (8 × 25 кг) | 5 л |
 | Стяжка 15 м², порожня товщина (→ 40), сітка + плівка, периметр 16 м | 1325 кг (53 мішки); сітка 19 м², плівка 19 м², стрічка 19 м | 5 л |
+
+## Stage 3 — the two pages (PWA 1.61.0)
+
+`/kalkulyator-shtukaturky` (`data-calculator="PLASTER"`) and `/kalkulyator-styazhky` (`SCREED`), built
+like the tile page: static HTML, the form read by `src/seo/calcPage.ts`, the table and the lede's
+example printed from `calc-snapshot.json` (taken from `https://api.majstr.pro`, `seo:check` green).
+
+- **Form ↔ request.** Plaster: area, `plaster`, `method` (the fieldset is `data-show="plaster:GYPSUM"`,
+  and no `method` is SENT for cement-lime even if «Машиною» was ticked before), `thicknessMm`, waste.
+  Screed: area, `screed`, `thicknessMm` (hint per kind: cement 10-100, self-levelling 2-30 — the
+  backend's bounds, not the prompt's «від 30»), mesh/film ticks (cement only, sent as `false` when
+  unticked), the optional perimeter (→ damper tape). An empty thickness is left OUT of the request,
+  so the server takes the position's own suggestion.
+- **`data-show="<radio>:<values>"`** is the new generic show/hide; the drywall page keeps its own
+  `data-for`.
+- **«Своя норма з мішка»** is the tile mechanics, on the line bought by a THICKNESS norm (the mix,
+  whatever its name), labelled «кг/м² на 1 мм» with «поділіть на 10» (8–9 for plaster, 18–20 for
+  screed). The mix is listed first. A refusal is blamed on the norm only when the recount came from
+  that block — a bad thickness typed after an own norm stays on the form.
+- **Example ids** are `plaster-room` / `screed-room`, not the prompt's `room` twice: `SEO_EXAMPLE`
+  ids are global across pages.
+- **«Як ми рахуємо» says what is NOT counted:** beacons (both), the plaster mesh a thick coat needs in
+  its first layer (sheets: past 20-30 mm), corner beads, insulation under a screed. The thickness
+  ranges quoted are from the datasheets in `Materials calculators/` (gypsum from 5 mm, up to ~30 mm a
+  pass; cement screed 10-100 mm), no brand named. No norm figure is typed on a page.
+- Everywhere the pages are listed: vite input, `sw.ts` `NAVIGATION_DENYLIST`, sitemap (lastmod
+  2026-10-25), `llms.txt`, robots comment, all four footers, the landing footer (+ two i18n keys),
+  `redirects.test.ts`, OG cards (`og-shtukaturky.png`, `og-styazhky.png`), PWA `CLAUDE.md`.
+  `request-dtos.json` copied over from stage 2.
+- **Analytics:** the pages send no events (as before) — nothing to extend.
+- Deferred: the putty calculator (stage 4) — open question.
+
