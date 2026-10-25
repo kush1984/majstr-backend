@@ -44,6 +44,7 @@ public class MessageFileService {
 
     private final ProjectMessageFileRepository fileRepository;
     private final StorageService storage;
+    private final StorageCleanup cleanup;
 
     /** The bytes of one attachment plus what is needed to serve it. */
     public record MessageFileContent(byte[] bytes, String contentType, String downloadName) {}
@@ -142,24 +143,21 @@ public class MessageFileService {
     }
 
     /**
-     * Delete the stored bytes for a message's attachments. The rows go with the message through the
-     * FK; this is the half the database cannot do.
+     * Delete a message's attachments: the rows now, the stored bytes once the transaction commits.
      *
-     * <p>Best effort per file: a key already missing from storage must not stop the master from
-     * deleting the message.</p>
+     * <p>The rows are deleted explicitly even though the FK cascades. Reading {@code getFiles()} makes
+     * them managed, and a managed file still pointing at a removed message fails the flush
+     * ({@code TransientPropertyValueException}) — every delete of a message with an attachment was a
+     * 500. The bytes go after the commit (B-25), fail-soft per key.</p>
      */
-    public void deleteStoredFiles(ProjectMessage message) {
-        if (message.getFiles() == null) {
+    public void deleteFiles(ProjectMessage message) {
+        if (message.getFiles() == null || message.getFiles().isEmpty()) {
             return;
         }
-        for (ProjectMessageFile file : message.getFiles()) {
-            try {
-                storage.delete(file.getStorageKey());
-            } catch (IOException | RuntimeException e) {
-                log.warn("Could not delete stored attachment {} of message {}: {}",
-                        file.getStorageKey(), message.getId(), e.getMessage());
-            }
-        }
+        List<ProjectMessageFile> files = List.copyOf(message.getFiles());
+        cleanup.afterCommit(files.stream().map(ProjectMessageFile::getStorageKey).toList());
+        fileRepository.deleteAll(files);
+        message.getFiles().clear();
     }
 
     /**

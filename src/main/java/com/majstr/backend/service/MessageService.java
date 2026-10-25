@@ -80,9 +80,7 @@ public class MessageService {
         messageRepository.findById(messageId)
                 .filter(m -> m.getProject().getId().equals(projectId))
                 .ifPresent(m -> {
-                    // The rows CASCADE with the message; the stored bytes do not, and nothing else
-                    // would ever come back for them.
-                    messageFileService.deleteStoredFiles(m);
+                    messageFileService.deleteFiles(m);
                     messageRepository.delete(m);
                 });
     }

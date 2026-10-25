@@ -50,6 +50,7 @@ class MessageFileServiceTest {
 
     @Mock ProjectMessageFileRepository fileRepository;
     @Mock StorageService storage;
+    @Mock StorageCleanup cleanup;
     @InjectMocks MessageFileService service;
 
     private static final byte[] PNG_HEADER =
@@ -228,21 +229,16 @@ class MessageFileServiceTest {
     }
 
     @Test
-    void deletingAMessageDeletesItsStoredBytesEvenIfOneIsAlreadyGone() throws IOException {
-        // Best effort per file: a key missing from storage must not block the master from deleting.
+    void deletingAMessageDeletesItsFileRowsNowAndTheirBytesAfterCommit() {
         ProjectMessage m = message();
-        m.getFiles().addAll(List.of(
-                ProjectMessageFile.builder().id(UUID.randomUUID()).storageKey("messages/a.png").build(),
-                ProjectMessageFile.builder().id(UUID.randomUUID()).storageKey("messages/b.pdf").build()));
-        willThrowOn("messages/a.png");
+        ProjectMessageFile a = ProjectMessageFile.builder().id(UUID.randomUUID()).storageKey("messages/a.png").build();
+        ProjectMessageFile b = ProjectMessageFile.builder().id(UUID.randomUUID()).storageKey("messages/b.pdf").build();
+        m.getFiles().addAll(List.of(a, b));
 
-        service.deleteStoredFiles(m);
+        service.deleteFiles(m);
 
-        verify(storage).delete("messages/a.png");
-        verify(storage).delete(eq("messages/b.pdf"));
-    }
-
-    private void willThrowOn(String key) throws IOException {
-        org.mockito.BDDMockito.willThrow(new IOException("gone")).given(storage).delete(key);
+        verify(fileRepository).deleteAll(List.of(a, b));
+        verify(cleanup).afterCommit(List.of("messages/a.png", "messages/b.pdf"));
+        assertThat(m.getFiles()).isEmpty();
     }
 }
