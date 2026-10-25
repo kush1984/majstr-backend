@@ -125,7 +125,7 @@ public class PublicMaterialCalculatorService {
         BigDecimal box = req.calculator() == PublicMaterialCalcRequest.PublicCalculator.TILE
                 ? in.boxArea() : null;
         Computed computed = calculator.calculateLines(job.lines(), in.wastePercent(), job.perimeter(),
-                job.perPosition(), joint, box, ownNorm(in, job));
+                job.perPosition(), joint, box, ownNorm(req.calculator(), in, job));
         // Every line the page prints carries a quantity: a line that came to nothing is not a purchase.
         List<CalculatedMaterialLine> materials = computed.materials().stream()
                 .filter(m -> m.quantity() != null && m.quantity().signum() > 0)
@@ -146,7 +146,7 @@ public class PublicMaterialCalculatorService {
      * while a value typed in grams or for the whole bag falls outside it and is a 400. Our figure
      * for a THICKNESS norm is per millimetre, never already multiplied by the layer.</p>
      */
-    private OwnNorm ownNorm(Inputs in, Job job) {
+    private OwnNorm ownNorm(PublicMaterialCalcRequest.PublicCalculator kind, Inputs in, Job job) {
         BigDecimal value = in.ownNorm();
         if (value == null) {
             return null;
@@ -156,7 +156,10 @@ public class PublicMaterialCalculatorService {
         }
         BigDecimal ours = calculator.libraryCoefficient(job.lines(), job.mainMaterial()).orElseThrow();
         if (value.compareTo(ours.multiply(OWN_NORM_MIN)) < 0 || value.compareTo(ours.multiply(OWN_NORM_MAX)) > 0) {
-            throw new PublicCalcValidationException("error.public-calc.own-norm-range");
+            // A plaster or a screed figure is per mm, and the bag prints it per 10 mm — say so.
+            throw new PublicCalcValidationException(kind == PublicMaterialCalcRequest.PublicCalculator.TILE
+                    ? "error.public-calc.own-norm-range"
+                    : "error.public-calc.own-norm-range-per-mm");
         }
         return new OwnNorm(job.mainMaterial(), value);
     }

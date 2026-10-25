@@ -245,9 +245,12 @@ class PublicMaterialCalculatorIntegrationTest extends IntegrationTestBase {
         assertThat(post("""
                 {"calculator":"TILE","inputs":{"area":10,"format":"T300X300","ownNorm":0.4}}
                 """, null).statusCode()).isEqualTo(400);
-        assertThat(post("""
+        HttpResponse<String> tooMuch = post("""
                 {"calculator":"TILE","inputs":{"area":10,"format":"T300X300","ownNorm":60}}
-                """, null).statusCode()).isEqualTo(400);
+                """, null);
+        assertThat(tooMuch.statusCode()).isEqualTo(400);
+        // The adhesive's figure is per m², so the hint says exactly that and nothing about a layer.
+        assertThat(tooMuch.body()).contains("Перевірте одиниці: кг на м².").doesNotContain("на 1 мм");
         assertThat(post("""
                 {"calculator":"TILE","inputs":{"area":10,"format":"T300X300","ownNorm":1.6}}
                 """, null).statusCode()).isEqualTo(200);
@@ -434,9 +437,17 @@ class PublicMaterialCalculatorIntegrationTest extends IntegrationTestBase {
         assertThat(post("""
                 {"calculator":"PLASTER","inputs":{"area":10,"plaster":"GYPSUM","method":"MACHINE","ownNorm":0.09}}
                 """, null).statusCode()).isEqualTo(400);
-        assertThat(post("""
+        HttpResponse<String> plaster = post("""
                 {"calculator":"PLASTER","inputs":{"area":10,"plaster":"GYPSUM","method":"MACHINE","ownNorm":9.6}}
-                """, null).statusCode()).isEqualTo(400);
+                """, null);
+        assertThat(plaster.statusCode()).isEqualTo(400);
+        // 9,6 is the bag's per-10-mm figure typed as is — the answer tells him to divide it.
+        assertThat(plaster.body()).contains("кг на м² на 1 мм товщини", "поділіть на 10");
+        HttpResponse<String> screed = post("""
+                {"calculator":"SCREED","inputs":{"area":10,"screed":"CEMENT","ownNorm":25}}
+                """, null);
+        assertThat(screed.statusCode()).isEqualTo(400);
+        assertThat(screed.body()).contains("кг на м² на 1 мм товщини", "поділіть на 10");
         assertThat(post("""
                 {"calculator":"SCREED","inputs":{"area":10,"screed":"CEMENT","ownNorm":1.8}}
                 """, null).statusCode()).isEqualTo(200);
