@@ -44,6 +44,7 @@ class MarketPriceReviewOnLiveDataIntegrationTest extends IntegrationTestBase {
     private static final String SEAL = "Опломбування лічильника води";
     private static final String SEAL_NEW = "Організація опломбування лічильника води";
     private static final String PAINT_LINE = "Відведення лінії фарби довкола вікон/дверей";
+    private static final String CABLE = "Прокладка кабелю";
     private static final String THRESHOLD_DUP = "Приклеювання стиків в місцях порожків, герметизація силіконом";
 
     private static JdbcTemplate db;
@@ -97,6 +98,11 @@ class MarketPriceReviewOnLiveDataIntegrationTest extends IntegrationTestBase {
                 """.formatted(PENDING, MESH));
 
         item(WRECKER, PARTITION, "DEMOLITION", "M2", "60.00");
+
+        // Production met this: an admin moved a reviewed price before V176 ran (210 -> 95).
+        db.update("UPDATE catalog_templates SET suggested_price = 95 WHERE trade = 'ELECTRICAL' AND name = ?", CABLE);
+        item(WRECKER, CABLE, "ELECTRICAL", "LINEAR_METER", "95.00");
+        item(OWN_PRICE, CABLE, "ELECTRICAL", "LINEAR_METER", "180.00");
 
         Flyway.configure().dataSource(url, user, pass)
                 .locations("classpath:db/migration")
@@ -157,7 +163,17 @@ class MarketPriceReviewOnLiveDataIntegrationTest extends IntegrationTestBase {
         assertThat(notices(STALE)).containsExactly(
                 MESH + ": 50.00 → 100.00",
                 PARTITION + ": 60.00 → 150.00");
-        assertThat(notices(WRECKER)).containsExactly(PARTITION + ": 60.00 → 140.00");
+        assertThat(notices(WRECKER)).containsExactly(
+                PARTITION + ": 60.00 → 140.00",
+                CABLE + ": 95.00 → 50.00");
+    }
+
+    /** A price an admin moved after the review does not stop the deploy: it is still corrected, and
+     *  each master is offered the move from the number HE carries. */
+    @Test
+    void aPriceMovedSinceTheReviewIsStillCorrected() {
+        assertThat(templatePrice("ELECTRICAL", CABLE)).isEqualByComparingTo("50");
+        assertThat(notices(OWN_PRICE)).isEmpty();
     }
 
     @Test

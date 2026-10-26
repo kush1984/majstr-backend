@@ -53,7 +53,9 @@
 -- zeros, which is why «Прибирання…», «Винесення…» and «Розвантаження…» stay at 0 in PAINTER while
 -- TILING prices them.
 --
--- Self-checks `RAISE EXCEPTION` only about THIS migration's own work (review B-50).
+-- Nothing refuses on the live library's state (part 0): the first production run refused on one
+-- admin-edited price and took the deploy down. Self-checks `RAISE EXCEPTION` only about THIS
+-- migration's own work (review B-50).
 -- =================================================================================================
 
 CREATE TEMP TABLE _reprice (trade varchar(50), name varchar(255), unit varchar(20),
@@ -431,53 +433,100 @@ SELECT DISTINCT n AS name,
         UNION SELECT name FROM _del UNION SELECT survivor FROM _del UNION SELECT name FROM _pos) s(n);
 
 -- -------------------------------------------------------------------------------------------------
--- 0. Preconditions: each row is where we think it is, so nothing below lands on a guess.
+-- 0. Reconcile with the live library. The decision file was read off a copy of the library, and an
+--    admin may have edited a row since (the first production run met «Прокладка кабелю» at another
+--    price and refused, taking the deploy down). So nothing here refuses: a row that is no longer
+--    where the ruling found it is SKIPPED with a WARNING, and a moved price is still corrected - the
+--    notice then offers each master the move from the number HE carries (see 1).
 -- -------------------------------------------------------------------------------------------------
+CREATE TEMP TABLE _live ON COMMIT DROP AS
+SELECT r.trade, r.name, r.unit, ct.suggested_price AS live_price
+  FROM _reprice r
+  JOIN catalog_templates ct
+    ON ct.trade = r.trade AND ct.type = 'WORK' AND ct.unit = r.unit
+   AND lower(trim(ct.name)) = lower(trim(r.name));
+
 DO $$
 DECLARE v_bad text;
 BEGIN
-    -- The ruling was given about these numbers; a moved one would make the notices lie.
     SELECT string_agg(r.trade || ' / ' || r.name, '; ') INTO v_bad FROM _reprice r
-     WHERE (SELECT count(*) FROM catalog_templates ct
-             WHERE ct.trade = r.trade AND ct.type = 'WORK' AND ct.unit = r.unit
-               AND lower(trim(ct.name)) = lower(trim(r.name)) AND ct.suggested_price = r.old_price) <> 1;
+     WHERE NOT EXISTS (SELECT 1 FROM _live l WHERE l.trade = r.trade AND l.name = r.name AND l.unit = r.unit);
     IF v_bad IS NOT NULL THEN
-        RAISE EXCEPTION 'V176: repriced position(s) not found exactly once at the expected old price: %', v_bad;
+        RAISE WARNING 'V176: repriced position(s) not in the library, skipped: %', v_bad;
+        DELETE FROM _reprice r
+         WHERE NOT EXISTS (SELECT 1 FROM _live l WHERE l.trade = r.trade AND l.name = r.name AND l.unit = r.unit);
     END IF;
 
-    SELECT string_agg(x.name, '; ') INTO v_bad FROM (
-        SELECT r.trade, r.old_name AS name, r.unit FROM _ren r
-        UNION ALL SELECT u.trade, u.name, u.from_unit FROM _unit u
-        UNION ALL SELECT d.trade, d.name, d.unit FROM _del d
-        UNION ALL SELECT d.trade, d.survivor, d.survivor_unit FROM _del d
-        UNION ALL SELECT d.trade, d.name, d.unit FROM _desc d) x
-     WHERE NOT EXISTS (SELECT 1 FROM catalog_templates ct
-                        WHERE ct.trade = x.trade AND ct.type = 'WORK' AND ct.unit = x.unit
-                          AND lower(trim(ct.name)) = lower(trim(x.name)));
+    SELECT string_agg(r.trade || ' / ' || r.name || ' (' || l.live_price || ', expected ' || r.old_price || ')', '; ')
+      INTO v_bad
+      FROM _reprice r JOIN _live l ON l.trade = r.trade AND l.name = r.name AND l.unit = r.unit
+     WHERE l.live_price <> r.old_price;
     IF v_bad IS NOT NULL THEN
-        RAISE EXCEPTION 'V176: structural edit(s) on a position not in the library: %', v_bad;
+        RAISE WARNING 'V176: library price moved since the review, repriced anyway: %', v_bad;
     END IF;
 
-    -- A name another trade ships too would be split in two by a one-trade edit.
-    SELECT string_agg(x.name, '; ') INTO v_bad FROM (
-        SELECT r.trade, r.old_name AS name, r.unit FROM _ren r
-        UNION ALL SELECT u.trade, u.name, u.from_unit FROM _unit u
-        UNION ALL SELECT d.trade, d.name, d.unit FROM _del d) x
-     WHERE EXISTS (SELECT 1 FROM catalog_templates ct
-                    WHERE ct.trade <> x.trade AND ct.type = 'WORK' AND ct.unit = x.unit
-                      AND lower(trim(ct.name)) = lower(trim(x.name)));
+    SELECT string_agg(r.old_name, '; ') INTO v_bad FROM _ren r
+     WHERE NOT EXISTS (SELECT 1 FROM catalog_templates ct WHERE ct.trade = r.trade AND ct.type = 'WORK'
+                         AND ct.unit = r.unit AND lower(trim(ct.name)) = lower(trim(r.old_name)))
+        OR EXISTS (SELECT 1 FROM catalog_templates ct WHERE ct.trade <> r.trade AND ct.type = 'WORK'
+                     AND ct.unit = r.unit AND lower(trim(ct.name)) = lower(trim(r.old_name)))
+        OR EXISTS (SELECT 1 FROM catalog_templates ct WHERE ct.type = 'WORK'
+                     AND ct.unit = r.unit AND lower(trim(ct.name)) = lower(trim(r.new_name)));
     IF v_bad IS NOT NULL THEN
-        RAISE EXCEPTION 'V176: edited position(s) are shipped by another trade too: %', v_bad;
+        RAISE WARNING 'V176: rename(s) not applicable to the live library, skipped: %', v_bad;
+        DELETE FROM _ren r
+         WHERE NOT EXISTS (SELECT 1 FROM catalog_templates ct WHERE ct.trade = r.trade AND ct.type = 'WORK'
+                             AND ct.unit = r.unit AND lower(trim(ct.name)) = lower(trim(r.old_name)))
+            OR EXISTS (SELECT 1 FROM catalog_templates ct WHERE ct.trade <> r.trade AND ct.type = 'WORK'
+                         AND ct.unit = r.unit AND lower(trim(ct.name)) = lower(trim(r.old_name)))
+            OR EXISTS (SELECT 1 FROM catalog_templates ct WHERE ct.type = 'WORK'
+                         AND ct.unit = r.unit AND lower(trim(ct.name)) = lower(trim(r.new_name)));
     END IF;
 
-    SELECT string_agg(x.name, '; ') INTO v_bad FROM (
-        SELECT r.new_name AS name, r.unit FROM _ren r
-        UNION ALL SELECT u.name, u.to_unit FROM _unit u) x
-     WHERE EXISTS (SELECT 1 FROM catalog_templates ct
-                    WHERE ct.type = 'WORK' AND ct.unit = x.unit
-                      AND lower(trim(ct.name)) = lower(trim(x.name)));
+    SELECT string_agg(u.name, '; ') INTO v_bad FROM _unit u
+     WHERE NOT EXISTS (SELECT 1 FROM catalog_templates ct WHERE ct.trade = u.trade AND ct.type = 'WORK'
+                         AND ct.unit = u.from_unit AND lower(trim(ct.name)) = lower(trim(u.name)))
+        OR EXISTS (SELECT 1 FROM catalog_templates ct WHERE ct.trade <> u.trade AND ct.type = 'WORK'
+                     AND ct.unit = u.from_unit AND lower(trim(ct.name)) = lower(trim(u.name)))
+        OR EXISTS (SELECT 1 FROM catalog_templates ct WHERE ct.type = 'WORK'
+                     AND ct.unit = u.to_unit AND lower(trim(ct.name)) = lower(trim(u.name)));
     IF v_bad IS NOT NULL THEN
-        RAISE EXCEPTION 'V176: a new name or unit is already in the library: %', v_bad;
+        RAISE WARNING 'V176: unit change(s) not applicable to the live library, skipped: %', v_bad;
+        DELETE FROM _unit u
+         WHERE NOT EXISTS (SELECT 1 FROM catalog_templates ct WHERE ct.trade = u.trade AND ct.type = 'WORK'
+                             AND ct.unit = u.from_unit AND lower(trim(ct.name)) = lower(trim(u.name)))
+            OR EXISTS (SELECT 1 FROM catalog_templates ct WHERE ct.trade <> u.trade AND ct.type = 'WORK'
+                         AND ct.unit = u.from_unit AND lower(trim(ct.name)) = lower(trim(u.name)))
+            OR EXISTS (SELECT 1 FROM catalog_templates ct WHERE ct.type = 'WORK'
+                         AND ct.unit = u.to_unit AND lower(trim(ct.name)) = lower(trim(u.name)));
+    END IF;
+
+    SELECT string_agg(d.name, '; ') INTO v_bad FROM _del d
+     WHERE NOT EXISTS (SELECT 1 FROM catalog_templates ct WHERE ct.trade = d.trade AND ct.type = 'WORK'
+                         AND ct.unit = d.unit AND lower(trim(ct.name)) = lower(trim(d.name)))
+        OR NOT EXISTS (SELECT 1 FROM catalog_templates ct WHERE ct.trade = d.trade AND ct.type = 'WORK'
+                         AND ct.unit = d.survivor_unit AND lower(trim(ct.name)) = lower(trim(d.survivor)))
+        OR EXISTS (SELECT 1 FROM catalog_templates ct WHERE ct.trade <> d.trade AND ct.type = 'WORK'
+                     AND ct.unit = d.unit AND lower(trim(ct.name)) = lower(trim(d.name)));
+    IF v_bad IS NOT NULL THEN
+        RAISE WARNING 'V176: deletion(s) not applicable to the live library, skipped: %', v_bad;
+        DELETE FROM _del d
+         WHERE NOT EXISTS (SELECT 1 FROM catalog_templates ct WHERE ct.trade = d.trade AND ct.type = 'WORK'
+                             AND ct.unit = d.unit AND lower(trim(ct.name)) = lower(trim(d.name)))
+            OR NOT EXISTS (SELECT 1 FROM catalog_templates ct WHERE ct.trade = d.trade AND ct.type = 'WORK'
+                             AND ct.unit = d.survivor_unit AND lower(trim(ct.name)) = lower(trim(d.survivor)))
+            OR EXISTS (SELECT 1 FROM catalog_templates ct WHERE ct.trade <> d.trade AND ct.type = 'WORK'
+                         AND ct.unit = d.unit AND lower(trim(ct.name)) = lower(trim(d.name)));
+    END IF;
+
+    SELECT string_agg(d.name, '; ') INTO v_bad FROM _desc d
+     WHERE NOT EXISTS (SELECT 1 FROM catalog_templates ct WHERE ct.trade = d.trade AND ct.type = 'WORK'
+                         AND ct.unit = d.unit AND lower(trim(ct.name)) = lower(trim(d.name)));
+    IF v_bad IS NOT NULL THEN
+        RAISE WARNING 'V176: described position(s) not in the library, skipped: %', v_bad;
+        DELETE FROM _desc d
+         WHERE NOT EXISTS (SELECT 1 FROM catalog_templates ct WHERE ct.trade = d.trade AND ct.type = 'WORK'
+                             AND ct.unit = d.unit AND lower(trim(ct.name)) = lower(trim(d.name)));
     END IF;
 
     SELECT string_agg(p.trade || ' / ' || p.name, '; ') INTO v_bad FROM _pos p JOIN _key kp ON kp.name = p.name
@@ -485,12 +534,20 @@ BEGIN
                     WHERE ct.trade = p.trade AND ct.type = 'WORK' AND ct.unit = p.unit
                       AND lower(btrim(replace(replace(regexp_replace(ct.name, '\s+', ' ', 'g'), '( ', '('), ' )', ')'))) = kp.k);
     IF v_bad IS NOT NULL THEN
-        RAISE EXCEPTION 'V176: a new position is already in its trade: %', v_bad;
+        RAISE WARNING 'V176: new position(s) already in their trade, skipped: %', v_bad;
+        DELETE FROM _pos p USING _key kp
+         WHERE kp.name = p.name
+           AND EXISTS (SELECT 1 FROM catalog_templates ct
+                        WHERE ct.trade = p.trade AND ct.type = 'WORK' AND ct.unit = p.unit
+                          AND lower(btrim(replace(replace(regexp_replace(ct.name, '\s+', ' ', 'g'), '( ', '('), ' )', ')'))) = kp.k);
     END IF;
 END $$;
 
 -- -------------------------------------------------------------------------------------------------
--- 1. Prices, and the notices — at most one per master's row, by the trade the row is filed under.
+-- 1. Prices, and the notices - at most one per master's row, by the trade the row is filed under.
+--    A copy counts as «ours» at the decision file's old price or at the library's live one, and the
+--    notice carries HIS number as the old price (accept() moves his price only while it still equals
+--    it). A copy already at the new price is not nagged.
 -- -------------------------------------------------------------------------------------------------
 UPDATE catalog_templates ct
    SET suggested_price = r.new_price
@@ -503,16 +560,21 @@ CREATE TEMP TABLE _notified (user_id uuid, position_name varchar(255)) ON COMMIT
 WITH ins AS (
     INSERT INTO catalog_update_notices (id, user_id, kind, positions_added, positions_removed,
                                         position_name, old_price, new_price)
-    SELECT gen_random_uuid(), ci.owner_id, 'PRICE_DRIFT', 0, 0, r.name, r.old_price, r.new_price
+    SELECT DISTINCT ON (ci.id) gen_random_uuid(), ci.owner_id, 'PRICE_DRIFT', 0, 0, r.name,
+           ci.default_price, r.new_price
       FROM _reprice r
       JOIN catalog_items ci
         ON lower(trim(ci.name)) = lower(trim(r.name))
        AND ci.type = 'WORK' AND ci.unit = r.unit AND ci.trade = r.trade
-     WHERE ci.source = 'LIBRARY' AND ci.default_price = r.old_price
+     WHERE ci.source = 'LIBRARY' AND ci.default_price <> r.new_price
+       AND (ci.default_price = r.old_price
+            OR ci.default_price IN (SELECT l.live_price FROM _live l
+                                     WHERE l.trade = r.trade AND l.name = r.name AND l.unit = r.unit))
        AND NOT EXISTS (SELECT 1 FROM catalog_update_notices n
                         WHERE n.user_id = ci.owner_id AND n.kind = 'PRICE_DRIFT'
                           AND n.dismissed_at IS NULL
                           AND lower(trim(n.position_name)) = lower(trim(r.name)))
+     ORDER BY ci.id
     RETURNING user_id, position_name)
 INSERT INTO _notified SELECT user_id, position_name FROM ins;
 
