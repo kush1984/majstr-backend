@@ -72,6 +72,11 @@ public class CatalogUpdateNotice {
     @Column(name = "dismissed_at")
     private Instant dismissedAt;
 
+    /** WHY it left the queue (V179) — set together with {@link #dismissedAt} through {@link #close}. */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "resolution", length = 20)
+    private CatalogUpdateNoticeResolution resolution;
+
     /** Set only for {@code kind = PRICE_DRIFT}; null otherwise. The three travel together — a
      *  row has either all three or none (DB CHECK enforces this, see V94). */
     @Column(name = "position_name")
@@ -82,6 +87,15 @@ public class CatalogUpdateNotice {
 
     @Column(name = "new_price", precision = 15, scale = 2)
     private BigDecimal newPrice;
+
+    /** Take the notice out of the queue and say why; a notice already closed keeps its first answer. */
+    public void close(CatalogUpdateNoticeResolution why) {
+        if (dismissedAt != null) {
+            return;
+        }
+        dismissedAt = Instant.now();
+        resolution = why;
+    }
 
     @PrePersist
     void onCreate() {

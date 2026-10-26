@@ -65,7 +65,7 @@ controllers return DTOs. `passwordHash` never appears in any response (`UserResp
 
 `hibernate.ddl-auto: validate` — never express schema changes in entity annotations. Add a new
 `V<N>__<desc>.sql` under `src/main/resources/db/migration/`; **check the highest number first**
-(latest is **V178**). **Never edit an applied migration** — Flyway checksums it and a changed file
+(latest is **V179**). **Never edit an applied migration** — Flyway checksums it and a changed file
 fails startup (a correction to a shipped migration's COMMENT goes in the next migration's header —
 review B-53 did that for V136). **A self-check may `RAISE EXCEPTION` only about the migration's OWN
 work** (review B-50): «I just re-filed these rows, assert none is left» is a bug if it fails, while
@@ -107,6 +107,11 @@ Spring Boot 4 removed all test-slice annotations (`@WebMvcTest`, `@DataJpaTest`,
   Two are easy to forget and each has reddened CI alone: **`npm run lint`** (`eslint --max-warnings 0`
   — a stray `!`/`as` is a HARD error) and **`npm run typecheck:tests`** (a SEPARATE, stricter tsconfig
   covering the TEST files, which `tsc -b` does **not**). "build + vitest were green" is NOT the gate.
+- **UI: what the row shows, the row edits** — «Що видно в рядку — редагується в рядку. Діалог — для
+  решти.» New lists use `InlineNumberCell` / `InlineTextCell`; save on blur / Enter / «Далі» /
+  `visibilitychange`, cancel on Esc / «Назад»; empty number = 0, empty name not saved; toast
+  «Збережено · Скасувати» 5 s. **Crew prices never reach the client nor the catalog.**
+  [docs/iteration-inline-editing.md](docs/iteration-inline-editing.md).
 - **Offline/service-worker changes also need `npm run test:e2e:offline`** (CI runs the shell spec).
   The normal e2e runs on the Vite dev server where the SW is DISABLED, so no dev-based test sees an
   SW regression. Verify a new one fails without the fix — check the SOURCE, not minified `dist/sw.js`.

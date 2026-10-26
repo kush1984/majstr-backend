@@ -4,6 +4,7 @@ import com.majstr.backend.entity.CatalogItem;
 import com.majstr.backend.entity.CatalogItemSource;
 import com.majstr.backend.entity.CatalogTemplate;
 import com.majstr.backend.entity.CatalogUpdateNoticeKind;
+import com.majstr.backend.entity.CatalogUpdateNoticeResolution;
 import com.majstr.backend.entity.Trade;
 import com.majstr.backend.entity.User;
 import com.majstr.backend.dto.CatalogUpdateNoticeResponse;
@@ -15,7 +16,6 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.time.Instant;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
@@ -64,28 +64,28 @@ public class CatalogTemplateService {
     @Transactional
     public void dismissUpdateNotice(UUID userId, UUID noticeId) {
         noticeRepository.findByIdAndUserId(noticeId, userId)
-                .ifPresent(n -> n.setDismissedAt(Instant.now()));
+                .ifPresent(n -> n.close(CatalogUpdateNoticeResolution.DISMISSED));
     }
 
     /**
-     * "Прийняти" on a PRICE_DRIFT notice: updates the master's own {@code LIBRARY} catalog item
-     * to the new price, but ONLY if it still carries the exact old price from the notice — if the
-     * master edited it themselves in the meantime, their number is never touched, the notice is
-     * just dismissed. A COUNT notice has no price to accept; this is then the same as dismiss.
-     * Idempotent for the same reasons as {@link #dismissUpdateNotice}.
+     * «Оновити мою ціну» on a PRICE_DRIFT notice: the master's own {@code LIBRARY} catalog item takes
+     * the new price — ALWAYS (owner ruling 2026-10-26). It used to move only while the item still
+     * carried the notice's old price, so a master who had re-priced it and then tapped the button
+     * got a dismissed notice and nothing else: a silent no-op on an explicit tap is a bug. A notice
+     * already closed (and a COUNT notice, which has no price) changes no price. Idempotent for the
+     * same reasons as {@link #dismissUpdateNotice}.
      */
     @Transactional
     public void acceptUpdateNotice(UUID userId, UUID noticeId) {
         noticeRepository.findByIdAndUserId(noticeId, userId).ifPresent(n -> {
-            if (n.getKind() == CatalogUpdateNoticeKind.PRICE_DRIFT) {
+            if (n.getKind() == CatalogUpdateNoticeKind.PRICE_DRIFT && n.getDismissedAt() == null) {
                 String key = CatalogNameKey.of(n.getPositionName());
                 catalogRepository.findByOwnerIdOrderByNameAsc(userId).stream()
                         .filter(item -> item.getSource() == CatalogItemSource.LIBRARY)
-                        .filter(item -> item.getDefaultPrice().compareTo(n.getOldPrice()) == 0)
                         .filter(item -> key.equals(CatalogNameKey.of(item.getName())))
                         .forEach(item -> item.setDefaultPrice(n.getNewPrice()));
             }
-            n.setDismissedAt(Instant.now());
+            n.close(CatalogUpdateNoticeResolution.ACCEPTED);
         });
     }
 

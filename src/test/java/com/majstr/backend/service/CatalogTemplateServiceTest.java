@@ -6,6 +6,7 @@ import com.majstr.backend.entity.CatalogItemSource;
 import com.majstr.backend.entity.CatalogTemplate;
 import com.majstr.backend.entity.CatalogUpdateNotice;
 import com.majstr.backend.entity.CatalogUpdateNoticeKind;
+import com.majstr.backend.entity.CatalogUpdateNoticeResolution;
 import com.majstr.backend.entity.ItemType;
 import com.majstr.backend.entity.Trade;
 import com.majstr.backend.entity.Unit;
@@ -105,7 +106,7 @@ class CatalogTemplateServiceTest {
     }
 
     @Test
-    void acceptUpdateNotice_updatesTheLibraryItem_onlyWhenItStillCarriesTheOldPrice() {
+    void acceptUpdateNotice_updatesTheLibraryItem_atTheOldPrice() {
         UUID userId = UUID.randomUUID();
         UUID noticeId = UUID.randomUUID();
         CatalogUpdateNotice notice = CatalogUpdateNotice.builder()
@@ -122,11 +123,13 @@ class CatalogTemplateServiceTest {
 
         assertThat(stillAtOldPrice.getDefaultPrice()).isEqualByComparingTo("250");
         assertThat(notice.getDismissedAt()).isNotNull();
+        assertThat(notice.getResolution()).isEqualTo(CatalogUpdateNoticeResolution.ACCEPTED);
     }
 
+    /** Owner ruling 2026-10-26: «Оновити мою ціну» is an explicit tap — it applies the new price even
+     *  over one the master changed himself. It used to dismiss the notice and change nothing. */
     @Test
-    void acceptUpdateNotice_neverTouchesAPriceTheMasterAlreadyChangedHimself() {
-        // The golden rule this whole feature is built around: a self-edited price is untouched.
+    void acceptUpdateNotice_appliesTheNewPriceEvenOverOneTheMasterChangedHimself() {
         UUID userId = UUID.randomUUID();
         UUID noticeId = UUID.randomUUID();
         CatalogUpdateNotice notice = CatalogUpdateNotice.builder()
@@ -141,8 +144,8 @@ class CatalogTemplateServiceTest {
 
         catalogTemplateService.acceptUpdateNotice(userId, noticeId);
 
-        assertThat(selfEdited.getDefaultPrice()).isEqualByComparingTo("310"); // untouched
-        assertThat(notice.getDismissedAt()).isNotNull(); // still closes the notice
+        assertThat(selfEdited.getDefaultPrice()).isEqualByComparingTo("250");
+        assertThat(notice.getResolution()).isEqualTo(CatalogUpdateNoticeResolution.ACCEPTED);
     }
 
     @Test

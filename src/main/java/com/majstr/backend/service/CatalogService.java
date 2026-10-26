@@ -6,6 +6,8 @@ import com.majstr.backend.dto.CatalogItemResponse.SharedTrade;
 import com.majstr.backend.dto.CatalogItemsOrderRequest;
 import com.majstr.backend.entity.CatalogItem;
 import com.majstr.backend.entity.CatalogItemSource;
+import com.majstr.backend.entity.CatalogUpdateNoticeKind;
+import com.majstr.backend.entity.CatalogUpdateNoticeResolution;
 import com.majstr.backend.entity.ItemType;
 import com.majstr.backend.entity.Trade;
 import com.majstr.backend.entity.User;
@@ -13,8 +15,10 @@ import com.majstr.backend.entity.UserTrade;
 import com.majstr.backend.exception.ResourceNotFoundException;
 import com.majstr.backend.repository.CatalogItemRepository;
 import com.majstr.backend.repository.CatalogTemplateRepository;
+import com.majstr.backend.repository.CatalogUpdateNoticeRepository;
 import com.majstr.backend.repository.UserRepository;
 import com.majstr.backend.repository.UserTradeRepository;
+import com.majstr.backend.service.catalog.CatalogNameKey;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.security.access.AccessDeniedException;
@@ -22,6 +26,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.LinkedHashSet;
@@ -53,6 +58,7 @@ public class CatalogService {
     private final CatalogTemplateRepository catalogTemplateRepository;
     private final UserRepository userRepository;
     private final UserTradeRepository userTradeRepository;
+    private final CatalogUpdateNoticeRepository noticeRepository;
 
     @Transactional
     public CatalogItemResponse create(CatalogItemRequest req, UUID ownerId) {
@@ -227,6 +233,8 @@ public class CatalogService {
     public CatalogItemResponse update(UUID id, CatalogItemRequest req, UUID ownerId) {
         CatalogItem item = loadOwned(id, ownerId);
         UserTrade customTrade = resolveCustomTrade(req.customTradeId(), ownerId);
+        String oldName = item.getName();
+        boolean repriced = item.getDefaultPrice().compareTo(req.defaultPrice()) != 0;
         item.setName(req.name().trim());
         item.setCategory(normalizeCategory(req.category()));
         item.setTrade(customTrade != null ? Trade.OTHER
@@ -235,7 +243,24 @@ public class CatalogService {
         item.setType(req.type());
         item.setUnit(req.unit());
         item.setDefaultPrice(req.defaultPrice());
+        if (repriced) {
+            resolvePriceDrift(ownerId, List.of(oldName, item.getName()));
+        }
         return CatalogItemResponse.from(item);
+    }
+
+    /**
+     * The master set a position's price himself: his open PRICE_DRIFT notice about it has been
+     * answered, so it leaves the queue as RESOLVED (V179) rather than offering «Оновити мою ціну»
+     * over a number he just chose. A rename alone resolves nothing. Matched by the same
+     * {@link CatalogNameKey} the notice's accept uses, on the old name and the new one.
+     */
+    public void resolvePriceDrift(UUID ownerId, Collection<String> names) {
+        Set<String> keys = names.stream().map(CatalogNameKey::of).collect(Collectors.toSet());
+        noticeRepository.findByUserIdAndKindAndDismissedAtIsNull(ownerId, CatalogUpdateNoticeKind.PRICE_DRIFT)
+                .stream()
+                .filter(n -> keys.contains(CatalogNameKey.of(n.getPositionName())))
+                .forEach(n -> n.close(CatalogUpdateNoticeResolution.RESOLVED));
     }
 
     /** Resolve and ownership-check a custom trade id from a request; {@code null} passes through. */

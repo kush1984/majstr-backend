@@ -1,6 +1,6 @@
 # Inline editing (spreadsheet-style rows) + «Оновити каталог» card
 
-**Status:** IN PROGRESS — stages 1-2 done (not pushed); 3 and 4 next. UI freeze 4 November, meetup
+**Status:** IN PROGRESS — stages 1-3 done (not pushed); 4 next. UI freeze 4 November, meetup
 11 November. Phone (PWA) only.
 **Rule:** «Що видно в рядку — редагується в рядку. Діалог — для решти.»
 **Flags:** `INLINE_ITEM_EDITING`, `CATALOG_SYNC_CARD` in `majstr-pwa/src/lib/featureFlags.ts`.
@@ -43,6 +43,25 @@ change is undoable (`toastUndoable`, 5 s).
   «Спершу вкажіть кількість». A quantity typed over measurements sets `quantityManual` and shows
   «✎ вручну». A «%» line edits only its percent, sign shown beside it. `inline_edit_commit` (field +
   screen only) in PostHog.
+
+## Stage 3 — catalog and templates
+
+- Backend, V179 `catalog_update_notices.resolution` (DISMISSED / ACCEPTED / RESOLVED; NULL on rows
+  closed before, never guessed; CHECK it comes with `dismissed_at`). `CatalogUpdateNotice.close(why)`
+  is the one door.
+  - A master who RE-PRICES a position himself (`CatalogService.update`, so the row, the dialog and —
+    stage 4 — the card) closes his open PRICE_DRIFT notice about it as RESOLVED (`resolvePriceDrift`,
+    matched by `CatalogNameKey` on the old AND the new name); a rename alone resolves nothing.
+  - «Оновити мою ціну» applies the new price ALWAYS (it used to move it only while it still equalled
+    the notice's old price — a silent no-op on an explicit tap). This covers V176's 253 notices.
+  - `PriceDriftResolutionIntegrationTest` (notices planted exactly as V176 writes them),
+    `CatalogTemplateServiceTest` updated.
+- PWA catalog row: name and price in the row, «⋯» for trade / category / unit / description. A price
+  of 0 or empty is never saved. «Ціну/Назву в каталозі змінено · Скасувати». Estimates are snapshots
+  and are not touched. The notices list refreshes through the `['catalog']` prefix.
+- PWA templates: the NAME edits in the row, into the explicit-save draft (no toast); the price shows
+  greyed «з каталогу N ₴» or «немає в каталозі» by `lib/catalogMatch.ts` — `lower(trim(name))` + type
+  + unit, the key the server prices template lines by.
 
 ## Not verified yet
 

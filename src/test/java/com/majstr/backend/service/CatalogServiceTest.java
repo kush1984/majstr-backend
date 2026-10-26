@@ -12,6 +12,7 @@ import com.majstr.backend.entity.UserTrade;
 import com.majstr.backend.repository.CatalogItemRepository;
 import com.majstr.backend.repository.CatalogTemplateRepository;
 import com.majstr.backend.repository.UserRepository;
+import com.majstr.backend.repository.CatalogUpdateNoticeRepository;
 import com.majstr.backend.repository.UserTradeRepository;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -44,6 +45,7 @@ class CatalogServiceTest {
     @Mock CatalogTemplateRepository catalogTemplateRepository;
     @Mock UserRepository userRepository;
     @Mock UserTradeRepository userTradeRepository;
+    @Mock CatalogUpdateNoticeRepository noticeRepository;
     @InjectMocks CatalogService catalogService;
 
     private final UUID ownerId = UUID.randomUUID();
