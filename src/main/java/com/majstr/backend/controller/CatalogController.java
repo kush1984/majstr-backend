@@ -6,6 +6,8 @@ import com.majstr.backend.dto.CatalogBulkDeleteRequest;
 import com.majstr.backend.dto.CatalogBulkDeleteResponse;
 import com.majstr.backend.dto.CatalogItemResponse;
 import com.majstr.backend.dto.CatalogItemsOrderRequest;
+import com.majstr.backend.dto.CatalogSyncRequest;
+import com.majstr.backend.dto.CatalogSyncResponse;
 import com.majstr.backend.dto.CatalogResetResponse;
 import com.majstr.backend.dto.CatalogUpdateNoticeResponse;
 import com.majstr.backend.dto.TemplateUpdatesResponse;
@@ -109,6 +111,16 @@ public class CatalogController {
     public CatalogBulkDeleteResponse deleteItems(@Valid @RequestBody CatalogBulkDeleteRequest req,
                                                  @AuthenticationPrincipal UserPrincipal principal) {
         return new CatalogBulkDeleteResponse(catalogService.deleteItems(req.ids(), principal.id()));
+    }
+
+    @Operation(summary = "«Оновити каталог» from an estimate: re-price and add positions in one transaction",
+            description = "Idempotent on replay: an added position carries its client id, a price set twice is "
+                    + "the same price. The offline queue sends the batch's id in X-Entity-Uuid; nothing here "
+                    + "needs it beyond those per-row ids. Only client prices travel — there is no crew-price field.")
+    @PostMapping("/sync")
+    public CatalogSyncResponse sync(@Valid @RequestBody CatalogSyncRequest req,
+                                    @AuthenticationPrincipal UserPrincipal principal) {
+        return catalogService.sync(req, principal.id());
     }
 
     @Operation(summary = "Persist the master's own arrangement of his catalog")

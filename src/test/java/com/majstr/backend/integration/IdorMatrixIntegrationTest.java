@@ -679,6 +679,13 @@ class IdorMatrixIntegrationTest extends IntegrationTestBase {
                         "{\"customTradeId\":\"" + a.customTrade + "\"}", b.template),
                 "bundles pointing at A's trade", TEMPLATES_OF_TRADE_SQL, a.customTrade));
 
+        // «Оновити каталог» from B's estimate naming A's catalog position: A's price stays A's.
+        c.add(new BodyCase(
+                json("POST", "/api/catalog/sync",
+                        "{\"updates\":[{\"catalogItemId\":\"" + a.catalogItem + "\",\"defaultPrice\":1}],"
+                                + "\"creates\":[]}"),
+                "A's catalog price", CATALOG_ITEM_SQL, a.catalogItem));
+
         // An object of B's claiming A's client.
         c.add(new BodyCase(
                 json("POST", "/api/projects",
@@ -694,6 +701,8 @@ class IdorMatrixIntegrationTest extends IntegrationTestBase {
         return c;
     }
 
+    private static final String CATALOG_ITEM_SQL = """
+            select coalesce(max(default_price::text || '|' || name), 'gone') from catalog_items where id = ?""";
     private static final String LINE_SQL = """
             select coalesce(max(unit_price::text || '|' || line_total::text || '|' || sort_order::text
                    || '|' || name), 'gone') from estimate_items where id = ?""";

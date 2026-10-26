@@ -4,6 +4,8 @@ import com.majstr.backend.dto.CatalogItemRequest;
 import com.majstr.backend.dto.CatalogItemResponse;
 import com.majstr.backend.dto.CatalogItemResponse.SharedTrade;
 import com.majstr.backend.dto.CatalogItemsOrderRequest;
+import com.majstr.backend.dto.CatalogSyncRequest;
+import com.majstr.backend.dto.CatalogSyncResponse;
 import com.majstr.backend.entity.CatalogItem;
 import com.majstr.backend.entity.CatalogItemSource;
 import com.majstr.backend.entity.CatalogUpdateNoticeKind;
@@ -261,6 +263,45 @@ public class CatalogService {
                 .stream()
                 .filter(n -> keys.contains(CatalogNameKey.of(n.getPositionName())))
                 .forEach(n -> n.close(CatalogUpdateNoticeResolution.RESOLVED));
+    }
+
+    /**
+     * «Оновити каталог» from an estimate's card, in ONE transaction: the ticked prices written into
+     * positions the master already has, and the ticked positions added. Every write is a re-price the
+     * master chose himself, so each one resolves his open PRICE_DRIFT notice about it (V179).
+     *
+     * <p>Idempotent on replay (the offline queue): a price set twice is the same price, and an added
+     * position carries its client id, which {@link #create(CatalogItemRequest, UUID, UUID)} honours.
+     * Lenient where the queue needs it: a position deleted since the card was drawn — or one that is
+     * not the master's — is skipped, not an error, so a stale batch can never wedge the queue. If the
+     * position changed in between, the last write wins.</p>
+     */
+    @Transactional
+    public CatalogSyncResponse sync(CatalogSyncRequest req, UUID ownerId) {
+        int updated = 0;
+        List<String> repriced = new ArrayList<>();
+        for (CatalogSyncRequest.PriceUpdate u : req.updates()) {
+            var found = catalogRepository.findById(u.catalogItemId())
+                    .filter(i -> i.getOwner().getId().equals(ownerId));
+            if (found.isEmpty()) {
+                continue;
+            }
+            CatalogItem item = found.get();
+            item.setDefaultPrice(u.defaultPrice());
+            repriced.add(item.getName());
+            updated++;
+        }
+        int added = 0;
+        for (CatalogSyncRequest.NewPosition p : req.creates()) {
+            create(new CatalogItemRequest(p.name(), p.category(), p.trade(), null, p.type(), p.unit(),
+                    p.defaultPrice()), ownerId, p.id());
+            repriced.add(p.name());
+            added++;
+        }
+        if (!repriced.isEmpty()) {
+            resolvePriceDrift(ownerId, repriced);
+        }
+        return new CatalogSyncResponse(updated, added);
     }
 
     /** Resolve and ownership-check a custom trade id from a request; {@code null} passes through. */

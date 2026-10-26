@@ -1,6 +1,6 @@
 # Inline editing (spreadsheet-style rows) + «Оновити каталог» card
 
-**Status:** IN PROGRESS — stages 1-3 done (not pushed); 4 next. UI freeze 4 November, meetup
+**Status:** DONE (not pushed) — stages 1-4. PWA 1.62.0. UI freeze 4 November, meetup
 11 November. Phone (PWA) only.
 **Rule:** «Що видно в рядку — редагується в рядку. Діалог — для решти.»
 **Flags:** `INLINE_ITEM_EDITING`, `CATALOG_SYNC_CARD` in `majstr-pwa/src/lib/featureFlags.ts`.
@@ -62,6 +62,25 @@ change is undoable (`toastUndoable`, 5 s).
 - PWA templates: the NAME edits in the row, into the explicit-save draft (no toast); the price shows
   greyed «з каталогу N ₴» or «немає в каталозі» by `lib/catalogMatch.ts` — `lower(trim(name))` + type
   + unit, the key the server prices template lines by.
+
+## Stage 4 — «Ціни відрізняються від каталогу»
+
+- Backend: `POST /api/catalog/sync` (`CatalogSyncRequest {updates[], creates[]}` →
+  `CatalogSyncResponse {updated, added}`), ONE transaction. Re-prices positions the master owns
+  (a foreign or deleted id is skipped, so a stale batch never wedges the queue), adds new ones through
+  the catalog's own upsert (client id → a replay finds its row; an existing name+type+unit is
+  re-priced — the last write wins), and resolves the PRICE_DRIFT notices of everything it wrote
+  (V179). No crew-price field exists in the request. `CatalogSyncIntegrationTest` (atomic, replay,
+  last-write-wins, foreign id, notice, no crew field); an IDOR class-3 case (B's sync naming A's
+  position leaves A's price alone). Contract snapshot refreshed and copied to the PWA.
+- PWA: `catalogSync.ts` computes the card — «%» lines and 0 ₴ lines skipped, the same name in another
+  unit/type skipped (not «missing»), several lines at different prices for one position skipped; only
+  `unitPrice` is read. «Не зараз» stores the card's signatures per estimate in localStorage (try/catch:
+  storage failing just shows the card); the card returns only for a signature not stored then.
+  `CatalogSyncCard` under «Кошторис готовий?», unsigned estimates only; the sheet pre-ticks a HIGHER
+  price, never a lower one («знижка клієнту?») and never a missing position. One queued `catalogSync`
+  batch; «Каталог оновлено: K позицій · Скасувати» undoes the whole batch (old prices as another
+  sync, the added positions bulk-deleted). `catalog_sync_apply` (counts only) in PostHog.
 
 ## Not verified yet
 
