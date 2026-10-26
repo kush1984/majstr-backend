@@ -4035,6 +4035,30 @@ one-line summary — keep the item in the file as a record.
   expensive grout on the market, so the position where a wrong figure costs the most is also the one
   we currently answer not at all.
 
+### «New in the library» notice for pull-only additions
+
+- **Status:** OPEN
+- **Since:** 2026-10-26, V176 ([iteration-market-price-review-2026-10.md](iteration-market-price-review-2026-10.md))
+- **Context:** V176 added 67 positions under a new catalog version without pushing them into
+  masters' catalogs (owner ruling). The owner wanted one informational notice that leads to
+  «Додати нові з довідника». Nothing can say that today: `COUNT` renders «Ваш каталог оновлено —
+  Додано N позицій», which would be false, and the button only checks when it is tapped.
+- **Notes / options:** a third `catalog_update_notices.kind` (e.g. `AVAILABLE`, N =
+  `countNewFromCatalog` at read time rather than stored) plus PWA rendering that links to the button.
+  Alternatively, a badge on the button driven by the existing count endpoint.
+
+### V176's new positions have no material norms; the 34 deferred price rows
+
+- **Status:** OPEN
+- **Since:** 2026-10-26, V176
+- **Context:** The 67 additions shipped priced but un-normed, so the calculator answers nothing for
+  them. FLOORING's «every position answers» pin now excludes catalog version 26 explicitly (11
+  positions). The decision file's 34 `deferred` rows (e.g. two-component waterproofing 273, herringbone
+  laminate 500, PAINTER's 11 organizational zeros, BUILDER's «240 × N» fence/facade rows) are
+  untouched and still to discuss.
+- **Notes / options:** a norm pass trade by trade (FLOORING first, to lift the test exclusion), with
+  a before→after preview for the owner first.
+
 ---
 
 ## Resolved

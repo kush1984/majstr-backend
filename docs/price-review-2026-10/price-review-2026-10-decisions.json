@@ -1,0 +1,3973 @@
+{
+ "date": "2026-10-25",
+ "price_changes": [
+  {
+   "trade": "BUILDER",
+   "name": "Анкерування однієї стіни до іншої",
+   "unit": "PIECE",
+   "old": 45.0,
+   "new": 90.0,
+   "why": "аномалія: Rabotniki 80/90/100 грн/анкер (Київ), 60/91/120 (Львів).",
+   "sources": [],
+   "confidence": "market"
+  },
+  {
+   "trade": "BUILDER",
+   "name": "Армування кладки сіткою арматурою",
+   "unit": "M2",
+   "old": 50.0,
+   "new": 100.0,
+   "why": "rabotniki сітка 90/101/120 ₴/м²",
+   "sources": [],
+   "confidence": "manual"
+  },
+  {
+   "trade": "BUILDER",
+   "name": "Армування фасаду сітка перетяжка",
+   "unit": "M2",
+   "old": 290.0,
+   "new": 240.0,
+   "why": "Якщо 'перетяжка' означає 2-й шар шпаклівки — 290 прийнятно; без неї ринок ~230.",
+   "sources": [
+    "https://www.rabotniki.ua/uk/fasadnye-raboty/kiev",
+    "https://www.rabotniki.ua/uk/fasadnye-raboty/lvov"
+   ],
+   "confidence": "market"
+  },
+  {
+   "trade": "BUILDER",
+   "name": "Бетонні сходи поворотна сходинка (бетон вручну)",
+   "unit": "PIECE",
+   "old": 1350.0,
+   "new": 3450.0,
+   "why": "поворотна +15% вручну",
+   "sources": [],
+   "confidence": "manual"
+  },
+  {
+   "trade": "BUILDER",
+   "name": "Бетонні сходи поворотна сходинка (бетон з міксера)",
+   "unit": "PIECE",
+   "old": 1350.0,
+   "new": 3000.0,
+   "why": "поворотна ~3000",
+   "sources": [],
+   "confidence": "manual"
+  },
+  {
+   "trade": "BUILDER",
+   "name": "Бетонні сходи пряма сходинка (бетон вручну)",
+   "unit": "PIECE",
+   "old": 1350.0,
+   "new": 2650.0,
+   "why": "те саме +15% за ручне бетонування",
+   "sources": [],
+   "confidence": "manual"
+  },
+  {
+   "trade": "BUILDER",
+   "name": "Бетонні сходи пряма сходинка (бетон з міксера)",
+   "unit": "PIECE",
+   "old": 1350.0,
+   "new": 2300.0,
+   "why": "rabotniki «Монолітні ступені» 1350/2360/3200 за м.п.",
+   "sources": [],
+   "confidence": "manual"
+  },
+  {
+   "trade": "BUILDER",
+   "name": "Вентильований фасад",
+   "unit": "M2",
+   "old": 850.0,
+   "new": 1150.0,
+   "why": "",
+   "sources": [
+    "https://www.rabotniki.ua/uk/fasadnye-raboty/kiev",
+    "https://www.rabotniki.ua/uk/fasadnye-raboty/lvov",
+    "https://bud.arsel.com.ua/tsiny-na-budivelni-roboty/"
+   ],
+   "confidence": "market"
+  },
+  {
+   "trade": "BUILDER",
+   "name": "Виготовлення монолітних колон",
+   "unit": "M3",
+   "old": 3050.0,
+   "new": 6700.0,
+   "why": "rabotniki 5200/6683/8000; rbk-alba 8300",
+   "sources": [],
+   "confidence": "manual"
+  },
+  {
+   "trade": "BUILDER",
+   "name": "Виготовлення терас веранд комплекс",
+   "unit": "M2",
+   "old": 11800.0,
+   "new": 2800.0,
+   "why": "аномалія: Аномально високо для 'тільки робота': монтаж терасної дошки 350/538/800 (rabotniki), металокаркас 1800/м² (ecowood), навіть 'Стандартна тераса' ecowood 5300/м² (схоже, з матеріалом). Майже напевно з матеріалами. Робота комплекс ≈ каркас + настил + опори ≈ 2500–3000.",
+   "sources": [],
+   "confidence": "market"
+  },
+  {
+   "trade": "BUILDER",
+   "name": "Викорчовування пнів",
+   "unit": "PIECE",
+   "old": 1350.0,
+   "new": 650.0,
+   "why": "rbk-alba: корчування пня до 200 мм з утилізацією 650 ₴/шт",
+   "sources": [],
+   "confidence": "manual"
+  },
+  {
+   "trade": "BUILDER",
+   "name": "Влаштування відмостки бетонної",
+   "unit": "M2",
+   "old": 480.0,
+   "new": 650.0,
+   "why": "",
+   "sources": [
+    "https://www.rabotniki.ua/uk/betonnye-raboty/kiev",
+    "https://rbk-alba.com/ua/price"
+   ],
+   "confidence": "market"
+  },
+  {
+   "trade": "BUILDER",
+   "name": "Влаштування монолітного перекриття (армування, бетонування)",
+   "unit": "M3",
+   "old": 3400.0,
+   "new": 5800.0,
+   "why": "Наша ціна нижче ринкового мінімуму. Аналогічно 'Монолітні стіни' 2350/м³ (ринок 4100/5750/6900) та 'Виготовлення монолітних колон' 3050/м³ (ринок 5200/6683/8000; rbk-alba 8300).",
+   "sources": [
+    "https://www.rabotniki.ua/uk/betonnye-raboty/kiev",
+    "https://rbk-alba.com/ua/price"
+   ],
+   "confidence": "market"
+  },
+  {
+   "trade": "BUILDER",
+   "name": "Влаштування фундаментної плити (армування, бетонування)",
+   "unit": "M3",
+   "old": 4000.0,
+   "new": 5000.0,
+   "why": "Те саме стосується 'Облаштування фундаменту (приймання бетону арматура)' 4000/м³ → ~5000.",
+   "sources": [
+    "https://www.rabotniki.ua/uk/fundament/kiev",
+    "https://rbk-alba.com/ua/price"
+   ],
+   "confidence": "market"
+  },
+  {
+   "trade": "BUILDER",
+   "name": "Доріжки з бетону з армуванням",
+   "unit": "M2",
+   "old": 270.0,
+   "new": 580.0,
+   "why": "ціни були переставлені; rabotniki з армуванням 490/584/700",
+   "sources": [],
+   "confidence": "manual"
+  },
+  {
+   "trade": "BUILDER",
+   "name": "Доріжок з бетону без армування",
+   "unit": "M2",
+   "old": 500.0,
+   "new": 460.0,
+   "why": "rabotniki без армування 389/462/600",
+   "sources": [],
+   "confidence": "manual"
+  },
+  {
+   "trade": "BUILDER",
+   "name": "Зварювання каркасу сходів поворотна сходинка",
+   "unit": "PIECE",
+   "old": 1350.0,
+   "new": 1750.0,
+   "why": "поворотна ≈ +30% до прямої (1350)",
+   "sources": [],
+   "confidence": "manual"
+  },
+  {
+   "trade": "BUILDER",
+   "name": "Кладка стовпів паркану під розшивку",
+   "unit": "PIECE",
+   "old": 2500.0,
+   "new": 3500.0,
+   "why": "аномалія: Rabotniki 'Кладка стовпів паркану' 3000/3783/5000 (Київ), 3000/3588/5000 (Львів) — нижче мінімуму.",
+   "sources": [],
+   "confidence": "market"
+  },
+  {
+   "trade": "BUILDER",
+   "name": "Кладка стін з газоблоку або піноблоку 300 мм",
+   "unit": "M3",
+   "old": 2300.0,
+   "new": 2600.0,
+   "why": "Основна позиція для стін; ринкова медіана ~2600–2650. Позиція 200 мм за 3000 — ок (тонша стіна дорожча за м³).",
+   "sources": [
+    "https://www.rabotniki.ua/uk/kladochnye-raboty/kiev",
+    "https://www.rabotniki.ua/uk/kladochnye-raboty/lvov",
+    "https://rbk-alba.com/ua/price"
+   ],
+   "confidence": "market"
+  },
+  {
+   "trade": "BUILDER",
+   "name": "Кладка стін з керамоблоку 380 мм на теплий розчин або клей-піну",
+   "unit": "M2",
+   "old": 750.0,
+   "new": 1100.0,
+   "why": "аномалія: Одиниця M2 серед сусідніх M3; 750/м² при 0,38 м = 1970/м³ — нижче позиції 'керамоблок 38х60х20' 3000/м³. Уніфікувати одиницю або підняти до ~1100/м².",
+   "sources": [],
+   "confidence": "market"
+  },
+  {
+   "trade": "BUILDER",
+   "name": "Кладка стін з шлакоблоку",
+   "unit": "M3",
+   "old": 1900.0,
+   "new": 2600.0,
+   "why": "Наша ціна нижче ринкового мінімуму.",
+   "sources": [
+    "https://www.rabotniki.ua/uk/kladochnye-raboty/kiev",
+    "https://www.rabotniki.ua/uk/kladochnye-raboty/lvov",
+    "https://rbk-alba.com/ua/price"
+   ],
+   "confidence": "market"
+  },
+  {
+   "trade": "BUILDER",
+   "name": "Монолітні стіни",
+   "unit": "M3",
+   "old": 2350.0,
+   "new": 5750.0,
+   "why": "rabotniki 4100/5750/6900",
+   "sources": [],
+   "confidence": "manual"
+  },
+  {
+   "trade": "BUILDER",
+   "name": "Монтаж водостоків жолоб труба",
+   "unit": "LINEAR_METER",
+   "old": 190.0,
+   "new": 350.0,
+   "why": "",
+   "sources": [
+    "https://www.rabotniki.ua/uk/krovelnye-raboty/kiev",
+    "https://www.rabotniki.ua/uk/fasadnye-raboty/kiev",
+    "https://pilo-material.kiev.ua/uk/pokrivelni-roboty-pid-klyuch/"
+   ],
+   "confidence": "market"
+  },
+  {
+   "trade": "BUILDER",
+   "name": "Монтаж лобової вітрової конькової планки",
+   "unit": "LINEAR_METER",
+   "old": 240.0,
+   "new": 150.0,
+   "why": "rabotniki лобова планка 90/148/190; 240 — заглушка",
+   "sources": [],
+   "confidence": "manual"
+  },
+  {
+   "trade": "BUILDER",
+   "name": "Монтаж маурлата",
+   "unit": "LINEAR_METER",
+   "old": 100.0,
+   "new": 200.0,
+   "why": "аномалія: Rabotniki 150/201/250; rating-remont від 200.",
+   "sources": [],
+   "confidence": "market"
+  },
+  {
+   "trade": "BUILDER",
+   "name": "Монтаж перемичок над прорізами",
+   "unit": "PIECE",
+   "old": 1350.0,
+   "new": 550.0,
+   "why": "аномалія: Rabotniki: 500/544/620 грн/шт — наша у 2,5 раза вища (значення-заглушка 1350). А 'Облаштування перемичок бетонних' 300/м.п. навпаки занижено (rabotniki 500/946/1200).",
+   "sources": [],
+   "confidence": "market"
+  },
+  {
+   "trade": "BUILDER",
+   "name": "Монтаж профнастилу на паркан",
+   "unit": "M2",
+   "old": 180.0,
+   "new": 260.0,
+   "why": "аномалія: Дубль METAL-позиції (250). Rabotniki 180/276/340. Уніфікувати.",
+   "sources": [],
+   "confidence": "market"
+  },
+  {
+   "trade": "BUILDER",
+   "name": "Монтаж утеплювача на перекриття більше 100мм",
+   "unit": "M2",
+   "old": 135.0,
+   "new": 250.0,
+   "why": "понад 100 мм ~250",
+   "sources": [],
+   "confidence": "manual"
+  },
+  {
+   "trade": "BUILDER",
+   "name": "Монтаж утеплювача на перекриття до 100мм",
+   "unit": "M2",
+   "old": 135.0,
+   "new": 170.0,
+   "why": "rabotniki, pilo-material: до 100 мм ~170",
+   "sources": [],
+   "confidence": "manual"
+  },
+  {
+   "trade": "BUILDER",
+   "name": "Монтаж утеплювача на покрівлю більше 100мм",
+   "unit": "M2",
+   "old": 135.0,
+   "new": 250.0,
+   "why": "те саме",
+   "sources": [],
+   "confidence": "manual"
+  },
+  {
+   "trade": "BUILDER",
+   "name": "Монтаж утеплювача на покрівлю до 100мм",
+   "unit": "M2",
+   "old": 135.0,
+   "new": 170.0,
+   "why": "те саме",
+   "sources": [],
+   "confidence": "manual"
+  },
+  {
+   "trade": "BUILDER",
+   "name": "Монтаж утеплювача під стяжку",
+   "unit": "M2",
+   "old": 302.0,
+   "new": 160.0,
+   "why": "як у FLOORING: ринок 130–200",
+   "sources": [],
+   "confidence": "manual"
+  },
+  {
+   "trade": "BUILDER",
+   "name": "Монтаж фальцевої покрівлі",
+   "unit": "M2",
+   "old": 100.0,
+   "new": 600.0,
+   "why": "100 грн/м² — явна помилка (у 6 разів нижче ринку).",
+   "sources": [
+    "https://www.rabotniki.ua/uk/krovelnye-raboty/kiev",
+    "https://rating-remont-kvartir.com.ua/ua/rozcinki-na-pokrivelni-roboti/",
+    "https://bud.arsel.com.ua/tsiny-na-budivelni-roboty/"
+   ],
+   "confidence": "market"
+  },
+  {
+   "trade": "BUILDER",
+   "name": "Навіс легкий комплекс",
+   "unit": "M2",
+   "old": 630.0,
+   "new": 1300.0,
+   "why": "ринок (тільки робота) каркас 850–1800 + покрівля 400–450 ⇒ 1300–2200/м²",
+   "sources": [],
+   "confidence": "manual"
+  },
+  {
+   "trade": "BUILDER",
+   "name": "Навіс максимальний комплекс",
+   "unit": "M2",
+   "old": 630.0,
+   "new": 2200.0,
+   "why": "те саме, верх діапазону",
+   "sources": [],
+   "confidence": "manual"
+  },
+  {
+   "trade": "BUILDER",
+   "name": "Навіс середній комплекс",
+   "unit": "M2",
+   "old": 630.0,
+   "new": 1700.0,
+   "why": "те саме, середина діапазону",
+   "sources": [],
+   "confidence": "manual"
+  },
+  {
+   "trade": "BUILDER",
+   "name": "Облаштування ПВХ-мембрани покрівлі",
+   "unit": "M2",
+   "old": 145.0,
+   "new": 320.0,
+   "why": "",
+   "sources": [
+    "https://www.rabotniki.ua/uk/krovelnye-raboty/kiev",
+    "https://rating-remont-kvartir.com.ua/ua/rozcinki-na-pokrivelni-roboti/",
+    "https://bud.arsel.com.ua/tsiny-na-budivelni-roboty/"
+   ],
+   "confidence": "market"
+  },
+  {
+   "trade": "BUILDER",
+   "name": "Облаштування водостічної воронки",
+   "unit": "PIECE",
+   "old": 1350.0,
+   "new": 850.0,
+   "why": "аномалія: Rabotniki 650/828/1100 грн/шт — вище максимуму (заглушка 1350).",
+   "sources": [],
+   "confidence": "market"
+  },
+  {
+   "trade": "BUILDER",
+   "name": "Облаштування дверної пройми",
+   "unit": "PIECE",
+   "old": 1350.0,
+   "new": 1750.0,
+   "why": "rabotniki розширення прорізу 1400–2500; arsel 1740",
+   "sources": [],
+   "confidence": "manual"
+  },
+  {
+   "trade": "BUILDER",
+   "name": "Облицювання фасаду натуральним або штучним каменем",
+   "unit": "M2",
+   "old": 250.0,
+   "new": 900.0,
+   "why": "аномалія: Rabotniki: облицювання плоским каменем 740/923/1100, пісковиком 680/870/1000 грн/м². 250 — у 3–4 рази нижче. Клінкерна плитка 650 теж нижче (720/1074/1300).",
+   "sources": [],
+   "confidence": "market"
+  },
+  {
+   "trade": "BUILDER",
+   "name": "Приготування бетону для тротуарної плитки",
+   "unit": "M3",
+   "old": 250.0,
+   "new": 1000.0,
+   "why": "аномалія: Rabotniki 700/1040/1250 грн/м³; також 'Приготування розчину для кладки' у нас 800/м³ і 'бетонного розчину для фундаменту' 1800/м³ — 250 випадає.",
+   "sources": [],
+   "confidence": "market"
+  },
+  {
+   "trade": "BUILDER",
+   "name": "Приготування гарцовки для тротуарної плитки",
+   "unit": "M3",
+   "old": 250.0,
+   "new": 900.0,
+   "why": "Нижче ринкового мінімуму у 3 рази; те саме для 'Приготування бетону для тротуарної плитки' 250/м³ (rabotniki 700/1040/1250 → ~1000).",
+   "sources": [
+    "https://www.rabotniki.ua/uk/trotuarnaya-plitka/kiev",
+    "https://pl2t.com/uk/shop/product/ukladanna-trotuarnoi-plitki/"
+   ],
+   "confidence": "market"
+  },
+  {
+   "trade": "BUILDER",
+   "name": "Укладання армованої сітки для тротуарної плитки",
+   "unit": "LINEAR_METER",
+   "old": 250.0,
+   "new": 90.0,
+   "why": "аномалія: Rabotniki 70/87/100 грн/м.п. — наша в 2,5–3 рази вища.",
+   "sources": [],
+   "confidence": "market"
+  },
+  {
+   "trade": "BUILDER",
+   "name": "Укладання бітумної черепиці",
+   "unit": "M2",
+   "old": 460.0,
+   "new": 400.0,
+   "why": "Наша ціна на рівні ринкового максимуму.",
+   "sources": [
+    "https://www.rabotniki.ua/uk/krovelnye-raboty/kiev",
+    "https://pilo-material.kiev.ua/uk/pokrivelni-roboty-pid-klyuch/",
+    "https://rating-remont-kvartir.com.ua/ua/rozcinki-na-pokrivelni-roboti/"
+   ],
+   "confidence": "market"
+  },
+  {
+   "trade": "BUILDER",
+   "name": "Укладання підкладкового килима",
+   "unit": "M2",
+   "old": 182.0,
+   "new": 110.0,
+   "why": "rabotniki 80/105/130",
+   "sources": [],
+   "confidence": "manual"
+  },
+  {
+   "trade": "BUILDER",
+   "name": "Укладання шиферу або ондуліна",
+   "unit": "M2",
+   "old": 182.0,
+   "new": 280.0,
+   "why": "rabotniki 200/286/370",
+   "sources": [],
+   "confidence": "manual"
+  },
+  {
+   "trade": "BUILDER",
+   "name": "Установка тротуарного бордюру коло радіус",
+   "unit": "LINEAR_METER",
+   "old": 150.0,
+   "new": 400.0,
+   "why": "аномалія: Дешевше за прямий бордюр (280) — нелогічно. Rabotniki 244/451/600, pl2t радіальна установка 350.",
+   "sources": [],
+   "confidence": "market"
+  },
+  {
+   "trade": "BUILDER",
+   "name": "Установка флюгера ковпака на димохід",
+   "unit": "PIECE",
+   "old": 200.0,
+   "new": 1200.0,
+   "why": "аномалія: Rabotniki 930/1222/1800 грн/шт — у 6 разів нижче мінімуму.",
+   "sources": [],
+   "confidence": "market"
+  },
+  {
+   "trade": "DEMOLITION",
+   "name": "Вивезення сміття контейнером",
+   "unit": "PIECE",
+   "old": 4500.0,
+   "new": 3000.0,
+   "why": "Для контейнера 8 м³; якщо мається на увазі 20–27 м³ — 4500 може бути ок. Вказати об'єм в описі.",
+   "sources": [
+    "https://rating-remont-kvartir.com.ua/ua/rozcinki-na-demontazhni-roboti-kiiv/",
+    "https://demontazh-kyiv.com.ua/service/tsiny-na-demontazhni-roboty/"
+   ],
+   "confidence": "market"
+  },
+  {
+   "trade": "DEMOLITION",
+   "name": "Вирізання прорізу в бетонній стіні товщиною до 100 мм",
+   "unit": "M2",
+   "old": 1167.0,
+   "new": 1400.0,
+   "why": "",
+   "sources": [
+    "https://www.rabotniki.ua/uk/proemy-shtroby/kiev",
+    "https://bud.arsel.com.ua/tsiny-na-budivelni-roboty/"
+   ],
+   "confidence": "market"
+  },
+  {
+   "trade": "DEMOLITION",
+   "name": "Демонтаж вхідних дверей",
+   "unit": "PIECE",
+   "old": 200.0,
+   "new": 550.0,
+   "why": "",
+   "sources": [
+    "https://www.rabotniki.ua/uk/demontazh-okon-dverey/kiev",
+    "https://bud.arsel.com.ua/tsiny-na-budivelni-roboty/",
+    "https://kabanchik.ua/ua/kyiv/category/demontazhni-roboty"
+   ],
+   "confidence": "market"
+  },
+  {
+   "trade": "DEMOLITION",
+   "name": "Демонтаж вікна балконного блоку",
+   "unit": "PIECE",
+   "old": 250.0,
+   "new": 400.0,
+   "why": "'Демонтаж балконного блоку' 1100 — теж низько (rabotniki 2233) → ~2000.",
+   "sources": [
+    "https://www.rabotniki.ua/uk/demontazh-okon-dverey/kiev",
+    "https://bud.arsel.com.ua/tsiny-na-budivelni-roboty/",
+    "https://rbk-alba.com/ua/price",
+    "https://rating-remont-kvartir.com.ua/ua/rozcinki-na-demontazhni-roboti-kiiv/"
+   ],
+   "confidence": "market"
+  },
+  {
+   "trade": "DEMOLITION",
+   "name": "Демонтаж керамічної плитки з підлоги",
+   "unit": "M2",
+   "old": 60.0,
+   "new": 150.0,
+   "why": "УВАГА: demontazh-pro.kiev.ua має рівно наші цифри (60/60/65/70/60/20/30) — ймовірне джерело каталогу, не враховано як незалежне.",
+   "sources": [
+    "https://rbk-alba.com/ua/price",
+    "https://bud.arsel.com.ua/tsiny-na-budivelni-roboty/",
+    "https://rating-remont-kvartir.com.ua/ua/rozcinki-na-demontazhni-roboti-kiiv/",
+    "https://kabanchik.ua/ua/kyiv/category/demontazhni-roboty"
+   ],
+   "confidence": "market"
+  },
+  {
+   "trade": "DEMOLITION",
+   "name": "Демонтаж ламінату або паркету",
+   "unit": "M2",
+   "old": 25.0,
+   "new": 100.0,
+   "why": "Аналогічно: лінолеум 20 → ~90 (rabotniki 109/96), шпалери 30 → ~75 (rabotniki 88/78), плінтус 30 → ~50 (rabotniki 55/49). УВАГА: demontazh-pro.kiev.ua має рівно наші цифри (60/60/65/70/60/20/30) — ймовірне джерело каталогу, не враховано як незалежне.",
+   "sources": [
+    "https://www.rabotniki.ua/uk/demontazh-napolnyh-pokrytiy/kiev",
+    "https://www.rabotniki.ua/uk/demontazh-napolnyh-pokrytiy/lvov",
+    "https://rbk-alba.com/ua/price",
+    "https://rating-remont-kvartir.com.ua/ua/rozcinki-na-demontazhni-roboti-kiiv/",
+    "https://kabanchik.ua/ua/kyiv/category/demontazhni-roboty"
+   ],
+   "confidence": "market"
+  },
+  {
+   "trade": "DEMOLITION",
+   "name": "Демонтаж міжкімнатних дверей з коробкою",
+   "unit": "PIECE",
+   "old": 150.0,
+   "new": 400.0,
+   "why": "УВАГА: demontazh-pro.kiev.ua має рівно наші цифри (60/60/65/70/60/20/30) — ймовірне джерело каталогу, не враховано як незалежне.",
+   "sources": [
+    "https://www.rabotniki.ua/uk/demontazh-okon-dverey/kiev",
+    "https://bud.arsel.com.ua/tsiny-na-budivelni-roboty/",
+    "https://rating-remont-kvartir.com.ua/ua/rozcinki-na-demontazhni-roboti-kiiv/",
+    "https://kabanchik.ua/ua/kyiv/category/demontazhni-roboty",
+    "https://demontazh-kyiv.com.ua/service/tsiny-na-demontazhni-roboty/"
+   ],
+   "confidence": "market"
+  },
+  {
+   "trade": "DEMOLITION",
+   "name": "Демонтаж перегородки з гіпсокартону",
+   "unit": "M2",
+   "old": 60.0,
+   "new": 140.0,
+   "why": "Обшивка стін ГКЛ (60) — аналогічно ~130.",
+   "sources": [
+    "https://www.rabotniki.ua/uk/snos-sten-peregorodok/kiev",
+    "https://rbk-alba.com/ua/price",
+    "https://bud.arsel.com.ua/tsiny-na-budivelni-roboty/",
+    "https://rating-remont-kvartir.com.ua/ua/rozcinki-na-demontazhni-roboti-kiiv/",
+    "https://kabanchik.ua/ua/kyiv/category/demontazhni-roboty"
+   ],
+   "confidence": "market"
+  },
+  {
+   "trade": "DEMOLITION",
+   "name": "Демонтаж перегородки з піноблоку або газоблоку",
+   "unit": "M2",
+   "old": 60.0,
+   "new": 200.0,
+   "why": "",
+   "sources": [
+    "https://www.rabotniki.ua/uk/snos-sten-peregorodok/kiev",
+    "https://rbk-alba.com/ua/price",
+    "https://bud.arsel.com.ua/tsiny-na-budivelni-roboty/",
+    "https://rating-remont-kvartir.com.ua/ua/rozcinki-na-demontazhni-roboti-kiiv/"
+   ],
+   "confidence": "market"
+  },
+  {
+   "trade": "DEMOLITION",
+   "name": "Демонтаж перегородки з цегли в півцеглини (120 мм)",
+   "unit": "M2",
+   "old": 70.0,
+   "new": 230.0,
+   "why": "УВАГА: demontazh-pro.kiev.ua має рівно наші цифри (60/60/65/70/60/20/30) — ймовірне джерело каталогу, не враховано як незалежне.",
+   "sources": [
+    "https://www.rabotniki.ua/uk/snos-sten-peregorodok/kiev",
+    "https://www.rabotniki.ua/uk/snos-sten-peregorodok/lvov",
+    "https://rbk-alba.com/ua/price",
+    "https://bud.arsel.com.ua/tsiny-na-budivelni-roboty/",
+    "https://rating-remont-kvartir.com.ua/ua/rozcinki-na-demontazhni-roboti-kiiv/",
+    "https://kabanchik.ua/ua/kyiv/category/demontazhni-roboty"
+   ],
+   "confidence": "market"
+  },
+  {
+   "trade": "DEMOLITION",
+   "name": "Демонтаж плитки зі стін",
+   "unit": "M2",
+   "old": 60.0,
+   "new": 170.0,
+   "why": "Наша ціна нижче всіх незалежних джерел. УВАГА: demontazh-pro.kiev.ua має рівно наші цифри (60/60/65/70/60/20/30) — ймовірне джерело каталогу, не враховано як незалежне.",
+   "sources": [
+    "https://www.rabotniki.ua/uk/demontazh-nastennyh-pokrytiy/kiev",
+    "https://www.rabotniki.ua/uk/demontazh-nastennyh-pokrytiy/lvov",
+    "https://rbk-alba.com/ua/price",
+    "https://bud.arsel.com.ua/tsiny-na-budivelni-roboty/",
+    "https://kabanchik.ua/ua/kyiv/category/demontazhni-roboty"
+   ],
+   "confidence": "market"
+  },
+  {
+   "trade": "DEMOLITION",
+   "name": "Демонтаж підвіконня",
+   "unit": "PIECE",
+   "old": 100.0,
+   "new": 300.0,
+   "why": "",
+   "sources": [
+    "https://www.rabotniki.ua/uk/demontazh-okon-dverey/kiev",
+    "https://bud.arsel.com.ua/tsiny-na-budivelni-roboty/",
+    "https://rbk-alba.com/ua/price"
+   ],
+   "confidence": "market"
+  },
+  {
+   "trade": "DEMOLITION",
+   "name": "Демонтаж стяжки бетонної",
+   "unit": "M2",
+   "old": 65.0,
+   "new": 180.0,
+   "why": "Варто розділити на до 5 см (~180) і до 10 см (~250). УВАГА: demontazh-pro.kiev.ua має рівно наші цифри (60/60/65/70/60/20/30) — ймовірне джерело каталогу, не враховано як незалежне.",
+   "sources": [
+    "https://www.rabotniki.ua/uk/demontazh-napolnyh-pokrytiy/kiev",
+    "https://www.rabotniki.ua/uk/demontazh-napolnyh-pokrytiy/lvov",
+    "https://rbk-alba.com/ua/price",
+    "https://bud.arsel.com.ua/tsiny-na-budivelni-roboty/",
+    "https://rating-remont-kvartir.com.ua/ua/rozcinki-na-demontazhni-roboti-kiiv/",
+    "https://www.remonthub.org/prices.php"
+   ],
+   "confidence": "market"
+  },
+  {
+   "trade": "DEMOLITION",
+   "name": "Демонтаж цегляної стіни в цеглину (250 мм)",
+   "unit": "M2",
+   "old": 100.0,
+   "new": 380.0,
+   "why": "Перевірити й 'Демонтаж цегляної кладки' 400/м³ — за м³ це ~100/м² для 250 мм, теж занижено (ринок ~1500/м³).",
+   "sources": [
+    "https://www.rabotniki.ua/uk/snos-sten-peregorodok/kiev",
+    "https://www.rabotniki.ua/uk/snos-sten-peregorodok/lvov",
+    "https://rbk-alba.com/ua/price",
+    "https://bud.arsel.com.ua/tsiny-na-budivelni-roboty/",
+    "https://kabanchik.ua/ua/kyiv/category/demontazhni-roboty"
+   ],
+   "confidence": "market"
+  },
+  {
+   "trade": "DEMOLITION",
+   "name": "Збивання штукатурки зі стін",
+   "unit": "M2",
+   "old": 60.0,
+   "new": 170.0,
+   "why": "Ринок двомодальний (бюджетні 35–85 'від' vs 175–250); медіана ~175. 'Збивання штукатурки зі стелі' 90 → ~180 (rbk-alba 200). УВАГА: demontazh-pro.kiev.ua має рівно наші цифри (60/60/65/70/60/20/30) — ймовірне джерело каталогу, не враховано як незалежне.",
+   "sources": [
+    "https://www.rabotniki.ua/uk/demontazh-nastennyh-pokrytiy/kiev",
+    "https://www.rabotniki.ua/uk/demontazh-nastennyh-pokrytiy/lvov",
+    "https://rbk-alba.com/ua/price",
+    "https://bud.arsel.com.ua/tsiny-na-budivelni-roboty/",
+    "https://kabanchik.ua/ua/kyiv/category/demontazhni-roboty",
+    "https://rating-remont-kvartir.com.ua/ua/rozcinki-na-demontazhni-roboti-kiiv/"
+   ],
+   "confidence": "market"
+  },
+  {
+   "trade": "DEMOLITION",
+   "name": "Підйом будматеріалів на поверх",
+   "unit": "PIECE",
+   "old": 263.0,
+   "new": 15.0,
+   "why": "аномалія: 263 грн 'за шт' без визначення одиниці. Ринок: 10 грн/мішок/поверх (gruzmen.kiev.ua), 25 грн/поверх/людина (bison-trans.com), +10 грн за поверх (ms-pro.kiev.ua), підйом негабариту 120–130 грн/поверх (rabotniki). Ймовірно мало бути за тонну/поверх або за поверх усього замовлення. Рекомендую одиницю 'мішок до 50 кг за поверх' ≈15 грн, або FLOOR із чітким описом.",
+   "sources": [],
+   "confidence": "market"
+  },
+  {
+   "trade": "DEMOLITION",
+   "name": "Розширення дверного прорізу",
+   "unit": "PIECE",
+   "old": 225.0,
+   "new": 1750.0,
+   "why": "225 — абсурдно мало; rabotniki 1400/1967/2500",
+   "sources": [],
+   "confidence": "manual"
+  },
+  {
+   "trade": "DEMOLITION",
+   "name": "Розширення отвору під вхідні двері",
+   "unit": "PIECE",
+   "old": 1000.0,
+   "new": 1800.0,
+   "why": "",
+   "sources": [
+    "https://www.rabotniki.ua/uk/proemy-shtroby/kiev",
+    "https://bud.arsel.com.ua/tsiny-na-budivelni-roboty/"
+   ],
+   "confidence": "market"
+  },
+  {
+   "trade": "DRYWALL",
+   "name": "Демонтаж гіпсокартонної стелі",
+   "unit": "M2",
+   "old": 60.0,
+   "new": 150.0,
+   "why": "аномалія: rbk-alba: демонтаж ГК стелі 200; budver: демонтаж ГКЛ від 165.",
+   "sources": [],
+   "confidence": "market"
+  },
+  {
+   "trade": "DRYWALL",
+   "name": "Демонтаж перегородки з гіпсокартону",
+   "unit": "M2",
+   "old": 60.0,
+   "new": 150.0,
+   "why": "аномалія: Нижче ринку: rbk-alba 300, budver від 165, bud.arsel 130 (демонтаж стін з ГК).",
+   "sources": [],
+   "confidence": "market"
+  },
+  {
+   "trade": "DRYWALL",
+   "name": "Монтаж відкосів з гіпсокартону на клей",
+   "unit": "LINEAR_METER",
+   "old": 230.0,
+   "new": 350.0,
+   "why": "аномалія: Дорівнює варіанту на профілях і на мінімумі ринку (rabotniki 230/393/650; remonthub 350).",
+   "sources": [],
+   "confidence": "market"
+  },
+  {
+   "trade": "DRYWALL",
+   "name": "Монтаж відкосів з гіпсокартону на профілі",
+   "unit": "LINEAR_METER",
+   "old": 230.0,
+   "new": 380.0,
+   "why": "На самому мінімумі. Варіант 'на клей' (230) — ~350.",
+   "sources": [
+    "https://www.rabotniki.ua/uk/montazh-gipsokartona",
+    "https://www.rabotniki.ua/uk/montazh-gipsokartona/kiev",
+    "https://www.rabotniki.ua/uk/montazh-gipsokartona/lvov",
+    "https://bud.arsel.com.ua/tsiny-na-budivelni-roboty/",
+    "https://www.remonthub.org/prices.php",
+    "https://kabanchik.ua/ua/kyiv/tag/montazh-konstruktsii-z-hipsokartonu",
+    "https://budver.com/masters/gipsokartonni-roboti"
+   ],
+   "confidence": "market"
+  },
+  {
+   "trade": "DRYWALL",
+   "name": "Монтаж конструкцій (перегородки 2 сторони) із гіпсокартону в 1 шар",
+   "unit": "M2",
+   "old": 800.0,
+   "new": 650.0,
+   "why": "Вище середнього навіть у Києві (672).",
+   "sources": [
+    "https://www.rabotniki.ua/uk/montazh-gipsokartona",
+    "https://www.rabotniki.ua/uk/montazh-gipsokartona/kiev",
+    "https://www.rabotniki.ua/uk/montazh-gipsokartona/lvov",
+    "https://www.remonthub.org/prices.php",
+    "https://liv-comfort.kyiv.ua/price-remont/index.html",
+    "https://kabanchik.ua/ua/kyiv/tag/montazh-konstruktsii-z-hipsokartonu",
+    "https://stroyremdizayn.kiev.ua/rascenki-na-otdelochnye-raboty.html",
+    "https://budver.com/masters/gipsokartonni-roboti"
+   ],
+   "confidence": "market"
+  },
+  {
+   "trade": "DRYWALL",
+   "name": "Монтаж конструкцій (перегородки 2 сторони) із гіпсокартону в 2 шари",
+   "unit": "M2",
+   "old": 900.0,
+   "new": 780.0,
+   "why": "Вище всіх прайсів з явними 2 шарами (700–750).",
+   "sources": [
+    "https://www.remonthub.org/prices.php",
+    "https://liv-comfort.kyiv.ua/price-remont/index.html",
+    "https://stroyremdizayn.kiev.ua/rascenki-na-otdelochnye-raboty.html",
+    "https://www.rabotniki.ua/uk/montazh-gipsokartona/kiev"
+   ],
+   "confidence": "market"
+  },
+  {
+   "trade": "DRYWALL",
+   "name": "Монтаж напівкруглої конструкції ГКЛ",
+   "unit": "M2",
+   "old": 450.0,
+   "new": 700.0,
+   "why": "аномалія: Дешевше за пряму перегородку (800) і радіусні перегородки (900/1000). rabotniki: напівкругла конструкція (стіни) 500/785/1000, Київ сер. 705.",
+   "sources": [],
+   "confidence": "market"
+  },
+  {
+   "trade": "DRYWALL",
+   "name": "Монтаж профілю тіньового шва по периметру стелі",
+   "unit": "LINEAR_METER",
+   "old": 400.0,
+   "new": 600.0,
+   "why": "Лише rabotniki (3 міські зрізи, мало пропозицій).",
+   "sources": [
+    "https://www.rabotniki.ua/uk/montazh-gipsokartona",
+    "https://www.rabotniki.ua/uk/montazh-gipsokartona/kiev",
+    "https://www.rabotniki.ua/uk/montazh-gipsokartona/lvov"
+   ],
+   "confidence": "market"
+  },
+  {
+   "trade": "DRYWALL",
+   "name": "Монтаж треків прихованого карниза",
+   "unit": "LINEAR_METER",
+   "old": 1400.0,
+   "new": 1800.0,
+   "why": "Лише rabotniki; нижче мінімуму.",
+   "sources": [
+    "https://www.rabotniki.ua/uk/montazh-gipsokartona",
+    "https://www.rabotniki.ua/uk/montazh-gipsokartona/kiev",
+    "https://www.rabotniki.ua/uk/montazh-gipsokartona/lvov"
+   ],
+   "confidence": "market"
+  },
+  {
+   "trade": "DRYWALL",
+   "name": "Облаштування ніші ГКЛ з підсвічуванням",
+   "unit": "LINEAR_METER",
+   "old": 400.0,
+   "new": 600.0,
+   "why": "Також є 'Монтаж ніші під прихований карниз' 550 — схожа робота, ціни мають бути близькі.",
+   "sources": [
+    "https://www.rabotniki.ua/uk/montazh-gipsokartona",
+    "https://www.rabotniki.ua/uk/montazh-gipsokartona/kiev",
+    "https://www.rabotniki.ua/uk/montazh-gipsokartona/lvov",
+    "https://kabanchik.ua/ua/kyiv/tag/montazh-konstruktsii-z-hipsokartonu",
+    "https://budver.com/masters/gipsokartonni-roboti",
+    "https://www.remonthub.org/prices.php"
+   ],
+   "confidence": "market"
+  },
+  {
+   "trade": "DRYWALL",
+   "name": "Обшивка інсталяції в т.ч. отвори",
+   "unit": "PIECE",
+   "old": 900.0,
+   "new": 2000.0,
+   "why": "Одиниці різні (шт vs м²), але коробка інсталяції ~1–1,5 м², тож 900/шт явно мало.",
+   "sources": [
+    "https://stroyremdizayn.kiev.ua/rascenki-na-otdelochnye-raboty.html",
+    "https://www.rabotniki.ua/uk/montazh-gipsokartona",
+    "https://budver.com/masters/gipsokartonni-roboti"
+   ],
+   "confidence": "market"
+  },
+  {
+   "trade": "DRYWALL",
+   "name": "Шпаклювання та шліфування гіпсокартону (без склополотна)",
+   "unit": "M2",
+   "old": 130.0,
+   "new": 220.0,
+   "why": "Якщо це повна підготовка ГКЛ під фарбування — нижче ринку. Якщо лише шви+шурупи, це дубль 'Шпаклювання швів ГКЛ' (100).",
+   "sources": [
+    "https://kabanchik.ua/ua/kyiv/category/shpaklivka-stin",
+    "https://www.rabotniki.ua/uk/malyarnye-raboty/kiev",
+    "https://budver.com/masters/shtukaturno-malyarni-roboti",
+    "https://creativebuild.com.ua/shpaklyuvannya-stin-tsina-lviv/"
+   ],
+   "confidence": "market"
+  },
+  {
+   "trade": "ELECTRICAL",
+   "name": "Закладення штроб гіпсовою сумішшю",
+   "unit": "LINEAR_METER",
+   "old": 88.0,
+   "new": 65.0,
+   "why": "Наші 88 вищі за максимум усіх джерел.",
+   "sources": [
+    "https://www.rabotniki.ua/uk/elektromontazhnye-raboty/kiev",
+    "https://www.rabotniki.ua/uk/elektromontazhnye-raboty/lvov",
+    "https://bud.arsel.com.ua/tsiny-na-budivelni-roboty/",
+    "https://budver.com/masters/elektromontazhni-roboti"
+   ],
+   "confidence": "market"
+  },
+  {
+   "trade": "ELECTRICAL",
+   "name": "Комутація в підрозетнику",
+   "unit": "PIECE",
+   "old": 400.0,
+   "new": 200.0,
+   "why": "дорожча за повну збірку розподільчої коробки; ринкова логіка 150–250",
+   "sources": [],
+   "confidence": "manual"
+  },
+  {
+   "trade": "ELECTRICAL",
+   "name": "Монтаж кабель каналу",
+   "unit": "LINEAR_METER",
+   "old": 400.0,
+   "new": 100.0,
+   "why": "Наші 400 у ~5 разів вищі за медіану. Схоже на помилку (порівняйте з лотком за 200).",
+   "sources": [
+    "https://www.rabotniki.ua/uk/elektromontazhnye-raboty/kiev",
+    "https://www.rabotniki.ua/uk/elektromontazhnye-raboty/lvov",
+    "https://bud.arsel.com.ua/tsiny-na-budivelni-roboty/",
+    "https://budver.com/masters/elektromontazhni-roboti",
+    "https://altek.kiev.ua/uk/cini-na-elektromontazh-kyiv/",
+    "https://san-sanych.ua/czini-na-poslugi/posluga-elektruk.html",
+    "https://amperage.com.ua/price/"
+   ],
+   "confidence": "market"
+  },
+  {
+   "trade": "ELECTRICAL",
+   "name": "Монтаж розподільчої коробки в стіну",
+   "unit": "PIECE",
+   "old": 120.0,
+   "new": 80.0,
+   "why": "аномалія: Разом з отвором (200) виходить 320 грн, а ринок за отвір і коробку дає 190 (цегла) і 250 (бетон). Посадка коробки в готовий отвір не має коштувати вдвічі більше, ніж підрозетник (60).",
+   "sources": [],
+   "confidence": "market"
+  },
+  {
+   "trade": "ELECTRICAL",
+   "name": "Монтаж розподільчої коробки на стелю",
+   "unit": "PIECE",
+   "old": 120.0,
+   "new": 90.0,
+   "why": "аномалія: Те саме, що й для стіни. Стеля дорожча через висоту, але сума з отвором однаково завищена.",
+   "sources": [],
+   "confidence": "market"
+  },
+  {
+   "trade": "ELECTRICAL",
+   "name": "Монтаж світлодіодної стрічки в профілі",
+   "unit": "LINEAR_METER",
+   "old": 350.0,
+   "new": 300.0,
+   "why": "Медіана ~255. Ціна з профілем окремо (Ampérage, РБК) дає 350–500, тож 300 буде компромісом.",
+   "sources": [
+    "https://www.rabotniki.ua/uk/elektromontazhnye-raboty/kiev",
+    "https://www.rabotniki.ua/uk/elektromontazhnye-raboty/lvov",
+    "https://bud.arsel.com.ua/tsiny-na-budivelni-roboty/",
+    "https://kabanchik.ua/ua/kyiv/category/elektryk",
+    "https://liv-comfort.kyiv.ua/price-remont/index.html",
+    "https://amperage.com.ua/price/",
+    "https://rbk-alba.com/ua/price",
+    "https://san-sanych.ua/czini-na-poslugi/posluga-elektruk.html"
+   ],
+   "confidence": "market"
+  },
+  {
+   "trade": "ELECTRICAL",
+   "name": "Монтаж та підключення ДБЖ",
+   "unit": "POINT",
+   "old": 8000.0,
+   "new": 10000.0,
+   "why": "аномалія: Одиниця POINT не підходить: ДБЖ ставлять поштучно (rabotniki пише «точка», але по суті це комплект). Ціна теж низька (ринок 8000–16570, середня ~12500).",
+   "sources": [],
+   "confidence": "market"
+  },
+  {
+   "trade": "ELECTRICAL",
+   "name": "Монтаж та установка домофона",
+   "unit": "PIECE",
+   "old": 800.0,
+   "new": 1000.0,
+   "why": "Наші 800 дорівнюють мінімуму rabotniki.",
+   "sources": [
+    "https://www.rabotniki.ua/uk/elektromontazhnye-raboty/kiev",
+    "https://www.rabotniki.ua/uk/elektromontazhnye-raboty/lvov",
+    "https://kabanchik.ua/ua/kyiv/category/elektryk",
+    "https://remmo.lviv.ua/elektromontazhni-roboty-lviv/",
+    "https://san-sanych.ua/czini-na-poslugi/posluga-elektruk.html"
+   ],
+   "confidence": "market"
+  },
+  {
+   "trade": "ELECTRICAL",
+   "name": "Монтаж шинопровода трекової системи",
+   "unit": "LINEAR_METER",
+   "old": 147.0,
+   "new": 450.0,
+   "why": "Обидва джерела дають 500+. Наші 147 (нецілі, схоже на перерахунок) втричі нижчі.",
+   "sources": [
+    "https://amperage.com.ua/price/",
+    "https://rbk-alba.com/ua/price"
+   ],
+   "confidence": "market"
+  },
+  {
+   "trade": "ELECTRICAL",
+   "name": "Отвір для розподільчої коробки в гіпсокартоні",
+   "unit": "PIECE",
+   "old": 200.0,
+   "new": 100.0,
+   "why": "аномалія: Стоїть стільки ж, скільки отвір у бетоні. Ринок за отвір разом із коробкою в ГКЛ: 125–220 (rabotniki 141/153, arsel 125, kabanchik 220). Отвір під підрозетник у ГКЛ у нас 90.",
+   "sources": [],
+   "confidence": "market"
+  },
+  {
+   "trade": "ELECTRICAL",
+   "name": "Отвір для розподільчої коробки в цеглі",
+   "unit": "PIECE",
+   "old": 200.0,
+   "new": 150.0,
+   "why": "Ринкова ціна ~190 включає й установку коробки, а в нас отвір 200 + «монтаж розподільчої коробки в стіну» 120 = 320, тобто +70% до медіани. Отвір у цеглі не повинен коштувати стільки ж, скільки в бетоні; про ГКЛ див. аномалії.",
+   "sources": [
+    "https://www.rabotniki.ua/uk/elektromontazhnye-raboty/kiev",
+    "https://www.rabotniki.ua/uk/elektromontazhnye-raboty/lvov",
+    "https://bud.arsel.com.ua/tsiny-na-budivelni-roboty/",
+    "https://kabanchik.ua/ua/kyiv/category/inshi-posluhy-elektryka",
+    "https://altek.kiev.ua/uk/cini-na-elektromontazh-kyiv/"
+   ],
+   "confidence": "market"
+  },
+  {
+   "trade": "ELECTRICAL",
+   "name": "Прокладка закладної гофри в штробі для теплої підлоги",
+   "unit": "LINEAR_METER",
+   "old": 210.0,
+   "new": 60.0,
+   "why": "аномалія: Учетверо дорожче за «Прокладку закладної гофри» (50) і кабель у гофрі (65). Якщо штроблення не входить, ціна має бути ~60; якщо входить, назва має про це казати.",
+   "sources": [],
+   "confidence": "market"
+  },
+  {
+   "trade": "ELECTRICAL",
+   "name": "Прокладка кабелю",
+   "unit": "LINEAR_METER",
+   "old": 210.0,
+   "new": 50.0,
+   "why": "Наші 210 у 4 рази вищі за ринок і в 3 рази вищі за наш же «кабель у гофрі» (65). Схоже на помилку.",
+   "sources": [
+    "https://www.rabotniki.ua/uk/elektromontazhnye-raboty/kiev",
+    "https://www.rabotniki.ua/uk/elektromontazhnye-raboty/lvov",
+    "https://bud.arsel.com.ua/tsiny-na-budivelni-roboty/",
+    "https://rbk-alba.com/ua/price",
+    "https://amperage.com.ua/price/",
+    "https://kabanchik.ua/ua/kyiv/category/elektryk"
+   ],
+   "confidence": "market"
+  },
+  {
+   "trade": "ELECTRICAL",
+   "name": "Прокладка кабелю в металорукаві",
+   "unit": "LINEAR_METER",
+   "old": 210.0,
+   "new": 90.0,
+   "why": "аномалія: Удвічі-втричі дорожче за кабель у гофрі (65) і за ринок: гофра/ПВХ/металева труба 60 (РБК), гофротруба 61–83 (rabotniki), металорукав 65–75 (stroyremdizayn). Ціна 210 повторює помилкову «Прокладку кабелю».",
+   "sources": [],
+   "confidence": "market"
+  },
+  {
+   "trade": "ELECTRICAL",
+   "name": "Підключення бойлера (водонагрівача)",
+   "unit": "PIECE",
+   "old": 650.0,
+   "new": 1000.0,
+   "why": "Два незалежні джерела починаються від 1000+. Але бойлер часто ставить сантехнік, тож ціна може включати навішування. Якщо в нас лише електрична частина, можна 800–1000.",
+   "sources": [
+    "https://altek.kiev.ua/uk/cini-na-elektromontazh-kyiv/",
+    "https://budver.com/masters/elektromontazhni-roboti"
+   ],
+   "confidence": "market"
+  },
+  {
+   "trade": "ELECTRICAL",
+   "name": "Підключення електричного рушникосушника",
+   "unit": "PIECE",
+   "old": 500.0,
+   "new": 700.0,
+   "why": "Наші 500 дорівнюють мінімуму.",
+   "sources": [
+    "https://www.rabotniki.ua/uk/elektromontazhnye-raboty/kiev",
+    "https://www.rabotniki.ua/uk/elektromontazhnye-raboty/lvov",
+    "https://bud.arsel.com.ua/tsiny-na-budivelni-roboty/",
+    "https://budver.com/masters/elektromontazhni-roboti"
+   ],
+   "confidence": "market"
+  },
+  {
+   "trade": "ELECTRICAL",
+   "name": "Свердління під точковий світильник в гіпсокартоні",
+   "unit": "PIECE",
+   "old": 90.0,
+   "new": 150.0,
+   "why": "Усі джерела, що рахують отвір окремо, дають 120–250. Багато майстрів включають отвір у ціну монтажу світильника, тому піднімаємо стримано.",
+   "sources": [
+    "https://amperage.com.ua/price/",
+    "https://rbk-alba.com/ua/price",
+    "https://remmo.lviv.ua/elektromontazhni-roboty-lviv/",
+    "https://san-sanych.ua/czini-na-poslugi/posluga-elektruk.html"
+   ],
+   "confidence": "market"
+  },
+  {
+   "trade": "ELECTRICAL",
+   "name": "Складання люстри простої",
+   "unit": "PIECE",
+   "old": 800.0,
+   "new": 500.0,
+   "why": "Наші 800 дорівнюють ціні збірки кришталевої люстри. Для «простої» це забагато.",
+   "sources": [
+    "https://kabanchik.ua/ua/kyiv/category/elektryk",
+    "https://san-sanych.ua/czini-na-poslugi/posluga-elektruk.html",
+    "https://rbk-alba.com/ua/price"
+   ],
+   "confidence": "market"
+  },
+  {
+   "trade": "ELECTRICAL",
+   "name": "Установка ПЗВ двополюсний",
+   "unit": "PIECE",
+   "old": 500.0,
+   "new": 400.0,
+   "why": "Медіана ~375. Наші 500 дорівнюють максимуму rabotniki.",
+   "sources": [
+    "https://www.rabotniki.ua/uk/elektromontazhnye-raboty/kiev",
+    "https://www.rabotniki.ua/uk/elektromontazhnye-raboty/lvov",
+    "https://bud.arsel.com.ua/tsiny-na-budivelni-roboty/",
+    "https://kabanchik.ua/ua/kyiv/category/elektryk",
+    "https://amperage.com.ua/price/",
+    "https://remmo.lviv.ua/elektromontazhni-roboty-lviv/",
+    "https://san-sanych.ua/czini-na-poslugi/posluga-elektruk.html"
+   ],
+   "confidence": "market"
+  },
+  {
+   "trade": "ELECTRICAL",
+   "name": "Установка автомата диференційного",
+   "unit": "PIECE",
+   "old": 500.0,
+   "new": 400.0,
+   "why": "Ту саму ціну, що й двополюсне ПЗВ, варто знизити до ~400.",
+   "sources": [
+    "https://kabanchik.ua/ua/kyiv/category/elektryk",
+    "https://www.rabotniki.ua/uk/elektromontazhnye-raboty/kiev",
+    "https://budver.com/masters/elektromontazhni-roboti",
+    "https://remmo.lviv.ua/elektromontazhni-roboty-lviv/",
+    "https://altek.kiev.ua/uk/cini-na-elektromontazh-kyiv/"
+   ],
+   "confidence": "market"
+  },
+  {
+   "trade": "ELECTRICAL",
+   "name": "Установка автомата перекидного чотириполюсного",
+   "unit": "PIECE",
+   "old": 700.0,
+   "new": 1000.0,
+   "why": "аномалія: Ampérage (Львів): перемикач аварійного живлення 4-полюсний 1200, 2-полюсний 600. Наш двополюсний 600 збігається, а чотириполюсний занижений.",
+   "sources": [],
+   "confidence": "market"
+  },
+  {
+   "trade": "ELECTRICAL",
+   "name": "Установка блока живлення світлодіодної стрічки",
+   "unit": "PIECE",
+   "old": 150.0,
+   "new": 250.0,
+   "why": "Наші 150 дорівнюють мінімуму ринку.",
+   "sources": [
+    "https://amperage.com.ua/price/",
+    "https://san-sanych.ua/czini-na-poslugi/posluga-elektruk.html",
+    "https://www.rabotniki.ua/uk/elektromontazhnye-raboty/kiev",
+    "https://bud.arsel.com.ua/tsiny-na-budivelni-roboty/",
+    "https://rbk-alba.com/ua/price"
+   ],
+   "confidence": "market"
+  },
+  {
+   "trade": "ELECTRICAL",
+   "name": "Установка датчика руху або освітленості з підключенням",
+   "unit": "PIECE",
+   "old": 500.0,
+   "new": 350.0,
+   "why": "Наші 500 вищі за всі незалежні джерела (500 дає лише stroyremdizayn).",
+   "sources": [
+    "https://www.rabotniki.ua/uk/elektromontazhnye-raboty/kiev",
+    "https://bud.arsel.com.ua/tsiny-na-budivelni-roboty/",
+    "https://rbk-alba.com/ua/price",
+    "https://remmo.lviv.ua/elektromontazhni-roboty-lviv/",
+    "https://altek.kiev.ua/uk/cini-na-elektromontazh-kyiv/"
+   ],
+   "confidence": "market"
+  },
+  {
+   "trade": "ELECTRICAL",
+   "name": "Установка кнопки дверного дзвінка",
+   "unit": "PIECE",
+   "old": 120.0,
+   "new": 180.0,
+   "why": "Наші 120 близькі до мінімуму.",
+   "sources": [
+    "https://www.rabotniki.ua/uk/elektromontazhnye-raboty/kiev",
+    "https://www.rabotniki.ua/uk/elektromontazhnye-raboty/lvov"
+   ],
+   "confidence": "market"
+  },
+  {
+   "trade": "ELECTRICAL",
+   "name": "Установка контактора 380В",
+   "unit": "PIECE",
+   "old": 400.0,
+   "new": 550.0,
+   "why": "аномалія: Стоїть стільки ж, скільки контактор 220 В. stroyremdizayn: 220 В — 440, 380 В — 600. Трифазний контактор складніший у підключенні.",
+   "sources": [],
+   "confidence": "market"
+  },
+  {
+   "trade": "ELECTRICAL",
+   "name": "Установка ландшафтних світильників",
+   "unit": "PIECE",
+   "old": 240.0,
+   "new": 350.0,
+   "why": "Наші 240 нижчі за мінімум для «в ґрунт».",
+   "sources": [
+    "https://www.rabotniki.ua/uk/elektromontazhnye-raboty/kiev",
+    "https://www.rabotniki.ua/uk/elektromontazhnye-raboty/lvov",
+    "https://budver.com/masters/elektromontazhni-roboti"
+   ],
+   "confidence": "market"
+  },
+  {
+   "trade": "ELECTRICAL",
+   "name": "Установка маршрутизатора комутатора",
+   "unit": "PIECE",
+   "old": 738.0,
+   "new": 700.0,
+   "why": "аномалія: Нецілу ціну схоже перераховано (як і 147, 84, 88 в інших рядках). До того ж вона не узгоджується з «Налаштуванням Wi-Fi роутера» (200). Ampérage бере за налаштування роутера від 1500. Варто округлити й узгодити.",
+   "sources": [],
+   "confidence": "market"
+  },
+  {
+   "trade": "ELECTRICAL",
+   "name": "Установка реле перекидного чотириполюсного",
+   "unit": "PIECE",
+   "old": 400.0,
+   "new": 1000.0,
+   "why": "amperage.com.ua: 4-полюсний перемикач у щиті 1000–1200",
+   "sources": [],
+   "confidence": "manual"
+  },
+  {
+   "trade": "ELECTRICAL",
+   "name": "Установка стабілізатора напруги",
+   "unit": "PIECE",
+   "old": 1000.0,
+   "new": 1400.0,
+   "why": "Медіана ~1400.",
+   "sources": [
+    "https://www.rabotniki.ua/uk/elektromontazhnye-raboty/kiev",
+    "https://www.rabotniki.ua/uk/elektromontazhnye-raboty/lvov",
+    "https://bud.arsel.com.ua/tsiny-na-budivelni-roboty/",
+    "https://rbk-alba.com/ua/price",
+    "https://kabanchik.ua/ua/kyiv/category/elektryk",
+    "https://remmo.lviv.ua/elektromontazhni-roboty-lviv/",
+    "https://san-sanych.ua/czini-na-poslugi/posluga-elektruk.html"
+   ],
+   "confidence": "market"
+  },
+  {
+   "trade": "ELECTRICAL",
+   "name": "Установка та підключення дверного дзвінка бездротового",
+   "unit": "PIECE",
+   "old": 500.0,
+   "new": 300.0,
+   "why": "аномалія: Бездротовий дзвінок не потребує проводки, а коштує майже як дротовий (600). Kabanchik: бездротовий від 300.",
+   "sources": [],
+   "confidence": "market"
+  },
+  {
+   "trade": "ELECTRICAL",
+   "name": "Установка та підключення дверного дзвінка дротового",
+   "unit": "PIECE",
+   "old": 600.0,
+   "new": 400.0,
+   "why": "Медіана ~330–400.",
+   "sources": [
+    "https://www.rabotniki.ua/uk/elektromontazhnye-raboty/kiev",
+    "https://www.rabotniki.ua/uk/elektromontazhnye-raboty/lvov",
+    "https://kabanchik.ua/ua/kyiv/category/elektryk",
+    "https://rbk-alba.com/ua/price",
+    "https://san-sanych.ua/czini-na-poslugi/posluga-elektruk.html"
+   ],
+   "confidence": "market"
+  },
+  {
+   "trade": "ELECTRICAL",
+   "name": "Установка та підключення електроплити, варочної поверхні",
+   "unit": "PIECE",
+   "old": 1500.0,
+   "new": 900.0,
+   "why": "Наші 1500 удвічі вищі за ціни на підключення (500–800). Якщо позиція включає вбудовування в стільницю/меблі, поясніть це в описі; інакше ~900.",
+   "sources": [
+    "https://altek.kiev.ua/uk/cini-na-elektromontazh-kyiv/",
+    "https://san-sanych.ua/czini-na-poslugi/posluga-elektruk.html",
+    "https://remmo.lviv.ua/elektromontazhni-roboty-lviv/",
+    "https://kabanchik.ua/ua/kyiv/category/elektryk",
+    "https://kabanchik.ua/ua/kyiv/category/ustanovka-dukhovoi-shafy"
+   ],
+   "confidence": "market"
+  },
+  {
+   "trade": "ELECTRICAL",
+   "name": "Установка та підключення настінного світильника, бра",
+   "unit": "PIECE",
+   "old": 450.0,
+   "new": 380.0,
+   "why": "Медіана ~350–400.",
+   "sources": [
+    "https://www.rabotniki.ua/uk/elektromontazhnye-raboty/kiev",
+    "https://www.rabotniki.ua/uk/elektromontazhnye-raboty/lvov",
+    "https://bud.arsel.com.ua/tsiny-na-budivelni-roboty/",
+    "https://kabanchik.ua/ua/kyiv/category/elektryk",
+    "https://rbk-alba.com/ua/price",
+    "https://altek.kiev.ua/uk/cini-na-elektromontazh-kyiv/",
+    "https://amperage.com.ua/price/",
+    "https://san-sanych.ua/czini-na-poslugi/posluga-elektruk.html"
+   ],
+   "confidence": "market"
+  },
+  {
+   "trade": "ELECTRICAL",
+   "name": "Установка та підключення однофазного лічильника електроенергії",
+   "unit": "PIECE",
+   "old": 600.0,
+   "new": 700.0,
+   "why": "Медіана ~700.",
+   "sources": [
+    "https://www.rabotniki.ua/uk/elektromontazhnye-raboty/kiev",
+    "https://www.rabotniki.ua/uk/elektromontazhnye-raboty/lvov",
+    "https://bud.arsel.com.ua/tsiny-na-budivelni-roboty/",
+    "https://kabanchik.ua/ua/kyiv/category/elektryk",
+    "https://rbk-alba.com/ua/price",
+    "https://amperage.com.ua/price/",
+    "https://altek.kiev.ua/uk/cini-na-elektromontazh-kyiv/",
+    "https://remmo.lviv.ua/elektromontazhni-roboty-lviv/",
+    "https://san-sanych.ua/czini-na-poslugi/posluga-elektruk.html"
+   ],
+   "confidence": "market"
+  },
+  {
+   "trade": "ELECTRICAL",
+   "name": "Установка та підключення прохідних, перехресних вимикачів",
+   "unit": "PIECE",
+   "old": 320.0,
+   "new": 260.0,
+   "why": "Наші 320 вищі за максимум незалежних джерел.",
+   "sources": [
+    "https://kabanchik.ua/ua/kyiv/category/elektryk",
+    "https://amperage.com.ua/price/",
+    "https://remmo.lviv.ua/elektromontazhni-roboty-lviv/",
+    "https://stroyremdizayn.kiev.ua/rascenki-na-otdelochnye-raboty.html"
+   ],
+   "confidence": "market"
+  },
+  {
+   "trade": "ELECTRICAL",
+   "name": "Установка та підключення підвісного світильника, люстри простої",
+   "unit": "PIECE",
+   "old": 750.0,
+   "new": 600.0,
+   "why": "Наші 750 вищі за середню по Києву і Львову (~570). Збірка в нас іде окремою позицією, тож 600 достатньо.",
+   "sources": [
+    "https://www.rabotniki.ua/uk/elektromontazhnye-raboty/kiev",
+    "https://www.rabotniki.ua/uk/elektromontazhnye-raboty/lvov",
+    "https://bud.arsel.com.ua/tsiny-na-budivelni-roboty/",
+    "https://kabanchik.ua/ua/kyiv/category/elektryk",
+    "https://rbk-alba.com/ua/price",
+    "https://altek.kiev.ua/uk/cini-na-elektromontazh-kyiv/",
+    "https://san-sanych.ua/czini-na-poslugi/posluga-elektruk.html",
+    "https://amperage.com.ua/price/"
+   ],
+   "confidence": "market"
+  },
+  {
+   "trade": "ELECTRICAL",
+   "name": "Установка та підключення світлодіодного світильника",
+   "unit": "PIECE",
+   "old": 450.0,
+   "new": 280.0,
+   "why": "Наші 450 приблизно в 1,9 раза вищі за медіану і вищі за максимум.",
+   "sources": [
+    "https://www.rabotniki.ua/uk/elektromontazhnye-raboty/kiev",
+    "https://www.rabotniki.ua/uk/elektromontazhnye-raboty/lvov",
+    "https://bud.arsel.com.ua/tsiny-na-budivelni-roboty/",
+    "https://rbk-alba.com/ua/price"
+   ],
+   "confidence": "market"
+  },
+  {
+   "trade": "ELECTRICAL",
+   "name": "Установка та підключення терморегулятора теплої підлоги",
+   "unit": "PIECE",
+   "old": 600.0,
+   "new": 450.0,
+   "why": "Чотири з п’яти джерел дають 400.",
+   "sources": [
+    "https://rbk-alba.com/ua/price",
+    "https://amperage.com.ua/price/",
+    "https://altek.kiev.ua/uk/cini-na-elektromontazh-kyiv/",
+    "https://san-sanych.ua/czini-na-poslugi/posluga-elektruk.html",
+    "https://remmo.lviv.ua/elektromontazhni-roboty-lviv/"
+   ],
+   "confidence": "market"
+  },
+  {
+   "trade": "ELECTRICAL",
+   "name": "Установка та підключення трифазного лічильника електроенергії",
+   "unit": "PIECE",
+   "old": 1200.0,
+   "new": 1500.0,
+   "why": "Три з п’яти джерел дають 1600–2200.",
+   "sources": [
+    "https://rbk-alba.com/ua/price",
+    "https://amperage.com.ua/price/",
+    "https://kabanchik.ua/ua/kyiv/category/elektryk",
+    "https://remmo.lviv.ua/elektromontazhni-roboty-lviv/",
+    "https://san-sanych.ua/czini-na-poslugi/posluga-elektruk.html"
+   ],
+   "confidence": "market"
+  },
+  {
+   "trade": "ELECTRICAL",
+   "name": "Штроблення під електрокабель 20х20 в газоблоці",
+   "unit": "LINEAR_METER",
+   "old": 50.0,
+   "new": 100.0,
+   "why": "Наші 50 у 2+ рази нижчі за всі джерела і в 2,6 раза нижчі за нашу ж цеглу (130). Газоблок дешевший за цеглу, але не в 2,6 раза.",
+   "sources": [
+    "https://remmo.lviv.ua/elektromontazhni-roboty-lviv/",
+    "https://rbk-alba.com/ua/price",
+    "https://san-sanych.ua/czini-na-poslugi/posluga-elektruk.html"
+   ],
+   "confidence": "market"
+  },
+  {
+   "trade": "ELECTRICAL",
+   "name": "Штроблення під електрокабель 20х20 мм (в бетоні)",
+   "unit": "LINEAR_METER",
+   "old": 220.0,
+   "new": 200.0,
+   "why": "Наші 220 у межах ринку, але приблизно на 15–20% вищі за медіану (~185). Розмір 20х20 відповідає ринковій позиції «глибина 2 см».",
+   "sources": [
+    "https://www.rabotniki.ua/uk/elektromontazhnye-raboty/kiev",
+    "https://www.rabotniki.ua/uk/elektromontazhnye-raboty/lvov",
+    "https://bud.arsel.com.ua/tsiny-na-budivelni-roboty/",
+    "https://kabanchik.ua/ua/kyiv/category/elektryk",
+    "https://remmo.lviv.ua/elektromontazhni-roboty-lviv/",
+    "https://rbk-alba.com/ua/price"
+   ],
+   "confidence": "market"
+  },
+  {
+   "trade": "FLOORING",
+   "name": "Демонтаж лінолеуму ковроліну",
+   "unit": "M2",
+   "old": 20.0,
+   "new": 100.0,
+   "why": "аномалія: 20 грн/м² — нереально низько (rbk-alba 250, kabanchik 130).",
+   "sources": [],
+   "confidence": "market"
+  },
+  {
+   "trade": "FLOORING",
+   "name": "Демонтаж плінтуса",
+   "unit": "LINEAR_METER",
+   "old": 30.0,
+   "new": 60.0,
+   "why": "аномалія: 30 грн/м.п. — низько: rbk-alba 60 грн/м.п. (дерев'яний/пластиковий).",
+   "sources": [],
+   "confidence": "market"
+  },
+  {
+   "trade": "FLOORING",
+   "name": "Машинна стяжка самовирівнююча",
+   "unit": "M2",
+   "old": 301.0,
+   "new": 350.0,
+   "why": "Наша ціна нижча навіть за мінімум rabotniki (307).",
+   "sources": [
+    "https://www.rabotniki.ua/uk/chernovye-raboty-po-polu/kiev",
+    "https://mirafloor.com.ua/statti/nalivna-pidloga-tsina-za-m2.html"
+   ],
+   "confidence": "market"
+  },
+  {
+   "trade": "FLOORING",
+   "name": "Монтаж алюмінієвого плінтуса",
+   "unit": "LINEAR_METER",
+   "old": 312.0,
+   "new": 370.0,
+   "why": "",
+   "sources": [
+    "https://stroyremdizayn.kiev.ua/rascenki-na-otdelochnye-raboty.html",
+    "https://bud.arsel.com.ua/tsiny-na-budivelni-roboty/"
+   ],
+   "confidence": "market"
+  },
+  {
+   "trade": "FLOORING",
+   "name": "Монтаж міжкімнатного порога",
+   "unit": "LINEAR_METER",
+   "old": 400.0,
+   "new": 210.0,
+   "why": "аномалія: 400 грн/м.п. — удвічі більше за перехідний профіль (200); ринок ~210. Поріг зазвичай рахують за шт.",
+   "sources": [],
+   "confidence": "market"
+  },
+  {
+   "trade": "FLOORING",
+   "name": "Монтаж утеплювача під стяжку",
+   "unit": "M2",
+   "old": 302.0,
+   "new": 160.0,
+   "why": "аномалія: 302 проти 130 у сусідньому 'Монтаж утеплювача'; ринок 130–200.",
+   "sources": [],
+   "confidence": "market"
+  },
+  {
+   "trade": "FLOORING",
+   "name": "Настил лінолеуму ковроліну на клей",
+   "unit": "M2",
+   "old": 200.0,
+   "new": 260.0,
+   "why": "аномалія: Дорівнює варіанту без клею (200); на клей має бути дорожче (stroyremdizayn 300, arsel 220).",
+   "sources": [],
+   "confidence": "market"
+  },
+  {
+   "trade": "FLOORING",
+   "name": "Настилання підлоги з дошки по лагах",
+   "unit": "M2",
+   "old": 400.0,
+   "new": 450.0,
+   "why": "",
+   "sources": [
+    "https://www.rabotniki.ua/uk/price/ukladka-laminata-price/kiev",
+    "https://www.rabotniki.ua/uk/price/tsiklevanie-parketa-pokrytie-lakom",
+    "https://stroyremdizayn.kiev.ua/rascenki-na-otdelochnye-raboty.html"
+   ],
+   "confidence": "market"
+  },
+  {
+   "trade": "FLOORING",
+   "name": "Плівкова ізоляція під стяжку",
+   "unit": "M2",
+   "old": 134.0,
+   "new": 60.0,
+   "why": "аномалія: 134 грн/м² — вдвічі вище за ринок (60–64) і за 'пароізоляційну плівку під ламінат' (30).",
+   "sources": [],
+   "confidence": "market"
+  },
+  {
+   "trade": "FLOORING",
+   "name": "Укладання паркетної / інженерної дошки плаваючим способом",
+   "unit": "M2",
+   "old": 420.0,
+   "new": 480.0,
+   "why": "Наша ціна нижча за всі три джерела.",
+   "sources": [
+    "https://www.rabotniki.ua/uk/price/ukladka-laminata-price/kiev",
+    "https://www.rabotniki.ua/uk/price/tsiklevanie-parketa-pokrytie-lakom",
+    "https://bud.arsel.com.ua/tsiny-na-budivelni-roboty/"
+   ],
+   "confidence": "market"
+  },
+  {
+   "trade": "FLOORING",
+   "name": "Укладання фанери або OSB на стяжку чи лаги",
+   "unit": "M2",
+   "old": 250.0,
+   "new": 210.0,
+   "why": "Небагато вище за ринок.",
+   "sources": [
+    "https://www.rabotniki.ua/uk/price/ukladka-laminata-price/kiev",
+    "https://www.rabotniki.ua/uk/price/tsiklevanie-parketa-pokrytie-lakom",
+    "https://rating-remont-kvartir.com.ua/ua/rozcinki-na-roboti-z-pidlogami-lviv/"
+   ],
+   "confidence": "market"
+  },
+  {
+   "trade": "METAL",
+   "name": "Виготовлення металевого каркасу сходів (за сходинку)",
+   "unit": "PIECE",
+   "old": 900.0,
+   "new": 1350.0,
+   "why": "аномалія: Не узгоджено з 'Виготовлення сходів на косоурах (за сходинку)' (1350) і BUILDER 'Зварювання каркасу сходів пряма/поворотна сходинка' (1350). Див. checked.",
+   "sources": [],
+   "confidence": "market"
+  },
+  {
+   "trade": "METAL",
+   "name": "Виготовлення хвіртки металевої",
+   "unit": "PIECE",
+   "old": 3500.0,
+   "new": 7000.0,
+   "why": "BUILDER-дубль 'Зварювання рами хвіртки (зварювання, монтаж, фарбування)' коштує 9000 — розбіжність у 2,5 раза.",
+   "sources": [
+    "https://www.rabotniki.ua/uk/vorota-kalitki/kiev",
+    "https://www.rabotniki.ua/uk/vorota-kalitki/lvov"
+   ],
+   "confidence": "market"
+  },
+  {
+   "trade": "METAL",
+   "name": "Демонтаж металоконструкцій",
+   "unit": "KG",
+   "old": 12.0,
+   "new": 4.0,
+   "why": "Наша ціна у 3 рази вища за ринковий максимум.",
+   "sources": [
+    "https://www.rabotniki.ua/uk/demontazh-metallokonstruktsiy/kiev",
+    "https://rating-remont-kvartir.com.ua/ua/rozcinki-na-zvarjuvalni-roboti/"
+   ],
+   "confidence": "market"
+  },
+  {
+   "trade": "METAL",
+   "name": "Зварювальні роботи (електродом)",
+   "unit": "HOUR",
+   "old": 400.0,
+   "new": 600.0,
+   "why": "Слабка база (одне спец. джерело 2023 р.), але ставка зварника не може дорівнювати ставці вантажника. Напівавтомат 500 / аргон 800 — пропорційно.",
+   "sources": [
+    "https://duga.in.ua/ua/prajs2.html",
+    "https://www.rabotniki.ua/uk/vynos-musora/kiev"
+   ],
+   "confidence": "market"
+  },
+  {
+   "trade": "METAL",
+   "name": "Монтаж воріт",
+   "unit": "PIECE",
+   "old": 3000.0,
+   "new": 5000.0,
+   "why": "",
+   "sources": [
+    "https://www.rabotniki.ua/uk/price/montazh-raspashnyh-vorot",
+    "https://www.rabotniki.ua/uk/price/montazh-otkatnyh-vorot"
+   ],
+   "confidence": "market"
+  },
+  {
+   "trade": "METAL",
+   "name": "Монтаж перил та огородження",
+   "unit": "LINEAR_METER",
+   "old": 400.0,
+   "new": 1000.0,
+   "why": "",
+   "sources": [
+    "https://www.rabotniki.ua/uk/lestnitsy/kiev",
+    "https://www.rabotniki.ua/uk/lestnitsy/lvov"
+   ],
+   "confidence": "market"
+  },
+  {
+   "trade": "METAL",
+   "name": "Монтаж стовпів для паркану",
+   "unit": "PIECE",
+   "old": 500.0,
+   "new": 400.0,
+   "why": "BUILDER 'Установка дерев'яного або металевого стовпа' 350 — уніфікувати ~400.",
+   "sources": [
+    "https://www.rabotniki.ua/uk/zabor-iz-profnastila/kiev",
+    "https://www.rabotniki.ua/uk/zabor-iz-profnastila/lvov"
+   ],
+   "confidence": "market"
+  },
+  {
+   "trade": "PAINTER",
+   "name": "Акрилення примикань",
+   "unit": "LINEAR_METER",
+   "old": 100.0,
+   "new": 140.0,
+   "why": "аномалія: Та сама робота, що й 'Герметизація швів, стиків акрилом, спеціальною мастикою' (220), але ціни різняться вдвічі. Ринок (rabotniki): герметизація акрилом 80/143/200.",
+   "sources": [],
+   "confidence": "market"
+  },
+  {
+   "trade": "PAINTER",
+   "name": "Венеціанська штукатурка",
+   "unit": "M2",
+   "old": 400.0,
+   "new": 650.0,
+   "why": "Нижче мінімуму обох джерел.",
+   "sources": [
+    "https://www.rabotniki.ua/uk/dekorativnaya-otdelka-sten",
+    "https://budver.com/masters/shtukaturno-malyarni-roboti"
+   ],
+   "confidence": "market"
+  },
+  {
+   "trade": "PAINTER",
+   "name": "Герметизація швів, стиків акрилом, спеціальною мастикою",
+   "unit": "LINEAR_METER",
+   "old": 220.0,
+   "new": 140.0,
+   "why": "аномалія: Дубль 'Акрилення примикань' (100) з іншою ціною; вище максимуму rabotniki (200).",
+   "sources": [],
+   "confidence": "market"
+  },
+  {
+   "trade": "PAINTER",
+   "name": "Грунтування",
+   "unit": "M2",
+   "old": 33.0,
+   "new": 40.0,
+   "why": "три ґрунтування з різними цінами (33/35/50) → одна ринкова 40",
+   "sources": [],
+   "confidence": "manual"
+  },
+  {
+   "trade": "PAINTER",
+   "name": "Грунтування основи перед штукатуркою, армуванням",
+   "unit": "M2",
+   "old": 35.0,
+   "new": 40.0,
+   "why": "вирівнювання ґрунтувань",
+   "sources": [],
+   "confidence": "manual"
+  },
+  {
+   "trade": "PAINTER",
+   "name": "Грунтування перед шпаклівкою",
+   "unit": "M2",
+   "old": 50.0,
+   "new": 40.0,
+   "why": "вирівнювання ґрунтувань",
+   "sources": [],
+   "confidence": "manual"
+  },
+  {
+   "trade": "PAINTER",
+   "name": "Змивання побілки зі стелі",
+   "unit": "M2",
+   "old": 60.0,
+   "new": 100.0,
+   "why": "аномалія: kabanchik: змивка побілки зі стелі 110; rbk-alba: змивання вапна/крейди/водоемульсійки 110.",
+   "sources": [],
+   "confidence": "market"
+  },
+  {
+   "trade": "PAINTER",
+   "name": "Зняття шпалер",
+   "unit": "M2",
+   "old": 30.0,
+   "new": 60.0,
+   "why": "аномалія: Нижче ринку: kabanchik 59 (стіни) / 63 (стеля), rbk-alba 100. Тільки vikna.tv дає 'від 10'.",
+   "sources": [],
+   "confidence": "market"
+  },
+  {
+   "trade": "PAINTER",
+   "name": "Машинна штукатурка стель",
+   "unit": "M2",
+   "old": 300.0,
+   "new": 450.0,
+   "why": "Нижче мінімуму в усіх джерелах.",
+   "sources": [
+    "https://www.rabotniki.ua/uk/shtukaturnye-raboty",
+    "https://www.rabotniki.ua/uk/shtukaturnye-raboty/kiev",
+    "https://www.rabotniki.ua/uk/shtukaturnye-raboty/lvov",
+    "https://kabanchik.ua/ua/kyiv/category/mashynna-shtukaturka",
+    "https://budver.com/masters/shtukaturno-malyarni-roboti"
+   ],
+   "confidence": "market"
+  },
+  {
+   "trade": "PAINTER",
+   "name": "Нанесення декоративної штукатурки \"гротто\", \"1000 ліній\"",
+   "unit": "M2",
+   "old": 700.0,
+   "new": 520.0,
+   "why": "На максимумі ринку.",
+   "sources": [
+    "https://www.rabotniki.ua/uk/dekorativnaya-otdelka-sten",
+    "https://stroyremdizayn.kiev.ua/rascenki-na-otdelochnye-raboty.html"
+   ],
+   "confidence": "market"
+  },
+  {
+   "trade": "PAINTER",
+   "name": "Нанесення декоративної штукатурки \"китайський шовк\", \"вельвет\", \"лава\", \"сахара\"",
+   "unit": "M2",
+   "old": 650.0,
+   "new": 500.0,
+   "why": "Біля максимуму.",
+   "sources": [
+    "https://www.rabotniki.ua/uk/dekorativnaya-otdelka-sten",
+    "https://stroyremdizayn.kiev.ua/rascenki-na-otdelochnye-raboty.html"
+   ],
+   "confidence": "market"
+  },
+  {
+   "trade": "PAINTER",
+   "name": "Нанесення рідких шпалер",
+   "unit": "M2",
+   "old": 180.0,
+   "new": 260.0,
+   "why": "На мінімумі ринку.",
+   "sources": [
+    "https://www.rabotniki.ua/uk/pokleyka-oboev",
+    "https://bud.arsel.com.ua/tsiny-na-budivelni-roboty/",
+    "https://vikna.tv/styl-zhyttya/skilky-koshtuye-pokleyity-kvadratnyj-metr-shpaler-u-2026-rotsi/"
+   ],
+   "confidence": "market"
+  },
+  {
+   "trade": "PAINTER",
+   "name": "Обшивка стелі шалівкою",
+   "unit": "M2",
+   "old": 80.0,
+   "new": 450.0,
+   "why": "аномалія: Шалівка — те саме, що вагонка, але вагонка на стелю коштує 550, тобто в 7 разів дорожче. rabotniki: OSB/фанера на стелю 200/320/400.",
+   "sources": [],
+   "confidence": "market"
+  },
+  {
+   "trade": "PAINTER",
+   "name": "Поклейка шпалер шириною 100 см на стіну (без підбору)",
+   "unit": "M2",
+   "old": 240.0,
+   "new": 200.0,
+   "why": "Вище медіани на ~20%.",
+   "sources": [
+    "https://www.rabotniki.ua/uk/pokleyka-oboev",
+    "https://bud.arsel.com.ua/tsiny-na-budivelni-roboty/",
+    "https://www.remonthub.org/prices.php",
+    "https://kabanchik.ua/ua/kyiv/category/pokleika-shpaler",
+    "https://stroyremdizayn.kiev.ua/rascenki-na-otdelochnye-raboty.html",
+    "https://vikna.tv/styl-zhyttya/skilky-koshtuye-pokleyity-kvadratnyj-metr-shpaler-u-2026-rotsi/"
+   ],
+   "confidence": "market"
+  },
+  {
+   "trade": "PAINTER",
+   "name": "Поклейка шпалер шириною 50 см на стіну (з підбором)",
+   "unit": "M2",
+   "old": 300.0,
+   "new": 240.0,
+   "why": "Найдорожча з 4 позицій шпалер; ринок з підбором ~200–220.",
+   "sources": [
+    "https://kabanchik.ua/ua/kyiv/category/pokleika-shpaler",
+    "https://stroyremdizayn.kiev.ua/rascenki-na-otdelochnye-raboty.html",
+    "https://www.rabotniki.ua/uk/pokleyka-oboev",
+    "https://bud.arsel.com.ua/tsiny-na-budivelni-roboty/"
+   ],
+   "confidence": "market"
+  },
+  {
+   "trade": "PAINTER",
+   "name": "Підвісна стеля Армстронг",
+   "unit": "M2",
+   "old": 170.0,
+   "new": 300.0,
+   "why": "аномалія: Нижче мінімуму. rabotniki 200/334/450; remonthub від 180.",
+   "sources": [],
+   "confidence": "market"
+  },
+  {
+   "trade": "PAINTER",
+   "name": "Стелі Грильято",
+   "unit": "M2",
+   "old": 80.0,
+   "new": 350.0,
+   "why": "аномалія: Абсурдно низько. rabotniki: Грильято 250/365/530.",
+   "sources": [],
+   "confidence": "market"
+  },
+  {
+   "trade": "PAINTER",
+   "name": "Утеплення укосів пінопластом",
+   "unit": "LINEAR_METER",
+   "old": 600.0,
+   "new": 300.0,
+   "why": "аномалія: Удвічі дорожче за утеплення укосів ватою (300), хоча на фасаді вата дорожча (500 проти 300 за пінопласт). Схоже, ціни переплутано.",
+   "sources": [],
+   "confidence": "market"
+  },
+  {
+   "trade": "PAINTER",
+   "name": "Фарбування нашовної планки",
+   "unit": "LINEAR_METER",
+   "old": 260.0,
+   "new": 80.0,
+   "why": "аномалія: Дорожче за фарбування 1 м² вагонки (220) і вдвічі дорожче за монтаж цієї ж планки (120). Схоже на помилку.",
+   "sources": [],
+   "confidence": "market"
+  },
+  {
+   "trade": "PAINTER",
+   "name": "Шліфування штукатурки",
+   "unit": "M2",
+   "old": 50.0,
+   "new": 90.0,
+   "why": "Нижче мінімуму всіх джерел.",
+   "sources": [
+    "https://www.rabotniki.ua/uk/shtukaturnye-raboty",
+    "https://www.rabotniki.ua/uk/shtukaturnye-raboty/kiev",
+    "https://www.rabotniki.ua/uk/shtukaturnye-raboty/lvov",
+    "https://stroyremdizayn.kiev.ua/rascenki-na-otdelochnye-raboty.html"
+   ],
+   "confidence": "market"
+  },
+  {
+   "trade": "PAINTER",
+   "name": "Штукатурка Марморіно",
+   "unit": "M2",
+   "old": 500.0,
+   "new": 750.0,
+   "why": "Лише одне джерело з повним діапазоном (rabotniki, 60 пропозицій); друге — 'від'. Підвищувати обережно.",
+   "sources": [
+    "https://www.rabotniki.ua/uk/dekorativnaya-otdelka-sten",
+    "https://budver.com/masters/shtukaturno-malyarni-roboti"
+   ],
+   "confidence": "market"
+  },
+  {
+   "trade": "PAINTER",
+   "name": "Штукатурка Марсельський віск",
+   "unit": "M2",
+   "old": 500.0,
+   "new": 650.0,
+   "why": "На мінімумі; одне джерело з діапазоном.",
+   "sources": [
+    "https://www.rabotniki.ua/uk/dekorativnaya-otdelka-sten",
+    "https://budver.com/masters/shtukaturno-malyarni-roboti"
+   ],
+   "confidence": "market"
+  },
+  {
+   "trade": "PAINTER",
+   "name": "Штукатурка стін від 2см об'ємом до 50м2",
+   "unit": "M2",
+   "old": 280.0,
+   "new": 430.0,
+   "why": "аномалія: Те саме: нижче за звичайну ручну від 2 см (380) і дорівнює ціні до 2 см.",
+   "sources": [],
+   "confidence": "market"
+  },
+  {
+   "trade": "PAINTER",
+   "name": "Штукатурка стін до 2см об'ємом до 50м2",
+   "unit": "M2",
+   "old": 280.0,
+   "new": 400.0,
+   "why": "аномалія: Надбавка за малий обсяг має робити ціну вищою за звичайну ручну (330), а тут нижче. Обидві товщини мають однакову ціну 280. Джерело-аналог (stroyremdizayn): 400 (до 2 см) і 430 (від 2 см).",
+   "sources": [],
+   "confidence": "market"
+  },
+  {
+   "trade": "PAINTER",
+   "name": "Штукатурка стін машинкою до 2см",
+   "unit": "M2",
+   "old": 270.0,
+   "new": 340.0,
+   "why": "Нижче медіани і нижче мінімуму Києва (350).",
+   "sources": [
+    "https://www.rabotniki.ua/uk/shtukaturnye-raboty",
+    "https://www.rabotniki.ua/uk/shtukaturnye-raboty/kiev",
+    "https://www.rabotniki.ua/uk/shtukaturnye-raboty/lvov",
+    "https://stroyremdizayn.kiev.ua/rascenki-na-otdelochnye-raboty.html",
+    "https://kabanchik.ua/ua/kyiv/category/mashynna-shtukaturka",
+    "https://budver.com/masters/shtukaturno-malyarni-roboti",
+    "https://domremonta.com.ua/uk/mashinnaja-shtukaturka/"
+   ],
+   "confidence": "market"
+  },
+  {
+   "trade": "PAINTER",
+   "name": "Штукатурка стін машинкою понад 2см",
+   "unit": "M2",
+   "old": 300.0,
+   "new": 380.0,
+   "why": "Має бути дорожче за <2 см; ринок товщини >2 см ~360–420.",
+   "sources": [
+    "https://stroyremdizayn.kiev.ua/rascenki-na-otdelochnye-raboty.html",
+    "https://www.rabotniki.ua/uk/shtukaturnye-raboty",
+    "https://www.rabotniki.ua/uk/shtukaturnye-raboty/kiev"
+   ],
+   "confidence": "market"
+  },
+  {
+   "trade": "PLUMBING",
+   "name": "Врізка в стояк водопроводу",
+   "unit": "PIECE",
+   "old": 1500.0,
+   "new": 1100.0,
+   "why": "1500 вище за ринковий максимум 1350.",
+   "sources": [
+    "https://www.rabotniki.ua/uk/santehnicheskie-raboty/kiev",
+    "https://www.rabotniki.ua/uk/santehnicheskie-raboty/lvov",
+    "https://bud.arsel.com.ua/tsiny-na-budivelni-roboty/"
+   ],
+   "confidence": "market"
+  },
+  {
+   "trade": "PLUMBING",
+   "name": "Демонтаж радіатора опалення",
+   "unit": "PIECE",
+   "old": 350.0,
+   "new": 450.0,
+   "why": "",
+   "sources": [
+    "https://rbk-alba.com/ua/price",
+    "https://liv-comfort.kyiv.ua/price-remont/index.html",
+    "https://santehprofi.kyiv.ua/tsiny/",
+    "https://rimeik.com.ua/ceny-santehnik-lviv"
+   ],
+   "confidence": "market"
+  },
+  {
+   "trade": "PLUMBING",
+   "name": "Демонтаж умивальника раковини",
+   "unit": "PIECE",
+   "old": 200.0,
+   "new": 320.0,
+   "why": "Наша ціна дорівнює ринковому мінімуму.",
+   "sources": [
+    "https://www.rabotniki.ua/uk/santehnicheskie-raboty/kiev",
+    "https://www.rabotniki.ua/uk/santehnicheskie-raboty/lvov",
+    "https://bud.arsel.com.ua/tsiny-na-budivelni-roboty/",
+    "https://rbk-alba.com/ua/price"
+   ],
+   "confidence": "market"
+  },
+  {
+   "trade": "PLUMBING",
+   "name": "Демонтаж унітазу",
+   "unit": "PIECE",
+   "old": 350.0,
+   "new": 450.0,
+   "why": "",
+   "sources": [
+    "https://www.rabotniki.ua/uk/santehnicheskie-raboty/kiev",
+    "https://www.rabotniki.ua/uk/santehnicheskie-raboty/lvov",
+    "https://bud.arsel.com.ua/tsiny-na-budivelni-roboty/",
+    "https://rbk-alba.com/ua/price",
+    "https://kabanchik.ua/ua/lviv/category/inshi-posluhy-santekhnika"
+   ],
+   "confidence": "market"
+  },
+  {
+   "trade": "PLUMBING",
+   "name": "Монтаж буферної ємності",
+   "unit": "PIECE",
+   "old": 5190.0,
+   "new": 7000.0,
+   "why": "Нижче за мінімум.",
+   "sources": [
+    "https://www.rabotniki.ua/uk/sistemy-otopleniya/kiev",
+    "https://www.rabotniki.ua/uk/sistemy-otopleniya/lvov"
+   ],
+   "confidence": "market"
+  },
+  {
+   "trade": "PLUMBING",
+   "name": "Монтаж вентиляційної решітки",
+   "unit": "PIECE",
+   "old": 1300.0,
+   "new": 250.0,
+   "why": "1300 — явна помилка (дорожче за вентилятор 425); оцінка без прямого джерела",
+   "sources": [],
+   "confidence": "manual"
+  },
+  {
+   "trade": "PLUMBING",
+   "name": "Монтаж гасника гідроудару (гідрокомпенсатора)",
+   "unit": "PIECE",
+   "old": 1300.0,
+   "new": 800.0,
+   "why": "вкручується як фітинг; на рівні редуктора тиску",
+   "sources": [],
+   "confidence": "manual"
+  },
+  {
+   "trade": "PLUMBING",
+   "name": "Монтаж гідрострілки опалення",
+   "unit": "PIECE",
+   "old": 1450.0,
+   "new": 1900.0,
+   "why": "Наша ціна дорівнює ринковому мінімуму.",
+   "sources": [
+    "https://www.rabotniki.ua/uk/sistemy-otopleniya/kiev",
+    "https://www.rabotniki.ua/uk/sistemy-otopleniya/lvov"
+   ],
+   "confidence": "market"
+  },
+  {
+   "trade": "PLUMBING",
+   "name": "Монтаж зворотного клапана каналізації Ø110",
+   "unit": "PIECE",
+   "old": 1300.0,
+   "new": 1800.0,
+   "why": "Ринок не ділить клапани за діаметром. Для Ø50 залишити 1300 прийнятно.",
+   "sources": [
+    "https://www.rabotniki.ua/uk/santehnicheskie-raboty/kiev",
+    "https://www.rabotniki.ua/uk/santehnicheskie-raboty/lvov",
+    "https://bud.arsel.com.ua/tsiny-na-budivelni-roboty/"
+   ],
+   "confidence": "market"
+  },
+  {
+   "trade": "PLUMBING",
+   "name": "Монтаж змішувального вузла теплої підлоги",
+   "unit": "PIECE",
+   "old": 1200.0,
+   "new": 1600.0,
+   "why": "",
+   "sources": [
+    "https://www.rabotniki.ua/uk/teplyy-pol",
+    "https://santehprofi.kyiv.ua/tsiny/",
+    "https://rating-remont-kvartir.com.ua/ua/rozcinki-na-santehnichni-roboti/"
+   ],
+   "confidence": "market"
+  },
+  {
+   "trade": "PLUMBING",
+   "name": "Монтаж колектора водопостачання (гребінки) з кранами на виходах",
+   "unit": "SET",
+   "old": 1300.0,
+   "new": 2000.0,
+   "why": "аномалія: Майже дублікат «Монтаж колектора гребінки» (Опалення, 1281), ціни різняться без причини. Обидві нижче за ринок ~2000.",
+   "sources": [],
+   "confidence": "market"
+  },
+  {
+   "trade": "PLUMBING",
+   "name": "Монтаж колектора гребінки",
+   "unit": "SET",
+   "old": 1281.0,
+   "new": 2000.0,
+   "why": "Ціна 1281 не кругла, як і 1203, 1450 та 5190 у цьому розділі. Схоже, її імпортували з шаблону. Гребінку понад 5 контурів варто винести окремо (~3500).",
+   "sources": [
+    "https://www.rabotniki.ua/uk/sistemy-otopleniya/kiev",
+    "https://www.rabotniki.ua/uk/sistemy-otopleniya",
+    "https://santehprofi.kyiv.ua/tsiny/"
+   ],
+   "confidence": "market"
+  },
+  {
+   "trade": "PLUMBING",
+   "name": "Монтаж котельної (котел, бойлер, насоси, крани, фільтра) - від",
+   "unit": "PIECE",
+   "old": 20000.0,
+   "new": 35000.0,
+   "why": "Навіть як ціна «від» 20000 нижче за ринкові мінімуми 30–35 тис. Є також дублікат у розділі «Опалення» за 825 (див. аномалії).",
+   "sources": [
+    "https://www.rabotniki.ua/uk/sistemy-otopleniya/kiev",
+    "https://www.rabotniki.ua/uk/sistemy-otopleniya/lvov",
+    "https://santehprofi.kyiv.ua/tsiny/"
+   ],
+   "confidence": "market"
+  },
+  {
+   "trade": "PLUMBING",
+   "name": "Монтаж кульового крана",
+   "unit": "PIECE",
+   "old": 300.0,
+   "new": 400.0,
+   "why": "",
+   "sources": [
+    "https://www.rabotniki.ua/uk/santehnicheskie-raboty/kiev",
+    "https://www.rabotniki.ua/uk/santehnicheskie-raboty/lvov",
+    "https://bud.arsel.com.ua/tsiny-na-budivelni-roboty/",
+    "https://www.remonthub.org/prices.php",
+    "https://budver.com/masters/santehnichni-roboti"
+   ],
+   "confidence": "market"
+  },
+  {
+   "trade": "PLUMBING",
+   "name": "Монтаж кухонного подрібнювача",
+   "unit": "PIECE",
+   "old": 900.0,
+   "new": 1250.0,
+   "why": "Наша ціна дорівнює ринковому мінімуму.",
+   "sources": [
+    "https://www.rabotniki.ua/uk/santehnicheskie-raboty/kiev",
+    "https://www.rabotniki.ua/uk/santehnicheskie-raboty/lvov",
+    "https://bud.arsel.com.ua/tsiny-na-budivelni-roboty/",
+    "https://budver.com/masters/santehnichni-roboti",
+    "https://rating-remont-kvartir.com.ua/ua/rozcinki-na-santehnichni-roboti/"
+   ],
+   "confidence": "market"
+  },
+  {
+   "trade": "PLUMBING",
+   "name": "Монтаж магістрального фільтра механічного очищення",
+   "unit": "PIECE",
+   "old": 620.0,
+   "new": 1000.0,
+   "why": "Фільтр-колба без байпаса — 1100–2000; простий сітчастий — 600–1000.",
+   "sources": [
+    "https://www.rabotniki.ua/uk/vodosnabzhenie-ochistka-vody",
+    "https://www.rabotniki.ua/uk/santehnicheskie-raboty/kiev",
+    "https://kabanchik.ua/ua/kyiv/category/santekhnik"
+   ],
+   "confidence": "market"
+  },
+  {
+   "trade": "PLUMBING",
+   "name": "Монтаж металевого сифона",
+   "unit": "PIECE",
+   "old": 1300.0,
+   "new": 800.0,
+   "why": "аномалія: Вдвічі дорожче за «Установка сифона» (500) і вище за ринковий максимум для сифона, 800 (rabotniki).",
+   "sources": [],
+   "confidence": "market"
+  },
+  {
+   "trade": "PLUMBING",
+   "name": "Монтаж насоса свердловини труби трос оголовок",
+   "unit": "SET",
+   "old": 825.0,
+   "new": 7500.0,
+   "why": "аномалія: Абсурдно низько: поруч стоять «Підключення свердловинного насоса» 3000 і «Монтаж обладнання свердловини» 8500. На ринку глибинний насос до 40 м з облаштуванням коштує 5500/7820/10000 (rabotniki, водопостачання).",
+   "sources": [],
+   "confidence": "market"
+  },
+  {
+   "trade": "PLUMBING",
+   "name": "Монтаж насосної групи",
+   "unit": "PIECE",
+   "old": 1203.0,
+   "new": 1500.0,
+   "why": "",
+   "sources": [
+    "https://www.rabotniki.ua/uk/sistemy-otopleniya/kiev",
+    "https://www.rabotniki.ua/uk/sistemy-otopleniya/lvov"
+   ],
+   "confidence": "market"
+  },
+  {
+   "trade": "PLUMBING",
+   "name": "Монтаж насосної станції",
+   "unit": "PIECE",
+   "old": 1700.0,
+   "new": 3000.0,
+   "why": "За насосну станцію знайшли лише одне джерело (rabotniki по Україні). Але 1700 нижче за мінімум, а наш гідроакумулятор окремо коштує 1200.",
+   "sources": [
+    "https://www.rabotniki.ua/uk/vodosnabzhenie-ochistka-vody",
+    "https://www.rabotniki.ua/uk/santehnicheskie-raboty/kiev"
+   ],
+   "confidence": "market"
+  },
+  {
+   "trade": "PLUMBING",
+   "name": "Монтаж панелі з клавішами змиву",
+   "unit": "PIECE",
+   "old": 1300.0,
+   "new": 500.0,
+   "why": "аномалія: Завищено: santehprofi бере за встановлення кнопки інсталяції від 500. На ринку унітаз на консолі з кнопкою коштує 1750–1840 разом.",
+   "sources": [],
+   "confidence": "market"
+  },
+  {
+   "trade": "PLUMBING",
+   "name": "Монтаж прихованої частини душової системи (вбудований корпус)",
+   "unit": "PIECE",
+   "old": 1300.0,
+   "new": 2200.0,
+   "why": "1300 нижче за ринковий мінімум 1500. До того ж вбудований корпус душової системи у нас дешевший за приховану частину змішувача умивальника (1800), хоча він складніший.",
+   "sources": [
+    "https://www.rabotniki.ua/uk/santehnicheskie-raboty/kiev",
+    "https://www.rabotniki.ua/uk/santehnicheskie-raboty/lvov",
+    "https://bud.arsel.com.ua/tsiny-na-budivelni-roboty/",
+    "https://rating-remont-kvartir.com.ua/ua/rozcinki-na-santehnichni-roboti/",
+    "https://budver.com/masters/santehnichni-roboti"
+   ],
+   "confidence": "market"
+  },
+  {
+   "trade": "PLUMBING",
+   "name": "Монтаж прихованої частини змішувача (душ, біде)",
+   "unit": "PIECE",
+   "old": 1500.0,
+   "new": 2000.0,
+   "why": "Порівнюється з тим самим ринковим «мультибоксом». «Прихована частина змішувача умивальника» за 1800 — ok.",
+   "sources": [
+    "https://www.rabotniki.ua/uk/santehnicheskie-raboty/kiev",
+    "https://bud.arsel.com.ua/tsiny-na-budivelni-roboty/",
+    "https://budver.com/masters/santehnichni-roboti"
+   ],
+   "confidence": "market"
+  },
+  {
+   "trade": "PLUMBING",
+   "name": "Монтаж редуктора тиску води",
+   "unit": "PIECE",
+   "old": 500.0,
+   "new": 800.0,
+   "why": "",
+   "sources": [
+    "https://www.rabotniki.ua/uk/santehnicheskie-raboty/kiev",
+    "https://www.rabotniki.ua/uk/santehnicheskie-raboty/lvov",
+    "https://bud.arsel.com.ua/tsiny-na-budivelni-roboty/",
+    "https://www.remonthub.org/prices.php",
+    "https://santehprofi.kyiv.ua/tsiny/"
+   ],
+   "confidence": "market"
+  },
+  {
+   "trade": "PLUMBING",
+   "name": "Монтаж системи від протікання води",
+   "unit": "PIECE",
+   "old": 850.0,
+   "new": 2000.0,
+   "why": "аномалія: Схоже, ціна занижена: liv-comfort бере за систему «Аквастоп» 2300 за комплект. У нашому комплекті 2 крани з приводом, контролер і датчики, тоді як один кран коштує 250–400.",
+   "sources": [],
+   "confidence": "market"
+  },
+  {
+   "trade": "PLUMBING",
+   "name": "Монтаж сололіфта",
+   "unit": "PIECE",
+   "old": 1300.0,
+   "new": 2400.0,
+   "why": "1300 нижче за мінімум усіх джерел.",
+   "sources": [
+    "https://www.rabotniki.ua/uk/santehnicheskie-raboty/kiev",
+    "https://www.rabotniki.ua/uk/santehnicheskie-raboty/lvov",
+    "https://budver.com/masters/santehnichni-roboti"
+   ],
+   "confidence": "market"
+  },
+  {
+   "trade": "PLUMBING",
+   "name": "Монтаж трубної системи тепла підлога з утеплювачем",
+   "unit": "M2",
+   "old": 200.0,
+   "new": 350.0,
+   "why": "У нашу ціну входять ще утеплювач, плівка й демпферна стрічка, проте 200 нижче за всі ринкові мінімуми, навіть за саму трубу.",
+   "sources": [
+    "https://www.rabotniki.ua/uk/teplyy-pol",
+    "https://rbk-alba.com/ua/price",
+    "https://santehprofi.kyiv.ua/tsiny/",
+    "https://news.telegraf.com.ua/ukr/obshhestvo/5940271-vodyanoy-ili-elektricheskiy-teplyy-pol-skolko-stoit-montazh-i-chto-bystree-okupitsya",
+    "https://www.remonthub.org/prices.php"
+   ],
+   "confidence": "market"
+  },
+  {
+   "trade": "PLUMBING",
+   "name": "Монтаж фільтра зворотного осмосу",
+   "unit": "PIECE",
+   "old": 850.0,
+   "new": 1600.0,
+   "why": "850 нижче за ринковий мінімум.",
+   "sources": [
+    "https://www.rabotniki.ua/uk/santehnicheskie-raboty/kiev",
+    "https://www.rabotniki.ua/uk/santehnicheskie-raboty/lvov",
+    "https://kabanchik.ua/ua/kyiv/category/santekhnik",
+    "https://kabanchik.ua/ua/lviv/category/santekhnik",
+    "https://budver.com/masters/santehnichni-roboti"
+   ],
+   "confidence": "market"
+  },
+  {
+   "trade": "PLUMBING",
+   "name": "Монтаж фільтра самопромивного",
+   "unit": "POINT",
+   "old": 400.0,
+   "new": 900.0,
+   "why": "аномалія: Помилкова одиниця: має бути PIECE. Також ціна нижче за ринок 950–1000 (див. checked).",
+   "sources": [],
+   "confidence": "market"
+  },
+  {
+   "trade": "PLUMBING",
+   "name": "Монтаж інсталяції для унітазу",
+   "unit": "PIECE",
+   "old": 2600.0,
+   "new": 2300.0,
+   "why": "Рама за 2600 приблизно на 18% вища за медіану, а унітаз на готову інсталяцію (1300) нижчий за ринок (~1800). Пропонуємо перерозподілити: 2300 + 1600. Загальна сума майже не зміниться.",
+   "sources": [
+    "https://www.rabotniki.ua/uk/santehnicheskie-raboty/kiev",
+    "https://www.rabotniki.ua/uk/santehnicheskie-raboty/lvov",
+    "https://bud.arsel.com.ua/tsiny-na-budivelni-roboty/",
+    "https://www.remonthub.org/prices.php",
+    "https://kabanchik.ua/ua/lviv/category/inshi-posluhy-santekhnika",
+    "https://santehprofi.kyiv.ua/tsiny/",
+    "https://budver.com/masters/santehnichni-roboti"
+   ],
+   "confidence": "market"
+  },
+  {
+   "trade": "PLUMBING",
+   "name": "Опресування (гідравлічне випробування) опалення",
+   "unit": "PIECE",
+   "old": 1800.0,
+   "new": 1300.0,
+   "why": "Опресування водопроводу за 900 — ok.",
+   "sources": [
+    "https://www.rabotniki.ua/uk/sistemy-otopleniya/kiev",
+    "https://www.rabotniki.ua/uk/sistemy-otopleniya/lvov",
+    "https://www.rabotniki.ua/uk/teplyy-pol"
+   ],
+   "confidence": "market"
+  },
+  {
+   "trade": "PLUMBING",
+   "name": "Прокладання труб з ізоляцією",
+   "unit": "LINEAR_METER",
+   "old": 100.0,
+   "new": 130.0,
+   "why": "Саме прокладання Ø16-40 коштує 85–105 грн/м.п., ізоляція окремо ще 40–50. Тож прокладання з ізоляцією ≈130–150. 100 грн покриває тільки прокладання.",
+   "sources": [
+    "https://www.rabotniki.ua/uk/santehnicheskie-raboty/kiev",
+    "https://www.rabotniki.ua/uk/santehnicheskie-raboty/lvov",
+    "https://bud.arsel.com.ua/tsiny-na-budivelni-roboty/",
+    "https://rating-remont-kvartir.com.ua/ua/rozcinki-na-santehnichni-roboti/"
+   ],
+   "confidence": "market"
+  },
+  {
+   "trade": "PLUMBING",
+   "name": "Прокладання труб на хомутах (каналізація)",
+   "unit": "LINEAR_METER",
+   "old": 220.0,
+   "new": 170.0,
+   "why": "аномалія: Дублікат «Прокладка труб каналізації» (220) з тією самою ціною. Обидві вище за ринок (Ø50 ≈130–160, Ø110 ≈190).",
+   "sources": [],
+   "confidence": "market"
+  },
+  {
+   "trade": "PLUMBING",
+   "name": "Прокладка труб каналізації",
+   "unit": "LINEAR_METER",
+   "old": 220.0,
+   "new": 170.0,
+   "why": "220 вище за максимум для Ø50 і навіть за медіану для Ø110. Можна розділити на Ø50 (≈150) і Ø110 (≈190). Те саме стосується «Прокладання труб на хомутах (каналізація)» 220.",
+   "sources": [
+    "https://www.rabotniki.ua/uk/santehnicheskie-raboty/kiev",
+    "https://www.rabotniki.ua/uk/santehnicheskie-raboty/lvov",
+    "https://bud.arsel.com.ua/tsiny-na-budivelni-roboty/",
+    "https://rating-remont-kvartir.com.ua/ua/rozcinki-na-santehnichni-roboti/"
+   ],
+   "confidence": "market"
+  },
+  {
+   "trade": "PLUMBING",
+   "name": "Установка УФ знезаражувача води",
+   "unit": "PIECE",
+   "old": 2532.0,
+   "new": 3000.0,
+   "why": "аномалія: Ціна не кругла (імпорт?). rabotniki по Україні дає 2500/3025/3500.",
+   "sources": [],
+   "confidence": "market"
+  },
+  {
+   "trade": "PLUMBING",
+   "name": "Установка ванни із гідромасажем",
+   "unit": "PIECE",
+   "old": 7500.0,
+   "new": 6000.0,
+   "why": "7500 близько до ринкового максимуму.",
+   "sources": [
+    "https://www.rabotniki.ua/uk/santehnicheskie-raboty/kiev",
+    "https://www.rabotniki.ua/uk/santehnicheskie-raboty/lvov",
+    "https://rating-remont-kvartir.com.ua/ua/rozcinki-na-santehnichni-roboti/",
+    "https://budver.com/masters/santehnichni-roboti"
+   ],
+   "confidence": "market"
+  },
+  {
+   "trade": "PLUMBING",
+   "name": "Установка гідроакумулятора",
+   "unit": "PIECE",
+   "old": 1200.0,
+   "new": 1500.0,
+   "why": "",
+   "sources": [
+    "https://www.rabotniki.ua/uk/santehnicheskie-raboty/kiev",
+    "https://www.rabotniki.ua/uk/santehnicheskie-raboty/lvov",
+    "https://www.rabotniki.ua/uk/vodosnabzhenie-ochistka-vody"
+   ],
+   "confidence": "market"
+  },
+  {
+   "trade": "PLUMBING",
+   "name": "Установка душової кабіни бокс",
+   "unit": "PIECE",
+   "old": 2000.0,
+   "new": 4000.0,
+   "why": "аномалія: Інверсія: бокс (гідробокс) у нас дешевший за просту кабіну (3000), хоча він складніший. На ринку кабіна коштує 3800–4000 (rabotniki, середнє); rimeik ставить гідробокс приблизно у 2× дорожче за кабіну.",
+   "sources": [],
+   "confidence": "market"
+  },
+  {
+   "trade": "PLUMBING",
+   "name": "Установка душової кабіни простої",
+   "unit": "PIECE",
+   "old": 3000.0,
+   "new": 3500.0,
+   "why": "Аномалія: «Установка душової кабіни бокс» коштує 2000, тобто дешевше за просту, хоча гідробокс складніший.",
+   "sources": [
+    "https://www.rabotniki.ua/uk/santehnicheskie-raboty/kiev",
+    "https://www.rabotniki.ua/uk/santehnicheskie-raboty/lvov",
+    "https://bud.arsel.com.ua/tsiny-na-budivelni-roboty/",
+    "https://santehprofi.kyiv.ua/tsiny/",
+    "https://budver.com/masters/santehnichni-roboti"
+   ],
+   "confidence": "market"
+  },
+  {
+   "trade": "PLUMBING",
+   "name": "Установка електрокотла до 28 кВт",
+   "unit": "PIECE",
+   "old": 2500.0,
+   "new": 4000.0,
+   "why": "Наша ціна дорівнює ринковому мінімуму.",
+   "sources": [
+    "https://www.rabotniki.ua/uk/sistemy-otopleniya/kiev",
+    "https://www.rabotniki.ua/uk/sistemy-otopleniya/lvov",
+    "https://santehprofi.kyiv.ua/tsiny/",
+    "https://rbk-alba.com/ua/price"
+   ],
+   "confidence": "market"
+  },
+  {
+   "trade": "PLUMBING",
+   "name": "Установка конденсаційного котла",
+   "unit": "PIECE",
+   "old": 3000.0,
+   "new": 4500.0,
+   "why": "Наша ціна дорівнює ринковому мінімуму.",
+   "sources": [
+    "https://www.rabotniki.ua/uk/sistemy-otopleniya/kiev",
+    "https://www.rabotniki.ua/uk/sistemy-otopleniya/lvov"
+   ],
+   "confidence": "market"
+  },
+  {
+   "trade": "PLUMBING",
+   "name": "Установка люка-ревізії простого",
+   "unit": "PIECE",
+   "old": 400.0,
+   "new": 800.0,
+   "why": "budver: ревізійний люк від 1265 (одне джерело) — піднято обережно",
+   "sources": [],
+   "confidence": "manual"
+  },
+  {
+   "trade": "PLUMBING",
+   "name": "Установка настінного двоконтурного котла",
+   "unit": "PIECE",
+   "old": 3000.0,
+   "new": 4000.0,
+   "why": "Підключення до газу виконує лише ліцензована організація.",
+   "sources": [
+    "https://www.rabotniki.ua/uk/sistemy-otopleniya/kiev",
+    "https://www.rabotniki.ua/uk/sistemy-otopleniya/lvov",
+    "https://santehprofi.kyiv.ua/tsiny/",
+    "https://vencon.ua/ua/catalog/montazh-otopleniya"
+   ],
+   "confidence": "market"
+  },
+  {
+   "trade": "PLUMBING",
+   "name": "Установка настінного одноконтурного котла з бойлером",
+   "unit": "PIECE",
+   "old": 3000.0,
+   "new": 5200.0,
+   "why": "3000 значно нижче за ринковий мінімум 4700.",
+   "sources": [
+    "https://www.rabotniki.ua/uk/sistemy-otopleniya/kiev",
+    "https://www.rabotniki.ua/uk/sistemy-otopleniya/lvov"
+   ],
+   "confidence": "market"
+  },
+  {
+   "trade": "PLUMBING",
+   "name": "Установка пелетного котла",
+   "unit": "PIECE",
+   "old": 10056.0,
+   "new": 13000.0,
+   "why": "аномалія: Ціни не круглі (10056, 5190, 1281, 1203, 825), тобто явно імпортовані з шаблону. 1203 збігається з ціною змішувального вузла в santehprofi.kyiv.ua. Усі вони нижче за ринкові мінімуми (див. checked).",
+   "sources": [],
+   "confidence": "market"
+  },
+  {
+   "trade": "PLUMBING",
+   "name": "Установка скляних розсувних дверей",
+   "unit": "PIECE",
+   "old": 300.0,
+   "new": 700.0,
+   "why": "rimeik: двері кабіни 700 (слабке джерело); шторки на ванну у нас 2000",
+   "sources": [],
+   "confidence": "manual"
+  },
+  {
+   "trade": "PLUMBING",
+   "name": "Установка та підключення душового піддону (готового)",
+   "unit": "PIECE",
+   "old": 4500.0,
+   "new": 2300.0,
+   "why": "Наші 4500 приблизно вдвічі вищі за ринковий максимум. Ціна виправдана лише для піддону, який роблять на місці з цегли та гідроізоляції, а йдеться про готовий.",
+   "sources": [
+    "https://www.rabotniki.ua/uk/santehnicheskie-raboty/kiev",
+    "https://www.rabotniki.ua/uk/santehnicheskie-raboty/lvov",
+    "https://bud.arsel.com.ua/tsiny-na-budivelni-roboty/",
+    "https://kabanchik.ua/ua/kyiv/category/santekhnik",
+    "https://kabanchik.ua/ua/lviv/category/santekhnik",
+    "https://santehprofi.kyiv.ua/tsiny/"
+   ],
+   "confidence": "market"
+  },
+  {
+   "trade": "PLUMBING",
+   "name": "Установка та підключення пральної, сушильної машини",
+   "unit": "PIECE",
+   "old": 1000.0,
+   "new": 800.0,
+   "why": "Те саме стосується «Підключення посудомийної машини» 1000. Ціна передбачає підключення до готових виводів. santehprofi і pricesua дають вищі значення, але це прайси «від» і огляд.",
+   "sources": [
+    "https://www.rabotniki.ua/uk/santehnicheskie-raboty/kiev",
+    "https://www.rabotniki.ua/uk/santehnicheskie-raboty/lvov",
+    "https://bud.arsel.com.ua/tsiny-na-budivelni-roboty/",
+    "https://www.remonthub.org/prices.php",
+    "https://santehprofi.kyiv.ua/tsiny/",
+    "https://pricesua.com/rozcinky-santehnichni-roboty-ukrayina-2026/"
+   ],
+   "confidence": "market"
+  },
+  {
+   "trade": "PLUMBING",
+   "name": "Установка твердопаливного котла",
+   "unit": "PIECE",
+   "old": 6000.0,
+   "new": 9500.0,
+   "why": "6000 нижче за ринковий мінімум.",
+   "sources": [
+    "https://www.rabotniki.ua/uk/sistemy-otopleniya/kiev",
+    "https://www.rabotniki.ua/uk/sistemy-otopleniya/lvov",
+    "https://santehprofi.kyiv.ua/tsiny/"
+   ],
+   "confidence": "market"
+  },
+  {
+   "trade": "PLUMBING",
+   "name": "Установка унітазу на готову інсталяцію",
+   "unit": "PIECE",
+   "old": 1300.0,
+   "new": 1600.0,
+   "why": "Обидва rabotniki дають середнє ≈1800, arsel 1220. Кнопку змиву у нас рахують окремо (1300), тож 1600 разом із нею виходить навіть із запасом.",
+   "sources": [
+    "https://www.rabotniki.ua/uk/santehnicheskie-raboty/kiev",
+    "https://www.rabotniki.ua/uk/santehnicheskie-raboty/lvov",
+    "https://bud.arsel.com.ua/tsiny-na-budivelni-roboty/",
+    "https://santehprofi.kyiv.ua/tsiny/"
+   ],
+   "confidence": "market"
+  },
+  {
+   "trade": "PLUMBING",
+   "name": "Установка штанги",
+   "unit": "PIECE",
+   "old": 300.0,
+   "new": 800.0,
+   "why": "rabotniki Київ «Установка душової штанги з лійкою» 580–1150, сер. 798",
+   "sources": [
+    "https://www.rabotniki.ua/uk/santehnicheskie-raboty/kiev"
+   ],
+   "confidence": "manual"
+  },
+  {
+   "trade": "PLUMBING",
+   "name": "Штроблення в бетоні (каналізація)",
+   "unit": "LINEAR_METER",
+   "old": 200.0,
+   "new": 450.0,
+   "why": "аномалія: Дублікат «Штроблення під трубу 100мм в бетоні» (200), і обидва дешевші за штробу під воду в бетоні (370). На ринку каналізаційна штроба в бетоні коштує 350–500.",
+   "sources": [],
+   "confidence": "market"
+  },
+  {
+   "trade": "PLUMBING",
+   "name": "Штроблення в газобетоні цеглі (каналізація)",
+   "unit": "LINEAR_METER",
+   "old": 150.0,
+   "new": 300.0,
+   "why": "аномалія: У каталозі чотири різні ціни на штробу в цеглі (300 / 250 / 150 / 150), а каналізаційна штроба дешевша за штробу під воду. Треба вирівняти: вода ≈260, каналізація ≈300.",
+   "sources": [],
+   "confidence": "market"
+  },
+  {
+   "trade": "PLUMBING",
+   "name": "Штроблення під трубу 100мм в бетоні",
+   "unit": "LINEAR_METER",
+   "old": 200.0,
+   "new": 450.0,
+   "why": "Аномалія: штроба під трубу 100 мм у бетоні (200) дешевша за штробу під воду (370), хоча вона більша. Те саме стосується «Штроблення в бетоні (каналізація)» 200. За ринком каналізаційна штроба коштує ≥350.",
+   "sources": [
+    "https://www.remonthub.org/prices.php",
+    "https://rbk-alba.com/ua/price",
+    "https://rimeik.com.ua/ceny-santehnik-lviv"
+   ],
+   "confidence": "market"
+  },
+  {
+   "trade": "PLUMBING",
+   "name": "Штроблення під трубу 100мм в газобетоні цеглі",
+   "unit": "LINEAR_METER",
+   "old": 150.0,
+   "new": 300.0,
+   "why": "Штроба 100 мм не може коштувати менше за 5-сантиметрову під воду (300 у нас). Те саме стосується «Штроблення в газобетоні цеглі (каналізація)» 150.",
+   "sources": [
+    "https://www.remonthub.org/prices.php",
+    "https://www.rabotniki.ua/uk/santehnicheskie-raboty/kiev",
+    "https://rbk-alba.com/ua/price"
+   ],
+   "confidence": "market"
+  },
+  {
+   "trade": "TILING",
+   "name": "Винесення та вивезення будівельного сміття",
+   "unit": "M3",
+   "old": 0.0,
+   "new": 600.0,
+   "why": "аномалія: TILING 0, а такий самий рядок у FLOORING — 600 грн/м³.",
+   "sources": [],
+   "confidence": "market"
+  },
+  {
+   "trade": "TILING",
+   "name": "Виріз отворів до 70 мм",
+   "unit": "PIECE",
+   "old": 196.0,
+   "new": 240.0,
+   "why": "",
+   "sources": [
+    "https://www.rabotniki.ua/uk/plitochnye-raboty",
+    "https://www.rabotniki.ua/uk/price/ukladka-plitki-na-pol/kiev",
+    "https://kabanchik.ua/ua/kyiv/category/ukladannia-plytky",
+    "https://plitochnik.kiev.ua/ua/%D0%B2%D0%B0%D1%80%D1%82%D1%96%D1%81%D1%82%D1%8C-%D1%80%D0%BE%D0%B1%D1%96%D1%82-%D0%BF%D0%BB%D0%B8%D1%82%D0%BE%D1%87%D0%BD%D0%B8%D0%BA%D0%B0.html",
+    "https://bud.arsel.com.ua/tsiny-na-budivelni-roboty/",
+    "https://liv-comfort.kyiv.ua/price-remont/index.html",
+    "https://stroyremdizayn.kiev.ua/rascenki-na-otdelochnye-raboty.html",
+    "https://remmo.lviv.ua/plytochni-roboty-lviv/",
+    "https://plitka.ua/ua/services/ukladannya-plitki/",
+    "https://24tv.ua/skilki-naspravdi-koshtuye-poklasti-plitku-vanniy-realni-tsini_n3111316",
+    "https://www.remonthub.org/prices.php"
+   ],
+   "confidence": "market"
+  },
+  {
+   "trade": "TILING",
+   "name": "Влаштування деформаційних швів",
+   "unit": "LINEAR_METER",
+   "old": 0.0,
+   "new": 300.0,
+   "why": "plitochnik.kiev.ua: джгут 60 + герметизація 240 ₴/м.п.",
+   "sources": [],
+   "confidence": "manual"
+  },
+  {
+   "trade": "TILING",
+   "name": "Гідроізоляція плівкова",
+   "unit": "M2",
+   "old": 0.0,
+   "new": 60.0,
+   "why": "аномалія: Ціна 0. Ринок 60–64 грн/м² (rabotniki, arsel, stroyremdizayn).",
+   "sources": [],
+   "confidence": "market"
+  },
+  {
+   "trade": "TILING",
+   "name": "Гідроізоляція сухою сумішшю",
+   "unit": "M2",
+   "old": 0.0,
+   "new": 200.0,
+   "why": "аномалія: Ціна 0. stroyremdizayn 130 грн/м²; PK цементна 2 шари 264 грн/м²; сусідня мастика 174.",
+   "sources": [],
+   "confidence": "market"
+  },
+  {
+   "trade": "TILING",
+   "name": "Заміна силіконового шва (видалення старого, нанесення нового)",
+   "unit": "LINEAR_METER",
+   "old": 180.0,
+   "new": 280.0,
+   "why": "аномалія: 180 грн/м.п. — близько до простого заповнення (130), а за ринком (rabotniki 215, PK 240) і нижче за нього. Заміна з видаленням має бути дорожчою.",
+   "sources": [],
+   "confidence": "market"
+  },
+  {
+   "trade": "TILING",
+   "name": "Запил плитки під 45°",
+   "unit": "LINEAR_METER",
+   "old": 367.0,
+   "new": 460.0,
+   "why": "",
+   "sources": [
+    "https://www.rabotniki.ua/uk/plitochnye-raboty",
+    "https://www.rabotniki.ua/uk/price/ukladka-plitki-na-pol/kiev",
+    "https://www.rabotniki.ua/uk/plitochnye-raboty/lvov",
+    "https://budver.com/masters/zapil-ta-shlifuvannya-kromok-plitki-pid-45-gradusiv",
+    "https://kabanchik.ua/ua/kyiv/category/ukladannia-plytky",
+    "https://plitochnik.kiev.ua/ua/%D0%B2%D0%B0%D1%80%D1%82%D1%96%D1%81%D1%82%D1%8C-%D1%80%D0%BE%D0%B1%D1%96%D1%82-%D0%BF%D0%BB%D0%B8%D1%82%D0%BE%D1%87%D0%BD%D0%B8%D0%BA%D0%B0.html",
+    "https://bud.arsel.com.ua/tsiny-na-budivelni-roboty/",
+    "https://liv-comfort.kyiv.ua/price-remont/index.html",
+    "https://stroyremdizayn.kiev.ua/rascenki-na-otdelochnye-raboty.html",
+    "https://remmo.lviv.ua/plytochni-roboty-lviv/",
+    "https://plitka.ua/ua/services/ukladannya-plitki/"
+   ],
+   "confidence": "market"
+  },
+  {
+   "trade": "TILING",
+   "name": "Заповнення швів герметиком",
+   "unit": "LINEAR_METER",
+   "old": 130.0,
+   "new": 220.0,
+   "why": "Після підвищення 'Заміна силіконового шва' (180) треба тримати вище за просте заповнення, ~280.",
+   "sources": [
+    "https://www.rabotniki.ua/uk/plitochnye-raboty",
+    "https://plitochnik.kiev.ua/ua/%D0%B2%D0%B0%D1%80%D1%82%D1%96%D1%81%D1%82%D1%8C-%D1%80%D0%BE%D0%B1%D1%96%D1%82-%D0%BF%D0%BB%D0%B8%D1%82%D0%BE%D1%87%D0%BD%D0%B8%D0%BA%D0%B0.html",
+    "https://kabanchik.ua/ua/kyiv/category/ukladannia-plytky",
+    "https://stroyremdizayn.kiev.ua/rascenki-na-otdelochnye-raboty.html",
+    "https://plitka.ua/ua/services/ukladannya-plitki/",
+    "https://24tv.ua/skilki-naspravdi-koshtuye-poklasti-plitku-vanniy-realni-tsini_n3111316"
+   ],
+   "confidence": "market"
+  },
+  {
+   "trade": "TILING",
+   "name": "Заповнення швів епоксидною сумішшю",
+   "unit": "M2",
+   "old": 241.0,
+   "new": 290.0,
+   "why": "rabotniki (315) і arsel (320) вказують у грн/м.п. — розбіжність одиниць, не враховано.",
+   "sources": [
+    "https://budver.com/masters/zatirannya-shviv-plitki-epoksidnoyu-zatirkoyu",
+    "https://plitochnik.kiev.ua/ua/%D0%B2%D0%B0%D1%80%D1%82%D1%96%D1%81%D1%82%D1%8C-%D1%80%D0%BE%D0%B1%D1%96%D1%82-%D0%BF%D0%BB%D0%B8%D1%82%D0%BE%D1%87%D0%BD%D0%B8%D0%BA%D0%B0.html",
+    "https://plitochnik.kiev.ua/ua/%D1%83%D0%BA%D0%BB%D0%B0%D0%B4%D0%B0%D0%BD%D0%BD%D1%8F-%D1%84%D0%BE%D1%80%D0%BC%D0%B0%D1%82%D0%BD%D0%BE%D0%B3%D0%BE-%D0%BA%D0%B5%D1%80%D0%B0%D0%BC%D0%BE%D0%B3%D1%80%D0%B0%D0%BD%D1%96%D1%82%D0%B0.html",
+    "https://24tv.ua/skilki-naspravdi-koshtuye-poklasti-plitku-vanniy-realni-tsini_n3111316",
+    "https://www.remonthub.org/prices.php",
+    "https://plitka.ua/ua/services/ukladannya-plitki/",
+    "https://liv-comfort.kyiv.ua/price-remont/index.html"
+   ],
+   "confidence": "market"
+  },
+  {
+   "trade": "TILING",
+   "name": "Заповнення швів цементною сумішшю",
+   "unit": "M2",
+   "old": 116.0,
+   "new": 170.0,
+   "why": "SR вказує 50 грн/м.п. — інша одиниця, не враховано.",
+   "sources": [
+    "https://www.rabotniki.ua/uk/plitochnye-raboty",
+    "https://www.rabotniki.ua/uk/price/ukladka-plitki-na-pol/kiev",
+    "https://www.rabotniki.ua/uk/plitochnye-raboty/lvov",
+    "https://budver.com/masters/zatirannya-shviv-plitki",
+    "https://kabanchik.ua/ua/kyiv/category/ukladannia-plytky",
+    "https://plitochnik.kiev.ua/ua/%D0%B2%D0%B0%D1%80%D1%82%D1%96%D1%81%D1%82%D1%8C-%D1%80%D0%BE%D0%B1%D1%96%D1%82-%D0%BF%D0%BB%D0%B8%D1%82%D0%BE%D1%87%D0%BD%D0%B8%D0%BA%D0%B0.html",
+    "https://bud.arsel.com.ua/tsiny-na-budivelni-roboty/",
+    "https://www.remonthub.org/prices.php",
+    "https://24tv.ua/skilki-naspravdi-koshtuye-poklasti-plitku-vanniy-realni-tsini_n3111316",
+    "https://remmo.lviv.ua/plytochni-roboty-lviv/"
+   ],
+   "confidence": "market"
+  },
+  {
+   "trade": "TILING",
+   "name": "Затирання швів у декоративній плитці, мозаїці",
+   "unit": "M2",
+   "old": 0.0,
+   "new": 300.0,
+   "why": "аномалія: Ціна 0. Ринок: PK — затирка 180 + доплата за мозаїку 120 = 300 грн/м²; remmo — мозаїка 130 грн/м²; сусідня цементна затирка 116.",
+   "sources": [],
+   "confidence": "market"
+  },
+  {
+   "trade": "TILING",
+   "name": "Монтаж лінійного душового каналу",
+   "unit": "PIECE",
+   "old": 0.0,
+   "new": 1600.0,
+   "why": "вирівняно з PLUMBING «Монтаж лінійного душового каналу» 1600",
+   "sources": [],
+   "confidence": "manual"
+  },
+  {
+   "trade": "TILING",
+   "name": "Монтаж трапу та формування ухилу до нього",
+   "unit": "PIECE",
+   "old": 0.0,
+   "new": 1500.0,
+   "why": "rabotniki Київ «Монтаж трапа» 900–2200, сер. 1547",
+   "sources": [
+    "https://www.rabotniki.ua/uk/santehnicheskie-raboty/kiev"
+   ],
+   "confidence": "manual"
+  },
+  {
+   "trade": "TILING",
+   "name": "Облицювання плиткою короба",
+   "unit": "M2",
+   "old": 0.0,
+   "new": 900.0,
+   "why": "аномалія: Ціна 0 і, ймовірно, неправильна одиниця: ринок рахує в м.п. (rabotniki 600/993/1500 грн/м.п.; budver від 660 грн/м.п.).",
+   "sources": [],
+   "confidence": "market"
+  },
+  {
+   "trade": "TILING",
+   "name": "Поклейка гідроізоляційних муфт на водорозетки",
+   "unit": "PIECE",
+   "old": 0.0,
+   "new": 250.0,
+   "why": "аномалія: Ціна 0. PK 360 грн/шт; сусідня позиція 'гідроізоляційні кути' 100 грн/шт.",
+   "sources": [],
+   "confidence": "market"
+  },
+  {
+   "trade": "TILING",
+   "name": "Прибирання приміщення після робіт",
+   "unit": "M2",
+   "old": 0.0,
+   "new": 40.0,
+   "why": "аномалія: TILING 0, а такий самий рядок у FLOORING — 40 грн/м².",
+   "sources": [],
+   "confidence": "market"
+  },
+  {
+   "trade": "TILING",
+   "name": "Розвантаження матеріалу",
+   "unit": "T",
+   "old": 1271.0,
+   "new": 750.0,
+   "why": "plitochnik.kiev.ua: завантаження/розвантаження 750 ₴/т",
+   "sources": [
+    "https://plitochnik.kiev.ua/ua/%D0%B2%D0%B0%D1%80%D1%82%D1%96%D1%81%D1%82%D1%8C-%D1%80%D0%BE%D0%B1%D1%96%D1%82-%D0%BF%D0%BB%D0%B8%D1%82%D0%BE%D1%87%D0%BD%D0%B8%D0%BA%D0%B0.html"
+   ],
+   "confidence": "manual"
+  },
+  {
+   "trade": "TILING",
+   "name": "Сортування плитки та підбір малюнка",
+   "unit": "M2",
+   "old": 247.0,
+   "new": 100.0,
+   "why": "аномалія: 247 грн/м² завищено: PK — підбір малюнка 60 грн/м² (сортування окремо, 360 грн/год); plitka.ua — підбір малюнка 80 грн/м².",
+   "sources": [],
+   "confidence": "market"
+  },
+  {
+   "trade": "TILING",
+   "name": "Стяжка маякова цементна",
+   "unit": "M2",
+   "old": 342.0,
+   "new": 400.0,
+   "why": "аномалія: Різниться з FLOORING 'Цементно-піщана стяжка понад 20м2' (400) / 'до 20м2' (500) за ту саму роботу.",
+   "sources": [],
+   "confidence": "market"
+  },
+  {
+   "trade": "TILING",
+   "name": "Укладання декоративної плитки під «цеглу» або «камінь» (гіпсова, бетонна)",
+   "unit": "M2",
+   "old": 0.0,
+   "new": 1000.0,
+   "why": "аномалія: Ціна 0 (див. checked: ринок ~1000–1100 грн/м²).",
+   "sources": [],
+   "confidence": "market"
+  },
+  {
+   "trade": "TILING",
+   "name": "Укладання керамічного паркету, дрібної дошки",
+   "unit": "M2",
+   "old": 866.0,
+   "new": 1000.0,
+   "why": "",
+   "sources": [
+    "https://plitochnik.kiev.ua/ua/%D0%B2%D0%B0%D1%80%D1%82%D1%96%D1%81%D1%82%D1%8C-%D1%80%D0%BE%D0%B1%D1%96%D1%82-%D0%BF%D0%BB%D0%B8%D1%82%D0%BE%D1%87%D0%BD%D0%B8%D0%BA%D0%B0.html",
+    "https://plitka.ua/ua/services/ukladannya-plitki/",
+    "https://www.rabotniki.ua/uk/plitochnye-raboty",
+    "https://budver.com/masters/plitochni-roboti"
+   ],
+   "confidence": "market"
+  },
+  {
+   "trade": "TILING",
+   "name": "Укладання клінкерної підлогової плитки",
+   "unit": "M2",
+   "old": 891.0,
+   "new": 1100.0,
+   "why": "Позиція в категорії 'Облицювання сходів'.",
+   "sources": [
+    "https://www.rabotniki.ua/uk/plitochnye-raboty",
+    "https://budver.com/masters/plitochni-roboti",
+    "https://plitochnik.kiev.ua/ua/%D0%B2%D0%B0%D1%80%D1%82%D1%96%D1%81%D1%82%D1%8C-%D1%80%D0%BE%D0%B1%D1%96%D1%82-%D0%BF%D0%BB%D0%B8%D1%82%D0%BE%D1%87%D0%BD%D0%B8%D0%BA%D0%B0.html",
+    "https://stroyremdizayn.kiev.ua/rascenki-na-otdelochnye-raboty.html",
+    "https://remmo.lviv.ua/plytochni-roboty-lviv/"
+   ],
+   "confidence": "market"
+  },
+  {
+   "trade": "TILING",
+   "name": "Укладання плитки 1200х1200 мм",
+   "unit": "M2",
+   "old": 1130.0,
+   "new": 1300.0,
+   "why": "",
+   "sources": [
+    "https://plitochnik.kiev.ua/ua/%D1%83%D0%BA%D0%BB%D0%B0%D0%B4%D0%B0%D0%BD%D0%BD%D1%8F-%D1%84%D0%BE%D1%80%D0%BC%D0%B0%D1%82%D0%BD%D0%BE%D0%B3%D0%BE-%D0%BA%D0%B5%D1%80%D0%B0%D0%BC%D0%BE%D0%B3%D1%80%D0%B0%D0%BD%D1%96%D1%82%D0%B0.html",
+    "https://stroyremdizayn.kiev.ua/rascenki-na-otdelochnye-raboty.html"
+   ],
+   "confidence": "market"
+  },
+  {
+   "trade": "TILING",
+   "name": "Укладання плитки 300х300",
+   "unit": "M2",
+   "old": 641.0,
+   "new": 800.0,
+   "why": "Окремої ціни на 300х300 мало; порівняно з базовою ціною укладання на підлогу/стіни.",
+   "sources": [
+    "https://plitka.ua/ua/services/ukladannya-plitki/",
+    "https://plitochnik.kiev.ua/ua/%D0%B2%D0%B0%D1%80%D1%82%D1%96%D1%81%D1%82%D1%8C-%D1%80%D0%BE%D0%B1%D1%96%D1%82-%D0%BF%D0%BB%D0%B8%D1%82%D0%BE%D1%87%D0%BD%D0%B8%D0%BA%D0%B0.html",
+    "https://www.rabotniki.ua/uk/price/ukladka-plitki-na-pol/kiev",
+    "https://www.rabotniki.ua/uk/plitochnye-raboty",
+    "https://kabanchik.ua/ua/kyiv/category/ukladannia-plytky",
+    "https://bud.arsel.com.ua/tsiny-na-budivelni-roboty/",
+    "https://liv-comfort.kyiv.ua/price-remont/index.html"
+   ],
+   "confidence": "market"
+  },
+  {
+   "trade": "TILING",
+   "name": "Укладання плитки 300х600",
+   "unit": "M2",
+   "old": 594.0,
+   "new": 850.0,
+   "why": "Типовий настінний формат; ринок 700–1000 у більшості джерел. Наші 594 — на рівні мінімумів.",
+   "sources": [
+    "https://www.rabotniki.ua/uk/plitochnye-raboty",
+    "https://www.rabotniki.ua/uk/price/ukladka-plitki-na-pol/kiev",
+    "https://www.rabotniki.ua/uk/plitochnye-raboty/lvov",
+    "https://kabanchik.ua/ua/kyiv/category/ukladannia-plytky",
+    "https://plitochnik.kiev.ua/ua/%D0%B2%D0%B0%D1%80%D1%82%D1%96%D1%81%D1%82%D1%8C-%D1%80%D0%BE%D0%B1%D1%96%D1%82-%D0%BF%D0%BB%D0%B8%D1%82%D0%BE%D1%87%D0%BD%D0%B8%D0%BA%D0%B0.html",
+    "https://plitka.ua/ua/services/ukladannya-plitki/",
+    "https://bud.arsel.com.ua/tsiny-na-budivelni-roboty/",
+    "https://liv-comfort.kyiv.ua/price-remont/index.html",
+    "https://remmo.lviv.ua/plytochni-roboty-lviv/",
+    "https://www.remonthub.org/prices.php",
+    "https://stroyremdizayn.kiev.ua/rascenki-na-otdelochnye-raboty.html"
+   ],
+   "confidence": "market"
+  },
+  {
+   "trade": "TILING",
+   "name": "Укладання плитки 600х1200",
+   "unit": "M2",
+   "old": 732.0,
+   "new": 880.0,
+   "why": "DF: доплата за великий формат +20–30% (Київ) до базової 800–1400.",
+   "sources": [
+    "https://plitka.ua/ua/services/ukladannya-plitki/",
+    "https://stroyremdizayn.kiev.ua/rascenki-na-otdelochnye-raboty.html",
+    "https://plitochnik.kiev.ua/ua/%D0%B2%D0%B0%D1%80%D1%82%D1%96%D1%81%D1%82%D1%8C-%D1%80%D0%BE%D0%B1%D1%96%D1%82-%D0%BF%D0%BB%D0%B8%D1%82%D0%BE%D1%87%D0%BD%D0%B8%D0%BA%D0%B0.html",
+    "https://plitochnik.kiev.ua/ua/%D0%B2%D0%B0%D1%80%D1%82%D1%96%D1%81%D1%82%D1%8C-%D1%80%D0%BE%D0%B1%D1%96%D1%82-%D0%BF%D0%BB%D0%B8%D1%82%D0%BE%D1%87%D0%BD%D0%B8%D0%BA%D0%B0.html"
+   ],
+   "confidence": "market"
+  },
+  {
+   "trade": "TILING",
+   "name": "Укладання плитки 600х600",
+   "unit": "M2",
+   "old": 631.0,
+   "new": 830.0,
+   "why": "Базовий формат підлоги. Наша ціна нижча за всі джерела, крім plitka.ua (2025). DF: Київ 800–1400, Львів 550–800, інші міста 450–900.",
+   "sources": [
+    "https://www.rabotniki.ua/uk/price/ukladka-plitki-na-pol/kiev",
+    "https://www.rabotniki.ua/uk/plitochnye-raboty/lvov",
+    "https://www.rabotniki.ua/uk/plitochnye-raboty",
+    "https://kabanchik.ua/ua/kyiv/category/ukladannia-plytky",
+    "https://plitochnik.kiev.ua/ua/%D0%B2%D0%B0%D1%80%D1%82%D1%96%D1%81%D1%82%D1%8C-%D1%80%D0%BE%D0%B1%D1%96%D1%82-%D0%BF%D0%BB%D0%B8%D1%82%D0%BE%D1%87%D0%BD%D0%B8%D0%BA%D0%B0.html",
+    "https://stroyremdizayn.kiev.ua/rascenki-na-otdelochnye-raboty.html",
+    "https://plitka.ua/ua/services/ukladannya-plitki/",
+    "https://bud.arsel.com.ua/tsiny-na-budivelni-roboty/",
+    "https://liv-comfort.kyiv.ua/price-remont/index.html",
+    "https://remmo.lviv.ua/plytochni-roboty-lviv/"
+   ],
+   "confidence": "market"
+  },
+  {
+   "trade": "TILING",
+   "name": "Укладання плитки 800х800",
+   "unit": "M2",
+   "old": 779.0,
+   "new": 900.0,
+   "why": "",
+   "sources": [
+    "https://stroyremdizayn.kiev.ua/rascenki-na-otdelochnye-raboty.html",
+    "https://plitka.ua/ua/services/ukladannya-plitki/",
+    "https://plitochnik.kiev.ua/ua/%D0%B2%D0%B0%D1%80%D1%82%D1%96%D1%81%D1%82%D1%8C-%D1%80%D0%BE%D0%B1%D1%96%D1%82-%D0%BF%D0%BB%D0%B8%D1%82%D0%BE%D1%87%D0%BD%D0%B8%D0%BA%D0%B0.html"
+   ],
+   "confidence": "market"
+  },
+  {
+   "trade": "TILING",
+   "name": "Укладання плитки кабанчик, «цегла»",
+   "unit": "M2",
+   "old": 998.0,
+   "new": 1300.0,
+   "why": "Одна з найбільших розбіжностей: усі джерела 2026 року дають 1200–1500.",
+   "sources": [
+    "https://www.rabotniki.ua/uk/plitochnye-raboty",
+    "https://www.rabotniki.ua/uk/price/ukladka-plitki-na-pol/kiev",
+    "https://budver.com/masters/ukladannya-plitki-kabanchik",
+    "https://kabanchik.ua/ua/kyiv/category/ukladannia-plytky",
+    "https://stroyremdizayn.kiev.ua/rascenki-na-otdelochnye-raboty.html",
+    "https://plitka.ua/ua/services/ukladannya-plitki/"
+   ],
+   "confidence": "market"
+  },
+  {
+   "trade": "TILING",
+   "name": "Укладання плитки на відкос (плюс % до м.кв.)",
+   "unit": "PERCENT",
+   "old": 88.0,
+   "new": 60.0,
+   "why": "аномалія: +88% вище за ринкові доплати: plitka.ua +60%; PK — відкос до 600 мм ×0.8 від ціни м² за м.п.; rabotniki — 834 грн/м.п. Варто перевірити.",
+   "sources": [],
+   "confidence": "market"
+  },
+  {
+   "trade": "TILING",
+   "name": "Укладання плитки на шар клею більше 1 см",
+   "unit": "M2",
+   "old": 0.0,
+   "new": 150.0,
+   "why": "аномалія: Ціна 0 і одиниця M2 для того, що за змістом є доплатою. stroyremdizayn: +150 грн/м² за товщину понад 1 см; PK: вирівнювання клеєм до 10 мм 264 грн/м².",
+   "sources": [],
+   "confidence": "market"
+  },
+  {
+   "trade": "TILING",
+   "name": "Укладання плитки ялинкою (плюс % до м.кв.)",
+   "unit": "PERCENT",
+   "old": 0.0,
+   "new": 30.0,
+   "why": "аномалія: 0%. PK: діагональ/ялинка від +15%; duflu: ялинка/діагональ у Києві 1100–1800 проти 800–1400 за пряму укладку (≈+30%). Сусідня діагональ +33%.",
+   "sources": [],
+   "confidence": "market"
+  },
+  {
+   "trade": "TILING",
+   "name": "Укриття плівкою підлоги, дверей, сантехніки",
+   "unit": "M2",
+   "old": 0.0,
+   "new": 30.0,
+   "why": "аномалія: Ціна 0. Сусідні позиції: картон 30, ДВП 70 грн/м².",
+   "sources": [],
+   "confidence": "market"
+  },
+  {
+   "trade": "TILING",
+   "name": "Формування кута з епоксидної суміші",
+   "unit": "M2",
+   "old": 287.0,
+   "new": 320.0,
+   "why": "аномалія: Одиниця M2 для лінійного елемента. PK: епоксидний зовнішній кут 360 грн/м.п.; plitka.ua: кут епоксидом 300 грн/м.п. Треба LINEAR_METER.",
+   "sources": [],
+   "confidence": "market"
+  },
+  {
+   "trade": "TILING",
+   "name": "Шліфування стяжки (зняття перепадів до 5 мм)",
+   "unit": "M2",
+   "old": 392.0,
+   "new": 230.0,
+   "why": "аномалія: 392 проти 150 у FLOORING 'Шліфування бетонної основи' і 161 у 'Шліфування видалення слабкого шару'. Ринок ~226.",
+   "sources": [],
+   "confidence": "market"
+  }
+ ],
+ "structural": [
+  {
+   "action": "unit",
+   "trade": "TILING",
+   "name": "Формування кута з епоксидної суміші",
+   "from_unit": "M2",
+   "to_unit": "LINEAR_METER",
+   "why": "лінійний елемент; ціна 320 ₴/м.п."
+  },
+  {
+   "action": "unit",
+   "trade": "PAINTER",
+   "name": "Відведення лінії фарби довкола вікон/дверей",
+   "from_unit": "M2",
+   "to_unit": "LINEAR_METER",
+   "why": "лінію рахують у м.п.; ціна лишається 100"
+  },
+  {
+   "action": "unit",
+   "trade": "PLUMBING",
+   "name": "Установка фільтра питної води під мийку",
+   "from_unit": "POINT",
+   "to_unit": "PIECE",
+   "why": "фільтр — штука"
+  },
+  {
+   "action": "unit",
+   "trade": "PLUMBING",
+   "name": "Монтаж фільтра самопромивного",
+   "from_unit": "POINT",
+   "to_unit": "PIECE",
+   "why": "фільтр — штука"
+  },
+  {
+   "action": "unit",
+   "trade": "ELECTRICAL",
+   "name": "Монтаж та підключення ДБЖ",
+   "from_unit": "POINT",
+   "to_unit": "PIECE",
+   "why": "ДБЖ — штука"
+  },
+  {
+   "action": "delete",
+   "trade": "FLOORING",
+   "name": "Приклеювання стиків в місцях порожків, герметизація силіконом",
+   "why": "дубль «Приклеювання стиків порожків герметизація» (212 ₴/м.п.)"
+  },
+  {
+   "action": "delete",
+   "trade": "PLUMBING",
+   "name": "Монтаж котельної котел бойлер насоси крани фільтра",
+   "why": "дубль «Монтаж котельної … - від» з абсурдною ціною 825"
+  },
+  {
+   "action": "rename",
+   "trade": "ELECTRICAL",
+   "name": "Установка АВР",
+   "to_name": "Установка модуля АВР (перемикача) на DIN-рейку",
+   "why": "плутанина з «Підключення АВР» за 4000"
+  },
+  {
+   "action": "rename",
+   "trade": "ELECTRICAL",
+   "name": "Свердління отвору під прокладку електрокабелю в капітальній стіні - від",
+   "to_name": "Свердління отвору під прокладку електрокабелю в капітальній стіні понад 30 см - від",
+   "why": "відрізнити від «Свердління наскрізних отворів (у бетоні)» 160"
+  },
+  {
+   "action": "rename",
+   "trade": "PLUMBING",
+   "name": "Обв'язка радіатора один радіатор 2 точки",
+   "to_name": "Обв'язка радіатора (за точку; радіатор = 2 точки)",
+   "why": "ціна за точку"
+  },
+  {
+   "action": "rename",
+   "trade": "PLUMBING",
+   "name": "Установка штанги",
+   "to_name": "Установка душової штанги з лійкою",
+   "why": "уточнення змісту; ціна 800"
+  },
+  {
+   "action": "rename",
+   "trade": "PLUMBING",
+   "name": "Опломбування лічильника води",
+   "to_name": "Організація опломбування лічильника води",
+   "why": "пломбує водоканал, майстер організовує"
+  },
+  {
+   "action": "description",
+   "trade": "PLUMBING",
+   "name": "Прокладка труб в траншеї",
+   "description": "Без копання траншеї (земляні роботи — окремо)",
+   "why": "інакше ціна 50 нелогічна"
+  },
+  {
+   "action": "rename",
+   "trade": "DEMOLITION",
+   "name": "Підйом будматеріалів на поверх",
+   "to_name": "Підйом будматеріалів на поверх (за мішок, за кожен поверх)",
+   "why": "ринок рахує 10–25 ₴ за мішок за поверх; ціна 15"
+  }
+ ],
+ "new_positions": [
+  {
+   "trade": "FLOORING",
+   "name": "Монтаж електричної теплої підлоги (мат/кабель)",
+   "unit": "M2",
+   "price": 300
+  },
+  {
+   "trade": "FLOORING",
+   "name": "Підключення теплої підлоги до терморегулятора",
+   "unit": "PIECE",
+   "price": 350
+  },
+  {
+   "trade": "TILING",
+   "name": "Облицювання кухонного фартуха плиткою",
+   "unit": "M2",
+   "price": 850
+  },
+  {
+   "trade": "TILING",
+   "name": "Облицювання відкосів плиткою (за м.п.)",
+   "unit": "LINEAR_METER",
+   "price": 800
+  },
+  {
+   "trade": "FLOORING",
+   "name": "Демонтаж ламінату",
+   "unit": "M2",
+   "price": 130
+  },
+  {
+   "trade": "FLOORING",
+   "name": "Демонтаж паркету / дерев'яної підлоги",
+   "unit": "M2",
+   "price": 150
+  },
+  {
+   "trade": "FLOORING",
+   "name": "Демонтаж ПВХ-плитки / кварцвінілу",
+   "unit": "M2",
+   "price": 250
+  },
+  {
+   "trade": "TILING",
+   "name": "Демонтаж керамічного плінтуса",
+   "unit": "LINEAR_METER",
+   "price": 260
+  },
+  {
+   "trade": "FLOORING",
+   "name": "Встановлення маяків для стяжки",
+   "unit": "M2",
+   "price": 120
+  },
+  {
+   "trade": "FLOORING",
+   "name": "Стяжка з пінополістиролбетону",
+   "unit": "M2",
+   "price": 450
+  },
+  {
+   "trade": "FLOORING",
+   "name": "Укладання кварцвінілу ялинкою",
+   "unit": "M2",
+   "price": 700
+  },
+  {
+   "trade": "FLOORING",
+   "name": "Радіусна (фігурна) підрізка ламінату",
+   "unit": "LINEAR_METER",
+   "price": 150
+  },
+  {
+   "trade": "FLOORING",
+   "name": "Укладання ламінату на стіну/стелю (на клей)",
+   "unit": "M2",
+   "price": 530
+  },
+  {
+   "trade": "FLOORING",
+   "name": "Монтаж плінтуса поліуретанового (під фарбування)",
+   "unit": "LINEAR_METER",
+   "price": 250
+  },
+  {
+   "trade": "TILING",
+   "name": "Укладання плитки на стелю (плюс % до м.кв.)",
+   "unit": "PERCENT",
+   "price": 50
+  },
+  {
+   "trade": "PAINTER",
+   "name": "Поклейка шпалер на стелю",
+   "unit": "M2",
+   "price": 240
+  },
+  {
+   "trade": "PAINTER",
+   "name": "Ручна штукатурка стелі по маяках",
+   "unit": "M2",
+   "price": 410
+  },
+  {
+   "trade": "PAINTER",
+   "name": "Машинне нанесення фінішної шпаклівки",
+   "unit": "M2",
+   "price": 280
+  },
+  {
+   "trade": "PAINTER",
+   "name": "Штукатурка ніш під радіатори",
+   "unit": "M2",
+   "price": 470
+  },
+  {
+   "trade": "PAINTER",
+   "name": "Монтаж маяків / розмітка площин стелі",
+   "unit": "M2",
+   "price": 140
+  },
+  {
+   "trade": "PAINTER",
+   "name": "Фактурна штукатурка «американка»",
+   "unit": "M2",
+   "price": 460
+  },
+  {
+   "trade": "PAINTER",
+   "name": "Фарбування вікон (дерев'яних рам)",
+   "unit": "M2",
+   "price": 450
+  },
+  {
+   "trade": "PAINTER",
+   "name": "Фарбування плінтусів та лиштви",
+   "unit": "LINEAR_METER",
+   "price": 90
+  },
+  {
+   "trade": "PAINTER",
+   "name": "Збивання старої штукатурки зі стін",
+   "unit": "M2",
+   "price": 250
+  },
+  {
+   "trade": "PAINTER",
+   "name": "Збивання старої штукатурки зі стелі",
+   "unit": "M2",
+   "price": 200
+  },
+  {
+   "trade": "PAINTER",
+   "name": "Очищення старої олійної фарби",
+   "unit": "M2",
+   "price": 250
+  },
+  {
+   "trade": "DRYWALL",
+   "name": "Перепад рівня стелі з ГКЛ (прямий)",
+   "unit": "LINEAR_METER",
+   "price": 550
+  },
+  {
+   "trade": "DRYWALL",
+   "name": "Перепад рівня стелі з ГКЛ (радіусний)",
+   "unit": "LINEAR_METER",
+   "price": 670
+  },
+  {
+   "trade": "DRYWALL",
+   "name": "Обшивка стелі ГКЛ у 2 шари",
+   "unit": "M2",
+   "price": 600
+  },
+  {
+   "trade": "ELECTRICAL",
+   "name": "Установка та підключення світильника для стелі Армстронг",
+   "unit": "PIECE",
+   "price": 300
+  },
+  {
+   "trade": "ELECTRICAL",
+   "name": "Складання та монтаж люстри складної (кришталевої, великої)",
+   "unit": "PIECE",
+   "price": 900
+  },
+  {
+   "trade": "ELECTRICAL",
+   "name": "Перенесення електрощитка в квартиру",
+   "unit": "PIECE",
+   "price": 2700
+  },
+  {
+   "trade": "ELECTRICAL",
+   "name": "Розробка схеми електропроводки",
+   "unit": "M2",
+   "price": 150
+  },
+  {
+   "trade": "ELECTRICAL",
+   "name": "Пошук прихованої проводки (детектором)",
+   "unit": "PIECE",
+   "price": 1000
+  },
+  {
+   "trade": "ELECTRICAL",
+   "name": "Установка та підключення прожектора",
+   "unit": "PIECE",
+   "price": 400
+  },
+  {
+   "trade": "ELECTRICAL",
+   "name": "Установка діммера (світлорегулятора)",
+   "unit": "PIECE",
+   "price": 300
+  },
+  {
+   "trade": "ELECTRICAL",
+   "name": "Підключення кухонної витяжки",
+   "unit": "PIECE",
+   "price": 500
+  },
+  {
+   "trade": "ELECTRICAL",
+   "name": "Установка силової розетки для електроплити (32/40 А)",
+   "unit": "PIECE",
+   "price": 300
+  },
+  {
+   "trade": "ELECTRICAL",
+   "name": "Установка електромагнітного (електромеханічного) замка",
+   "unit": "PIECE",
+   "price": 1400
+  },
+  {
+   "trade": "ELECTRICAL",
+   "name": "Заміна пробок на автоматичні вимикачі",
+   "unit": "PIECE",
+   "price": 550
+  },
+  {
+   "trade": "ELECTRICAL",
+   "name": "Година роботи електрика",
+   "unit": "HOUR",
+   "price": 450
+  },
+  {
+   "trade": "PLUMBING",
+   "name": "Монтаж каналізаційної насосної станції (КНС)",
+   "unit": "PIECE",
+   "price": 3800
+  },
+  {
+   "trade": "PLUMBING",
+   "name": "Установка пісуара (навісного)",
+   "unit": "PIECE",
+   "price": 1250
+  },
+  {
+   "trade": "PLUMBING",
+   "name": "Установка проточного водонагрівача",
+   "unit": "PIECE",
+   "price": 1300
+  },
+  {
+   "trade": "PLUMBING",
+   "name": "Заміна арматури в бачку унітазу",
+   "unit": "PIECE",
+   "price": 700
+  },
+  {
+   "trade": "PLUMBING",
+   "name": "Демонтаж змішувача",
+   "unit": "PIECE",
+   "price": 300
+  },
+  {
+   "trade": "PLUMBING",
+   "name": "Механічне прочищення каналізації",
+   "unit": "LINEAR_METER",
+   "price": 300
+  },
+  {
+   "trade": "PLUMBING",
+   "name": "Пусконалагодження (запуск) котла",
+   "unit": "PIECE",
+   "price": 1200
+  },
+  {
+   "trade": "PLUMBING",
+   "name": "Монтаж коаксіального (турбо) димоходу котла",
+   "unit": "PIECE",
+   "price": 900
+  },
+  {
+   "trade": "PLUMBING",
+   "name": "Перенесення радіатора опалення",
+   "unit": "PIECE",
+   "price": 2100
+  },
+  {
+   "trade": "PLUMBING",
+   "name": "Монтаж газової колонки",
+   "unit": "PIECE",
+   "price": 2100
+  },
+  {
+   "trade": "PLUMBING",
+   "name": "Установка кімнатного термостата / контролера котла",
+   "unit": "PIECE",
+   "price": 730
+  },
+  {
+   "trade": "DEMOLITION",
+   "name": "Демонтаж покрівлі (металочерепиця, профнастил)",
+   "unit": "M2",
+   "price": 225
+  },
+  {
+   "trade": "DEMOLITION",
+   "name": "Демонтаж покрівлі з шиферу",
+   "unit": "M2",
+   "price": 150
+  },
+  {
+   "trade": "DEMOLITION",
+   "name": "Демонтаж тротуарної плитки",
+   "unit": "M2",
+   "price": 170
+  },
+  {
+   "trade": "DEMOLITION",
+   "name": "Демонтаж бордюру",
+   "unit": "LINEAR_METER",
+   "price": 120
+  },
+  {
+   "trade": "DEMOLITION",
+   "name": "Демонтаж фасаду (утеплювач, облицювання)",
+   "unit": "M2",
+   "price": 285
+  },
+  {
+   "trade": "DEMOLITION",
+   "name": "Вирізання прорізу в бетонній стіні 100–150 мм",
+   "unit": "M2",
+   "price": 1900
+  },
+  {
+   "trade": "DEMOLITION",
+   "name": "Вирізання прорізу в бетонній стіні 150–200 мм",
+   "unit": "M2",
+   "price": 2500
+  },
+  {
+   "trade": "BUILDER",
+   "name": "Облицювання фасаду сайдингом",
+   "unit": "M2",
+   "price": 420
+  },
+  {
+   "trade": "BUILDER",
+   "name": "Укладання цементно-піщаної черепиці",
+   "unit": "M2",
+   "price": 480
+  },
+  {
+   "trade": "BUILDER",
+   "name": "Монтаж мансардного вікна (у процесі будівництва)",
+   "unit": "PIECE",
+   "price": 4400
+  },
+  {
+   "trade": "BUILDER",
+   "name": "Монтаж мансардного вікна в готову покрівлю",
+   "unit": "PIECE",
+   "price": 5400
+  },
+  {
+   "trade": "BUILDER",
+   "name": "Монтаж снігозатримувачів",
+   "unit": "LINEAR_METER",
+   "price": 250
+  },
+  {
+   "trade": "BUILDER",
+   "name": "В'язка арматури (за тонну)",
+   "unit": "T",
+   "price": 18300
+  },
+  {
+   "trade": "BUILDER",
+   "name": "Монтаж збірно-монолітного перекриття (Teriva)",
+   "unit": "M2",
+   "price": 720
+  },
+  {
+   "trade": "BUILDER",
+   "name": "Фігурне укладання тротуарної плитки (візерунки)",
+   "unit": "M2",
+   "price": 720
+  }
+ ],
+ "deferred": [
+  {
+   "trade": "TILING",
+   "name": "Нанесення двокомпонентної гідроізоляції",
+   "unit": "M2",
+   "our_price": 273.0,
+   "why": "неясно: Пряме порівняння є лише одне (PK 440). Схоже, що ціну варто підняти до ~350–400."
+  },
+  {
+   "trade": "FLOORING",
+   "name": "Укладання ламінату ялинкою",
+   "unit": "M2",
+   "our_price": 500.0,
+   "why": "неясно: Лише одне джерело (700). Можливо, ціну занижено."
+  },
+  {
+   "trade": "DRYWALL",
+   "name": "Монтаж гіпсокартону на стіни на клей (безкаркасно)",
+   "unit": "M2",
+   "our_price": 280,
+   "why": "неясно: Лише одне джерело (400); на rabotniki окремої позиції немає."
+  },
+  {
+   "trade": "ELECTRICAL",
+   "name": "Монтаж електричного котла",
+   "unit": "PIECE",
+   "our_price": 4500,
+   "why": "неясно: Лише одне незалежне джерело (6700). Можна піднімати до ~5500, але даних мало."
+  },
+  {
+   "trade": "ELECTRICAL",
+   "name": "Вимірювання опору ізоляції кабельних ліній",
+   "unit": "PIECE",
+   "our_price": 150,
+   "why": "неясно: Публічні ціни є лише в електролабораторій із протоколом, і вони застарілі. Від майстрів даних немає. Ціни за лінію не перевірити."
+  },
+  {
+   "trade": "ELECTRICAL",
+   "name": "Вимірювання опору заземлювального пристрою",
+   "unit": "PIECE",
+   "our_price": 1250,
+   "why": "неясно: Даних для приватного ринку немає. 1250 за один замір може бути виправдано лише як виклик з приладом."
+  },
+  {
+   "trade": "PLUMBING",
+   "name": "Прокладання труб на хомутах",
+   "unit": "LINEAR_METER",
+   "our_price": 180,
+   "why": "неясно: Окремої ринкової позиції «на хомутах» не знайшли. 180 дорівнює ринковій ціні для Ø55-63; для Ø16-40 на кліпсах ринок дає ≈95. Варто зменшити до ~130 або розділити за діаметром."
+  },
+  {
+   "trade": "DEMOLITION",
+   "name": "Вантаження сміття в авто",
+   "unit": "M3",
+   "our_price": 200,
+   "why": "неясно: Пряма ціна за м³ лише одна ('від'); 200 — у нижній частині."
+  },
+  {
+   "trade": "METAL",
+   "name": "Монтаж металоконструкцій",
+   "unit": "KG",
+   "our_price": 20,
+   "why": "неясно: Єдине джерело показує 3,5–6 грн/кг — у 3–5 разів нижче нашого. Потрібне друге джерело перед зниженням."
+  },
+  {
+   "trade": "METAL",
+   "name": "Виготовлення розпашних воріт (каркас, зашивка)",
+   "unit": "M2",
+   "our_price": 2200,
+   "why": "неясно: Джерела суперечать одне одному (за м² vs за шт, можливо з матеріалом). Відкатні 2500/м² — так само."
+  },
+  {
+   "trade": "TILING",
+   "name": "Укладання плитки поверх теплої підлоги (плюс % до м.кв.)",
+   "why": "0% — немає ринкових даних про доплату; видалити позицію чи дати %?"
+  },
+  {
+   "trade": "TILING",
+   "name": "Виготовлення та монтаж кріплення для раковини (зварювання, фарбування)",
+   "why": "0 — дуже різні роботи, немає даних"
+  },
+  {
+   "trade": "TILING",
+   "name": "Підняття матеріалу по сходах",
+   "why": "1642 ₴/т без прив'язки до поверху; треба переробити одиницю (за мішок/поверх?)"
+  },
+  {
+   "trade": "FLOORING",
+   "name": "Монтаж демпферної стрічки",
+   "why": "одиниця M2 → мала б бути м.п., але на позиції висить норма матеріалу (база PERIMETER) — перевірити вплив"
+  },
+  {
+   "trade": "PAINTER",
+   "name": "Шпаклювання стелі",
+   "why": "270 поруч з «Шпаклівка стелі під фарбування» 420 — дубль чи інший обсяг?"
+  },
+  {
+   "trade": "PAINTER",
+   "name": "Шпаклювання стін (старт, за потреби) / Вирівнювання стін стартовою шпаклівкою по площині / Шпаклівка старт по цементній штукатурці",
+   "why": "три стартові шпаклівки 150/170/200 — об'єднати чи розвести за змістом"
+  },
+  {
+   "trade": "PAINTER",
+   "name": "Монтаж на стелю пластикової вагонки",
+   "why": "80 — замало, але ринкових даних не знайшли"
+  },
+  {
+   "trade": "PAINTER",
+   "name": "Натяжна стеля",
+   "why": "340; ринкові ціни зазвичай з полотном; і це не малярна робота"
+  },
+  {
+   "trade": "PAINTER",
+   "name": "11 організаційних позицій з ціною 0",
+   "why": "навмисно «договірна»; у DRYWALL ті самі послуги з цінами"
+  },
+  {
+   "trade": "DRYWALL / PAINTER",
+   "name": "Монтаж пароізоляційної мембрани (100) / … або гідроізоляційної мембрани (200)",
+   "why": "та сама робота, дві ціни; ринкових даних немає"
+  },
+  {
+   "trade": "ELECTRICAL",
+   "name": "Штроблення під прихований (вбудований) кабель-канал",
+   "why": "100 дешевше за штробу в цеглі; матеріал стіни не вказано"
+  },
+  {
+   "trade": "ELECTRICAL",
+   "name": "Перевірка спрацювання ПЗВ та вимірювання опору петлі фаза-нуль",
+   "why": "200 проти 1250 за заземлення; ринкових даних немає"
+  },
+  {
+   "trade": "PLUMBING",
+   "name": "Запуск системи водопроводу",
+   "why": "1800 = як опалення; ймовірно завищено, даних немає"
+  },
+  {
+   "trade": "PLUMBING",
+   "name": "Вентиляція, витяжка, дзеркало, доводчик, вентилятор у «Сантехприлади»",
+   "why": "перенести в інший фах/категорію — структурне рішення"
+  },
+  {
+   "trade": "BUILDER",
+   "name": "Будівництво гаража комплекс; Хоз блок сарайчик комплекс робіт",
+   "why": "630 — заглушка, ринкових «комплексних» цін немає"
+  },
+  {
+   "trade": "BUILDER",
+   "name": "Бетонна площадка; Бетонна площадка заливка вручну; Зварювання площадки",
+   "why": "за шт без розміру — потрібна одиниця м² або м³"
+  },
+  {
+   "trade": "BUILDER",
+   "name": "Спил дерева",
+   "why": "1350 — залежить від діаметра; потрібна градація"
+  },
+  {
+   "trade": "BUILDER",
+   "name": "Встановлення замка; Виготовлення ручки на хвіртку",
+   "why": "1350 — заглушки, дублюють METAL"
+  },
+  {
+   "trade": "BUILDER",
+   "name": "Напилення пінополіуретану (утеплення) за м³ піни",
+   "why": "11 523 ₴/м³ — схоже на ціну з матеріалом"
+  },
+  {
+   "trade": "BUILDER",
+   "name": "Монтаж гвинтових паль",
+   "why": "240 ₴/м.п. — ймовірно одиниця має бути «шт» (~1800)"
+  },
+  {
+   "trade": "BUILDER",
+   "name": "Винесення та вивезення будівельного сміття",
+   "why": "600 ₴/м³ не узгоджено з DEMOLITION (200 + рейс 2000)"
+  },
+  {
+   "trade": "BUILDER",
+   "name": "Позиції паркану/фасаду з однаковою ціною 240",
+   "why": "повторювана заглушка в ~8 позиціях"
+  },
+  {
+   "trade": "PLUMBING",
+   "name": "НОВА: Демонтаж душової кабіни",
+   "why": "розкид 583–2500, немає опори"
+  },
+  {
+   "trade": "METAL",
+   "name": "НОВА: Зварювальний шов за м.п.",
+   "why": "розкид 100–541 залежно від методу/кромки"
+  }
+ ],
+ "notes": [
+  "TILING: 13 з 18 нулів («договірна», рішення з V157) тепер отримують ринкові ціни за рішенням власника 25.10.2026; решта нулів — у deferred.",
+  "Усі зміни цін — через механізм PRICE_DRIFT (як V120/V157): змінюється рядок бібліотеки, майстер із нашою старою ціною отримує сповіщення; ціну, яку майстер змінив сам, не чіпаємо.",
+  "Перевірити: зміни одиниць/назв/видалення — тими самими шляхами, що в V158–V167 (catalog_renamed_position, дублікати), щоб не зламати каталоги майстрів, шаблони й норми."
+ ]
+}

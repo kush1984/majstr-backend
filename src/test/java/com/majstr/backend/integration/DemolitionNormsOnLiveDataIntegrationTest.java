@@ -86,7 +86,7 @@ class DemolitionNormsOnLiveDataIntegrationTest extends IntegrationTestBase {
                 SELECT count(*) FROM material_norm
                  WHERE owner_id IS NULL AND trade = 'DEMOLITION'
                    AND material_id IS NULL AND qty_per_unit IS NULL
-                """)).isEqualTo(46); // V165: + 8 new verdicts, + 7 renamed keys
+                """)).isEqualTo(47); // V165: + 8 new verdicts, + 7 renamed keys; V176: + the lift per bag
         assertThat(count("""
                 SELECT count(*) FROM material_norm
                  WHERE owner_id IS NULL AND trade IS NULL AND material_id IS NULL

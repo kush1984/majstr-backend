@@ -194,7 +194,7 @@ class SeedCatalogInvariantsIntegrationTest extends IntegrationTestBase {
         // TILING and PAINTER are counted SEPARATELY rather than folded into a bigger allowance,
         // because each carries a real batch of deliberate zeros: TILING (V82) ships 18 — jobs
         // quoted per object («договірна»), where an invented number is worse than a blank the
-        // master fills in once. PAINTER (V99) ships 11 — the "Організаційні послуги" category (site visit,
+        // master fills in once; V176's market review priced 14 of them, leaving 4. PAINTER (V99) ships 11 — the "Організаційні послуги" category (site visit,
         // consultation, transport, cleanup, warranty callout), none of which came from the 4 real
         // price lists that were V96's actual pricing source, so inventing a number for them would
         // have been the exact mistake this test exists to catch. Raising the general bound instead
@@ -209,9 +209,9 @@ class SeedCatalogInvariantsIntegrationTest extends IntegrationTestBase {
         assertThat(jdbc.queryForObject(
                 "SELECT count(*) FROM catalog_templates WHERE suggested_price = 0 AND trade = 'TILING'",
                 Integer.class))
-                .as("18 «договірних» позицій плитки — рівно стільки, скільки вирішили; 19-та має "
-                        + "бути рішенням, а не опискою в наступному сіді")
-                .isEqualTo(18);
+                .as("4 «договірні» позиції плитки (V176 оцінив 14 з 18) — рівно стільки, скільки "
+                        + "вирішили; 5-та має бути рішенням, а не опискою в наступному сіді")
+                .isEqualTo(4);
 
         assertThat(jdbc.queryForObject(
                 "SELECT count(*) FROM catalog_templates WHERE suggested_price = 0 AND trade = 'PAINTER'",

@@ -113,7 +113,7 @@ class PlumbingNormsOnLiveDataIntegrationTest extends IntegrationTestBase {
                 SELECT name_key FROM material_norm
                  WHERE owner_id IS NULL AND trade = 'PLUMBING'
                    AND material_id IS NULL AND qty_per_unit IS NULL
-                """, String.class)).hasSize(28) // V164: both pressure tests under both names
+                """, String.class)).hasSize(29) // V164: both pressure tests under both names; V176: the meter seal
                 .contains("перевірка системи водопроводу тиском", "штроблення в бетоні (вода)",
                         "запуск системи опалення");
     }

@@ -59,6 +59,7 @@ class FlooringNormsOnLiveDataIntegrationTest extends IntegrationTestBase {
         assertThat(jdbc.queryForList("""
                 SELECT t.name || ' [' || t.unit || ']' FROM catalog_templates t
                  WHERE t.trade = 'FLOORING' AND t.type = 'WORK'
+                   AND t.added_in_version <> 26 -- V176's additions shipped priced, not yet normed
                    AND NOT EXISTS (
                         SELECT 1 FROM material_norm n
                          WHERE n.owner_id IS NULL
@@ -84,7 +85,8 @@ class FlooringNormsOnLiveDataIntegrationTest extends IntegrationTestBase {
         // + 7 from V161's catalog pass (docs/iteration-trades-review-catalog.md).
         assertThat(count("""
                 SELECT count(*) FROM catalog_templates WHERE trade = 'FLOORING' AND type = 'WORK'
-                """)).isEqualTo(54 + 14 + 7 - 4); // V167: four duplicate wordings left the library
+                """)).isEqualTo(54 + 14 + 7 - 4 // V167: four duplicate wordings left the library
+                        + 11 - 1);             // V176: the market review's additions, one duplicate out
     }
 
     /** «Checked, consumes nothing» is a RECORDED verdict and needs BOTH nulls together (V127's
