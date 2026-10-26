@@ -208,3 +208,35 @@ migrates V176, and checks:
 
 Adjusted pins: `SeedCatalogInvariantsIntegrationTest` (TILING zeros 18 → 4) and the two FLOORING norm
 tests (above).
+
+## 4. V177 — norms for the eleven FLOORING additions
+
+Owner ruling (2026-10-26) on the preview:
+
+| Position | Norm |
+|---|---|
+| Демонтаж ламінату / паркету / ПВХ-плитки, радіусна підрізка ламінату | «consumes nothing» verdict (4 rows) |
+| Укладання кварцвінілу ялинкою | SPC 1,12 + SPC underlay 1,0 (as herringbone laminate) |
+| Укладання ламінату на стіну/стелю (на клей) | laminate 1,05 + mounting adhesive 0,2 l/m², no underlay |
+| Монтаж плінтуса поліуретанового (під фарбування) | new `SKIRTING_PU` (2 m) 1,05 + mounting adhesive 0,04 l/м.п. |
+| Встановлення маяків для стяжки | new `SCREED_BEACON` (3 m) 0,85 м.п./m²; NO fixing mortar — beacons sit on the screed mix itself, already inside the screed's volume, and gypsum in a cement screed is bad practice |
+| Монтаж електричної теплої підлоги, підключення до терморегулятора | none — ELECTRICAL's rule (fixed-area kits; the client's device) |
+| Стяжка з пінополістиролбетону | none — no figure for how much finished layer a bag yields |
+
+The three deliberate gaps are named in both FLOORING «every position answers» tests beside the
+machine screed and the hidden-skirting niche; the version-26 exclusion is gone.
+
+## 5. Production incident — V176 refused on the live library
+
+The first production run of V176 refused: «Прокладка кабелю» (ELECTRICAL) was no longer at the
+reviewed 210 — an admin had moved it — and the precondition `RAISE`d, so the deploy failed and the app
+did not start. Postgres rolled the migration back whole. Fix (`ae01d56`): part 0 never refuses on the
+library's state. A moved price is still corrected, and the notice goes to copies at the review's OR
+the live price, carrying the master's own number as the old price; any structural edit or new position
+that no longer fits is skipped with a `WARNING`. `MarketPriceReviewOnLiveDataIntegrationTest`
+reproduces it (admin moves the cable 210 → 95 before V176).
+
+Lesson: a data migration's precondition about the LIBRARY (which an admin edits between the review
+and the deploy) is a `WARNING` + skip, never an `EXCEPTION` — review B-50's rule applied to
+preconditions, not only to self-checks. Editing the shipped V176 was safe only because it had never
+applied on production; local databases needed their `flyway_schema_history` checksum updated.

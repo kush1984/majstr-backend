@@ -59,7 +59,6 @@ class FlooringNormsOnLiveDataIntegrationTest extends IntegrationTestBase {
         assertThat(jdbc.queryForList("""
                 SELECT t.name || ' [' || t.unit || ']' FROM catalog_templates t
                  WHERE t.trade = 'FLOORING' AND t.type = 'WORK'
-                   AND t.added_in_version <> 26 -- V176's additions shipped priced, not yet normed
                    AND NOT EXISTS (
                         SELECT 1 FROM material_norm n
                          WHERE n.owner_id IS NULL
@@ -74,7 +73,36 @@ class FlooringNormsOnLiveDataIntegrationTest extends IntegrationTestBase {
                         // first and a norm second.
                         "Машинна стяжка самовирівнююча [M2]",
                         // The niche profile and its filler belong to a system we do not name.
-                        "Монтаж та виготовлення ніші під плінтус прихованого монтажу [LINEAR_METER]");
+                        "Монтаж та виготовлення ніші під плінтус прихованого монтажу [LINEAR_METER]",
+                        // V177, ELECTRICAL's rule: mats and cables are fixed-area kits and the
+                        // thermostat is the client's pick — a per-unit figure buys the wrong thing.
+                        "Монтаж електричної теплої підлоги (мат/кабель) [M2]",
+                        "Підключення теплої підлоги до терморегулятора [PIECE]",
+                        // V177: no figure for how much finished layer a bag of dry mix yields.
+                        "Стяжка з пінополістиролбетону [M2]");
+    }
+
+    /** V177 — the market review's additions, by the owner's ruling. */
+    @Test
+    void theMarketReviewAdditionsBuyWhatTheyLay() {
+        assertThat(qty("укладання кварцвінілу ялинкою", "SPC_VINYL")).isEqualByComparingTo("1.12");
+        assertThat(qty("укладання кварцвінілу ялинкою", "UNDERLAY_SPC")).isEqualByComparingTo("1.0");
+        assertThat(qty("укладання ламінату на стіну/стелю (на клей)", "LAMINATE")).isEqualByComparingTo("1.05");
+        assertThat(qty("укладання ламінату на стіну/стелю (на клей)", "MOUNTING_ADHESIVE")).isEqualByComparingTo("0.2");
+        assertThat(qty("монтаж плінтуса поліуретанового (під фарбування)", "SKIRTING_PU")).isEqualByComparingTo("1.05");
+        assertThat(qty("монтаж плінтуса поліуретанового (під фарбування)", "MOUNTING_ADHESIVE")).isEqualByComparingTo("0.04");
+        // Beacons sit on the screed mix itself, which the screed's own norm already buys.
+        assertThat(jdbc.queryForList("""
+                SELECT m.code FROM material_norm n JOIN material m ON m.id = n.material_id
+                 WHERE n.owner_id IS NULL AND n.name_key = 'встановлення маяків для стяжки'""", String.class))
+                .containsExactly("SCREED_BEACON");
+        assertThat(qty("встановлення маяків для стяжки", "SCREED_BEACON")).isEqualByComparingTo("0.85");
+        assertThat(jdbc.queryForObject("""
+                SELECT count(*) FROM material_norm
+                 WHERE owner_id IS NULL AND trade = 'FLOORING' AND material_id IS NULL AND qty_per_unit IS NULL
+                   AND name_key IN ('демонтаж ламінату', 'демонтаж паркету / дерев''яної підлоги',
+                                    'демонтаж пвх-плитки / кварцвінілу', 'радіусна (фігурна) підрізка ламінату')
+                """, Integer.class)).isEqualTo(4);
     }
 
     /** V147 inserts no catalog position, deliberately: one would force V118's ranking to be re-run
@@ -107,7 +135,10 @@ class FlooringNormsOnLiveDataIntegrationTest extends IntegrationTestBase {
                 "підготовка поверхні (очищення і т.п.)", "чистка підлоги порохотягом підготовка",
                 "штроблення в стяжці під монтаж перегородок",
                 // V148: trimming a door frame for the new covering is the eighth.
-                "підрізання дверних коробок і наличників під покриття");
+                "підрізання дверних коробок і наличників під покриття",
+                // V177: three demolitions and the radius trimming of laminate.
+                "демонтаж ламінату", "демонтаж паркету / дерев'яної підлоги",
+                "демонтаж пвх-плитки / кварцвінілу", "радіусна (фігурна) підрізка ламінату");
     }
 
     // ---- the waste decision -------------------------------------------------------------------

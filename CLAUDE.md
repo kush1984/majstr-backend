@@ -65,12 +65,14 @@ controllers return DTOs. `passwordHash` never appears in any response (`UserResp
 
 `hibernate.ddl-auto: validate` — never express schema changes in entity annotations. Add a new
 `V<N>__<desc>.sql` under `src/main/resources/db/migration/`; **check the highest number first**
-(latest is **V176**). **Never edit an applied migration** — Flyway checksums it and a changed file
+(latest is **V177**). **Never edit an applied migration** — Flyway checksums it and a changed file
 fails startup (a correction to a shipped migration's COMMENT goes in the next migration's header —
 review B-53 did that for V136). **A self-check may `RAISE EXCEPTION` only about the migration's OWN
 work** (review B-50): «I just re-filed these rows, assert none is left» is a bug if it fails, while
 «every shipped norm still finds a catalog position» is about data an admin can rename between two
-deploys — that one is a `RAISE WARNING`, and the integration tests are what keep it honest in CI. New `Trade` enum constant → migration to extend the `user_trades` CHECK (a
+deploys — that one is a `RAISE WARNING`, and the integration tests are what keep it honest in CI.
+**The same goes for PRECONDITIONS about the library** (V176 took prod down refusing on one
+admin-edited price): a row no longer where the ruling found it is a `WARNING` + skip. New `Trade` enum constant → migration to extend the `user_trades` CHECK (a
 master-invented trade instead goes in `user_trade`, no migration needed).
 
 ## Testing
