@@ -33,9 +33,9 @@ public record EstimateItemRequest(
          *
          * <p>Relaxed from {@code @DecimalMin("0.01")} to zero-or-more: a percentage OF ANOTHER LINE
          * or OF THE TOTAL has no price at all, and the old rule would have rejected it with a
-         * validation error the master could do nothing about. "Greater than zero" still holds for
-         * every other line — see {@link #isUnitPriceUsable()}, where the condition can actually be
-         * expressed.</p>
+         * validation error the master could do nothing about. Since inline editing (2026-10-26) an
+         * ordinary line may cost 0 too; only a manual-base «%» line still needs a price above zero
+         * — see {@link #isUnitPriceUsable()}.</p>
          */
         @NotNull @PositiveOrZero
         @Digits(integer = 13, fraction = 2) BigDecimal unitPrice,
@@ -67,15 +67,20 @@ public record EstimateItemRequest(
      * A price of zero is only meaningful where nothing is priced per unit: a percentage measured
      * against another line or against the estimate's total.
      */
+    /**
+     * An ordinary line may cost 0 (owner ruling 2026-10-26, inline editing: an emptied price cell is
+     * 0 and is saved — the same 0 a catalog or template line already arrives with); a negative is
+     * refused by {@code @PositiveOrZero}. Only a «%» line measured against a hand-typed base
+     * ({@link PercentBaseKind#MANUAL}) still needs that base above zero: its price IS the base.
+     */
     @AssertTrue(message = "unitPrice must be greater than 0")
     public boolean isUnitPriceUsable() {
         if (unitPrice == null) {
             return true; // @NotNull already reports this one
         }
-        boolean pricelessPercent = unit == Unit.PERCENT
-                && percentBaseKind != null
-                && percentBaseKind != PercentBaseKind.MANUAL;
-        return pricelessPercent || unitPrice.compareTo(BigDecimal.ZERO) > 0;
+        boolean manualBasePercent = unit == Unit.PERCENT
+                && (percentBaseKind == null || percentBaseKind == PercentBaseKind.MANUAL);
+        return !manualBasePercent || unitPrice.compareTo(BigDecimal.ZERO) > 0;
     }
 
     /** A base line may only be named when the base actually is a line. */
@@ -91,7 +96,13 @@ public record EstimateItemRequest(
      * meaningless either way, so it is rejected too. Every non-percent unit must be a positive count
      * (a «-3 шт» line is a data-entry bug, not a discount).
      */
-    @AssertTrue(message = "quantity must be greater than 0 (a «% від кошторису» line may also be negative)")
+    /**
+     * An ordinary line's quantity may be 0 — «not counted yet», the state a bundle's lines are born
+     * in and the board already shows (owner ruling 2026-10-26: an emptied quantity cell saves 0). A
+     * negative quantity is still a data-entry bug. A «%» line keeps its rules: a percentage of 0 is
+     * no line at all, and only a «% від кошторису» one may be negative (a discount).
+     */
+    @AssertTrue(message = "quantity must not be negative (a «%» line must not be 0; only a «% від кошторису» one may be negative)")
     public boolean isQuantityUsable() {
         if (quantity == null) {
             return true; // @NotNull already reports this one
@@ -101,7 +112,7 @@ public record EstimateItemRequest(
                     ? quantity.compareTo(BigDecimal.ZERO) != 0
                     : quantity.compareTo(BigDecimal.ZERO) > 0;
         }
-        return quantity.compareTo(BigDecimal.ZERO) > 0;
+        return quantity.compareTo(BigDecimal.ZERO) >= 0;
     }
 
     /**

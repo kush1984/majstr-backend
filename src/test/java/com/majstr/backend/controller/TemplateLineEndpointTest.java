@@ -86,11 +86,12 @@ class TemplateLineEndpointTest {
         assertThat(req.getValue().sortOrder()).isEqualTo(3);
     }
 
+    /** Since inline editing (2026-10-26) an ordinary line may be 0 on every door; a minus may not. */
     @Test
-    void theManualDoorStillRefusesQuantityZero() throws Exception {
+    void theManualDoorRefusesANegativeQuantity() throws Exception {
         mockMvc.perform(post("/api/estimates/{id}/items", estimateId)
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"name\":\"Робота\",\"type\":\"WORK\",\"unit\":\"M2\",\"quantity\":0,\"unitPrice\":100}"))
+                        .content("{\"name\":\"Робота\",\"type\":\"WORK\",\"unit\":\"M2\",\"quantity\":-1,\"unitPrice\":100}"))
                 .andExpect(status().isBadRequest());
         verify(estimateService, never()).addItem(any(), any(), any(), any());
     }

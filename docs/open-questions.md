@@ -4035,6 +4035,21 @@ one-line summary — keep the item in the file as a record.
   expensive grout on the market, so the position where a wrong figure costs the most is also the one
   we currently answer not at all.
 
+### An estimate line does not remember the catalog position it came from (`catalog_item_id`)
+
+- **Status:** OPEN — after the 11 November meetup
+- **Since:** 2026-10-26, inline editing ([iteration-inline-editing.md](iteration-inline-editing.md))
+- **Context:** `estimate_items` copies name / type / unit / price BY VALUE with no FK to `catalog_items`.
+  The «Ціни відрізняються від каталогу» card therefore matches a line to the master's catalog by the
+  exact key the template apply already prices by — `lower(trim(name))` + type + unit, unique per
+  owner by `ux_catalog_items_owner_name_type_unit` — which is reliable (owner ruling: variant «а»).
+  What it cannot see is a RENAME: a line renamed in the estimate, or a catalog position renamed
+  afterwards, falls into «Немає в каталозі», which is why that section's ticks are OFF by default.
+- **Notes / options:** a nullable `estimate_items.catalog_item_id` (`ON DELETE SET NULL`) stamped by
+  `addItemFromCatalog` / `addItemsFromCatalogBatch` / `applyTemplates`; old rows backfilled by the same
+  name+type+unit key, unambiguous matches only. The card would then prefer the id and fall back to
+  the key.
+
 ### «New in the library» notice for pull-only additions
 
 - **Status:** OPEN
