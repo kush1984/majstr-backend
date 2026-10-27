@@ -333,7 +333,11 @@ public class MetricsService {
                         registered.getOrDefault(s, 0L) >= SIGNIFICANT_SOURCE_MIN_REGISTRATIONS))
                 .sorted(BY_SIGNED_RATE)
                 .toList();
-        return new SourceBreakdownResponse(stats, SIGNIFICANT_SOURCE_MIN_REGISTRATIONS, utmStats());
+        return new SourceBreakdownResponse(stats, SIGNIFICANT_SOURCE_MIN_REGISTRATIONS, utmStats(),
+                channelStats(userRepository.countUsersByReferrerHost(),
+                        estimateRepository.countOwnersByStatusAndReferrerHost(EstimateStatus.SIGNED)),
+                channelStats(userRepository.countUsersByEntryPath(),
+                        estimateRepository.countOwnersByStatusAndEntryPath(EstimateStatus.SIGNED)));
     }
 
     /** Comparable rows first, best "% to signed" first within each group. */
@@ -371,9 +375,16 @@ public class MetricsService {
      * registration total.</p>
      */
     private List<SourceBreakdownResponse.UtmStat> utmStats() {
-        Map<String, Long> registered = toSourceMap(userRepository.countUsersByUtmSource());
-        Map<String, Long> signed = toSourceMap(
+        return channelStats(userRepository.countUsersByUtmSource(),
                 estimateRepository.countOwnersByStatusAndUtmSource(EstimateStatus.SIGNED));
+    }
+
+    /** Registered → «% до підпису» per value of one first-touch column (UTM source, referrer host,
+     *  entry page) — the same two steps and the same NULL-is-a-bucket fold for each. */
+    private static List<SourceBreakdownResponse.UtmStat> channelStats(List<SourceCount> registeredRows,
+                                                                      List<SourceCount> signedRows) {
+        Map<String, Long> registered = toSourceMap(registeredRows);
+        Map<String, Long> signed = toSourceMap(signedRows);
 
         Set<String> tags = new HashSet<>();
         tags.addAll(registered.keySet());

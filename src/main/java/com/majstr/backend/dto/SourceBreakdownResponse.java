@@ -24,7 +24,13 @@ public record SourceBreakdownResponse(
          *  admin page can label the "not enough data" group without keeping its own copy of the
          *  number — two copies would drift the moment one is tuned. */
         int significanceThreshold,
-        List<UtmStat> utm
+        List<UtmStat> utm,
+        /** First-touch referrer host (V178) — where search traffic shows, since it carries no UTM.
+         *  Same shape as {@code utm}; a null {@code source} is «без реферера». */
+        List<UtmStat> referrers,
+        /** First-touch entry page (V178) — which public page brought the visitor. A null
+         *  {@code source} is «невідомо» (registered before the column). */
+        List<UtmStat> entryPages
 ) {
 
     /**

@@ -409,6 +409,24 @@ public interface UserRepository extends JpaRepository<User, UUID> {
             """)
     List<com.majstr.backend.dto.SourceCount> countUsersByUtmSource();
 
+    /** Registrations by first-touch referrer host (V178). NULL = no referrer, a real bucket. */
+    @Query("""
+            SELECT u.firstReferrerHost AS source, COUNT(u) AS cnt
+            FROM User u
+            WHERE u.role = com.majstr.backend.entity.Role.USER
+            GROUP BY u.firstReferrerHost
+            """)
+    List<com.majstr.backend.dto.SourceCount> countUsersByReferrerHost();
+
+    /** Registrations by first-touch entry page (V178). NULL = unknown, a real bucket. */
+    @Query("""
+            SELECT u.firstEntryPath AS source, COUNT(u) AS cnt
+            FROM User u
+            WHERE u.role = com.majstr.backend.entity.Role.USER
+            GROUP BY u.firstEntryPath
+            """)
+    List<com.majstr.backend.dto.SourceCount> countUsersByEntryPath();
+
     /** Spring Data projection used by {@link #countGroupByPlan()}. */
     interface PlanCount {
         Plan getPlan();

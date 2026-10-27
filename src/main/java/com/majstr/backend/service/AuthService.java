@@ -73,6 +73,10 @@ public class AuthService {
                 .utmSource(trimToNull(req.utmSource()))
                 .utmMedium(trimToNull(req.utmMedium()))
                 .utmCampaign(trimToNull(req.utmCampaign()))
+                // First-touch referrer host + entry page (V178) — what search traffic has instead
+                // of UTM. Normalised here: whatever is not a plain host / path is dropped.
+                .firstReferrerHost(FirstTouch.host(req.referrerHost()))
+                .firstEntryPath(FirstTouch.path(req.entryPath()))
                 // This master's own shareable code (majstr.pro/?ref=m-<code>).
                 .referralCode(referralService.generateUniqueCode())
                 .build();

@@ -27,7 +27,7 @@ class YoutubeReferralIntegrationTest extends IntegrationTestBase {
     void aRegistrationFromTheYoutubeLinkIsStampedYoutube() {
         String email = "yt" + UUID.randomUUID().toString().substring(0, 8) + "@gmail.com";
         authService.register(new RegisterRequest(email, "Sup3r-Secret!", "Майстер з YouTube",
-                Set.of(Trade.TILING), null, "+380501112233", "ФОП", true, "youtube", null, null, null, null));
+                Set.of(Trade.TILING), null, "+380501112233", "ФОП", true, "youtube", null, null, null, null, null, null));
 
         assertThat(jdbc.queryForObject("SELECT referral_source FROM users WHERE email = ?", String.class, email))
                 .isEqualTo("YOUTUBE");

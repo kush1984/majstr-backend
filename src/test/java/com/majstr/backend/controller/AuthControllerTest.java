@@ -102,7 +102,7 @@ class AuthControllerTest {
                 "Smith Electrical LLC",
                 true,
                 null,
-                null, null, null, null);
+                null, null, null, null, null, null);
 
         given(authService.register(any(RegisterRequest.class)))
                 .willReturn(sampleAuthResponse("john@example.com"));
@@ -174,7 +174,7 @@ class AuthControllerTest {
                 "Company",
                 true,
                 null,
-                null, null, null, null);
+                null, null, null, null, null, null);
 
         mockMvc.perform(post("/api/auth/register")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -188,7 +188,7 @@ class AuthControllerTest {
     void register_aBlankNameIsSaidInWords_notAsAJavaFieldName() throws Exception {
         RegisterRequest blankName = new RegisterRequest(
                 "john@example.com", "Sup3r-Secret!", "   ", Set.of(Trade.GENERAL), null,
-                "+15551234567", "Company", true, null, null, null, null, null);
+                "+15551234567", "Company", true, null, null, null, null, null, null, null);
 
         mockMvc.perform(post("/api/auth/register")
                         .header("Accept-Language", "uk")
@@ -211,7 +211,7 @@ class AuthControllerTest {
                 "Company",
                 true,
                 null,
-                null, null, null, null);
+                null, null, null, null, null, null);
 
         mockMvc.perform(post("/api/auth/register")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -232,7 +232,7 @@ class AuthControllerTest {
                 "Smith Electrical LLC",
                 true,
                 null,
-                null, null, null, null);
+                null, null, null, null, null, null);
 
         given(authService.register(any(RegisterRequest.class)))
                 .willReturn(sampleAuthResponse("john@example.com"));
@@ -256,7 +256,7 @@ class AuthControllerTest {
                 "Company",
                 false,
                 null,
-                null, null, null, null);
+                null, null, null, null, null, null);
 
         mockMvc.perform(post("/api/auth/register")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -301,7 +301,7 @@ class AuthControllerTest {
 
     private static RegisterRequest validRegisterRequest(String email) {
         return new RegisterRequest(email, "Sup3r-Secret!", "John Smith",
-                Set.of(Trade.ELECTRICAL), null, "+15551234567", "Smith Electrical LLC", true, null, null, null, null, null);
+                Set.of(Trade.ELECTRICAL), null, "+15551234567", "Smith Electrical LLC", true, null, null, null, null, null, null, null);
     }
 
     private AuthResponse sampleAuthResponse(String email) {

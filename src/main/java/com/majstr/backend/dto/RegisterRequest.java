@@ -37,7 +37,11 @@ public record RegisterRequest(
         // which is a real value ("arrived with no tags"), not a missing one.
         @Size(max = 60) String utmSource,
         @Size(max = 60) String utmMedium,
-        @Size(max = 100) String utmCampaign
+        @Size(max = 100) String utmCampaign,
+        // First-touch referrer HOST and entry PATH (V178): what search traffic has instead of UTM.
+        // Optional; the server normalises both and drops anything that is not a plain host / path.
+        @Size(max = 100) String referrerHost,
+        @Size(max = 100) String entryPath
 ) {
     @AssertTrue(message = "at least one trade (system or custom) is required")
     public boolean isTradeChosen() {

@@ -110,6 +110,24 @@ public interface EstimateRepository extends JpaRepository<Estimate, UUID> {
             """)
     List<com.majstr.backend.dto.SourceCount> countOwnersByStatusAndUtmSource(@Param("status") EstimateStatus status);
 
+    /** Signed-estimate owners by first-touch referrer host (V178); NULL is a real bucket. */
+    @Query("""
+            SELECT e.project.owner.firstReferrerHost AS source, COUNT(DISTINCT e.project.owner.id) AS cnt
+            FROM Estimate e
+            WHERE e.status = :status AND e.project.owner.role = com.majstr.backend.entity.Role.USER
+            GROUP BY e.project.owner.firstReferrerHost
+            """)
+    List<com.majstr.backend.dto.SourceCount> countOwnersByStatusAndReferrerHost(@Param("status") EstimateStatus status);
+
+    /** Signed-estimate owners by first-touch entry page (V178); NULL is a real bucket. */
+    @Query("""
+            SELECT e.project.owner.firstEntryPath AS source, COUNT(DISTINCT e.project.owner.id) AS cnt
+            FROM Estimate e
+            WHERE e.status = :status AND e.project.owner.role = com.majstr.backend.entity.Role.USER
+            GROUP BY e.project.owner.firstEntryPath
+            """)
+    List<com.majstr.backend.dto.SourceCount> countOwnersByStatusAndEntryPath(@Param("status") EstimateStatus status);
+
     /**
      * The headline figure of each given project's card: <b>Σ SIGNED ∧ counted</b> when the object
      * has any, otherwise its latest non-ADDENDUM estimate's status and total. The total sums each

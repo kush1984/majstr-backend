@@ -136,3 +136,20 @@ would find it.
   sheet OPENS) — a PWA change, deliberately out of scope here, same as in prompt 1.
 - **Prompt 3 (PostHog EU, session replay, consent-gated) shipped separately, PWA-only** — no
   backend change at all, not one line. Details: [iteration-posthog.md](iteration-posthog.md).
+
+## Follow-up — organic search, first-touch referrer and entry page (V178, 2026-10-27)
+Google sets no UTM, so a visitor from search landed in «без UTM» beside everyone who typed the
+address by hand, and nothing could say whether the public calculator pages bring registrations.
+- The PWA records, ONCE on a visitor's first page, the HOST of the page that linked to us (never the
+  full URL — Google sends only its origin anyway) and the PATH he landed on (never the query), and
+  sends both with registration (`RegisterRequest.referrerHost` / `entryPath`). The calculator pages
+  are separate documents that never run `main.tsx`, so they record it too — that is where search
+  visitors usually land, and the CTA they follow to `/register` is same-origin, which would
+  otherwise have overwritten nothing but also recorded nothing.
+- First touch, like UTM: a first visit with no referrer still claims the slot (a typed-in visitor
+  who searches for us later stays a typed-in visitor). A referrer from majstr.pro itself is not one.
+- `FirstTouch` keeps only a plain host (lower-cased, without `www.`) and a plain path; anything else
+  is NULL. `users.first_referrer_host` / `first_entry_path`, NULL legitimate, stamped once.
+- Admin «Джерела»: two tables beside the UTM one — «Звідки прийшли» (host) and «Перша сторінка»,
+  registrations → «% до підпису», the same `channelStats` fold and NULL-is-a-row rule as UTM.
+- The privacy policy names both under «джерело реєстрації».

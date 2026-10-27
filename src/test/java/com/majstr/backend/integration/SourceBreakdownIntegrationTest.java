@@ -125,6 +125,32 @@ class SourceBreakdownIntegrationTest extends IntegrationTestBase {
         assertThat(utm).anyMatch(u -> u.source() == null && u.registered() > 0);
     }
 
+    /**
+     * V178: search traffic carries no UTM, so it shows under the referrer host, and the entry page
+     * says which public page brought the master. Both fold NULL as a row of its own, like UTM.
+     */
+    @Test
+    void theReferrerAndEntryPageTablesGroupByFirstTouch() {
+        String host = "search-" + UUID.randomUUID().toString().substring(0, 8) + ".com";
+        String page = "/kalkulyator-" + UUID.randomUUID().toString().substring(0, 8);
+        master("REF-TEST").referrer(host).entry(page).verified().withObject().withEstimate().signed().build();
+        master("REF-TEST").referrer(host).entry(page).verified().build();
+        master("REF-TEST").verified().build(); // no referrer, no entry page → the NULL buckets
+
+        SourceBreakdownResponse report = metricsService.bySource();
+
+        SourceBreakdownResponse.UtmStat byHost = report.referrers().stream()
+                .filter(u -> host.equals(u.source())).findFirst().orElseThrow();
+        assertThat(byHost.registered()).isEqualTo(2L);
+        assertThat(byHost.withSigned()).isEqualTo(1L);
+        SourceBreakdownResponse.UtmStat byPage = report.entryPages().stream()
+                .filter(u -> page.equals(u.source())).findFirst().orElseThrow();
+        assertThat(byPage.registered()).isEqualTo(2L);
+        assertThat(byPage.withSigned()).isEqualTo(1L);
+        assertThat(report.referrers()).anyMatch(u -> u.source() == null && u.registered() > 0);
+        assertThat(report.entryPages()).anyMatch(u -> u.source() == null && u.registered() > 0);
+    }
+
     // ---- fixture ----------------------------------------------------------
 
     private static long sum(List<SourceBreakdownResponse.SourceStat> rows,
@@ -149,6 +175,8 @@ class SourceBreakdownIntegrationTest extends IntegrationTestBase {
     private final class MasterFixture {
         private final String source;
         private String utmSource;
+        private String referrerHost;
+        private String entryPath;
         private Role role = Role.USER;
         private boolean verified;
         private boolean object;
@@ -162,6 +190,8 @@ class SourceBreakdownIntegrationTest extends IntegrationTestBase {
         }
 
         MasterFixture utm(String tag) { this.utmSource = tag; return this; }
+        MasterFixture referrer(String host) { this.referrerHost = host; return this; }
+        MasterFixture entry(String path) { this.entryPath = path; return this; }
         MasterFixture role(Role r) { this.role = r; return this; }
         MasterFixture verified() { this.verified = true; return this; }
         MasterFixture withObject() { this.object = true; return this; }
@@ -184,6 +214,8 @@ class SourceBreakdownIntegrationTest extends IntegrationTestBase {
                     .emailVerified(verified)
                     .referralSource(source)
                     .utmSource(utmSource)
+                    .firstReferrerHost(referrerHost)
+                    .firstEntryPath(entryPath)
                     .referralCode(unique.substring(0, 10)) // NOT NULL since V41, no entity default
                     .build());
 

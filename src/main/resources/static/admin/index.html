@@ -705,6 +705,10 @@
             + rows.map(line).join('')
             + `</tbody></table>`
             + utmTable(data.utm || [], threshold)
+            + channelTable('Звідки прийшли — сайт, що дав посилання', 'Сайт', 'без реферера',
+                data.referrers || [], threshold)
+            + channelTable('Перша сторінка — куди потрапили спочатку', 'Сторінка', 'невідомо',
+                data.entryPages || [], threshold)
             + `<p class="muted" style="margin-top:8px">Лише кількості — грошовий рев-шер додамо, коли підключимо облік платних підписок.
                На малих числах порівнюй лише джерела з ${threshold}+ реєстраціями.</p>`;
     }
@@ -713,11 +717,17 @@
     // (null, і при non_null-серіалізації поле просто відсутнє) — це реальний рядок «без UTM»,
     // а не пропуск: більшість майстрів приходять без міток.
     function utmTable(utm, threshold) {
-        if (utm.length === 0) return '';
-        return `<h2 style="text-transform:none; letter-spacing:0; margin-top:20px">UTM-мітки — канал заходу</h2>
-            <table><thead><tr><th>utm_source</th><th>Реєстр.</th><th>% до підпису</th></tr></thead><tbody>`
-            + utm.map(u => `<tr>
-                <td>${u.source == null ? '<span class="muted">без UTM</span>' : '<b>' + escapeHtml(u.source) + '</b>'}</td>
+        return channelTable('UTM-мітки — канал заходу', 'utm_source', 'без UTM', utm, threshold);
+    }
+
+    // One first-touch column (UTM, referrer host V178, entry page V178): registrations → «% до
+    // підпису». Search shows up under the referrer host (google.com): Google sets no UTM.
+    function channelTable(title, column, nullLabel, rows, threshold) {
+        if (rows.length === 0) return '';
+        return `<h2 style="text-transform:none; letter-spacing:0; margin-top:20px">${title}</h2>
+            <table><thead><tr><th>${column}</th><th>Реєстр.</th><th>% до підпису</th></tr></thead><tbody>`
+            + rows.map(u => `<tr>
+                <td>${u.source == null ? '<span class="muted">' + nullLabel + '</span>' : '<b>' + escapeHtml(u.source) + '</b>'}</td>
                 <td>${u.registered}</td>
                 <td>${u.enoughData ? ratio(u.withSigned, u.registered) : '<span class="muted">замало даних</span>'}</td>
             </tr>`).join('')

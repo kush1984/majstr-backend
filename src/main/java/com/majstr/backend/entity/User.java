@@ -216,6 +216,17 @@ public class User {
     @Column(name = "utm_campaign", length = 100)
     private String utmCampaign;
 
+    /** First-touch referrer HOST (V178) — «google.com», never a full URL. Search traffic carries no
+     *  UTM, so without it organic visitors were indistinguishable from typed-in ones. NULL = no
+     *  referrer. Stamped once at registration, never overwritten. */
+    @Column(name = "first_referrer_host", length = 100)
+    private String firstReferrerHost;
+
+    /** The PATH of the first page the visitor landed on (V178) — «/kalkulyator-plytky», never the
+     *  query. Says which public page brought him. NULL = unknown. Stamped once. */
+    @Column(name = "first_entry_path", length = 100)
+    private String firstEntryPath;
+
     /** This master's own personal referral code — the shareable link is
      *  {@code majstr.pro/?ref=m-<referralCode>}. Generated uniquely at registration
      *  (backfilled for existing users in V41). UNIQUE. */
