@@ -82,6 +82,24 @@ change is undoable (`toastUndoable`, 5 s).
   batch; «Каталог оновлено: K позицій · Скасувати» undoes the whole batch (old prices as another
   sync, the added positions bulk-deleted). `catalog_sync_apply` (counts only) in PostHog.
 
+## Calm cells (PWA `bdabab1`, 2026-10-27)
+
+Look only — commit/cancel, empty = 0, undo and the outbox are unchanged. At rest a value is text:
+a number carries a dotted underline (`--cell-dot`), a name nothing; only the open field is framed
+(white, `ring-2 ring-brand`) and its row is `--row-editing`. A section is ONE white block with
+`--divider` hairlines (estimate, catalog sub-category, template composition); the session marker is
+a dot by the line number; a missing quantity is «к-сть?» in the cell and «N без кількості» once in
+the section header (the per-row sentence is gone). The sum follows a typed quantity/price live, grey.
+**The name field opens exactly over the text**: a 16 px textarea (iOS zoom) scaled to the row's
+14 px with every length divided by the same factor (`fieldStyle`), a hidden sizer for the height —
+measured identical to the sub-pixel at 375 and 1440. **The caret lands at the end of the TAPPED
+word** (`lib/caret.ts`: `caretPositionFromPoint` → `caretRangeFromPoint` → end; `wordEndAt` breaks on
+space/punctuation/×/—, not on an apostrophe); keyboard entry = end of name; a double tap selects the
+word by hand (the click count restarts on the new textarea, and the iOS rAF re-placement must
+re-place the CURRENT selection). With a mouse (`pointer: fine`) a key hint replaces the bar; Tab moves
+on. The name stays selectable (`select-text` overrides the base `role="button"` rule) so a long
+press still selects a word.
+
 ## Not verified yet
 
 The 375 px browser check failed (the automation's screenshots timed out and the window would not
