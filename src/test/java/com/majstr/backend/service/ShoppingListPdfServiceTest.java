@@ -28,6 +28,12 @@ class ShoppingListPdfServiceTest {
     }
 
     @Test
+    void render_carriesTheMajstrBrandLineOnEveryPage() throws Exception {
+        PdfBrandAssert.assertBrandedOnEveryPage(pdfService.render(model(list(
+                row("Профіль CD 60/27", Unit.M, "48", false, null)), false)));
+    }
+
+    @Test
     void render_splitsWhatIsLeftFromWhatIsAlreadyBought() throws Exception {
         String text = textOf(pdfService.render(model(list(
                 row("Профіль CD 60/27", Unit.M, "48", false, null),

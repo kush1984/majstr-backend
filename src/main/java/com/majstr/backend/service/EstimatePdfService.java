@@ -63,7 +63,7 @@ public class EstimatePdfService {
     public byte[] render(PdfModel model) throws DocumentException, IOException {
         ByteArrayOutputStream out = new ByteArrayOutputStream();
         Document document = new Document(PageSize.A4, 40, 40, 50, 50);
-        PdfWriter.getInstance(document, out);
+        PdfBrandFooter.install(PdfWriter.getInstance(document, out), fonts);
         document.open();
         try {
             addHeader(document, model);

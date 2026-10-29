@@ -2150,7 +2150,8 @@ one-line summary — keep the item in the file as a record.
   actual rule, since this comment is what a future reader will trust.
 
 ### Landing og:image is the app icon, not a promo image
-- **Status:** OPEN
+- **Status:** RESOLVED (found 2026-10-28) — the PWA's `npm run og:images` renders 1200×630 cards from a
+  real app screen: `og-default.png` for the landing, one per calculator page and per sample page.
 - **Since:** Landing-copy-v2 iteration (2026-07-16)
 - **Context:** `og:image`/`twitter:image` point at `/icons/icon-512.png` — a plain square logo. Link
   previews (Viber/Telegram/Facebook, where masters actually share) would convert better with a real
@@ -3558,6 +3559,23 @@ one-line summary — keep the item in the file as a record.
   red test. Unrelated to the round-3 money work: nothing it touched is on the projects-list path.
 
 ---
+
+### Public master profile, a «місто × професія» directory, and client leads
+- **Status:** OPEN — after the 11 November meetup; validate demand first.
+- **Since:** SEO/discoverability round (2026-10-28)
+- **Context:** the strongest SEO lever left: indexable pages people search with intent to hire
+  («плиточник Львів»). Three stages: (1) an opt-in profile `majstr.pro/m/<slug>` — name, trades,
+  city, work photos the master picks from his objects, contact buttons; (2) a city × trade directory
+  plus VERIFIED reviews (only a client who signed an act in the portal can leave one); (3) leads.
+  Mockups of six screens were made in the session (master editor + published card; client search,
+  directory, profile, post-signature review prompt).
+- **Notes / options:** opt-in only, nothing exists until the master publishes; publish is instant
+  with post-moderation, unpublish removes the page (gone from sitemap). Never public: object
+  addresses, client names, sums; photos need EXIF GPS stripped. HTML must be server-rendered for
+  Google (backend, like the portal) — routing `majstr.pro/m/*` to the backend (Cloudflare Pages
+  Function/Worker vs a subdomain) is the open infra decision. Index a directory page only from ≥3
+  published profiles (thin content). Validate with a painted-door button first (the PRO-interest
+  pattern) or ask at the meetup.
 
 ## Features in the catalog enum but not implemented
 

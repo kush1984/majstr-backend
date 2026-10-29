@@ -11,6 +11,9 @@ import java.math.RoundingMode;
  *
  * <p>Gender per group: hryvnia and «тисяча» are feminine (одна/дві), «мільйон»/«мільярд» masculine
  * (один/два). Declension follows the standard last-digit rule, with 11–14 always the «many» form.</p>
+ *
+ * <p>Mirrored pair with the PWA's {@code src/seo/hryvniaInWords.ts} (the sample act page): change both;
+ * its test carries this class's test cases verbatim.</p>
  */
 final class HryvniaInWords {
 

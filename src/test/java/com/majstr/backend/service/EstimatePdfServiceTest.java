@@ -48,6 +48,11 @@ class EstimatePdfServiceTest {
     }
 
     @Test
+    void render_carriesTheMajstrBrandLineOnEveryPage() throws Exception {
+        PdfBrandAssert.assertBrandedOnEveryPage(pdfService.render(sampleModel()));
+    }
+
+    @Test
     void render_producesNonEmptyPdfWithUkrainianContent() throws Exception {
         given(featureGuard.isEnabled(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.eq(Feature.BRANDED_PDF)))
                 .willReturn(false); // no logo path exercised; tests the Cyrillic-text path

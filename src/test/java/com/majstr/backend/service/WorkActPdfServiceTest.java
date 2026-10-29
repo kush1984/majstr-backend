@@ -51,6 +51,11 @@ class WorkActPdfServiceTest {
     }
 
     @Test
+    void render_carriesTheMajstrBrandLineOnEveryPage() throws Exception {
+        PdfBrandAssert.assertBrandedOnEveryPage(pdfService.render(sampleModel(WorkActKind.INTERIM)));
+    }
+
+    @Test
     void render_interimActWithAdditionalWorks_hasAllTheMandatoryBlocks() throws Exception {
         given(featureGuard.isEnabled(any(), eq(Feature.BRANDED_PDF))).willReturn(false);
 
