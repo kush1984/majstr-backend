@@ -56,6 +56,12 @@ server:
   # for seconds — so an abrupt kill lands on a master as a failed import they have
   # to redo, and (for a payment webhook) as a delivery we never answered.
   shutdown: graceful
+  # Nothing in front of the app (Railway) gzips responses, so the embedded server must.
+  # Textual types only: PDFs/images are already compressed.
+  compression:
+    enabled: true
+    mime-types: text/html,text/xml,text/plain,text/css,text/javascript,application/javascript,application/json
+    min-response-size: 1024
 
 spring.lifecycle:
   # Cap on that drain window; past it the remaining requests are dropped anyway.

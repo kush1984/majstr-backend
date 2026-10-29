@@ -124,3 +124,26 @@ tile. The owner ruled that the app counts it too, from the same norm — no form
 `_redirects` ends in `/* /index.html 200`; static files are served before it (as its own comment
 notes for `/assets`). `curl` the preview's `/kalkulyator-plytky` and check the raw HTML is the
 calculator, not the SPA shell — if the catch-all wins, add explicit rules above it.
+
+## Addendum 2026-10-28: backend-side SEO/Core-Web-Vitals audit
+
+Backend half of a cross-repo SEO push (the PWA owns meta tags, sitemap, manifest, OG assets and
+new landing pages).
+
+- **gzip was off (fixed).** Spring Boot ships `server.compression` disabled and Railway proxies the
+  app as-is, so every JSON body — including the public calculator's answer — went out
+  uncompressed. Now on in `application.yml` for textual types; PDFs/images stay untouched.
+  `ResponseCompressionIntegrationTest` pins it over a real socket. Caveat: `min-response-size`
+  only bites when `Content-Length` is known before the write; a dynamically serialized JSON body
+  is compressed whenever the client accepts gzip, whatever its size.
+- **`Cache-Control`/`ETag` on `/api/public/materials/calc`: not applicable.** It is a POST
+  (never cached by browsers/CDNs), and the figures an SEO page renders on first paint come from the
+  build-time `seo:snapshot`, not a live call.
+- **Crawler handling unchanged.** The quiet 404/406 in `GlobalExceptionHandler` cannot swallow an
+  OG-preview bot: the backend serves no SEO-facing HTML (`api.majstr.pro` is `Disallow: /`; the
+  landing, calculator pages, sitemap and `llms.txt` are PWA/Cloudflare Pages assets).
+- **The calculator white list is a closed enum.** `PublicMaterialCalcRequest.PublicCalculator` is
+  `{TILE, DRYWALL, PLASTER, SCREED}`. A new landing page around an EXISTING calculator needs nothing
+  here; a new calculator DOMAIN (flooring, paint, profiles) needs an enum value, a position mapping,
+  bounds and `PublicMaterialCalculatorIntegrationTest` coverage first — it cannot ship from the PWA
+  repo alone.
