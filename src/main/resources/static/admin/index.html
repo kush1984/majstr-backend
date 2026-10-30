@@ -147,6 +147,13 @@
         .formrow { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-bottom: 8px; }
         .formrow input, .formrow select { flex: 1; min-width: 120px; }
         .hint { color: var(--muted); font-size: 0.85rem; margin: 0 0 12px; }
+        .bc-label { display: block; color: var(--muted); font-size: 0.85rem; margin: 10px 0 4px; }
+        #bc-body-text {
+            width: 100%; font: inherit; padding: 10px; border: 1px solid var(--border);
+            border-radius: 8px; background: var(--card); resize: vertical; line-height: 1.5;
+        }
+        #bc-body input[type="checkbox"] { width: 20px; height: 20px; }
+        #bc-preview-frame { width: 100%; height: 520px; border: 1px solid var(--border); border-radius: 8px; background: #fff; }
 
         @media (max-width: 720px) {
             .layout { flex-direction: column; }
@@ -178,6 +185,7 @@
             <button class="navlink" data-view="catalog">📖 Каталог</button>
             <button class="navlink" data-view="templates">🧩 Шаблони кошторисів</button>
             <button class="navlink" data-view="insights">💡 Від майстрів</button>
+            <button class="navlink" data-view="broadcasts">✉️ Розсилки</button>
             <button class="navlink logout" id="logoutBtn">Вийти</button>
         </aside>
 
@@ -362,6 +370,76 @@
                 <p class="hint" id="ins-tabhint"></p>
                 <section class="card">
                     <div id="ins-body">Завантаження…</div>
+                </section>
+            </section>
+
+            <!-- ===== BROADCASTS ===== -->
+            <!-- The segments are fixed on the server (AudienceRules) — the browser picks one, it never
+                 sends a query. Each master is in at most one segment, so two sends never reach one
+                 person twice. Admins and PRO/TEAM/trial masters are in none. -->
+            <section id="view-broadcasts" class="view" hidden>
+                <h1>Розсилки</h1>
+                <p class="hint">
+                    Лист від Андрія, «Відповісти» — на majstr.app@ukr.net. Посилання «Не надсилати мені
+                    такі листи» додається до кожного листа саме. Адмінів і майстрів на PRO/TEAM/тріалі
+                    немає в жодній вибірці.
+                </p>
+
+                <section class="card">
+                    <div class="filters" style="margin-bottom:6px">
+                        <select id="bc-segment" style="flex:1; min-width:220px"></select>
+                        <button id="bc-reload">Оновити</button>
+                    </div>
+                    <p class="hint" id="bc-criteria" style="margin:0"></p>
+                </section>
+
+                <section class="card">
+                    <div class="filters">
+                        <strong id="bc-count">—</strong>
+                        <button class="small" id="bc-all">Позначити всіх</button>
+                        <button class="small" id="bc-none">Зняти всіх</button>
+                    </div>
+                    <div style="overflow-x:auto">
+                        <table>
+                            <thead><tr>
+                                <th style="width:1%"></th>
+                                <th>Майстер</th>
+                                <th class="hide-mobile">Реєстрація</th>
+                                <th>Був востаннє</th>
+                                <th class="hide-mobile" title="Об'єкти / кошториси / позицій у найповнішому">Об. / Кош. / Поз.</th>
+                                <th>Цей лист</th>
+                            </tr></thead>
+                            <tbody id="bc-body"></tbody>
+                        </table>
+                    </div>
+                </section>
+
+                <section class="card">
+                    <label class="bc-label" for="bc-subject">Тема</label>
+                    <input id="bc-subject" maxlength="200" style="width:100%">
+                    <label class="bc-label" for="bc-body-text">Текст</label>
+                    <textarea id="bc-body-text" rows="16"></textarea>
+                    <p class="hint" style="margin-top:6px">
+                        <code>{{імʼя}}</code> — ім'я майстра (якщо порожнє, «Вітаю, {{імʼя}}!» стане «Вітаю!»).
+                        Порожній рядок — новий абзац, <code>**так**</code> — жирним. Кнопку
+                        «<span id="bc-button-label">Відкрити Майстр</span>» і відписку внизу лист отримає сам.
+                        Чернетка зберігається в цьому браузері.
+                    </p>
+                    <div class="formrow">
+                        <button id="bc-preview">Попередній перегляд</button>
+                        <button id="bc-test">Тестовий лист собі</button>
+                        <button id="bc-send" class="primary">Надіслати</button>
+                    </div>
+                    <div id="bc-status"></div>
+                    <div id="bc-preview-box" hidden>
+                        <p class="hint" id="bc-preview-meta" style="margin:12px 0 6px"></p>
+                        <iframe id="bc-preview-frame" sandbox title="Попередній перегляд листа"></iframe>
+                    </div>
+                </section>
+
+                <h2>Історія</h2>
+                <section class="card">
+                    <div style="overflow-x:auto"><div id="bc-history">Завантаження…</div></div>
                 </section>
             </section>
 
@@ -550,7 +628,7 @@
     document.getElementById('logoutBtn').addEventListener('click', logout);
 
     // ================= view switching =================
-    let catalogLoaded = false, templatesLoaded = false, insightsLoaded = false;
+    let catalogLoaded = false, templatesLoaded = false, insightsLoaded = false, broadcastsLoaded = false;
 
     function showView(name) {
         currentView = name;
@@ -560,6 +638,7 @@
         if (name === 'catalog' && !catalogLoaded) { catalogLoaded = true; loadCatalog(); }
         if (name === 'templates' && !templatesLoaded) { templatesLoaded = true; loadTemplates(); }
         if (name === 'insights' && !insightsLoaded) { insightsLoaded = true; loadInsights(); }
+        if (name === 'broadcasts' && !broadcastsLoaded) { broadcastsLoaded = true; loadBroadcasts(); }
     }
     document.querySelectorAll('.navlink[data-view]').forEach(a =>
         a.addEventListener('click', () => showView(a.dataset.view)));
@@ -1478,6 +1557,224 @@
     document.getElementById('promoteClose').addEventListener('click', closePromote);
     document.getElementById('promoteCancel').addEventListener('click', closePromote);
     document.getElementById('promoteSubmit').addEventListener('click', submitPromote);
+
+    // ================= BROADCASTS =================
+    // A starting text for the two segments we wrote one for; any edit replaces it with the draft
+    // kept in localStorage (per segment), so switching segments never loses what was typed.
+    const BC_DEFAULT_DRAFTS = {
+        INACTIVE: {
+            subject: 'Як Вам Майстр? Маю одне питання',
+            body: 'Вітаю, {{імʼя}}!\n\n'
+                + 'Ви зареєструвались у Майстрі і вже склали кошторис, але останній місяць не заходили. '
+                + 'Хочу чесно спитати: чого забракло? Щось не вийшло, незручно на телефоні, бракує потрібних '
+                + 'робіт у каталозі чи просто не було замовлень?\n\n'
+                + 'Відповідь на цей лист прийде мені особисто, навіть одне речення дуже допоможе.\n\n'
+                + 'За цей час у Майстрі з\'явилось:\n'
+                + '• **кошторис голосом**: надиктовуєте роботи, а Майстр сам розставляє рядки і ціни з Вашого каталогу;\n'
+                + '• **акти виконаних робіт**: клієнт підтверджує прийняті роботи онлайн за посиланням;\n'
+                + '• **«скільки купити»**: Майстр сам рахує матеріали за Вашим кошторисом.\n\n'
+                + 'Дякую,\nАндрій, розробник Майстра'
+        },
+        EMPTY_ESTIMATE: {
+            subject: 'Ваш кошторис можна заповнити за 5 хвилин',
+            body: 'Вітаю, {{імʼя}}!\n\n'
+                + 'Бачу, Ви почали кошторис у Майстрі, але в ньому поки майже нічого немає. '
+                + 'Ось три способи заповнити його швидко:\n\n'
+                + '1. **Шаблон**: готовий набір робіт для Вашої спеціальності, позначаєте потрібні позиції, '
+                + 'і вони з\'являються в кошторисі одразу з Вашими цінами.\n'
+                + '2. **Голосом**: натискаєте мікрофон і кажете «шпаклівка стін сорок квадратів, фарбування сорок квадратів».\n'
+                + '3. **З каталогу**: шукаєте роботу за назвою і вписуєте кількість.\n\n'
+                + 'Готовий кошторис надсилаєте клієнту посиланням, і він підписує його онлайн з телефону.\n\n'
+                + 'Якщо щось не виходить, просто відповідайте на цей лист, я допоможу.\n\n'
+                + 'Андрій, розробник Майстра'
+        }
+    };
+    const BC_DRAFT_KEY = 'majstr.admin.broadcastDraft.';
+    let bcSegments = [];
+    let bcRows = [];
+    let bcHistoryTimer = null;
+
+    function bcSegment() { return document.getElementById('bc-segment').value; }
+
+    function bcReadDraft(segment) {
+        try {
+            const raw = localStorage.getItem(BC_DRAFT_KEY + segment);
+            if (raw) return JSON.parse(raw);
+        } catch (e) { /* private window / blocked storage: fall back to the default */ }
+        return BC_DEFAULT_DRAFTS[segment] || { subject: '', body: 'Вітаю, {{імʼя}}!\n\n\n\nАндрій, розробник Майстра' };
+    }
+
+    function bcSaveDraft() {
+        try {
+            localStorage.setItem(BC_DRAFT_KEY + bcSegment(), JSON.stringify({
+                subject: val('bc-subject'), body: val('bc-body-text')
+            }));
+        } catch (e) { /* nothing to do: the draft just won't survive a reload */ }
+    }
+
+    function bcDraftBody() {
+        return { segment: bcSegment(), subject: val('bc-subject').trim(), body: val('bc-body-text') };
+    }
+
+    function bcStatus(text, kind) {
+        const el = document.getElementById('bc-status');
+        el.className = kind || 'hint';
+        el.textContent = text || '';
+    }
+
+    async function bcErrorText(resp) {
+        try {
+            const data = await resp.json();
+            if (data.message) return data.message;
+            if (data.fieldErrors) return Object.values(data.fieldErrors).join('; ');
+        } catch (e) { /* not JSON */ }
+        return 'Помилка ' + resp.status;
+    }
+
+    async function loadBroadcasts() {
+        const keep = bcSegment();
+        const resp = await api('/admin/broadcasts/segments');
+        if (resp.status === 401) return logout();
+        if (!resp.ok) { bcStatus(await bcErrorText(resp), 'error'); return; }
+        bcSegments = await resp.json();
+        const select = document.getElementById('bc-segment');
+        select.innerHTML = bcSegments.map(s =>
+            `<option value="${s.segment}">${escapeHtml(s.label)} (${s.count})</option>`).join('');
+        if (keep && bcSegments.some(s => s.segment === keep)) select.value = keep;
+        await bcSelectSegment();
+        loadBroadcastHistory();
+    }
+
+    async function bcSelectSegment() {
+        const segment = bcSegment();
+        const meta = bcSegments.find(s => s.segment === segment);
+        document.getElementById('bc-criteria').textContent = meta ? meta.criteria : '';
+        document.getElementById('bc-button-label').textContent =
+            segment === 'UNVERIFIED' ? 'Підтвердити пошту' : segment === 'EMPTY_ESTIMATE' ? 'Відкрити кошторис' : 'Відкрити Майстр';
+        const draft = bcReadDraft(segment);
+        document.getElementById('bc-subject').value = draft.subject;
+        document.getElementById('bc-body-text').value = draft.body;
+        document.getElementById('bc-preview-box').hidden = true;
+        bcStatus('');
+        document.getElementById('bc-body').innerHTML = '<tr><td colspan="6" class="muted">Завантаження…</td></tr>';
+        const resp = await api('/admin/broadcasts/segments/' + segment + '/recipients');
+        if (!resp.ok) { bcStatus(await bcErrorText(resp), 'error'); return; }
+        bcRows = await resp.json();
+        bcRenderRows();
+    }
+
+    function bcRenderRows() {
+        const body = document.getElementById('bc-body');
+        if (!bcRows.length) {
+            body.innerHTML = '<tr><td colspan="6" class="muted">У цьому сегменті зараз нікого немає.</td></tr>';
+        } else {
+            // Somebody who already got THIS segment's letter starts unticked — a second copy of the
+            // same nudge is a decision, not a default.
+            body.innerHTML = bcRows.map(r => `
+                <tr>
+                    <td><input type="checkbox" class="bc-pick" value="${r.userId}" ${r.lastSentAt ? '' : 'checked'}
+                               aria-label="Надіслати ${escapeHtml(r.fullName || r.email)}"></td>
+                    <td>${escapeHtml(r.fullName || '—')}<br><span class="muted" style="font-size:0.82rem">${escapeHtml(r.email)}</span></td>
+                    <td class="hide-mobile muted">${r.registeredAt ? dateFormat.format(new Date(r.registeredAt)) : '—'}</td>
+                    <td class="muted">${r.lastActiveAt ? dateFormat.format(new Date(r.lastActiveAt)) : 'ніколи'}</td>
+                    <td class="hide-mobile">${r.objects} / ${r.estimates} / ${r.maxEstimateLines}</td>
+                    <td class="muted">${r.lastSentAt ? 'отримав ' + dateFormat.format(new Date(r.lastSentAt)) : '—'}</td>
+                </tr>`).join('');
+        }
+        body.querySelectorAll('.bc-pick').forEach(cb => cb.addEventListener('change', bcUpdateCount));
+        bcUpdateCount();
+    }
+
+    function bcPicked() {
+        return [...document.querySelectorAll('#bc-body .bc-pick:checked')].map(cb => cb.value);
+    }
+
+    function bcUpdateCount() {
+        const picked = bcPicked().length;
+        document.getElementById('bc-count').textContent = `У вибірці: ${bcRows.length} · позначено: ${picked}`;
+        const send = document.getElementById('bc-send');
+        send.textContent = `Надіслати ${picked} ${picked === 1 ? 'лист' : (picked >= 2 && picked <= 4 ? 'листи' : 'листів')}`;
+        send.disabled = picked === 0;
+    }
+
+    function bcSetAll(checked) {
+        document.querySelectorAll('#bc-body .bc-pick').forEach(cb => { cb.checked = checked; });
+        bcUpdateCount();
+    }
+
+    async function bcPreview() {
+        const resp = await api('/admin/broadcasts/preview', { method: 'POST', body: JSON.stringify(bcDraftBody()) });
+        if (!resp.ok) { bcStatus(await bcErrorText(resp), 'error'); return; }
+        const data = await resp.json();
+        document.getElementById('bc-preview-meta').textContent = `Так лист побачить ${data.recipientName} · Тема: ${data.subject}`;
+        document.getElementById('bc-preview-frame').srcdoc = data.html;
+        document.getElementById('bc-preview-box').hidden = false;
+        bcStatus('');
+    }
+
+    async function bcTest() {
+        bcStatus('Надсилаю тестовий лист…');
+        const resp = await api('/admin/broadcasts/test', { method: 'POST', body: JSON.stringify(bcDraftBody()) });
+        if (!resp.ok) { bcStatus('Не вдалося: ' + await bcErrorText(resp), 'error'); return; }
+        const data = await resp.json();
+        bcStatus('Тестовий лист надіслано на ' + data.sentTo, 'ok');
+    }
+
+    async function bcSend() {
+        const userIds = bcPicked();
+        const draft = bcDraftBody();
+        if (!userIds.length) return;
+        if (!draft.subject || !draft.body.trim()) { bcStatus('Заповніть тему і текст', 'error'); return; }
+        const label = (bcSegments.find(s => s.segment === draft.segment) || {}).label || draft.segment;
+        if (!confirm(`Надіслати лист «${draft.subject}» — ${userIds.length} майстрам із сегмента «${label}»?\n\nЦе не можна скасувати.`)) return;
+        const send = document.getElementById('bc-send');
+        send.disabled = true;
+        const resp = await api('/admin/broadcasts', { method: 'POST', body: JSON.stringify(Object.assign(draft, { userIds })) });
+        if (!resp.ok) { bcStatus(await bcErrorText(resp), 'error'); bcUpdateCount(); return; }
+        const data = await resp.json();
+        bcStatus(`Розсилку запущено: ${data.total} листів іде у фоні. Прогрес — в «Історії» нижче.`, 'ok');
+        await bcSelectSegment();
+        bcStatus(`Розсилку запущено: ${data.total} листів іде у фоні. Прогрес — в «Історії» нижче.`, 'ok');
+        loadBroadcastHistory();
+    }
+
+    async function loadBroadcastHistory() {
+        clearTimeout(bcHistoryTimer);
+        const el = document.getElementById('bc-history');
+        const resp = await api('/admin/broadcasts');
+        if (!resp.ok) { el.textContent = 'Не вдалося завантажити історію'; return; }
+        const rows = await resp.json();
+        if (!rows.length) { el.innerHTML = '<p class="muted" style="margin:0">Розсилок ще не було.</p>'; return; }
+        el.innerHTML = `<table><thead><tr><th>Коли</th><th>Сегмент</th><th class="hide-mobile">Тема</th>`
+            + `<th>Надіслано</th><th>Помилки</th><th class="hide-mobile">Пропущено</th><th>Стан</th></tr></thead><tbody>`
+            + rows.map(b => `<tr>
+                <td class="muted">${dateFormat.format(new Date(b.createdAt))}</td>
+                <td>${escapeHtml(b.segmentLabel)}</td>
+                <td class="hide-mobile">${escapeHtml(b.subject)}</td>
+                <td>${b.sent} / ${b.total}</td>
+                <td>${b.failed ? `<span style="color:var(--danger)">${b.failed}</span>` : '0'}</td>
+                <td class="hide-mobile">${b.skipped}</td>
+                <td>${b.finishedAt ? 'готово' : `іде… (${b.pending})`}</td>
+            </tr>`).join('')
+            + '</tbody></table>';
+        // Poll only while something is still going out, and only while the tab is on screen.
+        if (rows.some(b => !b.finishedAt)) {
+            bcHistoryTimer = setTimeout(() => {
+                if (currentView === 'broadcasts' && document.visibilityState === 'visible') loadBroadcastHistory();
+                else bcHistoryTimer = setTimeout(loadBroadcastHistory, 5000);
+            }, 3000);
+        }
+    }
+
+    document.getElementById('bc-segment').addEventListener('change', bcSelectSegment);
+    document.getElementById('bc-reload').addEventListener('click', loadBroadcasts);
+    document.getElementById('bc-all').addEventListener('click', () => bcSetAll(true));
+    document.getElementById('bc-none').addEventListener('click', () => bcSetAll(false));
+    document.getElementById('bc-subject').addEventListener('input', bcSaveDraft);
+    document.getElementById('bc-body-text').addEventListener('input', bcSaveDraft);
+    document.getElementById('bc-preview').addEventListener('click', bcPreview);
+    document.getElementById('bc-test').addEventListener('click', bcTest);
+    document.getElementById('bc-send').addEventListener('click', bcSend);
 
     // ================= dashboard bootstrap + user detail overlay =================
     async function loadAll() {

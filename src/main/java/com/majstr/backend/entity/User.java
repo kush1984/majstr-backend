@@ -284,6 +284,10 @@ public class User {
     @Column(name = "trial_reminder_sent_at")
     private Instant trialReminderSentAt;
 
+    /** «Не надсилати мені такі листи» from a broadcast (V180). Transactional mail ignores it. */
+    @Column(name = "broadcast_opt_out_at")
+    private Instant broadcastOptOutAt;
+
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
 

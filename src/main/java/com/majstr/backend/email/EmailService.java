@@ -36,4 +36,13 @@ public interface EmailService {
 
     /** Auto-renew failed: "couldn't charge your card; access kept until {accessUntil}; update card". */
     void sendRenewFailedEmail(User user, Instant accessUntil, BigDecimal amount);
+
+    /**
+     * One broadcast letter, SYNCHRONOUS and NOT fail-soft — the one exception in this interface: the
+     * caller records SENT/FAILED per letter, so a failure (or a missing API key) must be thrown.
+     */
+    void sendBroadcast(BroadcastEmail email);
+
+    record BroadcastEmail(String to, String fromName, String replyTo, String subject,
+                          String html, String text, String unsubscribeUrl) {}
 }

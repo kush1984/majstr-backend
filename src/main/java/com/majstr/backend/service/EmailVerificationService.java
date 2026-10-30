@@ -1,5 +1,6 @@
 package com.majstr.backend.service;
 
+import com.majstr.backend.config.EmailProperties;
 import com.majstr.backend.email.EmailService;
 import com.majstr.backend.entity.EmailVerificationToken;
 import com.majstr.backend.entity.User;
@@ -12,6 +13,8 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
 import java.security.SecureRandom;
 import java.time.Duration;
 import java.time.Instant;
@@ -32,10 +35,22 @@ public class EmailVerificationService {
     private final EmailVerificationTokenRepository tokenRepository;
     private final UserRepository userRepository;
     private final EmailService emailService;
+    private final EmailProperties emailProperties;
 
     /** Mint a fresh token for the user and email it (async, fail-soft). Called on register. */
     @Transactional
     public void issueAndSend(User user) {
+        emailService.sendVerificationEmail(user, mint(user));
+    }
+
+    /** A fresh verify link for a broadcast to an unverified master — the letter is the one sending it. */
+    @Transactional
+    public String verifyLinkFor(UUID userId) {
+        return emailProperties.appUrl() + "/verify-email?token="
+                + URLEncoder.encode(mint(userRepository.getReferenceById(userId)), StandardCharsets.UTF_8);
+    }
+
+    private String mint(User user) {
         // The RAW token goes out in the email and is not kept; the row stores only its
         // hash, so a DB dump can't be replayed into a verified account.
         String raw = generateToken();
@@ -44,7 +59,7 @@ public class EmailVerificationService {
                 .tokenHash(TokenHash.of(raw))
                 .expiresAt(Instant.now().plus(TTL))
                 .build());
-        emailService.sendVerificationEmail(user, raw);
+        return raw;
     }
 
     /**

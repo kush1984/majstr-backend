@@ -432,4 +432,10 @@ public interface UserRepository extends JpaRepository<User, UUID> {
         Plan getPlan();
         long getTotal();
     }
+
+    /** Everyone a broadcast may reach at all (V180): masters on FREE who have not unsubscribed.
+     *  PRO, TEAM and a running trial (plan = PRO) are out; so is every admin. */
+    @Query("SELECT u FROM User u WHERE u.role = com.majstr.backend.entity.Role.USER "
+            + "AND u.plan = com.majstr.backend.entity.Plan.FREE AND u.broadcastOptOutAt IS NULL")
+    List<User> findBroadcastAudience();
 }

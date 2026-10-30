@@ -213,6 +213,12 @@ app:
     from-address: ${EMAIL_FROM:Majstr <onboarding@resend.dev>}
     # Base URL of the PWA — the verify link points here: {app-url}/verify-email?token=...
     app-url: ${APP_URL:http://localhost:5173}
+  # Admin «Розсилки» (V180): letters go out as the founder and are answered to the app's mailbox.
+  # 600 ms between letters keeps a send under Resend's default 2 requests per second.
+  broadcast:
+    from-name: ${BROADCAST_FROM_NAME:Андрій з Майстра}
+    reply-to: ${BROADCAST_REPLY_TO:majstr.app@ukr.net}
+    send-interval-ms: ${BROADCAST_SEND_INTERVAL_MS:600}
   push:
     # Web Push (VAPID). Keys are env only and blank in local dev (then a push is
     # logged & skipped). Generate a stable keypair once for production — rotating

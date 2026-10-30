@@ -24,6 +24,23 @@ one-line summary — keep the item in the file as a record.
 
 ## Architecture & operations
 
+### Re-engagement emails to masters stuck in the funnel
+- **Status:** RESOLVED — shipped 2026-10-30 (V180, admin «✉️ Розсилки»), see
+  [iteration-broadcasts.md](iteration-broadcasts.md). The privacy-policy line about these letters moved to
+  «Privacy policy: lawyer review + law №8153 readiness».
+- **Since:** 2026-10-30 (owner's idea; ~155 registered, few active, 2-3 paying)
+- **Context:** nothing nudges a master who stalls. Five segments, each master gets the letter for the
+  EARLIEST step he is stuck on (one letter, not five): (1) email not verified; (2) verified, no object;
+  (3) object, no estimate; (4) estimate exists but is near-empty; (5) got past that but
+  `last_active_at` older than 30 days.
+- **Notes / options:** building blocks exist — `ResendEmailService`, `users.last_active_at`
+  (`LastActiveTracker`), the admin activation funnel's step queries, the `TrialReminderService` shape
+  (own `@Scheduled` bean + a dedup stamp). Missing: a product-email opt-out on `users` + a tokenized
+  one-click unsubscribe link in every letter, and a send log (user, kind, sent_at) so a segment is
+  sent once. Undecided: one-off campaign from the admin (dry-run preview of who gets what, then send)
+  vs an automatic drip for new registrations; «near-empty» threshold; Reply-To the owner; exclude
+  ADMIN and paying masters from (5); whether the privacy policy covers such service letters.
+
 ### The FREE cap counts every object ever made — після мітапу
 - **Status:** OPEN
 - **Since:** 2026-10-19, objects-list (PWA)
@@ -769,6 +786,8 @@ one-line summary — keep the item in the file as a record.
   the consent mechanics against it. The structure (explicit checkbox + stamps
   `consentedToPrivacyAt` / `acknowledgedClientDataAt`, controller/operator split) is
   already aligned; this is wording/coverage validation.
+- **Update (2026-10-30):** admin broadcasts (V180) now send re-engagement letters to FREE masters, with an
+  unsubscribe link in each. The policy does not mention them yet — add a line (what, how often, how to opt out).
 
 ### English translation of the privacy policy texts
 - **Status:** OPEN

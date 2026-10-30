@@ -5,6 +5,7 @@ import com.majstr.backend.config.AiFlowsProperties;
 import com.majstr.backend.config.AnthropicProperties;
 import com.majstr.backend.config.OpenAiProperties;
 import com.majstr.backend.config.BillingProperties;
+import com.majstr.backend.config.BroadcastProperties;
 import com.majstr.backend.config.CorsProperties;
 import com.majstr.backend.config.EmailProperties;
 import com.majstr.backend.config.JwtProperties;
@@ -37,7 +38,8 @@ import org.springframework.scheduling.annotation.EnableScheduling;
         AiFlowsProperties.class,
         AnthropicProperties.class,
         OpenAiProperties.class,
-        FiscalQrProperties.class
+        FiscalQrProperties.class,
+        BroadcastProperties.class
 })
 public class MajstrApplication {
 

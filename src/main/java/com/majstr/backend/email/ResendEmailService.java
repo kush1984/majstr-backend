@@ -16,6 +16,7 @@ import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.time.format.DateTimeFormatter;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -167,6 +168,44 @@ public class ResendEmailService implements EmailService {
         }
         send(user.getEmail(), "Не вдалося продовжити Majstr PRO",
                 renewFailedHtml(money(amount), fmt(accessUntil), updateUrl));
+    }
+
+    /**
+     * Sent as the founder, answered to the app's own mailbox, and carrying the one-click
+     * unsubscribe headers (RFC 8058) Gmail and Yahoo expect on anything that is not transactional.
+     */
+    @Override
+    public void sendBroadcast(BroadcastEmail email) {
+        if (!props.isConfigured()) {
+            throw new IllegalStateException("RESEND_API_KEY not set");
+        }
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("from", email.fromName() + " <" + senderAddress(props.fromAddress()) + ">");
+        body.put("to", List.of(email.to()));
+        body.put("subject", email.subject());
+        body.put("html", email.html());
+        body.put("text", email.text());
+        if (email.replyTo() != null && !email.replyTo().isBlank()) {
+            body.put("reply_to", email.replyTo());
+        }
+        body.put("headers", Map.of(
+                "List-Unsubscribe", "<" + email.unsubscribeUrl() + ">",
+                "List-Unsubscribe-Post", "List-Unsubscribe=One-Click"));
+        restClient.post()
+                .uri(RESEND_URL)
+                .header("Authorization", "Bearer " + props.resendApiKey())
+                .contentType(MediaType.APPLICATION_JSON)
+                .body(body)
+                .retrieve()
+                .toBodilessEntity();
+        log.info("Broadcast email sent to {}", email.to());
+    }
+
+    /** «Majstr &lt;hello@majstr.app&gt;» → «hello@majstr.app»; a bare address passes through. */
+    static String senderAddress(String from) {
+        int open = from.indexOf('<');
+        int close = from.indexOf('>', open + 1);
+        return open >= 0 && close > open ? from.substring(open + 1, close).trim() : from.trim();
     }
 
     private static String fmt(Instant instant) {

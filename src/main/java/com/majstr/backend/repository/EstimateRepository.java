@@ -51,6 +51,19 @@ public interface EstimateRepository extends JpaRepository<Estimate, UUID> {
     List<OwnerCount> countByProjectOwnerIdInAndStatus(@Param("ownerIds") Collection<UUID> ownerIds,
                                                       @Param("status") EstimateStatus status);
 
+    /** Broadcast segments (V180): estimates per owner and the line count of his fullest one. */
+    @Query(value = """
+            SELECT p.owner_id AS "ownerId", COUNT(*) AS "estimates", COALESCE(MAX(x.lines), 0) AS "maxLines"
+            FROM (SELECT e.project_id,
+                         (SELECT COUNT(*) FROM estimate_items i WHERE i.estimate_id = e.id) AS lines
+                  FROM estimates e
+                  WHERE e.kind <> 'ADDENDUM') x
+            JOIN projects p ON p.id = x.project_id
+            WHERE p.owner_id IN (:ownerIds)
+            GROUP BY p.owner_id
+            """, nativeQuery = true)
+    List<OwnerEstimateFill> findEstimateFillByOwnerIdIn(@Param("ownerIds") Collection<UUID> ownerIds);
+
     /** Per-status estimate counts for one owner (admin user detail). Rows: [status, count]. */
     @Query("SELECT e.status, COUNT(e) FROM Estimate e WHERE e.project.owner.id = :ownerId GROUP BY e.status")
     List<Object[]> countByStatusForOwner(@Param("ownerId") UUID ownerId);
