@@ -34,8 +34,9 @@ import java.util.List;
  *       (and clears auto-renew) — a dead card is never hammered.</li>
  * </ol>
  *
- * <p>No class-level transaction: each charge runs in {@code BillingService.chargeAutoRenew}'s
- * own transaction, so one user's failure never rolls back the others.</p>
+ * <p>No class-level transaction: {@code BillingService.chargeAutoRenew} commits its row before it
+ * calls the gateway, so one user's failure never rolls back the others, and a charge whose outcome is
+ * unknown stays PENDING, which is what the {@code inFlight} check below stops on.</p>
  */
 @Slf4j
 @Service

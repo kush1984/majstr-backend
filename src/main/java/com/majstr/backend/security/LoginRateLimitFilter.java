@@ -45,7 +45,7 @@ public class LoginRateLimitFilter extends OncePerRequestFilter {
                                     FilterChain chain) throws ServletException, IOException {
         CachedBodyHttpServletRequest cached = new CachedBodyHttpServletRequest(request);
         String email = extractEmail(cached.getBody());
-        String ip = clientIp(request);
+        String ip = ClientIp.of(request);
         String key = (email == null ? "<unknown>" : email.toLowerCase(Locale.ROOT)) + "|" + ip;
 
         LoginRateLimiter.ConsumeResult result = rateLimiter.tryConsume(key);
@@ -67,15 +67,6 @@ public class LoginRateLimitFilter extends OncePerRequestFilter {
             log.debug("Could not parse login body for rate-limit key: {}", ex.getMessage());
             return null;
         }
-    }
-
-    private String clientIp(HttpServletRequest request) {
-        String forwarded = request.getHeader("X-Forwarded-For");
-        if (forwarded != null && !forwarded.isBlank()) {
-            int comma = forwarded.indexOf(',');
-            return (comma > 0 ? forwarded.substring(0, comma) : forwarded).trim();
-        }
-        return request.getRemoteAddr();
     }
 
     private void writeRateLimitResponse(HttpServletRequest request, HttpServletResponse response,

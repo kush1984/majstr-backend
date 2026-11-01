@@ -5,6 +5,7 @@ import com.majstr.backend.dto.MessageLinkRequest;
 import com.majstr.backend.dto.MessageLinkState;
 import com.majstr.backend.dto.QuestionResponse;
 import com.majstr.backend.exception.TooManyRequestsException;
+import com.majstr.backend.security.ClientIp;
 import com.majstr.backend.security.UserPrincipal;
 import com.majstr.backend.service.MessageLinkRateLimiter;
 import com.majstr.backend.service.MessageLinkService;
@@ -80,7 +81,7 @@ public class MessageLinkController {
             @Valid @RequestPart("data") MessageLinkRequest req,
             @RequestPart(value = "files", required = false) List<MultipartFile> files,
             HttpServletRequest http) {
-        String ip = clientIp(http);
+        String ip = ClientIp.of(http);
         // Keyed on the PAIR: one address cannot spray every link a master has, and one leaked link
         // cannot be filled from a hundred addresses either. Consumed before the write, and before any
         // bytes are stored.
@@ -89,15 +90,5 @@ public class MessageLinkController {
             throw new TooManyRequestsException("error.rate.message-link", probe.retryAfterSeconds());
         }
         return ResponseEntity.ok(messageLinkService.submit(token, req, files, ip));
-    }
-
-    /** Behind a proxy the socket address is the proxy's; the first XFF hop is the real sender. */
-    private static String clientIp(HttpServletRequest request) {
-        String forwarded = request.getHeader("X-Forwarded-For");
-        if (forwarded != null && !forwarded.isBlank()) {
-            int comma = forwarded.indexOf(',');
-            return (comma > 0 ? forwarded.substring(0, comma) : forwarded).trim();
-        }
-        return request.getRemoteAddr();
     }
 }

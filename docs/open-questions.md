@@ -119,7 +119,10 @@ one-line summary — keep the item in the file as a record.
   `forward-headers-strategy: framework`). If Railway's edge hands every request the same address,
   every portal visitor shares one per-IP ceiling; and the first value is whatever the client sent, so
   a caller can also pick his own bucket. Not verifiable without the prod DB.
-- **Notes / options:** run `SELECT signer_ip, count(*) FROM estimates WHERE signer_ip IS NOT NULL
+- **Notes / options:** Half of this is answered (2026-11-01, round 5 P0): on prod a rotating client-sent
+  `X-Forwarded-For` does not move the key, so a caller cannot pick his bucket with that header, and
+  `Forwarded`, which could, is now hidden (`TrustedForwardedHeaderFilter`). What is left is whether two real
+  visitors get different addresses. Run `SELECT signer_ip, count(*) FROM estimates WHERE signer_ip IS NOT NULL
   GROUP BY 1 ORDER BY 2 DESC LIMIT 10;` on prod. One or two addresses for everyone → read the
   address Railway itself appends (the LAST hop it adds) instead of the first.
 
@@ -304,7 +307,7 @@ one-line summary — keep the item in the file as a record.
 - **Status:** RESOLVED
 - **Since:** Fix I code review (2026-06-09)
 - **Context:** The rate-limit filters key off the first `X-Forwarded-For` entry. With no trusted reverse proxy in front, a client can spoof that header and evade the per-IP limits.
-- **Notes / options:** Deploy behind a trusted proxy and set `server.forward-headers-strategy` so the framework derives the client IP from the forwarded chain rather than a raw header.
+- **Notes / options:** Deploy behind a trusted proxy and set `server.forward-headers-strategy` so the framework derives the client IP from the forwarded chain rather than a raw header. **Correction, 2026-11-01:** the resolution below covered only `X-Forwarded-*`. The same filter also honours `Forwarded`, and being behind the proxy did not make that safe; see docs/iteration-review-round-5-p0.md.
 - **Resolution:** Prod-profile iteration (docs/iteration-prod-profile.md) — `application-prod.yml` sets `server.forward-headers-strategy=framework`. Spring's `ForwardedHeaderFilter` applies the forwarded client IP to `getRemoteAddr()` and **strips** the `X-Forwarded-*` headers, so the filters' manual header read returns null and they fall back to the corrected `getRemoteAddr()` — the genuine client IP. Safe because prod is reachable only through Railway's proxy; dev stays on the default (`NONE`), so its direct `X-Forwarded-For` parsing is unchanged. Still per-pod (see multi-instance item).
 
 ### DB backup restore drill not yet performed

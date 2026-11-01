@@ -19,8 +19,9 @@ spring:
 
 server:
   # Behind a trusted reverse proxy (Railway): honor X-Forwarded-* so the request
-  # carries the real client IP/scheme. Spring's ForwardedHeaderFilter applies the
-  # forwarded client IP to getRemoteAddr() and strips the header — the rate-limit
+  # carries the real client IP/scheme. TrustedForwardedHeaderFilter (Spring's filter
+  # minus the Forwarded header, which Railway passes through from the client) applies
+  # the forwarded client IP to getRemoteAddr() and strips the header — the rate-limit
   # filters then key off the genuine client IP, not a spoofable header. Only safe
   # because the app is reachable only through the proxy; dev stays on the default
   # (NONE), so its manual X-Forwarded-For parsing is unaffected.

@@ -10,6 +10,7 @@ import org.springframework.http.MediaType;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestClient;
+import org.springframework.web.util.HtmlUtils;
 
 import java.math.BigDecimal;
 import java.net.URLEncoder;
@@ -75,7 +76,7 @@ public class ResendEmailService implements EmailService {
             log.warn("RESEND_API_KEY not set — skipping estimate email to {}. Portal link: {}", toEmail, shareUrl);
             return;
         }
-        send(toEmail, "Кошторис від " + contractorName,
+        send(toEmail, "Кошторис від " + oneLine(contractorName),
                 estimateShareHtml(clientName, contractorName, projectName, shareUrl));
     }
 
@@ -87,16 +88,7 @@ public class ResendEmailService implements EmailService {
             log.warn("RESEND_API_KEY not set — skipping signed-act copy to {} (act {})", toEmail, actNumber);
             return;
         }
-        String greeting = clientName == null || clientName.isBlank() ? "" : ", " + clientName;
-        String html = """
-                <div style="font-family:Arial,sans-serif;max-width:480px;margin:0 auto;color:#1a1a1a">
-                  <h2 style="color:#F26B1F">Акт № %s підписано%s</h2>
-                  <p>Ви підтвердили приймання виконаних робіт за актом № %s (%s).
-                     Копію підписаного акта додано до цього листа у форматі PDF.</p>
-                  <p style="font-size:13px;color:#666">Це проста електронна форма підтвердження, а не
-                     кваліфікований електронний підпис.</p>
-                </div>
-                """.formatted(actNumber, greeting, actNumber, contractorName);
+        String html = signedActHtml(clientName, contractorName, actNumber);
         String base64 = java.util.Base64.getEncoder().encodeToString(pdf);
         try {
             restClient.post()
@@ -106,9 +98,11 @@ public class ResendEmailService implements EmailService {
                     .body(Map.of(
                             "from", props.fromAddress(),
                             "to", List.of(toEmail),
-                            "subject", "Акт № " + actNumber + " підписано",
+                            "subject", "Акт № " + oneLine(actNumber) + " підписано",
                             "html", html,
-                            "attachments", List.of(Map.of("filename", "act-" + actNumber + ".pdf", "content", base64))))
+                            "attachments", List.of(Map.of(
+                                    "filename", "act-" + actNumber.replaceAll("[^\\p{L}\\p{N}._-]", "_") + ".pdf",
+                                    "content", base64))))
                     .retrieve()
                     .toBodilessEntity();
             log.info("Signed-act copy sent to {} (act {})", toEmail, actNumber);
@@ -237,7 +231,39 @@ public class ResendEmailService implements EmailService {
         }
     }
 
-    private static String passwordResetHtml(String fullName, String link) {
+    /**
+     * Names and object titles here are whatever somebody typed, and the letter goes out from our
+     * verified domain to an address that same somebody chose. In a letter, then, a typed value is
+     * only ever text and never markup, which is what keeps a letter's links our own. Every
+     * value interpolated into HTML below goes through this.
+     */
+    private static String esc(String value) {
+        return value == null ? "" : HtmlUtils.htmlEscape(value, "UTF-8");
+    }
+
+    /** A subject is a single line, whatever a name holds. */
+    private static String oneLine(String value) {
+        return value == null ? "" : value.replaceAll("\\p{Cntrl}", " ").trim();
+    }
+
+    /** «, Name» after a greeting, or nothing when there is no name. */
+    private static String nameSuffix(String name) {
+        return name == null || name.isBlank() ? "" : ", " + esc(name);
+    }
+
+    static String signedActHtml(String clientName, String contractorName, String actNumber) {
+        return """
+                <div style="font-family:Arial,sans-serif;max-width:480px;margin:0 auto;color:#1a1a1a">
+                  <h2 style="color:#F26B1F">Акт № %s підписано%s</h2>
+                  <p>Ви підтвердили приймання виконаних робіт за актом № %s (%s).
+                     Копію підписаного акта додано до цього листа у форматі PDF.</p>
+                  <p style="font-size:13px;color:#666">Це проста електронна форма підтвердження, а не
+                     кваліфікований електронний підпис.</p>
+                </div>
+                """.formatted(esc(actNumber), nameSuffix(clientName), esc(actNumber), esc(contractorName));
+    }
+
+    static String passwordResetHtml(String fullName, String link) {
         return """
                 <div style="font-family:Arial,sans-serif;max-width:480px;margin:0 auto;color:#1a1a1a">
                   <h2 style="color:#F26B1F">Скидання пароля%s</h2>
@@ -253,12 +279,10 @@ public class ResendEmailService implements EmailService {
                   <p style="font-size:13px;color:#666">Посилання дійсне 45 хвилин. Якщо це не ви —
                      просто проігноруйте цей лист, пароль лишиться той самий.</p>
                 </div>
-                """.formatted(
-                        fullName == null || fullName.isBlank() ? "" : ", " + fullName,
-                        link, link, link);
+                """.formatted(nameSuffix(fullName), esc(link), esc(link), esc(link));
     }
 
-    private static String verificationHtml(String fullName, String link) {
+    static String verificationHtml(String fullName, String link) {
         return """
                 <div style="font-family:Arial,sans-serif;max-width:480px;margin:0 auto;color:#1a1a1a">
                   <h2 style="color:#F26B1F">Вітаємо в Majstr%s!</h2>
@@ -274,12 +298,10 @@ public class ResendEmailService implements EmailService {
                   <p style="font-size:13px;color:#666">Посилання дійсне 24 години. Якщо ви не
                      реєструвались у Majstr — просто проігноруйте цей лист.</p>
                 </div>
-                """.formatted(
-                        fullName == null || fullName.isBlank() ? "" : ", " + fullName,
-                        link, link, link);
+                """.formatted(nameSuffix(fullName), esc(link), esc(link), esc(link));
     }
 
-    private static String estimateShareHtml(String clientName, String contractorName, String projectName, String shareUrl) {
+    static String estimateShareHtml(String clientName, String contractorName, String projectName, String shareUrl) {
         return """
                 <div style="font-family:Arial,sans-serif;max-width:480px;margin:0 auto;color:#1a1a1a">
                   <h2 style="color:#F26B1F">Вітаємо%s!</h2>
@@ -293,9 +315,8 @@ public class ResendEmailService implements EmailService {
                   <p style="font-size:13px;color:#666">Якщо кнопка не працює, відкрийте посилання:<br>
                      <a href="%s">%s</a></p>
                 </div>
-                """.formatted(
-                        clientName == null || clientName.isBlank() ? "" : ", " + clientName,
-                        contractorName, projectName, shareUrl, shareUrl, shareUrl);
+                """.formatted(nameSuffix(clientName), esc(contractorName), esc(projectName),
+                        esc(shareUrl), esc(shareUrl), esc(shareUrl));
     }
 
     /**

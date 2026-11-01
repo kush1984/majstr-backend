@@ -16,8 +16,15 @@ import com.majstr.backend.repository.UserRepository;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
+import org.mockito.InOrder;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpStatus;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.web.client.HttpClientErrorException;
+import org.springframework.web.client.HttpServerErrorException;
+import org.springframework.web.client.ResourceAccessException;
 import tools.jackson.databind.ObjectMapper;
 import tools.jackson.databind.json.JsonMapper;
 
@@ -25,6 +32,7 @@ import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -35,8 +43,10 @@ import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 
 @ExtendWith(MockitoExtension.class)
 class BillingServiceTest {
@@ -47,6 +57,7 @@ class BillingServiceTest {
     @Mock UserRepository userRepository;
     @Mock ReferralRewardRepository referralRewardRepository;
     @Mock com.majstr.backend.email.EmailService emailService;
+    @Mock PlatformTransactionManager transactionManager;
 
     private final ObjectMapper mapper = JsonMapper.builder().build();
 
@@ -62,7 +73,7 @@ class BillingServiceTest {
 
     private BillingService service(BillingProperties props) {
         return new BillingService(props, monobankClient, signatureVerifier,
-                paymentRepository, userRepository, referralRewardRepository, mapper, emailService);
+                paymentRepository, userRepository, referralRewardRepository, mapper, emailService, transactionManager);
     }
 
     private User freeUser(UUID id) {
@@ -131,6 +142,202 @@ class BillingServiceTest {
         assertThat(resp.pageUrl()).isEqualTo("http://pay");
         assertThat(user.getPlan()).isEqualTo(Plan.FREE); // granted only by the webhook
         verify(userRepository, never()).save(any());
+        verify(paymentRepository).attachInvoice(any(), eq("inv123"));
+    }
+
+    @Test
+    void checkout_theRowCommitsBeforeTheGatewayIsCalled() {
+        UUID uid = UUID.randomUUID();
+        given(userRepository.findById(uid)).willReturn(Optional.of(verifiedFreeUser(uid)));
+        given(paymentRepository.save(any(Payment.class))).willAnswer(i -> withId(i.getArgument(0)));
+        given(monobankClient.createInvoice(anyLong(), eq(980), anyString(), anyString(), any()))
+                .willReturn(new MonobankClient.InvoiceCreated("inv123", "http://pay"));
+
+        service(props("tok")).checkout(uid, false, BillingPeriod.MONTH);
+
+        InOrder order = inOrder(paymentRepository, transactionManager, monobankClient);
+        order.verify(paymentRepository).save(any(Payment.class));
+        order.verify(transactionManager).commit(any());
+        order.verify(monobankClient).createInvoice(anyLong(), eq(980), anyString(), anyString(), any());
+        order.verify(paymentRepository).attachInvoice(any(), eq("inv123"));
+    }
+
+    @Test
+    void checkout_invoiceFailure_closesTheRowAndPropagates() {
+        UUID uid = UUID.randomUUID();
+        Payment[] saved = new Payment[1];
+        given(userRepository.findById(uid)).willReturn(Optional.of(verifiedFreeUser(uid)));
+        given(paymentRepository.save(any(Payment.class))).willAnswer(i -> saved[0] = withId(i.getArgument(0)));
+        given(paymentRepository.findById(any())).willAnswer(i -> Optional.of(saved[0]));
+        given(monobankClient.createInvoice(anyLong(), eq(980), anyString(), anyString(), any()))
+                .willThrow(new ResourceAccessException("timeout"));
+
+        assertThatThrownBy(() -> service(props("tok")).checkout(uid, false, BillingPeriod.MONTH))
+                .isInstanceOf(ResourceAccessException.class);
+
+        assertThat(saved[0].getStatus()).isEqualTo(PaymentStatus.FAILURE);
+    }
+
+    @Test
+    void chargeAutoRenew_theRowCommitsBeforeTheCardIsCharged() {
+        UUID uid = UUID.randomUUID();
+        given(userRepository.findById(uid)).willReturn(Optional.of(renewable(uid)));
+        given(paymentRepository.save(any(Payment.class))).willAnswer(i -> withId(i.getArgument(0)));
+        given(monobankClient.tokenPayment(anyString(), anyLong(), eq(980), anyString(), anyString()))
+                .willReturn("inv-renew");
+
+        service(props("tok")).chargeAutoRenew(uid);
+
+        InOrder order = inOrder(paymentRepository, transactionManager, monobankClient);
+        order.verify(paymentRepository).save(any(Payment.class));
+        order.verify(transactionManager).commit(any());
+        order.verify(monobankClient).tokenPayment(anyString(), anyLong(), eq(980), anyString(), anyString());
+        order.verify(paymentRepository).attachInvoice(any(), eq("inv-renew"));
+    }
+
+    @Test
+    void chargeAutoRenew_aTimeoutLeavesTheRowPendingSoNothingChargesAgain() {
+        UUID uid = UUID.randomUUID();
+        Payment[] saved = new Payment[1];
+        given(userRepository.findById(uid)).willReturn(Optional.of(renewable(uid)));
+        given(paymentRepository.save(any(Payment.class))).willAnswer(i -> saved[0] = withId(i.getArgument(0)));
+        given(monobankClient.tokenPayment(anyString(), anyLong(), eq(980), anyString(), anyString()))
+                .willThrow(new ResourceAccessException("read timed out"));
+
+        assertThatThrownBy(() -> service(props("tok")).chargeAutoRenew(uid))
+                .isInstanceOf(ResourceAccessException.class);
+
+        // The money may have moved: the row must survive, still open, and still committed.
+        assertThat(saved[0].getStatus()).isEqualTo(PaymentStatus.PENDING);
+        verify(transactionManager, never()).rollback(any());
+    }
+
+    @Test
+    void chargeAutoRenew_aServerErrorIsUnknownTooAndStaysPending() {
+        UUID uid = UUID.randomUUID();
+        Payment[] saved = new Payment[1];
+        given(userRepository.findById(uid)).willReturn(Optional.of(renewable(uid)));
+        given(paymentRepository.save(any(Payment.class))).willAnswer(i -> saved[0] = withId(i.getArgument(0)));
+        given(monobankClient.tokenPayment(anyString(), anyLong(), eq(980), anyString(), anyString()))
+                .willThrow(HttpServerErrorException.create(HttpStatus.BAD_GATEWAY, "bad", HttpHeaders.EMPTY, new byte[0], null));
+
+        assertThatThrownBy(() -> service(props("tok")).chargeAutoRenew(uid))
+                .isInstanceOf(HttpServerErrorException.class);
+
+        assertThat(saved[0].getStatus()).isEqualTo(PaymentStatus.PENDING);
+    }
+
+    @Test
+    void chargeAutoRenew_aRefusalMovedNoMoneySoTheRowCloses() {
+        UUID uid = UUID.randomUUID();
+        Payment[] saved = new Payment[1];
+        given(userRepository.findById(uid)).willReturn(Optional.of(renewable(uid)));
+        given(paymentRepository.save(any(Payment.class))).willAnswer(i -> saved[0] = withId(i.getArgument(0)));
+        given(paymentRepository.findById(any())).willAnswer(i -> Optional.of(saved[0]));
+        given(monobankClient.tokenPayment(anyString(), anyLong(), eq(980), anyString(), anyString()))
+                .willThrow(HttpClientErrorException.create(HttpStatus.BAD_REQUEST, "no", HttpHeaders.EMPTY, new byte[0], null));
+
+        assertThatThrownBy(() -> service(props("tok")).chargeAutoRenew(uid))
+                .isInstanceOf(HttpClientErrorException.class);
+
+        assertThat(saved[0].getStatus()).isEqualTo(PaymentStatus.FAILURE);
+    }
+
+    @Test
+    void webhook_thatBeatsTheChargeResponse_findsTheRowByReference() {
+        UUID uid = UUID.randomUUID();
+        User user = freeUser(uid);
+        Payment payment = pending(uid, null);
+        given(signatureVerifier.verify(any(), any(), any())).willReturn(true);
+        given(monobankClient.publicKey()).willReturn("pk");
+        given(paymentRepository.findByInvoiceId("inv-early")).willReturn(Optional.empty());
+        given(paymentRepository.findById(payment.getId())).willReturn(Optional.of(payment));
+        given(paymentRepository.claimForGrant(any(), any())).willReturn(1);
+        given(userRepository.findById(uid)).willReturn(Optional.of(user));
+
+        service(props("tok")).handleWebhook(("{\"invoiceId\":\"inv-early\",\"status\":\"success\",\"amount\":29900,"
+                + "\"reference\":\"" + payment.getId() + "\"}").getBytes(StandardCharsets.UTF_8), "sig");
+
+        assertThat(payment.getInvoiceId()).isEqualTo("inv-early");
+        assertThat(payment.getStatus()).isEqualTo(PaymentStatus.SUCCESS);
+        assertThat(user.getPlan()).isEqualTo(Plan.PRO);
+    }
+
+    @Test
+    void webhook_aReferenceCannotTakeOverARowThatHasAnotherInvoice() {
+        Payment other = pending(UUID.randomUUID(), "inv-other");
+        given(signatureVerifier.verify(any(), any(), any())).willReturn(true);
+        given(monobankClient.publicKey()).willReturn("pk");
+        given(paymentRepository.findByInvoiceId("inv-new")).willReturn(Optional.empty());
+        given(paymentRepository.findById(other.getId())).willReturn(Optional.of(other));
+
+        service(props("tok")).handleWebhook(("{\"invoiceId\":\"inv-new\",\"status\":\"success\",\"amount\":29900,"
+                + "\"reference\":\"" + other.getId() + "\"}").getBytes(StandardCharsets.UTF_8), "sig");
+
+        assertThat(other.getInvoiceId()).isEqualTo("inv-other");
+        assertThat(other.getStatus()).isEqualTo(PaymentStatus.PENDING);
+        verify(paymentRepository, never()).claimForGrant(any(), any());
+    }
+
+    @Test
+    void webhook_aFailureWhileApplyingEscapesSoMonobankDeliversAgain() {
+        given(signatureVerifier.verify(any(), any(), any())).willReturn(true);
+        given(monobankClient.publicKey()).willReturn("pk");
+        given(paymentRepository.findByInvoiceId("inv1")).willThrow(new IllegalStateException("db down"));
+
+        assertThatThrownBy(() -> service(props("tok")).handleWebhook(body("inv1", "success", 29900), "sig"))
+                .isInstanceOf(IllegalStateException.class);
+    }
+
+    @Test
+    void webhook_aForgedSignatureOpensNoTransaction() {
+        given(signatureVerifier.verify(any(), any(), any())).willReturn(false);
+        given(monobankClient.publicKey()).willReturn("pk");
+
+        service(props("tok")).handleWebhook(body("inv1", "success", 29900), "bad");
+
+        verifyNoInteractions(transactionManager);
+    }
+
+    @Test
+    void reconcile_appliesWhatMonobankSaysLikeAWebhook() {
+        UUID uid = UUID.randomUUID();
+        User user = freeUser(uid);
+        Payment payment = pending(uid, "inv1");
+        given(monobankClient.invoiceStatus("inv1")).willReturn(Map.of("status", "success", "amount", 29900));
+        given(paymentRepository.findByInvoiceId("inv1")).willReturn(Optional.of(payment));
+        given(paymentRepository.claimForGrant(any(), any())).willReturn(1);
+        given(userRepository.findById(uid)).willReturn(Optional.of(user));
+
+        service(props("tok")).reconcile(payment);
+
+        assertThat(payment.getStatus()).isEqualTo(PaymentStatus.SUCCESS);
+        assertThat(user.getPlan()).isEqualTo(Plan.PRO);
+    }
+
+    @Test
+    void reconcile_closesAnExpiredInvoice_whichNoWebhookEverReports() {
+        Payment payment = pending(UUID.randomUUID(), "inv1");
+        given(monobankClient.invoiceStatus("inv1")).willReturn(Map.of("invoiceId", "inv1", "status", "expired"));
+        given(paymentRepository.findByInvoiceId("inv1")).willReturn(Optional.of(payment));
+
+        service(props("tok")).reconcile(payment);
+
+        assertThat(payment.getStatus()).isEqualTo(PaymentStatus.EXPIRED);
+    }
+
+    private User renewable(UUID id) {
+        User user = verifiedFreeUser(id);
+        user.setCardToken("card-token");
+        user.setAutoRenew(true);
+        return user;
+    }
+
+    private static Payment withId(Payment payment) {
+        if (payment.getId() == null) {
+            payment.setId(UUID.randomUUID()); // simulate @PrePersist
+        }
+        return payment;
     }
 
     @Test

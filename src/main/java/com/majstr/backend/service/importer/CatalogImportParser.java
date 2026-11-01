@@ -10,12 +10,8 @@ import org.apache.poi.ss.usermodel.Cell;
 import org.apache.poi.ss.usermodel.DataFormatter;
 import org.apache.poi.ss.usermodel.Row;
 import org.apache.poi.ss.usermodel.Sheet;
-import org.apache.poi.ss.usermodel.Workbook;
-import org.apache.poi.ss.usermodel.WorkbookFactory;
 import org.springframework.stereotype.Service;
 
-import java.io.ByteArrayInputStream;
-import java.io.InputStream;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.nio.charset.Charset;
@@ -62,6 +58,7 @@ public class CatalogImportParser {
 
     /** Parse an uploaded spreadsheet/CSV file (chosen by extension, sniffed by POI). */
     public CatalogImportParseResponse parseFile(String filename, byte[] bytes) {
+        SafeWorkbook.requireSize(bytes);
         String lower = filename == null ? "" : filename.toLowerCase(Locale.ROOT);
         List<List<String>> grid = lower.endsWith(".csv")
                 ? readCsv(bytes)
@@ -80,20 +77,16 @@ public class CatalogImportParser {
     // ---- grid extraction --------------------------------------------------
 
     private List<List<String>> readWorkbook(byte[] bytes) {
-        try (InputStream in = new ByteArrayInputStream(bytes);
-             Workbook wb = WorkbookFactory.create(in)) {
+        return SafeWorkbook.read(bytes, wb -> {
             Sheet sheet = wb.getNumberOfSheets() > 0 ? wb.getSheetAt(0) : null;
             List<List<String>> grid = new ArrayList<>();
             if (sheet == null) {
                 return grid;
             }
             for (Row row : sheet) {
-                // Stop READING at the cap instead of building the whole grid and rejecting it
-                // afterwards: a zip-compressed .xlsx expanding to hundreds of thousands of rows
-                // was fully materialised into memory first (any registered account can upload
-                // one). The margin keeps the "too many rows" check downstream meaningful — it
-                // still sees more than MAX_ROWS and refuses. Mirrors the sibling
-                // EstimateImportService.spreadsheetToText, which already did this.
+                // Keeps the GRID small; the workbook itself is already parsed by now, and only
+                // SafeWorkbook bounds that. The margin keeps the "too many rows" check downstream
+                // meaningful: it still sees more than MAX_ROWS and refuses.
                 if (grid.size() >= MAX_ROWS + GRID_READ_MARGIN) {
                     break;
                 }
@@ -106,11 +99,7 @@ public class CatalogImportParser {
                 grid.add(cells);
             }
             return grid;
-        } catch (CatalogImportException e) {
-            throw e;
-        } catch (Exception e) {
-            throw new CatalogImportException("error.import.unreadable");
-        }
+        });
     }
 
     private List<List<String>> readCsv(byte[] bytes) {

@@ -6,6 +6,7 @@ import com.majstr.backend.dto.QuestionRequest;
 import com.majstr.backend.dto.QuestionResponse;
 import com.majstr.backend.dto.SignRequest;
 import com.majstr.backend.exception.TooManyRequestsException;
+import com.majstr.backend.security.ClientIp;
 import com.majstr.backend.service.ProjectPhotoService;
 import com.majstr.backend.service.PublicEstimateService;
 import com.majstr.backend.service.QuestionRateLimiter;
@@ -50,7 +51,7 @@ public class PublicEstimateController {
     public PublicEstimateView sign(@PathVariable String token,
                                    @Valid @RequestBody SignRequest req,
                                    HttpServletRequest request) {
-        return publicService.sign(token, req, clientIp(request));
+        return publicService.sign(token, req, ClientIp.of(request));
     }
 
     @Operation(summary = "Client leaves a question or comment")
@@ -58,7 +59,7 @@ public class PublicEstimateController {
     public ResponseEntity<QuestionResponse> ask(@PathVariable String token,
                                                 @Valid @RequestBody QuestionRequest req,
                                                 HttpServletRequest request) {
-        String ip = clientIp(request);
+        String ip = ClientIp.of(request);
         // A question WRITES (stored message + push to the master's phone) — tighter limit than the
         // blanket public-read one, keyed IP+token like the message link (review fix).
         QuestionRateLimiter.ConsumeResult probe = questionRateLimiter.tryConsume(ip + "|" + token);
@@ -89,14 +90,5 @@ public class PublicEstimateController {
                 .cacheControl(CacheControl.maxAge(Duration.ofMinutes(10)).cachePrivate())
                 .header(HttpHeaders.CONTENT_DISPOSITION, "inline")
                 .body(file.bytes());
-    }
-
-    private String clientIp(HttpServletRequest request) {
-        String forwarded = request.getHeader("X-Forwarded-For");
-        if (forwarded != null && !forwarded.isBlank()) {
-            int comma = forwarded.indexOf(',');
-            return (comma > 0 ? forwarded.substring(0, comma) : forwarded).trim();
-        }
-        return request.getRemoteAddr();
     }
 }

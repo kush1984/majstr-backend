@@ -31,13 +31,9 @@ import org.apache.poi.ss.usermodel.Cell;
 import org.apache.poi.ss.usermodel.DataFormatter;
 import org.apache.poi.ss.usermodel.Row;
 import org.apache.poi.ss.usermodel.Sheet;
-import org.apache.poi.ss.usermodel.Workbook;
-import org.apache.poi.ss.usermodel.WorkbookFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.io.ByteArrayInputStream;
-import java.io.InputStream;
 import java.math.BigDecimal;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
@@ -83,6 +79,7 @@ public class EstimateImportService {
         } else if (isSpreadsheet(filename, contentType)) {
             extracted = extractor.extractFromText(spreadsheetToText(bytes));
         } else if (isCsv(filename, contentType)) {
+            SafeWorkbook.requireSize(bytes);
             extracted = extractor.extractFromText(decode(bytes));
         } else {
             throw new CatalogImportException("error.import.unsupported");
@@ -208,8 +205,7 @@ public class EstimateImportService {
 
     /** First sheet → tab-separated text grid (capped) for the model to read. */
     private String spreadsheetToText(byte[] bytes) {
-        try (InputStream in = new ByteArrayInputStream(bytes);
-             Workbook wb = WorkbookFactory.create(in)) {
+        return SafeWorkbook.read(bytes, wb -> {
             if (wb.getNumberOfSheets() == 0) {
                 throw new CatalogImportException("error.import.unreadable");
             }
@@ -227,11 +223,7 @@ public class EstimateImportService {
                 sb.append('\n');
             }
             return sb.toString();
-        } catch (CatalogImportException e) {
-            throw e;
-        } catch (Exception e) {
-            throw new CatalogImportException("error.import.unreadable");
-        }
+        });
     }
 
     /** UTF-8, falling back to windows-1251 when the bytes aren't valid UTF-8 (old Excel CSVs). */

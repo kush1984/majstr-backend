@@ -11,6 +11,7 @@ import com.majstr.backend.dto.VerifyEmailRequest;
 import com.majstr.backend.exception.TooManyRequestsException;
 import com.majstr.backend.repository.UserRepository;
 import com.majstr.backend.repository.UserTradeRepository;
+import com.majstr.backend.security.ClientIp;
 import com.majstr.backend.security.UserPrincipal;
 import com.majstr.backend.service.AuthService;
 import com.majstr.backend.service.EmailVerificationService;
@@ -88,7 +89,7 @@ public class AuthController {
                                                HttpServletRequest http) {
         // Key by IP+email so a spammer can't hammer reset mail at one address, and one IP
         // can't churn many addresses. The limit itself never leaks account existence.
-        String key = clientIp(http) + "|" + request.email().trim().toLowerCase(Locale.ROOT);
+        String key = ClientIp.of(http) + "|" + request.email().trim().toLowerCase(Locale.ROOT);
         ForgotPasswordRateLimiter.ConsumeResult probe = forgotPasswordRateLimiter.tryConsume(key);
         if (!probe.allowed()) {
             throw new TooManyRequestsException("error.rate.forgot", probe.retryAfterSeconds());
@@ -132,16 +133,5 @@ public class AuthController {
                         userTradeRepository.findByUserIdOrderBySortOrderAscIdAsc(user.getId())))
                 .map(ResponseEntity::ok)
                 .orElseThrow(() -> new UsernameNotFoundException("User not found"));
-    }
-
-    /** First X-Forwarded-For entry if present, else the socket address — mirrors the rate-limit
-     *  filters. In prod the forward-headers strategy strips XFF so getRemoteAddr is the real IP. */
-    private static String clientIp(HttpServletRequest request) {
-        String forwarded = request.getHeader("X-Forwarded-For");
-        if (forwarded != null && !forwarded.isBlank()) {
-            int comma = forwarded.indexOf(',');
-            return (comma > 0 ? forwarded.substring(0, comma) : forwarded).trim();
-        }
-        return request.getRemoteAddr();
     }
 }

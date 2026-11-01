@@ -4,6 +4,7 @@ import com.majstr.backend.config.LocalizationConfig;
 import com.majstr.backend.dto.ErrorResponse;
 import com.majstr.backend.feature.FeatureNotAvailableException;
 import com.majstr.backend.feature.Limit;
+import com.majstr.backend.security.RequestBodyTooLargeException;
 import com.majstr.backend.security.UserPrincipal;
 import com.majstr.backend.storage.UnsupportedMediaTypeException;
 import io.sentry.Sentry;
@@ -88,7 +89,21 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(HttpMessageNotReadableException.class)
     public ResponseEntity<ErrorResponse> handleUnreadable(HttpMessageNotReadableException ex, HttpServletRequest req) {
+        // A converter hit RequestSizeLimitFilter's ceiling halfway through a chunked body.
+        Throwable cause = ex;
+        for (int depth = 0; cause != null && depth < 20; depth++, cause = cause.getCause()) {
+            if (cause instanceof RequestBodyTooLargeException) {
+                return build(HttpStatus.PAYLOAD_TOO_LARGE, msg("error.request.too-large"), req);
+            }
+        }
         return build(HttpStatus.BAD_REQUEST, msg("error.malformed-json"), req);
+    }
+
+    @ExceptionHandler(InvalidPushEndpointException.class)
+    public ResponseEntity<ErrorResponse> handleInvalidPushEndpoint(InvalidPushEndpointException ex, HttpServletRequest req) {
+        ErrorResponse body = ErrorResponse.coded(HttpStatus.BAD_REQUEST.value(),
+                HttpStatus.BAD_REQUEST.getReasonPhrase(), msg(ex.getMessage()), req.getRequestURI(), "PUSH_ENDPOINT_INVALID");
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(body);
     }
 
     @ExceptionHandler({BadCredentialsException.class, UsernameNotFoundException.class})

@@ -12,13 +12,15 @@ import org.apache.http.HttpResponse;
 import org.bouncycastle.jce.provider.BouncyCastleProvider;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 import tools.jackson.databind.ObjectMapper;
 
 import java.security.Security;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 
 /**
  * Sends Web Push notifications (VAPID / RFC 8291) to a contractor's subscribed
@@ -42,6 +44,8 @@ public class PushService {
         }
     }
 
+    private static final long SEND_TIMEOUT_MILLIS = 10_000;
+
     private final VapidProperties props;
     private final PushSubscriptionRepository subscriptionRepository;
     private final ObjectMapper objectMapper;
@@ -62,11 +66,13 @@ public class PushService {
      * a missing config, a bad key, or a push-service error is logged, never
      * thrown. Subscriptions reported gone (404/410) are deleted.
      *
+     * <p>Deliberately NOT {@code @Transactional}: a send waits on a network the server does not
+     * control, and a transaction around it holds a pooled connection for exactly that long.</p>
+     *
      * @param url optional click-through target (relative path resolved against
      *            the PWA origin, e.g. {@code /projects/{id}}); may be null
      */
     @Async
-    @Transactional
     public void sendToUser(User user, String title, String body, String url) {
         if (!props.isConfigured()) {
             log.warn("VAPID keys not set — skipping push to user {} (title: {})", user.getId(), title);
@@ -89,6 +95,12 @@ public class PushService {
     private void sendOne(nl.martijndwars.webpush.PushService service, PushSubscription sub,
                          byte[] payload, String title) {
         try {
+            if (!PushEndpointPolicy.allows(sub.getEndpoint())) {
+                // A row older than the subscribe check: never connect to it.
+                subscriptionRepository.delete(sub);
+                log.warn("Removed push subscription {}: its endpoint is not a push service", sub.getId());
+                return;
+            }
             HttpResponse response = deliver(service, sub, payload);
             int status = response.getStatusLine().getStatusCode();
             if (status == 404 || status == 410) {
@@ -148,9 +160,23 @@ public class PushService {
         // Force the modern aes128gcm encoding. The send(Notification) overload defaults to
         // the legacy "aesgcm" scheme ("Authorization: WebPush <jwt>"), which current FCM
         // rejects with 403; aes128gcm uses the "vapid t=,k=" header FCM accepts.
-        return service.send(
+        //
+        // sendAsync, not send: the library's send() is an unbounded Future.get() over a client with
+        // no timeouts, so one stalled connection held an async worker for good.
+        Future<HttpResponse> sending = service.sendAsync(
                 new Notification(sub.getEndpoint(), sub.getP256dh(), sub.getAuth(), payload),
                 Encoding.AES128GCM);
+        try {
+            return sending.get(sendTimeoutMillis(), TimeUnit.MILLISECONDS);
+        } catch (TimeoutException e) {
+            sending.cancel(true); // the library's callback closes its per-send client on cancel
+            throw e;
+        }
+    }
+
+    /** Seam for tests. */
+    long sendTimeoutMillis() {
+        return SEND_TIMEOUT_MILLIS;
     }
 }
 

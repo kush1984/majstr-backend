@@ -44,21 +44,12 @@ public class RegisterRateLimitFilter extends OncePerRequestFilter {
     protected void doFilterInternal(HttpServletRequest request,
                                     HttpServletResponse response,
                                     FilterChain chain) throws ServletException, IOException {
-        RegisterRateLimiter.ConsumeResult result = rateLimiter.tryConsume(clientIp(request));
+        RegisterRateLimiter.ConsumeResult result = rateLimiter.tryConsume(ClientIp.of(request));
         if (!result.allowed()) {
             writeRateLimited(request, response, result.retryAfterSeconds());
             return;
         }
         chain.doFilter(request, response);
-    }
-
-    private String clientIp(HttpServletRequest request) {
-        String forwarded = request.getHeader("X-Forwarded-For");
-        if (forwarded != null && !forwarded.isBlank()) {
-            int comma = forwarded.indexOf(',');
-            return (comma > 0 ? forwarded.substring(0, comma) : forwarded).trim();
-        }
-        return request.getRemoteAddr();
     }
 
     private void writeRateLimited(HttpServletRequest request, HttpServletResponse response,

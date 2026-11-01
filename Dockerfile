@@ -42,4 +42,7 @@ EXPOSE 8080
 # the other 384 MB sit unused. One page image of a large drawing is tens of megabytes on its own
 # (see SheetTiler), so the default turned a perfectly sized container into an out-of-memory. 75%
 # leaves room for the JVM's own non-heap use.
-ENTRYPOINT ["java", "-XX:MaxRAMPercentage=75.0", "-jar", "/app/app.jar"]
+# ExitOnOutOfMemoryError, because a JVM that survives an out-of-memory keeps answering the healthcheck
+# with some threads dead and the rest failing, and nothing restarts it. Exiting hands it to the
+# platform's restart policy instead.
+ENTRYPOINT ["java", "-XX:MaxRAMPercentage=75.0", "-XX:+ExitOnOutOfMemoryError", "-jar", "/app/app.jar"]

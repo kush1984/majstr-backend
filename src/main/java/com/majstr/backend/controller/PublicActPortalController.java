@@ -6,6 +6,7 @@ import com.majstr.backend.dto.QuestionRequest;
 import com.majstr.backend.dto.QuestionResponse;
 import com.majstr.backend.dto.SignRequest;
 import com.majstr.backend.exception.TooManyRequestsException;
+import com.majstr.backend.security.ClientIp;
 import com.majstr.backend.service.ProjectPhotoService.PhotoFile;
 import com.majstr.backend.service.PublicActPortalService;
 import com.majstr.backend.service.QuestionRateLimiter;
@@ -57,7 +58,7 @@ public class PublicActPortalController {
                              @Valid @RequestBody SignRequest req,
                              @RequestHeader(value = "User-Agent", required = false) String userAgent,
                              HttpServletRequest request) throws IOException, DocumentException {
-        return service.sign(token, req, clientIp(request), userAgent);
+        return service.sign(token, req, ClientIp.of(request), userAgent);
     }
 
     @Operation(summary = "Client asks a question about the act")
@@ -65,7 +66,7 @@ public class PublicActPortalController {
     public ResponseEntity<QuestionResponse> ask(@PathVariable String token,
                                                @Valid @RequestBody QuestionRequest req,
                                                HttpServletRequest request) {
-        String ip = clientIp(request);
+        String ip = ClientIp.of(request);
         // A question WRITES (stored message + push to the master's phone) — tighter limit than the
         // blanket public-read one, keyed IP+token like the message link (review fix).
         QuestionRateLimiter.ConsumeResult probe = questionRateLimiter.tryConsume(ip + "|" + token);
@@ -96,14 +97,5 @@ public class PublicActPortalController {
                 .cacheControl(CacheControl.maxAge(Duration.ofMinutes(10)).cachePrivate())
                 .header(HttpHeaders.CONTENT_DISPOSITION, "inline")
                 .body(f.bytes());
-    }
-
-    private String clientIp(HttpServletRequest request) {
-        String forwarded = request.getHeader("X-Forwarded-For");
-        if (forwarded != null && !forwarded.isBlank()) {
-            int comma = forwarded.indexOf(',');
-            return (comma > 0 ? forwarded.substring(0, comma) : forwarded).trim();
-        }
-        return request.getRemoteAddr();
     }
 }

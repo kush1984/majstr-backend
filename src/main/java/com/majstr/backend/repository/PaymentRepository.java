@@ -61,6 +61,27 @@ public interface PaymentRepository extends JpaRepository<Payment, UUID> {
             """)
     int claimForGrant(@Param("id") UUID id, @Param("paidAt") Instant paidAt);
 
+    /** Stores the gateway's invoice id, unless a webhook that got here first already did. */
+    @Modifying
+    @Query("UPDATE Payment p SET p.invoiceId = :invoiceId WHERE p.id = :id AND p.invoiceId IS NULL")
+    int attachInvoice(@Param("id") UUID id, @Param("invoiceId") String invoiceId);
+
+    /**
+     * What {@code BillingReconcileJob} looks at, oldest first: still open past the point a webhook
+     * should have closed it. A CHECKOUT row with no invoice id is left out: no payment page ever
+     * existed for it, so there is nothing to settle.
+     */
+    @Query("""
+            SELECT p FROM Payment p
+            WHERE p.status IN (com.majstr.backend.entity.PaymentStatus.PENDING,
+                               com.majstr.backend.entity.PaymentStatus.PROCESSING)
+              AND p.createdAt < :olderThan AND p.createdAt >= :newerThan
+              AND (p.invoiceId IS NOT NULL OR p.kind = com.majstr.backend.entity.PaymentKind.AUTO_RENEW)
+            ORDER BY p.createdAt ASC
+            """)
+    List<Payment> findUnsettled(@Param("olderThan") Instant olderThan, @Param("newerThan") Instant newerThan,
+                                Pageable pageable);
+
     // ---- admin metrics -----------------------------------------------------
     //
     // A SUCCESS payment is the ONLY honest evidence that money changed hands. The dashboard used

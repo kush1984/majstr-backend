@@ -58,6 +58,15 @@ class CatalogImportParserTest {
     }
 
     @Test
+    void refusesACsvOverTheSpreadsheetLimit() {
+        byte[] huge = new byte[SafeWorkbook.MAX_BYTES + 1];
+
+        assertThatThrownBy(() -> parser.parseFile("prices.csv", huge))
+                .isInstanceOf(CatalogImportException.class)
+                .hasMessage("error.import.spreadsheet-too-large");
+    }
+
+    @Test
     void parsesCsvWithSemicolonDelimiter() {
         String csv = "Назва;Од.;Ціна\nШтроба;пог.м;120\nДемонтаж;кв.м;150";
         CatalogImportParseResponse r = parser.parseFile("p.csv", csv.getBytes(java.nio.charset.StandardCharsets.UTF_8));

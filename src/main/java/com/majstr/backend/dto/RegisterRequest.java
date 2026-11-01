@@ -20,7 +20,7 @@ public record RegisterRequest(
         // Master-invented trades to create alongside the account (e.g. "Натяжні стелі") — the
         // same free-text flow ProfileService.createCustomTrade offers post-registration, just
         // reachable from the register form too. Optional; null/empty is a normal registration.
-        List<@NotBlank @Size(max = 100) String> customTrades,
+        @Size(max = 50) List<@NotBlank @Size(max = 100) String> customTrades,
         @NotBlank @Size(max = 50) String phone,
         @NotBlank @Size(max = 255) String companyName,
         // Explicit privacy-policy consent. The PWA blocks submit without the

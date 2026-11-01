@@ -2,7 +2,13 @@ package com.majstr.backend.security;
 
 import jakarta.servlet.http.HttpServletRequest;
 
-/** The caller's address behind the proxy: the first hop of {@code X-Forwarded-For}, else the socket. */
+/**
+ * The caller's address, for rate limits and signature evidence. The one place that reads it.
+ *
+ * <p>In production {@link TrustedForwardedHeaderFilter} has already applied the edge's address to
+ * {@code getRemoteAddr()} and removed the forwarding headers, so the socket branch is what runs. The
+ * header branch is for the {@code dev} profile, which runs with no such filter.</p>
+ */
 public final class ClientIp {
 
     private ClientIp() {

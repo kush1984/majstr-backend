@@ -11,7 +11,6 @@ import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -26,7 +25,6 @@ import org.springframework.web.bind.annotation.RestController;
  * monobank invoice-status callback. PRO is granted only by the verified webhook —
  * never by the client.
  */
-@Slf4j
 @RestController
 @RequestMapping("/api/billing")
 @RequiredArgsConstructor
@@ -58,13 +56,11 @@ public class BillingController {
     @PostMapping("/webhook")
     public ResponseEntity<Void> webhook(@RequestBody(required = false) byte[] body,
                                         @RequestHeader(value = "X-Sign", required = false) String sign) {
-        // Always 200 after handling: the work is idempotent, and a forged/invalid
-        // request is ignored inside — returning 200 avoids a monobank retry storm.
-        try {
-            billingService.handleWebhook(body, sign);
-        } catch (Exception e) {
-            log.error("Error handling billing webhook: {}", e.getMessage());
-        }
+        // 200 means «stop delivering», so it is only for what was handled or is not ours to act on
+        // (a forged signature, an unknown invoice), both of which handleWebhook returns from. A failure
+        // applying a genuine webhook escapes to the advice as a 5xx: monobank tries up to three times,
+        // and answering 200 here used to turn one database blip into money taken and no PRO.
+        billingService.handleWebhook(body, sign);
         return ResponseEntity.ok().build();
     }
 }

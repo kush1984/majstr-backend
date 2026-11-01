@@ -22,14 +22,20 @@ import com.majstr.backend.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
+import org.springframework.web.client.RestClientResponseException;
 import tools.jackson.databind.ObjectMapper;
 
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
+import java.util.HashMap;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
+import java.util.function.Supplier;
 
 /**
  * Subscription billing via monobank acquiring. Phase 1: a PRO purchase is a
@@ -39,6 +45,13 @@ import java.util.UUID;
  * payment; PRO is granted <b>only</b> by {@link #handleWebhook} after the monobank
  * webhook signature is verified and the amount matches. The webhook is idempotent
  * on the invoice id, so a repeated success never double-extends PRO.</p>
+ *
+ * <p><b>The row commits before the gateway hears about it.</b> {@link #checkout} and
+ * {@link #chargeAutoRenew} are deliberately not {@code @Transactional}: the call that moves money
+ * must not sit inside a transaction that can still roll back. A row committed first means the money
+ * always has a record, the webhook can find it by {@code reference} even when it beats the response
+ * carrying the invoice id, and a timeout leaves evidence that a charge may have happened instead of
+ * erasing it and charging again the next day.</p>
  *
  * <p><b>Dev mode:</b> with no {@code MONOBANK_TOKEN} ({@link BillingProperties#isConfigured()}),
  * checkout simulates a paid invoice and grants PRO immediately — so the flow is
@@ -59,9 +72,38 @@ public class BillingService {
     private final ReferralRewardRepository referralRewardRepository;
     private final ObjectMapper objectMapper;
     private final EmailService emailService;
+    private final PlatformTransactionManager transactionManager;
 
-    @Transactional
+    /** A committed PENDING row, ready to be sent to the gateway. */
+    private record PendingCharge(UUID paymentId, BigDecimal amount, int days, String walletId, String cardToken) {}
+
+    private <T> T inTransaction(Supplier<T> work) {
+        return new TransactionTemplate(transactionManager).execute(status -> work.get());
+    }
+
     public CheckoutResponse checkout(UUID userId, boolean autoRenew, BillingPeriod period) {
+        PendingCharge charge = inTransaction(() -> prepareCheckout(userId, autoRenew, period));
+        if (charge == null) {
+            return new CheckoutResponse(props.returnUrl()); // dev simulation: already granted
+        }
+        MonobankClient.InvoiceCreated invoice;
+        try {
+            invoice = monobankClient.createInvoice(
+                    toKopiykas(charge.amount()), UAH, charge.paymentId().toString(),
+                    "Підписка Majstr PRO — " + charge.days() + " днів", charge.walletId());
+        } catch (RuntimeException e) {
+            // Whatever happened over there, the payment page never reached anyone: nothing to pay.
+            settleAsFailed(charge.paymentId());
+            throw e;
+        }
+        attachInvoice(charge.paymentId(), invoice.invoiceId());
+        log.info("Created monobank invoice {} for user {} (payment {}, period {}, autoRenew={})",
+                invoice.invoiceId(), userId, charge.paymentId(), period, autoRenew);
+        return new CheckoutResponse(invoice.pageUrl());
+    }
+
+    /** The checkout's first transaction. Null when dev simulation already granted PRO. */
+    private PendingCharge prepareCheckout(UUID userId, boolean autoRenew, BillingPeriod period) {
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new ResourceNotFoundException("User not found: " + userId));
 
@@ -117,16 +159,9 @@ public class BillingService {
             grantReferralReward(user, payment);
             log.warn("[DEV] MONOBANK_TOKEN not set — simulated PRO purchase for {} (period={}, autoRenew={})",
                     user.getEmail(), period, autoRenew);
-            return new CheckoutResponse(props.returnUrl());
+            return null;
         }
-
-        MonobankClient.InvoiceCreated invoice = monobankClient.createInvoice(
-                toKopiykas(price), UAH, payment.getId().toString(),
-                "Підписка Majstr PRO — " + days + " днів", walletId);
-        payment.setInvoiceId(invoice.invoiceId());
-        log.info("Created monobank invoice {} for user {} (payment {}, period {}, autoRenew={})",
-                invoice.invoiceId(), user.getEmail(), payment.getId(), period, autoRenew);
-        return new CheckoutResponse(invoice.pageUrl());
+        return new PendingCharge(payment.getId(), price, days, walletId, null);
     }
 
     /**
@@ -167,9 +202,33 @@ public class BillingService {
      * scheduled {@code AutoRenewService} for a due subscription. Creates an
      * AUTO_RENEW payment; the result arrives via the same webhook (which extends PRO
      * + emails a receipt). Caller guarantees the user has a token and is due.
+     *
+     * <p>A refusal the gateway answered (4xx) moved no money, so the row is closed and tomorrow's run
+     * may try again. A timeout or a 5xx is unknown: the row stays PENDING, which is what stops
+     * {@code AutoRenewService} charging again, and {@code BillingReconcileJob} takes it from there.</p>
      */
-    @Transactional
     public void chargeAutoRenew(UUID userId) {
+        PendingCharge charge = inTransaction(() -> prepareAutoRenew(userId));
+        if (charge == null) {
+            return; // simulated, or billing is not configured
+        }
+        String invoiceId;
+        try {
+            invoiceId = monobankClient.tokenPayment(
+                    charge.cardToken(), toKopiykas(charge.amount()), UAH,
+                    charge.paymentId().toString(), "Автопродовження Majstr PRO — " + charge.days() + " днів");
+        } catch (RestClientResponseException e) {
+            if (e.getStatusCode().is4xxClientError()) {
+                settleAsFailed(charge.paymentId());
+            }
+            throw e;
+        }
+        attachInvoice(charge.paymentId(), invoiceId);
+        log.info("Auto-renew charge started for user {} (invoice {}, payment {})", userId, invoiceId, charge.paymentId());
+    }
+
+    /** The charge's first transaction. Null when there is nothing to send to the gateway. */
+    private PendingCharge prepareAutoRenew(UUID userId) {
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new ResourceNotFoundException("User not found: " + userId));
 
@@ -194,7 +253,7 @@ public class BillingService {
             if (!props.allowDevSimulation()) {
                 log.warn("Auto-renew charge skipped for {} — billing not configured", user.getEmail());
                 payment.setStatus(PaymentStatus.FAILURE);
-                return;
+                return null;
             }
             payment.setStatus(PaymentStatus.SUCCESS);
             payment.setPaidAt(Instant.now());
@@ -202,23 +261,33 @@ public class BillingService {
             emailService.sendRenewReceiptEmail(user, user.getPlanExpiresAt(), price);
             log.warn("[DEV] simulated auto-renew charge for {} (period {}, until {})",
                     user.getEmail(), period, user.getPlanExpiresAt());
-            return;
+            return null;
         }
+        return new PendingCharge(payment.getId(), price, days, null, user.getCardToken());
+    }
 
-        String invoiceId = monobankClient.tokenPayment(
-                user.getCardToken(), toKopiykas(price), UAH,
-                payment.getId().toString(), "Автопродовження Majstr PRO — " + days + " днів");
-        payment.setInvoiceId(invoiceId);
-        log.info("Auto-renew charge started for {} (invoice {}, period {})", user.getEmail(), invoiceId, period);
+    private void attachInvoice(UUID paymentId, String invoiceId) {
+        inTransaction(() -> paymentRepository.attachInvoice(paymentId, invoiceId));
+    }
+
+    private void settleAsFailed(UUID paymentId) {
+        inTransaction(() -> {
+            paymentRepository.findById(paymentId).ifPresent(payment -> mark(payment, PaymentStatus.FAILURE));
+            return null;
+        });
     }
 
     /**
      * Handles a monobank invoice-status webhook. Verifies the signature (prod),
-     * finds the payment by invoice id, and on {@code success} — with a matching
-     * amount — flips it to SUCCESS and extends PRO. Idempotent and fail-safe:
-     * anything unverified/unknown/mismatched is logged and ignored, never granted.
+     * finds the payment, and on {@code success} — with a matching amount — flips it to
+     * SUCCESS and extends PRO. Idempotent and fail-safe: anything unverified, unknown or
+     * mismatched is logged and ignored, never granted.
+     *
+     * <p>Returning normally tells monobank to stop delivering. A failure while applying a genuine
+     * webhook therefore has to ESCAPE: the controller turns it into a 5xx, and that is what makes
+     * monobank try again. The signature is checked before any transaction opens, so a forged POST
+     * costs no pooled connection.</p>
      */
-    @Transactional
     public void handleWebhook(byte[] body, String xSign) {
         if (!props.isConfigured()) {
             log.warn("Received billing webhook but MONOBANK_TOKEN not set — ignoring");
@@ -228,11 +297,32 @@ public class BillingService {
             log.warn("Rejected billing webhook with invalid signature");
             return;
         }
-
         Map<String, Object> payload = parse(body);
         if (payload == null) {
             return;
         }
+        applyInTransaction(payload);
+    }
+
+    /**
+     * Asks monobank where an unsettled invoice stands and applies the answer the way a webhook is
+     * applied. For the webhook that never arrived: monobank gives up after three tries, and sends none
+     * at all for an expired invoice. The caller has checked {@code invoiceId} is present.
+     */
+    public void reconcile(Payment payment) {
+        Map<String, Object> status = new HashMap<>(monobankClient.invoiceStatus(payment.getInvoiceId()));
+        status.putIfAbsent("invoiceId", payment.getInvoiceId());
+        applyInTransaction(status);
+    }
+
+    private void applyInTransaction(Map<String, Object> payload) {
+        inTransaction(() -> {
+            applyStatus(payload);
+            return null;
+        });
+    }
+
+    private void applyStatus(Map<String, Object> payload) {
         String invoiceId = str(payload.get("invoiceId"));
         String status = str(payload.get("status"));
         if (invoiceId == null || status == null) {
@@ -240,13 +330,16 @@ public class BillingService {
             return;
         }
 
-        Payment payment = paymentRepository.findByInvoiceId(invoiceId).orElse(null);
+        Payment payment = findPayment(invoiceId, str(payload.get("reference"))).orElse(null);
         if (payment == null) {
             log.warn("Billing webhook for unknown invoice {}", invoiceId);
             return;
         }
         if (payment.getStatus() == PaymentStatus.SUCCESS) {
             return; // idempotent — already granted
+        }
+        if (payment.getInvoiceId() == null) {
+            payment.setInvoiceId(invoiceId);
         }
 
         switch (status) {
@@ -256,6 +349,27 @@ public class BillingService {
             case "reversed" -> mark(payment, PaymentStatus.REVERSED);
             case "processing", "hold" -> mark(payment, PaymentStatus.PROCESSING);
             default -> { /* created / unknown — leave PENDING */ }
+        }
+    }
+
+    /**
+     * By invoice id, or else by the reference we sent (the payment's own id): a webhook can land after
+     * the charge was made and before its response has stored the invoice id on the row.
+     */
+    private Optional<Payment> findPayment(String invoiceId, String reference) {
+        return paymentRepository.findByInvoiceId(invoiceId)
+                .or(() -> parseUuid(reference).flatMap(paymentRepository::findById)
+                        .filter(payment -> payment.getInvoiceId() == null));
+    }
+
+    private static Optional<UUID> parseUuid(String value) {
+        if (value == null) {
+            return Optional.empty();
+        }
+        try {
+            return Optional.of(UUID.fromString(value));
+        } catch (IllegalArgumentException e) {
+            return Optional.empty();
         }
     }
 

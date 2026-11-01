@@ -126,6 +126,23 @@ public class MonobankClient {
     }
 
     /**
+     * Where an invoice stands right now, in the shape the webhook carries.
+     * {@code GET /api/merchant/invoice/status?invoiceId=...}.
+     */
+    @SuppressWarnings("unchecked")
+    public Map<String, Object> invoiceStatus(String invoiceId) {
+        Map<String, Object> resp = restClient.get()
+                .uri(props.monobankApiBase() + "/api/merchant/invoice/status?invoiceId={id}", invoiceId)
+                .header("X-Token", props.monobankToken())
+                .retrieve()
+                .body(Map.class);
+        if (resp == null) {
+            throw new IllegalStateException("monobank invoice/status returned nothing");
+        }
+        return resp;
+    }
+
+    /**
      * Merchant public key for verifying webhook {@code X-Sign} signatures. Cached
      * after the first call (the key is stable); refresh by restart if monobank
      * ever rotates it.
