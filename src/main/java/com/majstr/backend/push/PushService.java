@@ -72,7 +72,7 @@ public class PushService {
      * @param url optional click-through target (relative path resolved against
      *            the PWA origin, e.g. {@code /projects/{id}}); may be null
      */
-    @Async
+    @Async("pushExecutor")
     public void sendToUser(User user, String title, String body, String url) {
         if (!props.isConfigured()) {
             log.warn("VAPID keys not set — skipping push to user {} (title: {})", user.getId(), title);

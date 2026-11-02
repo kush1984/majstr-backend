@@ -21,7 +21,6 @@ import com.majstr.backend.entity.EstimateStatus;
 import com.majstr.backend.entity.MeasurementRefs;
 import com.majstr.backend.entity.PercentBaseKind;
 import com.majstr.backend.entity.Project;
-import com.majstr.backend.entity.ProjectPhoto;
 import com.majstr.backend.entity.Trade;
 import com.majstr.backend.entity.Unit;
 import com.majstr.backend.service.measurement.MeasurementService;
@@ -49,6 +48,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.io.IOException;
@@ -115,6 +115,8 @@ public class EstimateService {
      *  repositories only, which is also why the ownership check for its endpoint lives in
      *  {@code MaterialCalculatorService} and not there. */
     private final MaterialParamService materialParamService;
+    private final HeavyWork heavyWork;
+    private final PlatformTransactionManager transactionManager;
 
     // ---- estimates ---------------------------------------------------------
 
@@ -708,7 +710,6 @@ public class EstimateService {
         return recalculatedResponse(estimate);
     }
 
-    @Transactional(readOnly = true)
     public byte[] renderPdf(UUID estimateId, UUID ownerId) throws IOException, DocumentException {
         return renderPdf(estimateId, ownerId, List.of());
     }
@@ -719,68 +720,98 @@ public class EstimateService {
      * dropped, so a crafted request can never pull a foreign estimate's (or another owner's) photo
      * into the PDF.
      */
-    @Transactional(readOnly = true)
     public byte[] renderPdf(UUID estimateId, UUID ownerId, List<UUID> receiptPhotoIds)
             throws IOException, DocumentException {
-        Estimate estimate = loadOwned(estimateId, ownerId);
-        // The PDF is a client-facing deliverable — gate it behind a verified email
-        // (even on FREE) so a throwaway account can't churn out finished estimates.
-        if (!estimate.getProject().getOwner().isEmailVerified()) {
-            throw new EmailNotVerifiedException("error.email-not-verified");
-        }
-        return renderPdf(estimate, loadPdfImages(estimate, receiptPhotoIds));
+        return render(Transactions.read(transactionManager, () -> {
+            Estimate estimate = loadOwned(estimateId, ownerId);
+            // The PDF is a client-facing deliverable — gate it behind a verified email
+            // (even on FREE) so a throwaway account can't churn out finished estimates.
+            if (!estimate.getProject().getOwner().isEmailVerified()) {
+                throw new EmailNotVerifiedException("error.email-not-verified");
+            }
+            return pdfJob(estimate, pdfImageKeys(estimate, receiptPhotoIds));
+        }));
     }
 
+    /** What a PDF needs from the database, ready to print once the transaction has closed (B-121). */
+    public record PdfJob(EstimatePdfService.PdfModel model, String storedPdfKey, List<String> imageKeys) {}
+
     /**
-     * Used by both authenticated and public flows. Caller has already
+     * Used by both authenticated and public flows, inside the caller's transaction. Caller has already
      * validated access (ownership or share-link token). Never includes receipts — those are the
      * master's private records and only ride the owner download.
      */
-    @Transactional(readOnly = true)
-    public byte[] renderPdf(Estimate estimate) throws IOException, DocumentException {
-        return renderPdf(estimate, List.of());
+    public PdfJob pdfJob(Estimate estimate) {
+        return pdfJob(estimate, List.of());
     }
 
-    private byte[] renderPdf(Estimate estimate, List<byte[]> receiptImages)
-            throws IOException, DocumentException {
+    private PdfJob pdfJob(Estimate estimate, List<String> imageKeys) {
         // A signed estimate is printed from what was signed (B-76), stamp included.
         Optional<SignedDocumentService.FrozenEstimate> frozen = signedDocuments.estimate(estimate);
         if (frozen.isPresent()) {
-            return pdfService.render(frozen.get().pdfModel(receiptImages));
+            return new PdfJob(frozen.get().pdfModel(List.of()), frozen.get().pdfKey(), imageKeys);
         }
         Project project = estimate.getProject();
         List<EstimateItem> items = itemRepository.findByEstimateIdOrderBySortOrderAscIdAsc(estimate.getId());
-        return pdfService.render(new EstimatePdfService.PdfModel(
+        return new PdfJob(new EstimatePdfService.PdfModel(
                 project.getOwner(),
                 project,
                 project.getClient(),
                 estimate,
                 items,
-                receiptImages
-        ));
+                List.of()
+        ).loaded(), null, imageKeys);
     }
 
     /**
-     * Bytes of the requested photos, in the caller's order, dropping any id that is not a photo of
-     * THIS estimate's project (the ownership guarantee — a crafted id can't pull another owner's
-     * photo) or whose file is missing. Accepts both receipts and plain progress photos: a master
-     * sometimes saves a receipt as an ordinary photo, and may attach it to the PDF from there.
+     * Print a job with no transaction open. A signed estimate with nothing added to it is the file the
+     * client was sent, so it is served as stored; a render is the fallback for one that has none.
      */
-    private List<byte[]> loadPdfImages(Estimate estimate, List<UUID> photoIds) throws IOException {
+    public byte[] render(PdfJob job) throws IOException, DocumentException {
+        if (job.imageKeys().isEmpty()) {
+            Optional<byte[]> stored = signedDocuments.readPdf(job.storedPdfKey());
+            if (stored.isPresent()) {
+                return stored.get();
+            }
+        }
+        return heavyWork.pdf(() -> pdfService.render(job.model().withReceiptImages(readPdfImages(job.imageKeys()))));
+    }
+
+    /**
+     * Storage keys of the requested photos, in the caller's order, dropping any id that is not a photo
+     * of THIS estimate's project (the ownership guarantee — a crafted id can't pull another owner's
+     * photo). Accepts both receipts and plain progress photos: a master sometimes saves a receipt as an
+     * ordinary photo, and may attach it to the PDF from there.
+     */
+    private List<String> pdfImageKeys(Estimate estimate, List<UUID> photoIds) {
         if (photoIds == null || photoIds.isEmpty()) {
             return List.of();
         }
         UUID projectId = estimate.getProject().getId();
-        List<byte[]> images = new ArrayList<>();
+        List<String> keys = new ArrayList<>();
         for (UUID id : photoIds) {
-            ProjectPhoto photo = photoRepository.findByIdAndProjectId(id, projectId).orElse(null);
-            if (photo == null) {
-                continue; // not a photo of this estimate's project — never embed a foreign photo
-            }
-            try (InputStream in = storage.open(photo.getStorageKey()).orElse(null)) {
-                if (in != null) {
-                    images.add(in.readAllBytes());
+            photoRepository.findByIdAndProjectId(id, projectId).ifPresent(photo -> keys.add(photo.getStorageKey()));
+        }
+        return keys;
+    }
+
+    /** Bytes of those photos, dropping one whose file is missing, and stopping at the appendix budget. */
+    private List<byte[]> readPdfImages(List<String> keys) throws IOException {
+        List<byte[]> images = new ArrayList<>();
+        long total = 0;
+        for (String key : keys) {
+            try (InputStream in = storage.open(key).orElse(null)) {
+                if (in == null) {
+                    continue;
                 }
+                byte[] bytes = in.readAllBytes();
+                total += bytes.length;
+                if (total > WorkActPdfService.MAX_PHOTO_APPENDIX_BYTES) {
+                    log.warn("Estimate PDF stopped at {} of {} chosen photos: appendix budget reached",
+                            images.size(), keys.size());
+                    break;
+                }
+                images.add(bytes);
             }
         }
         return images;

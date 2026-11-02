@@ -23,4 +23,8 @@ public record ErrorResponse(
     public static ErrorResponse rateLimited(String message, String path, long retryAfterSeconds) {
         return new ErrorResponse(Instant.now(), 429, "Too Many Requests", message, path, retryAfterSeconds, null);
     }
+
+    public static ErrorResponse busy(String message, String path, long retryAfterSeconds) {
+        return new ErrorResponse(Instant.now(), 503, "Service Unavailable", message, path, retryAfterSeconds, "SERVER_BUSY");
+    }
 }

@@ -30,6 +30,7 @@ import com.majstr.backend.repository.WorkActRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.MessageSource;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.io.IOException;
@@ -63,7 +64,6 @@ public class PublicActPortalService {
     private final WorkActReceiptRepository receiptRepository;
     private final EstimateRepository estimateRepository;
     private final ProjectMessageRepository messageRepository;
-    private final WorkActPdfService pdfService;
     private final ActCumulativeCalculator cumulativeCalculator;
     private final ActAddendumCreator addendumCreator;
     private final ActReceiptReconciler receiptReconciler;
@@ -76,6 +76,7 @@ public class PublicActPortalService {
     private final WorkActReceiptService receiptService;
     private final PushService pushService;
     private final MessageSource messages;
+    private final PlatformTransactionManager transactionManager;
 
     @Transactional(readOnly = true)
     public PublicActView view(String token) {
@@ -177,27 +178,29 @@ public class PublicActPortalService {
         return QuestionResponse.from(saved);
     }
 
-    @Transactional(readOnly = true)
+    /** The database part closes before the print: this is anonymous, and a pool has ten connections. */
     public byte[] pdf(String token) throws IOException, DocumentException {
-        WorkAct act = resolveShareableAct(token);
-        Optional<SignedDocumentService.FrozenAct> frozen = signedDocuments.act(act);
-        if (frozen.isPresent()) {
-            return pdfService.render(frozen.get().pdfModel());
-        }
-        List<WorkActItem> items = itemRepository.findByWorkActIdOrderBySortOrderAscIdAsc(act.getId());
-        List<WorkActPdfService.ReceiptRow> receipts = receiptRepository
-                .findByWorkActIdNewestFirst(act.getId()).stream()
-                .map(WorkActPdfService.ReceiptRow::from).toList();
-        return pdfService.render(model(act, items, receipts, act.getDocHash(),
-                cumulativeCalculator.forDownload(act, items, receiptRepository.sumByWorkActId(act.getId()))));
+        return signedDocuments.print(Transactions.read(transactionManager, () -> {
+            WorkAct act = resolveShareableAct(token);
+            Optional<SignedDocumentService.FrozenAct> frozen = signedDocuments.act(act);
+            if (frozen.isPresent()) {
+                return new WorkActPdfService.PdfJob(frozen.get().pdfModel(), frozen.get().pdfKey());
+            }
+            List<WorkActItem> items = itemRepository.findByWorkActIdOrderBySortOrderAscIdAsc(act.getId());
+            List<WorkActPdfService.ReceiptRow> receipts = receiptRepository
+                    .findByWorkActIdNewestFirst(act.getId()).stream()
+                    .map(WorkActPdfService.ReceiptRow::from).toList();
+            return new WorkActPdfService.PdfJob(model(act, items, receipts, act.getDocHash(),
+                    cumulativeCalculator.forDownload(act, items, receiptRepository.sumByWorkActId(act.getId())))
+                    .loaded(), null);
+        }));
     }
 
     /** The photo of one receipt, for the portal's «Чеки та рахунки» block. Same defense-in-depth as
      *  every other public read: the act must be SENT/SIGNED, and the receipt must belong to it. */
-    @Transactional(readOnly = true)
     public ProjectPhotoService.PhotoFile receiptFile(String token, UUID receiptId) throws IOException {
-        WorkAct act = resolveShareableAct(token);
-        return receiptService.readPublicFile(act.getId(), receiptId);
+        UUID actId = Transactions.read(transactionManager, () -> resolveShareableAct(token).getId());
+        return receiptService.readPublicFile(actId, receiptId);
     }
 
     // ---- token resolution -------------------------------------------------

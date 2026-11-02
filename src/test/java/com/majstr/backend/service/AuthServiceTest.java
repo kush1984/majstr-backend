@@ -19,6 +19,7 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 
 import java.util.List;
 import java.util.Set;
+import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -43,6 +44,7 @@ class AuthServiceTest {
     @Mock ReferralService referralService;
     @Mock EmailPolicyService emailPolicyService;
     @Mock ProfileService profileService;
+    @Mock org.springframework.transaction.PlatformTransactionManager transactionManager;
     @InjectMocks AuthService authService;
 
     @Test
@@ -205,6 +207,54 @@ class AuthServiceTest {
         inOrder.verify(userRepository).lockCanonicalEmail("john@gmail.com");
         inOrder.verify(userRepository).existsByEmailCanonical("john@gmail.com");
         verify(userRepository, never()).save(any(User.class));
+    }
+
+    @Test
+    void register_doesTheDnsLookupAndTheHashBeforeTakingAConnection() {
+        RegisterRequest req = new RegisterRequest("New@User.com", "Sup3rPass!", "Іван",
+                Set.of(Trade.ELECTRICAL), null, "+380501112233", "FOP", true, null, null, null, null, null, null, null);
+        stubHappyPathRegistration();
+
+        authService.register(req);
+
+        var order = org.mockito.Mockito.inOrder(emailPolicyService, passwordEncoder, transactionManager, userRepository);
+        order.verify(emailPolicyService).assertAcceptable("new@user.com");
+        order.verify(passwordEncoder).encode("Sup3rPass!");
+        order.verify(transactionManager).getTransaction(any());
+        order.verify(userRepository).save(any(User.class));
+    }
+
+    @Test
+    void login_checksThePasswordBeforeTakingAConnection_andIssuesInsideTheTransaction() {
+        UUID id = UUID.randomUUID();
+        User user = User.builder().id(id).email("a@b.c").passwordHash("hash").fullName("Іван")
+                .trades(new java.util.LinkedHashSet<>()).build();
+        given(userRepository.findByEmailIgnoreCase("a@b.c")).willReturn(java.util.Optional.of(user));
+        given(passwordEncoder.matches("secret", "hash")).willReturn(true);
+        given(userRepository.findById(id)).willReturn(java.util.Optional.of(user));
+        given(jwtService.generateAccessToken(any(), any())).willReturn("access");
+        given(refreshTokenService.issue(user)).willReturn("refresh");
+
+        AuthResponse resp = authService.login(new com.majstr.backend.dto.LoginRequest("a@b.c", "secret"));
+
+        assertThat(resp.accessToken()).isEqualTo("access");
+        var order = org.mockito.Mockito.inOrder(passwordEncoder, transactionManager, refreshTokenService);
+        order.verify(passwordEncoder).matches("secret", "hash");
+        order.verify(transactionManager).getTransaction(any());
+        order.verify(refreshTokenService).issue(user);
+    }
+
+    @Test
+    void login_aWrongPasswordNeverOpensATransaction() {
+        User user = User.builder().id(UUID.randomUUID()).email("a@b.c").passwordHash("hash").build();
+        given(userRepository.findByEmailIgnoreCase("a@b.c")).willReturn(java.util.Optional.of(user));
+        given(passwordEncoder.matches("wrong", "hash")).willReturn(false);
+
+        org.assertj.core.api.Assertions.assertThatThrownBy(
+                () -> authService.login(new com.majstr.backend.dto.LoginRequest("a@b.c", "wrong")))
+                .isInstanceOf(org.springframework.security.authentication.BadCredentialsException.class);
+
+        verify(transactionManager, never()).getTransaction(any());
     }
 
     @Test

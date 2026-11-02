@@ -43,6 +43,7 @@ import com.majstr.backend.repository.WorkActItemRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.MessageSource;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.io.IOException;
@@ -92,6 +93,7 @@ public class PublicEstimateService {
     private final MessageSource messages;
     private final AfterCommit afterCommit;
     private final SignedDocumentService signedDocuments;
+    private final PlatformTransactionManager transactionManager;
 
     /**
      * The SIGNED estimate this one replaces, or {@code null} when nothing is superseded — and a 409
@@ -178,10 +180,10 @@ public class PublicEstimateService {
         return doAsk(resolveEstimate(token), req, clientIp);
     }
 
-    @Transactional(readOnly = true)
+    /** The database part closes before the render: these are anonymous, and a pool has ten connections. */
     public byte[] renderPdf(String token) throws IOException, DocumentException {
-        Estimate estimate = resolveEstimate(token);
-        return estimateService.renderPdf(estimate);
+        return estimateService.render(Transactions.read(transactionManager,
+                () -> estimateService.pdfJob(resolveEstimate(token))));
     }
 
     /**
@@ -189,10 +191,10 @@ public class PublicEstimateService {
      * only a SHARED photo of that same object is served (a private / receipt photo, or a
      * photo of another object, is a 404) — the client never reaches private assets.
      */
-    @Transactional(readOnly = true)
     public ProjectPhotoService.PhotoFile readSharedPhoto(String token, UUID photoId) throws IOException {
-        Estimate estimate = resolveEstimate(token);
-        return projectPhotoService.readSharedFile(estimate.getProject().getId(), photoId);
+        UUID projectId = Transactions.read(transactionManager,
+                () -> resolveEstimate(token).getProject().getId());
+        return projectPhotoService.readSharedFile(projectId, photoId);
     }
 
     // ---- SIGNATURE portal token (?p=) --------------------------------------
@@ -250,15 +252,15 @@ public class PublicEstimateService {
         return doAsk(resolvePortalEstimate(token, estimateId), req, clientIp);
     }
 
-    @Transactional(readOnly = true)
     public byte[] renderPortalPdf(String token, UUID estimateId) throws IOException, DocumentException {
-        return estimateService.renderPdf(resolvePortalEstimate(token, estimateId));
+        return estimateService.render(Transactions.read(transactionManager,
+                () -> estimateService.pdfJob(resolvePortalEstimate(token, estimateId))));
     }
 
-    @Transactional(readOnly = true)
     public ProjectPhotoService.PhotoFile readPortalSharedPhoto(String token, UUID photoId) throws IOException {
-        Project project = resolveProject(token, ShareLinkKind.PORTAL);
-        return projectPhotoService.readSharedFile(project.getId(), photoId);
+        UUID projectId = Transactions.read(transactionManager,
+                () -> resolveProject(token, ShareLinkKind.PORTAL).getId());
+        return projectPhotoService.readSharedFile(projectId, photoId);
     }
 
     // ---- ECONOMY portal token (?e=) ----------------------------------------
@@ -332,15 +334,15 @@ public class PublicEstimateService {
         return doAsk(resolveEconomyEstimate(token, estimateId), req, clientIp);
     }
 
-    @Transactional(readOnly = true)
     public byte[] renderEconomyPdf(String token, UUID estimateId) throws IOException, DocumentException {
-        return estimateService.renderPdf(resolveEconomyEstimate(token, estimateId));
+        return estimateService.render(Transactions.read(transactionManager,
+                () -> estimateService.pdfJob(resolveEconomyEstimate(token, estimateId))));
     }
 
-    @Transactional(readOnly = true)
     public ProjectPhotoService.PhotoFile readEconomySharedPhoto(String token, UUID photoId) throws IOException {
-        Project project = resolveProject(token, ShareLinkKind.ECONOMY);
-        return projectPhotoService.readSharedFile(project.getId(), photoId);
+        UUID projectId = Transactions.read(transactionManager,
+                () -> resolveProject(token, ShareLinkKind.ECONOMY).getId());
+        return projectPhotoService.readSharedFile(projectId, photoId);
     }
 
     /**

@@ -24,11 +24,13 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.ApplicationArguments;
 import org.springframework.boot.ApplicationRunner;
 import org.springframework.context.annotation.Profile;
+import org.springframework.core.env.Environment;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.net.URI;
 import java.time.LocalDate;
 import java.util.LinkedHashSet;
 import java.util.Optional;
@@ -62,10 +64,15 @@ public class DevDataSeeder implements ApplicationRunner {
     private final EstimateRepository estimateRepository;
     private final EstimateItemRepository estimateItemRepository;
     private final ReferralService referralService;
+    private final Environment environment;
 
     @Override
     @Transactional
     public void run(ApplicationArguments args) {
+        if (!isLocalDatabase(environment.getProperty("spring.datasource.url"))) {
+            throw new IllegalStateException(
+                    "The dev profile seeds accounts with known passwords, so it only runs against a local database.");
+        }
         Optional<User> test  = seedUser("test@majstr.dev",  "Test1234!",  "Тест Користувач",      Set.of(Trade.ELECTRICAL),                Plan.FREE, Role.USER);
         seedUser("pro@majstr.dev",   "Pro1234!",   "Pro Підрядник",        Set.of(Trade.PLUMBING),                  Plan.PRO,  Role.USER);
         // Admin is a generalist with two trades — exercises the merged starter catalog.
@@ -75,6 +82,18 @@ public class DevDataSeeder implements ApplicationRunner {
         // an existing DB will not duplicate it. Delete the test user (or
         // its project) by hand if you want a clean slate.
         test.ifPresent(this::seedDemoContentFor);
+    }
+
+    static boolean isLocalDatabase(String jdbcUrl) {
+        if (jdbcUrl == null || !jdbcUrl.startsWith("jdbc:")) {
+            return false;
+        }
+        try {
+            String host = URI.create(jdbcUrl.substring("jdbc:".length())).getHost();
+            return "localhost".equalsIgnoreCase(host) || "127.0.0.1".equals(host) || "[::1]".equals(host);
+        } catch (IllegalArgumentException unparsable) {
+            return false;
+        }
     }
 
     private Optional<User> seedUser(String email, String password, String fullName, Set<Trade> trades, Plan plan, Role role) {

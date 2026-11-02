@@ -48,6 +48,7 @@ class MessageLinkServiceTest {
     @Mock ProjectService projectService;
     @Mock PushService pushService;
     @Mock MessageFileService messageFileService;
+    @Mock org.springframework.transaction.PlatformTransactionManager transactionManager;
 
     private final UUID projectId = UUID.randomUUID();
     private final UUID ownerId = UUID.randomUUID();
@@ -55,7 +56,7 @@ class MessageLinkServiceTest {
     private MessageLinkService service() {
         PortalProperties portal = new PortalProperties("https://api.majstr.pro");
         return new MessageLinkService(linkRepository, messageRepository, projectService, portal,
-                pushService, messageFileService);
+                pushService, messageFileService, transactionManager);
     }
 
     @Test
@@ -153,6 +154,49 @@ class MessageLinkServiceTest {
                 .submit("tok", new MessageLinkRequest("Ім'я", null, "Текст"), List.of(), "1.2.3.4"))
                 .doesNotThrowAnyException();
         verify(messageRepository).save(any(ProjectMessage.class));
+    }
+
+    @Test
+    void submit_storesTheFilesBeforeTheTransactionThatSavesTheMessage() {
+        // Five uploads of 10 MB from an anonymous form must not sit on a pooled connection (B-121).
+        given(linkRepository.findByTokenAndKind("tok", ShareLinkKind.MESSAGE))
+                .willReturn(Optional.of(link("tok")));
+        given(messageRepository.save(any(ProjectMessage.class))).willAnswer(i -> {
+            ProjectMessage m = i.getArgument(0);
+            m.setId(UUID.randomUUID());
+            return m;
+        });
+
+        service().submit("tok", new MessageLinkRequest("Ім'я", null, "Текст"), List.of(), "1.2.3.4");
+
+        var order = org.mockito.Mockito.inOrder(messageFileService, transactionManager, messageRepository);
+        order.verify(messageFileService).store(any());
+        order.verify(transactionManager).getTransaction(any());
+        order.verify(messageRepository).save(any(ProjectMessage.class));
+    }
+
+    @Test
+    void submit_aDeadLinkStoresNothing() {
+        given(linkRepository.findByTokenAndKind("dead", ShareLinkKind.MESSAGE)).willReturn(Optional.empty());
+
+        assertThatThrownBy(() -> service().submit("dead", new MessageLinkRequest("Ім'я", null, "Текст"),
+                List.of(), "1.2.3.4")).isInstanceOf(ResourceNotFoundException.class);
+
+        verify(messageFileService, never()).store(any());
+    }
+
+    @Test
+    void submit_removesTheStoredFiles_whenTheMessageFailsToSave() {
+        var upload = new MessageFileService.StoredUpload("messages/a.png", "a.png", "image/png", 1);
+        given(linkRepository.findByTokenAndKind("tok", ShareLinkKind.MESSAGE))
+                .willReturn(Optional.of(link("tok")));
+        given(messageFileService.store(any())).willReturn(List.of(upload));
+        given(messageRepository.save(any(ProjectMessage.class))).willThrow(new IllegalStateException("db"));
+
+        assertThatThrownBy(() -> service().submit("tok", new MessageLinkRequest("Ім'я", null, "Текст"),
+                List.of(), "1.2.3.4")).isInstanceOf(IllegalStateException.class);
+
+        verify(messageFileService).discard(List.of(upload));
     }
 
     @Test

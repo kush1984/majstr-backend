@@ -111,9 +111,11 @@ public class MessageFileRetentionService {
      * <p>The bytes go first. A row deleted before its object leaves a key nothing will ever come back
      * for; bytes deleted before the row leave a row whose file is already gone, which the download
      * endpoint answers as a 404 — recoverable, and visible.</p>
+     *
+     * <p>Not {@code @Transactional}: a batch is hundreds of storage round trips, and a pooled connection
+     * has no business sitting idle through them (review B-121).</p>
      */
     @Scheduled(cron = "${app.message-files.delete-cron:0 45 3 * * *}")
-    @Transactional
     public void deleteWarnedFiles() {
         Instant cutoff = Instant.now().minus(graceDays, ChronoUnit.DAYS);
         List<ProjectMessageFile> due =
@@ -132,7 +134,7 @@ public class MessageFileRetentionService {
                 BackgroundErrors.capture("retention:delete-file", e, SentryLevel.WARNING);
             }
         }
-        fileRepository.deleteAll(due);
+        fileRepository.deleteAllByIdInBatch(due.stream().map(ProjectMessageFile::getId).toList());
         log.info("Message-file retention deleted {} files", due.size());
     }
 

@@ -173,7 +173,7 @@ class MessageFileRetentionServiceTest {
         service().deleteWarnedFiles();
 
         verify(storage).delete(f.getStorageKey());
-        verify(fileRepository).deleteAll(List.of(f));
+        verify(fileRepository).deleteAllByIdInBatch(List.of(f.getId()));
     }
 
     @Test
@@ -187,7 +187,7 @@ class MessageFileRetentionServiceTest {
         service().deleteWarnedFiles();
 
         verify(storage).delete(good.getStorageKey());
-        verify(fileRepository).deleteAll(List.of(bad, good));
+        verify(fileRepository).deleteAllByIdInBatch(List.of(bad.getId(), good.getId()));
     }
 
     @Test

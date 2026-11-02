@@ -73,6 +73,7 @@ class PublicEstimateServiceTest {
     @Mock private PushService pushService;
     @Mock private WorkActItemRepository workActItemRepository;
     @Mock private SignedDocumentService signedDocuments;
+    @Mock private org.springframework.transaction.PlatformTransactionManager transactionManager;
 
     private PublicEstimateService publicService;
 
@@ -90,7 +91,8 @@ class PublicEstimateServiceTest {
         publicService = new PublicEstimateService(shareLinkRepository, projectShareLinkRepository,
                 projectPaymentRepository, paymentReceiptRepository, estimateRepository, itemRepository,
                 messageRepository, estimateService, projectPhotoService, featureGuard, pushService,
-                workActItemRepository, refundCalculator, messages, new AfterCommit(), signedDocuments);
+                workActItemRepository, refundCalculator, messages, new AfterCommit(), signedDocuments,
+                transactionManager);
     }
 
     @Test

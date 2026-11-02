@@ -39,6 +39,7 @@ class ProfileServiceTest {
     @Mock StorageService storage;                       // unused here, needed for @InjectMocks
     @Mock EmailVerificationService emailVerificationService;
     @Mock EmailPolicyService emailPolicyService;
+    @Mock org.springframework.transaction.PlatformTransactionManager transactionManager;
     @InjectMocks ProfileService profileService;
 
     private final UUID userId = UUID.randomUUID();
@@ -216,8 +217,6 @@ class ProfileServiceTest {
         // 15 MB for photo imports, so a 15 MB "logo" was accepted, stored, and then read
         // whole into EVERY rendered PDF.
         UUID userId = UUID.randomUUID();
-        given(userRepository.findById(userId))
-                .willReturn(Optional.of(User.builder().id(userId).build())); // loaded before the check
         byte[] huge = new byte[3 * 1024 * 1024];
         huge[0] = (byte) 0x89; huge[1] = 'P'; huge[2] = 'N'; huge[3] = 'G'; // a valid PNG header
         var file = new org.springframework.mock.web.MockMultipartFile(
@@ -227,6 +226,56 @@ class ProfileServiceTest {
                 .isInstanceOf(com.majstr.backend.storage.UnsupportedMediaTypeException.class);
 
         verify(storage, never()).store(any(), anyLong(), any(), any(), any());
+    }
+
+    private static final byte[] JPEG = {(byte) 0xFF, (byte) 0xD8, (byte) 0xFF, (byte) 0xE0, 0, 0, 0, 0};
+
+    private static org.springframework.mock.web.MockMultipartFile logoFile() {
+        return new org.springframework.mock.web.MockMultipartFile("file", "logo.jpg", "image/jpeg", JPEG);
+    }
+
+    @Test
+    void uploadLogo_storesBeforeTheTransaction_andDeletesTheOldFileAfterIt() throws Exception {
+        User user = User.builder().id(userId).logoUrl("logos/old.jpg").build();
+        given(userRepository.existsById(userId)).willReturn(true);
+        given(userRepository.findById(userId)).willReturn(Optional.of(user));
+        given(storage.store(any(), anyLong(), any(), any(), any()))
+                .willReturn(new com.majstr.backend.storage.StoredObject("logos/new.jpg", 8, "image/jpeg"));
+
+        assertThat(profileService.uploadLogo(userId, logoFile())).isEqualTo("logos/new.jpg");
+
+        assertThat(user.getLogoUrl()).isEqualTo("logos/new.jpg");
+        var order = org.mockito.Mockito.inOrder(storage, transactionManager);
+        order.verify(storage).store(any(), anyLong(), any(), any(), any());
+        order.verify(transactionManager).getTransaction(any());
+        order.verify(transactionManager).commit(any());
+        order.verify(storage).delete("logos/old.jpg");
+    }
+
+    @Test
+    void uploadLogo_removesTheNewFile_whenTheRowCannotBeUpdated() throws Exception {
+        given(userRepository.existsById(userId)).willReturn(true);
+        given(userRepository.findById(userId)).willReturn(Optional.empty());
+        given(storage.store(any(), anyLong(), any(), any(), any()))
+                .willReturn(new com.majstr.backend.storage.StoredObject("logos/new.jpg", 8, "image/jpeg"));
+
+        assertThatThrownBy(() -> profileService.uploadLogo(userId, logoFile()))
+                .isInstanceOf(com.majstr.backend.exception.ResourceNotFoundException.class);
+
+        verify(storage).delete("logos/new.jpg");
+    }
+
+    @Test
+    void deleteLogo_commitsTheRowBeforeDeletingTheFile() throws Exception {
+        User user = User.builder().id(userId).logoUrl("logos/old.jpg").build();
+        given(userRepository.findById(userId)).willReturn(Optional.of(user));
+
+        profileService.deleteLogo(userId);
+
+        assertThat(user.getLogoUrl()).isNull();
+        var order = org.mockito.Mockito.inOrder(transactionManager, storage);
+        order.verify(transactionManager).commit(any());
+        order.verify(storage).delete("logos/old.jpg");
     }
 
     // ---- custom trades (user_trade) ---------------------------------------

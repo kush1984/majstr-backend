@@ -30,7 +30,6 @@ import org.springframework.web.multipart.MultipartFile;
 
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
-import java.io.InputStream;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDate;
@@ -243,11 +242,11 @@ public class ProjectReceiptService {
      * pooled connection across it starves the pool.</p>
      */
     public ReceiptRecognizeResponse recognize(UUID projectId, UUID receiptId, UUID ownerId) throws IOException {
-        ProjectPhotoService.PhotoFile photo = readOwnedFile(projectId, receiptId, ownerId);
+        byte[] photo = readOwnedFile(projectId, receiptId, ownerId).readAll();
         ImageKind kind = ImageContentTypeDetector.detect(Arrays.copyOf(
-                photo.bytes(), Math.min(HEADER_PEEK_BYTES, photo.bytes().length)));
+                photo, Math.min(HEADER_PEEK_BYTES, photo.length)));
         try {
-            var read = recognizer.extractMeta(kind.contentType, photo.bytes());
+            var read = recognizer.extractMeta(kind.contentType, photo);
             return ReceiptRecognizeResponse.read(read.label(), read.total(), read.issuedAt());
         } catch (AiExtractionException e) {
             log.info("Object receipt recognition fell back to manual entry: {}", e.getMessage());
@@ -256,7 +255,6 @@ public class ProjectReceiptService {
     }
 
     /** Owner download of a receipt photo — authenticated, never through {@code /api/files}. */
-    @Transactional(readOnly = true)
     public ProjectPhotoService.PhotoFile readOwnedFile(UUID projectId, UUID receiptId, UUID ownerId)
             throws IOException {
         projectService.loadOwned(projectId, ownerId);
@@ -264,13 +262,7 @@ public class ProjectReceiptService {
         if (receipt.getStorageKey() == null) {
             throw new ResourceNotFoundException("Receipt has no photo");
         }
-        byte[] bytes;
-        try (InputStream in = storage.open(receipt.getStorageKey())
-                .orElseThrow(() -> new ResourceNotFoundException("Receipt file not found"))) {
-            bytes = in.readAllBytes();
-        }
-        String contentType = storage.contentType(receipt.getStorageKey()).orElse("application/octet-stream");
-        return new ProjectPhotoService.PhotoFile(bytes, contentType);
+        return ProjectPhotoService.open(storage, receipt.getStorageKey(), "Receipt file not found");
     }
 
     /** Sum of the receipts the client is expected to pay back — the FREE-visible receivable. */
@@ -417,8 +409,10 @@ public class ProjectReceiptService {
         if (content.length > MAX_PHOTO_BYTES) {
             throw new UnsupportedMediaTypeException("error.upload.too-large");
         }
-        return ImageContentTypeDetector.detect(
+        ImageKind kind = ImageContentTypeDetector.detect(
                 Arrays.copyOf(content, Math.min(HEADER_PEEK_BYTES, content.length)));
+        ImageBounds.require(content);
+        return kind;
     }
 
     private String storeBytes(byte[] content, ImageKind kind) throws IOException {

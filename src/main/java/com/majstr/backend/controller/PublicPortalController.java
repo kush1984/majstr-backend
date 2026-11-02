@@ -15,6 +15,8 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.core.io.InputStreamResource;
+import org.springframework.core.io.Resource;
 import org.springframework.http.CacheControl;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
@@ -91,13 +93,13 @@ public class PublicPortalController {
 
     @Operation(summary = "Stream a photo the master shared with the client (SHARED only)")
     @GetMapping("/{token}/photos/{photoId}/file")
-    public ResponseEntity<byte[]> sharedPhoto(@PathVariable String token,
+    public ResponseEntity<Resource> sharedPhoto(@PathVariable String token,
                                               @PathVariable UUID photoId) throws IOException {
         ProjectPhotoService.PhotoFile file = publicService.readPortalSharedPhoto(token, photoId);
         return ResponseEntity.ok()
                 .contentType(MediaType.parseMediaType(file.contentType()))
                 .cacheControl(CacheControl.maxAge(Duration.ofMinutes(10)).cachePrivate())
                 .header(HttpHeaders.CONTENT_DISPOSITION, "inline")
-                .body(file.bytes());
+                .body(new InputStreamResource(file.content()));
     }
 }

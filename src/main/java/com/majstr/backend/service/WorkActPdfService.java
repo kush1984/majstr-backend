@@ -23,6 +23,7 @@ import com.majstr.backend.feature.FeatureGuard;
 import com.majstr.backend.storage.StorageService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.hibernate.Hibernate;
 import org.springframework.stereotype.Service;
 
 import java.awt.Color;
@@ -60,6 +61,8 @@ public class WorkActPdfService {
     private static final Color HEADER_BG = new Color(230, 230, 230);
     private static final Color SECTION_BG = new Color(245, 245, 245);
     private static final String NO_CATEGORY = "Без категорії";
+    /** A phone photo arrives downscaled, well under a megabyte, so this is dozens of receipts. */
+    static final long MAX_PHOTO_APPENDIX_BYTES = 32L * 1024 * 1024;
 
     private final PdfFontProvider fonts;
     private final FeatureGuard featureGuard;
@@ -419,13 +422,27 @@ public class WorkActPdfService {
         heading.setSpacingAfter(8);
         doc.add(heading);
         int n = 0;
+        long embedded = 0;
         for (ReceiptRow r : withPhoto) {
             n++;
             try (InputStream stream = storage.open(r.storageKey()).orElse(null)) {
                 if (stream == null) {
                     continue;
                 }
-                Image image = Image.getInstance(stream.readAllBytes());
+                byte[] bytes = stream.readAllBytes();
+                embedded += bytes.length;
+                if (embedded > MAX_PHOTO_APPENDIX_BYTES) {
+                    Paragraph note = new Paragraph("Решта фото чеків (" + (withPhoto.size() - n + 1)
+                            + ") не увійшла до цього файлу. Суми чеків наведено в таблиці вище.", fonts.regular(9));
+                    note.setSpacingBefore(6);
+                    doc.add(note);
+                    return;
+                }
+                if (ImageBounds.exceeded(bytes)) {
+                    log.warn("Skipping act receipt image {}: its dimensions are too large", r.storageKey());
+                    continue;
+                }
+                Image image = Image.getInstance(bytes);
                 image.scaleToFit(500, 620);
                 image.setAlignment(Element.ALIGN_CENTER);
                 // The money table bills billedAmount(); this caption used to print the GROSS one
@@ -609,7 +626,12 @@ public class WorkActPdfService {
             if (stream == null) {
                 return Optional.empty();
             }
-            return Optional.of(Image.getInstance(stream.readAllBytes()));
+            byte[] bytes = stream.readAllBytes();
+            if (ImageBounds.exceeded(bytes)) {
+                log.warn("Skipping contractor logo {}: its dimensions are too large", key);
+                return Optional.empty();
+            }
+            return Optional.of(Image.getInstance(bytes));
         } catch (Exception e) {
             log.warn("Could not load contractor logo {}: {}", key, e.getMessage());
             return Optional.empty();
@@ -680,6 +702,15 @@ public class WorkActPdfService {
             this(contractor, project, client, act, items, receipts, estimateNames, docHash, cumulative, null);
         }
 
+        /** Loads what the render reads, so it can run after the session has closed. */
+        public PdfModel loaded() {
+            Hibernate.initialize(contractor);
+            Hibernate.initialize(project);
+            Hibernate.initialize(client);
+            Hibernate.initialize(act);
+            return this;
+        }
+
         public PdfModel {
             // An act is always a document for the CLIENT, so the group headers are stripped of a
             // trailing markup rate here rather than at each of the three call sites (review B-74).
@@ -693,6 +724,10 @@ public class WorkActPdfService {
             return out;
         }
     }
+
+    /** What a PDF needs from the database, ready to print once the transaction has closed (B-121).
+     *  {@code storedPdfKey} is the file a signature stored, or null. */
+    public record PdfJob(PdfModel model, String storedPdfKey) {}
 
     /** One «Чеки та рахунки» row. Frozen data straight off {@code work_act_receipt}, so unlike the
      *  «ДОВІДКОВО» figures it is safe inside the canonical (hashed) render.

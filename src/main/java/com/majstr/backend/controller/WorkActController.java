@@ -26,6 +26,8 @@ import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.core.io.InputStreamResource;
+import org.springframework.core.io.Resource;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.CacheControl;
 import org.springframework.http.HttpHeaders;
@@ -265,7 +267,7 @@ public class WorkActController {
 
     @Operation(summary = "Stream a receipt photo (authenticated owner)")
     @GetMapping("/api/acts/{id}/receipts/{receiptId}/file")
-    public ResponseEntity<byte[]> receiptFile(@PathVariable UUID id,
+    public ResponseEntity<Resource> receiptFile(@PathVariable UUID id,
                                               @PathVariable UUID receiptId,
                                               @AuthenticationPrincipal UserPrincipal principal) throws IOException {
         PhotoFile f = receiptService.readOwnedFile(id, receiptId, principal.id());
@@ -273,7 +275,7 @@ public class WorkActController {
                 .contentType(MediaType.parseMediaType(f.contentType()))
                 .cacheControl(CacheControl.maxAge(Duration.ofMinutes(10)).cachePrivate())
                 .header(HttpHeaders.CONTENT_DISPOSITION, "inline")
-                .body(f.bytes());
+                .body(new InputStreamResource(f.content()));
     }
 
     // ---- act share link (one link per act, prompt 5) ----------------------

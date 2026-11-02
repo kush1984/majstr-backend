@@ -27,7 +27,6 @@ import org.springframework.web.multipart.MultipartFile;
 
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
-import java.io.InputStream;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDate;
@@ -275,7 +274,7 @@ public class WorkActReceiptService {
             throw new WorkActSignedException();
         }
         ProjectPhotoService.PhotoFile photo = readOwnedFile(actId, receiptId, ownerId);
-        return runRecognition(photo.bytes());
+        return runRecognition(photo.readAll());
     }
 
     private static void requireValidFields(String label, BigDecimal amount) {
@@ -373,7 +372,6 @@ public class WorkActReceiptService {
     }
 
     /** Owner download of a receipt photo — authenticated, never through {@code /api/files}. */
-    @Transactional(readOnly = true)
     public ProjectPhotoService.PhotoFile readOwnedFile(UUID actId, UUID receiptId, UUID ownerId) throws IOException {
         actService.loadOwned(actId, ownerId);
         return readFile(load(actId, receiptId));
@@ -381,7 +379,6 @@ public class WorkActReceiptService {
 
     /** Read a receipt photo for the public act portal. The caller has already validated the {@code ?a=}
      *  token AND that the act is client-visible — here we only bind the receipt to that act. */
-    @Transactional(readOnly = true)
     public ProjectPhotoService.PhotoFile readPublicFile(UUID actId, UUID receiptId) throws IOException {
         return readFile(load(actId, receiptId));
     }
@@ -392,13 +389,7 @@ public class WorkActReceiptService {
         if (receipt.getStorageKey() == null) {
             throw new ResourceNotFoundException("Receipt has no photo");
         }
-        byte[] bytes;
-        try (InputStream in = storage.open(receipt.getStorageKey())
-                .orElseThrow(() -> new ResourceNotFoundException("Receipt file not found"))) {
-            bytes = in.readAllBytes();
-        }
-        String contentType = storage.contentType(receipt.getStorageKey()).orElse("application/octet-stream");
-        return new ProjectPhotoService.PhotoFile(bytes, contentType);
+        return ProjectPhotoService.open(storage, receipt.getStorageKey(), "Receipt file not found");
     }
 
     private static ImageKind requireImage(byte[] content) {
@@ -409,7 +400,9 @@ public class WorkActReceiptService {
             throw new UnsupportedMediaTypeException("error.upload.too-large");
         }
         byte[] header = Arrays.copyOf(content, Math.min(HEADER_PEEK_BYTES, content.length));
-        return ImageContentTypeDetector.detect(header);
+        ImageKind kind = ImageContentTypeDetector.detect(header);
+        ImageBounds.require(content);
+        return kind;
     }
 
     private String storeBytes(byte[] content, ImageKind kind) throws IOException {

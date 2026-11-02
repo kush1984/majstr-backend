@@ -139,6 +139,12 @@ tasks.withType<JavaCompile> {
     options.compilerArgs.add("-parameters")
 }
 
+// A local run is dev unless told otherwise. A packaged jar has no such default and refuses to start
+// without a known profile (ActiveProfileGuard).
+tasks.named<org.springframework.boot.gradle.tasks.run.BootRun>("bootRun") {
+    environment("SPRING_PROFILES_ACTIVE", providers.environmentVariable("SPRING_PROFILES_ACTIVE").getOrElse("dev"))
+}
+
 // PDF generation needs Cyrillic-capable fonts. Bundled JDK fonts cannot do
 // Ukrainian, and OpenPDF ships no fonts of its own. The DejaVu source repo
 // holds only FontForge .sfd files; pre-built .ttf binaries live only in

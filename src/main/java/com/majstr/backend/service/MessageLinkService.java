@@ -16,6 +16,7 @@ import com.majstr.backend.repository.ProjectShareLinkRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -52,6 +53,7 @@ public class MessageLinkService {
     private final PortalProperties portalProperties;
     private final PushService pushService;
     private final MessageFileService messageFileService;
+    private final PlatformTransactionManager transactionManager;
 
     /** The object's message URL, minted if it does not exist yet. Owner-only. */
     @Transactional
@@ -99,13 +101,25 @@ public class MessageLinkService {
      * Store a message sent through the link, with whatever was attached. The caller has already applied
      * the rate limit.
      *
-     * <p>One transaction covering both: an attachment that cannot be stored takes the message with it,
-     * so the sender sees a failure and retries, instead of a cheerful "надіслано" for a message whose
-     * invoice never arrived.</p>
+     * <p>An attachment that cannot be stored takes the message with it, so the sender sees a failure and
+     * retries, instead of a cheerful "надіслано" for a message whose invoice never arrived. The files
+     * go to storage first, outside the transaction: five uploads of 10 MB from an anonymous form must
+     * not sit on a pooled connection (review B-121). If the message then fails, they are removed.</p>
      */
-    @Transactional
     public QuestionResponse submit(String token, MessageLinkRequest req, List<MultipartFile> files,
                                    String senderIp) {
+        Transactions.read(transactionManager, () -> resolve(token));
+        List<MessageFileService.StoredUpload> uploads = messageFileService.store(files);
+        try {
+            return Transactions.write(transactionManager, () -> save(token, req, uploads, senderIp));
+        } catch (RuntimeException e) {
+            messageFileService.discard(uploads);
+            throw e;
+        }
+    }
+
+    private QuestionResponse save(String token, MessageLinkRequest req, List<MessageFileService.StoredUpload> uploads,
+                                  String senderIp) {
         Project project = resolve(token).getProject();
         ProjectMessage message = messageRepository.save(ProjectMessage.builder()
                 .project(project)
@@ -115,7 +129,7 @@ public class MessageLinkService {
                 .message(req.message().trim())
                 .authorIp(senderIp)
                 .build());
-        int attached = messageFileService.attach(message, files).size();
+        int attached = messageFileService.attach(message, uploads).size();
 
         // Fail-soft, exactly as the portal's question is: a push that does not go out must not lose
         // the message that was already saved.

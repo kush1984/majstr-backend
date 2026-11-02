@@ -16,6 +16,7 @@ import com.majstr.backend.storage.UnsupportedMediaTypeException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -43,6 +44,7 @@ public class ProfileService {
     private final StorageService storage;
     private final EmailVerificationService emailVerificationService;
     private final EmailPolicyService emailPolicyService;
+    private final PlatformTransactionManager transactionManager;
 
     /** Stamp privacy-policy consent (one-time login modal for users who predate the
      *  registration checkbox). Idempotent — a prior stamp is kept. */
@@ -224,13 +226,11 @@ public class ProfileService {
         emailVerificationService.replaceForNewEmail(user);
     }
 
-    @Transactional
+    /** Not {@code @Transactional}: the upload is a network round trip with a pooled connection idle (B-121). */
     public String uploadLogo(UUID userId, MultipartFile file) throws IOException {
         if (file == null || file.isEmpty()) {
             throw new IllegalArgumentException("Logo file is empty");
         }
-        User user = userRepository.findById(userId)
-                .orElseThrow(() -> new ResourceNotFoundException("User not found: " + userId));
 
         // Read the upload once. Earlier versions peeked the stream and tried to re-open it —
         // MultipartFile gives a fresh stream on every call, so the file ended up with a
@@ -248,6 +248,10 @@ public class ProfileService {
         }
         byte[] header = Arrays.copyOf(content, Math.min(HEADER_PEEK_BYTES, content.length));
         ImageKind kind = ImageContentTypeDetector.detect(header);
+        ImageBounds.require(content);
+        if (!userRepository.existsById(userId)) {
+            throw new ResourceNotFoundException("User not found: " + userId);
+        }
 
         StoredObject stored = storage.store(
                 new ByteArrayInputStream(content),
@@ -256,23 +260,36 @@ public class ProfileService {
                 kind.extension,
                 kind.contentType
         );
-        // Remove the old logo to avoid orphaning a file on disk.
-        if (user.getLogoUrl() != null && !user.getLogoUrl().isBlank()) {
-            tryDelete(user.getLogoUrl());
+        String previous;
+        try {
+            previous = replaceLogoKey(userId, stored.key());
+        } catch (RuntimeException e) {
+            tryDelete(stored.key());
+            throw e;
         }
-        user.setLogoUrl(stored.key());
+        // Remove the old logo to avoid orphaning a file on disk.
+        if (previous != null && !previous.isBlank()) {
+            tryDelete(previous);
+        }
         return stored.key();
     }
 
-    @Transactional
+    /** Same reason as {@link #uploadLogo}: the row commits first, the old file goes after it. */
     public void deleteLogo(UUID userId) {
-        User user = userRepository.findById(userId)
-                .orElseThrow(() -> new ResourceNotFoundException("User not found: " + userId));
-        if (user.getLogoUrl() == null || user.getLogoUrl().isBlank()) {
-            return;
+        String previous = replaceLogoKey(userId, null);
+        if (previous != null && !previous.isBlank()) {
+            tryDelete(previous);
         }
-        tryDelete(user.getLogoUrl());
-        user.setLogoUrl(null);
+    }
+
+    private String replaceLogoKey(UUID userId, String key) {
+        return Transactions.write(transactionManager, () -> {
+            User user = userRepository.findById(userId)
+                    .orElseThrow(() -> new ResourceNotFoundException("User not found: " + userId));
+            String previous = user.getLogoUrl();
+            user.setLogoUrl(key);
+            return previous;
+        });
     }
 
     private void tryDelete(String key) {

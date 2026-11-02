@@ -472,6 +472,10 @@ one-line summary — keep the item in the file as a record.
   `STORAGE_KIND=s3` the logo upload's `storage.store()` is a *network* round-trip
   to R2 held inside `ProfileService`'s `@Transactional`, tying up a Hikari
   connection for the upload's duration.
+  **Mostly done 2026-11-01 (round 5 P1, B-121):** logo, photos, message attachments, every PDF and file read,
+  login and registration no longer wait on anything with a connection held, and
+  `StorageOutsideTransactionIntegrationTest` pins it. Left: a signature's own storage work, by decision
+  (`docs/iteration-review-round-5-p1.md`), and `MessageFileService.open`.
 
 ### Correlate limit-hit → upgrade click (funnel tie-in)
 - **Status:** OPEN

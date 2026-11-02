@@ -51,6 +51,25 @@ class WorkActPdfServiceTest {
     }
 
     @Test
+    void render_stopsAddingReceiptPhotosAtTheBudget_andSaysSoOnThePage() throws Exception {
+        WorkActPdfService.PdfModel base = sampleModel(WorkActKind.INTERIM);
+        base.act().setShowReceiptPhotos(true);
+        List<WorkActPdfService.ReceiptRow> rows = List.of("a", "b", "c").stream()
+                .map(key -> new WorkActPdfService.ReceiptRow("Чек " + key, LocalDate.of(2026, 8, 1),
+                        new BigDecimal("10.00"), BigDecimal.ZERO, key, false))
+                .toList();
+        byte[] large = new byte[(int) (WorkActPdfService.MAX_PHOTO_APPENDIX_BYTES / 2 + 1)];
+        given(storage.open("a")).willReturn(java.util.Optional.of(new java.io.ByteArrayInputStream(large)));
+        given(storage.open("b")).willReturn(java.util.Optional.of(new java.io.ByteArrayInputStream(large)));
+
+        String text = textOf(pdfService.render(new WorkActPdfService.PdfModel(base.contractor(), base.project(),
+                base.client(), base.act(), base.items(), rows, base.estimateNames(), null, null)));
+
+        assertThat(text).contains("Решта фото чеків (2)");
+        org.mockito.Mockito.verify(storage, org.mockito.Mockito.never()).open("c");
+    }
+
+    @Test
     void render_carriesTheMajstrBrandLineOnEveryPage() throws Exception {
         PdfBrandAssert.assertBrandedOnEveryPage(pdfService.render(sampleModel(WorkActKind.INTERIM)));
     }

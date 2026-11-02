@@ -25,6 +25,7 @@ import com.majstr.backend.feature.FeatureGuard;
 import com.majstr.backend.storage.StorageService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.hibernate.Hibernate;
 import org.springframework.stereotype.Service;
 
 import java.awt.Color;
@@ -309,6 +310,10 @@ public class EstimatePdfService {
         for (byte[] bytes : receiptImages) {
             n++;
             try {
+                if (ImageBounds.exceeded(bytes)) {
+                    log.warn("Skipping receipt image {} in PDF: its dimensions are too large", n);
+                    continue;
+                }
                 Image image = Image.getInstance(bytes);
                 image.scaleToFit(500, 640);
                 image.setAlignment(Element.ALIGN_CENTER);
@@ -333,7 +338,12 @@ public class EstimatePdfService {
             if (stream == null) {
                 return Optional.empty();
             }
-            return Optional.of(Image.getInstance(stream.readAllBytes()));
+            byte[] bytes = stream.readAllBytes();
+            if (ImageBounds.exceeded(bytes)) {
+                log.warn("Skipping contractor logo {}: its dimensions are too large", key);
+                return Optional.empty();
+            }
+            return Optional.of(Image.getInstance(bytes));
         } catch (Exception e) {
             log.warn("Could not load contractor logo {}: {}", key, e.getMessage());
             return Optional.empty();
@@ -472,6 +482,19 @@ public class EstimatePdfService {
         public PdfModel(User contractor, Project project, Client client, Estimate estimate,
                         List<EstimateItem> items, List<byte[]> receiptImages) {
             this(contractor, project, client, estimate, items, receiptImages, null, null);
+        }
+
+        /** Loads what the render reads, so it can run after the session has closed. */
+        public PdfModel loaded() {
+            Hibernate.initialize(contractor);
+            Hibernate.initialize(project);
+            Hibernate.initialize(client);
+            Hibernate.initialize(estimate);
+            return this;
+        }
+
+        public PdfModel withReceiptImages(List<byte[]> images) {
+            return new PdfModel(contractor, project, client, estimate, items, images, docHash, branded);
         }
 
         public List<EstimateItem> workItems() {

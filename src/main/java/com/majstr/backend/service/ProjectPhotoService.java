@@ -25,6 +25,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
@@ -66,9 +67,34 @@ public class ProjectPhotoService {
     private final LimitService limitService;
     private final StorageService storage;
     private final StorageCleanup cleanup;
+    private final PlatformTransactionManager transactionManager;
 
-    /** The bytes + content type of a stored photo, for streaming responses. */
-    public record PhotoFile(byte[] bytes, String contentType) {}
+    /**
+     * A stored photo on its way to a response. The stream is open and whoever receives this closes it,
+     * so a slow client costs a socket and a small buffer, not the whole photo on the heap.
+     */
+    public record PhotoFile(InputStream content, String contentType) {
+        public PhotoFile(byte[] bytes, String contentType) {
+            this(new ByteArrayInputStream(bytes), contentType);
+        }
+
+        public byte[] readAll() throws IOException {
+            try (InputStream in = content) {
+                return in.readAllBytes();
+            }
+        }
+    }
+
+    /** Open a stored file for reading. No transaction may be open around this (review B-121). */
+    static PhotoFile open(StorageService storage, String key, String missing) throws IOException {
+        InputStream in = storage.open(key).orElseThrow(() -> new ResourceNotFoundException(missing));
+        try {
+            return new PhotoFile(in, storage.contentType(key).orElse("application/octet-stream"));
+        } catch (RuntimeException e) {
+            in.close();
+            throw e;
+        }
+    }
 
     @Transactional(readOnly = true)
     public List<ProjectPhotoResponse> list(UUID projectId, UUID ownerId) {
@@ -78,12 +104,17 @@ public class ProjectPhotoService {
                 .toList();
     }
 
-    @Transactional
+    /**
+     * Not {@code @Transactional}: the upload to storage is a network round trip, and the cap below takes
+     * the master's row {@code FOR UPDATE}. Held together, one master's batch of photos made every other
+     * request on that row wait with a connection in hand (review B-121).
+     */
     public ProjectPhotoResponse upload(UUID projectId, UUID ownerId, MultipartFile file,
                                        PhotoSource source, String caption, UUID estimateId,
                                        String folder) throws IOException {
         requirePhotos(projectId, ownerId);
-        // Per-object cap (progress vs receipt have separate budgets); FREE < PRO.
+        // Per-object cap (progress vs receipt have separate budgets); FREE < PRO. Asked here so a
+        // full object does not spend an upload, and again below, where the answer can be relied on.
         limitService.requireCanAddPhoto(ownerId, projectId, source);
         if (file == null || file.isEmpty()) {
             throw new UnsupportedMediaTypeException("error.upload.empty");
@@ -97,6 +128,7 @@ public class ProjectPhotoService {
         }
         byte[] header = Arrays.copyOf(content, Math.min(HEADER_PEEK_BYTES, content.length));
         ImageKind kind = ImageContentTypeDetector.detect(header);
+        ImageBounds.require(content);
 
         // A receipt photo is always private and linked to its estimate (snapshot the name so
         // the label survives the estimate's deletion); a manual photo starts private.
@@ -114,26 +146,30 @@ public class ProjectPhotoService {
         StoredObject stored = storage.store(
                 new ByteArrayInputStream(content), content.length,
                 PHOTO_PREFIX, kind.extension, kind.contentType);
-        cleanup.onRollback(stored.key()); // a rollback, at the save OR at commit, drops it (B-111)
 
+        UUID estimateLink = linkedEstimateId;
+        String estimateLabel = estimateName;
         // A failing row save after the store leaves a blob nothing points at (review B-48) — the
         // photo cap, an invalid folder name, a connection dropping. Nothing can find the key
-        // afterwards, so it is dropped here.
+        // afterwards, so it is dropped here, on a commit failure too (B-111).
         try {
-            ProjectPhoto photo = photoRepository.save(ProjectPhoto.builder()
-                    .projectId(projectId)
-                    .storageKey(stored.key())
-                    .source(source)
-                    .visibility(PhotoVisibility.PRIVATE)
-                    .caption(blankToNull(caption))
-                    .estimateId(linkedEstimateId)
-                    .estimateNameSnapshot(estimateName)
-                    // Folder routing (photo-folders): an upload made from INSIDE a folder says so,
-                    // and that wins. With nothing said, receipts from ANY flow land in «Чеки» and
-                    // everything else in «Інше» (null) — no photo is left outside a folder.
-                    .folder(resolveUploadFolder(projectId, source, folder))
-                    .build());
-            return ProjectPhotoResponse.from(photo);
+            return Transactions.write(transactionManager, () -> {
+                limitService.requireCanAddPhoto(ownerId, projectId, source);
+                ProjectPhoto photo = photoRepository.save(ProjectPhoto.builder()
+                        .projectId(projectId)
+                        .storageKey(stored.key())
+                        .source(source)
+                        .visibility(PhotoVisibility.PRIVATE)
+                        .caption(blankToNull(caption))
+                        .estimateId(estimateLink)
+                        .estimateNameSnapshot(estimateLabel)
+                        // Folder routing (photo-folders): an upload made from INSIDE a folder says so,
+                        // and that wins. With nothing said, receipts from ANY flow land in «Чеки» and
+                        // everything else in «Інше» (null) — no photo is left outside a folder.
+                        .folder(resolveUploadFolder(projectId, source, folder))
+                        .build());
+                return ProjectPhotoResponse.from(photo);
+            });
         } catch (RuntimeException e) {
             cleanup.afterCommit(stored.key());
             throw e;
@@ -303,10 +339,12 @@ public class ProjectPhotoService {
     }
 
     /** Read a photo for the authenticated owner (any visibility). */
-    @Transactional(readOnly = true)
     public PhotoFile readOwnedFile(UUID projectId, UUID photoId, UUID ownerId) throws IOException {
-        requirePhotos(projectId, ownerId);
-        return readFile(loadPhoto(projectId, photoId));
+        String key = Transactions.read(transactionManager, () -> {
+            requirePhotos(projectId, ownerId);
+            return loadPhoto(projectId, photoId).getStorageKey();
+        });
+        return open(storage, key, "Photo file not found");
     }
 
     /**
@@ -314,13 +352,15 @@ public class ProjectPhotoService {
      * validated the share token maps to this project; here we only serve photos that are
      * actually SHARED (never a private / receipt photo). Missing / private → 404.
      */
-    @Transactional(readOnly = true)
     public PhotoFile readSharedFile(UUID projectId, UUID photoId) throws IOException {
-        ProjectPhoto photo = loadPhoto(projectId, photoId);
-        if (photo.getVisibility() != PhotoVisibility.SHARED) {
-            throw new ResourceNotFoundException("Photo not found");
-        }
-        return readFile(photo);
+        String key = Transactions.read(transactionManager, () -> {
+            ProjectPhoto photo = loadPhoto(projectId, photoId);
+            if (photo.getVisibility() != PhotoVisibility.SHARED) {
+                throw new ResourceNotFoundException("Photo not found");
+            }
+            return photo.getStorageKey();
+        });
+        return open(storage, key, "Photo file not found");
     }
 
     /** The object's SHARED photos, for the portal view (id + caption only). */
@@ -330,16 +370,6 @@ public class ProjectPhotoService {
     }
 
     // ---- helpers --------------------------------------------------------------
-
-    private PhotoFile readFile(ProjectPhoto photo) throws IOException {
-        byte[] bytes;
-        try (InputStream in = storage.open(photo.getStorageKey())
-                .orElseThrow(() -> new ResourceNotFoundException("Photo file not found"))) {
-            bytes = in.readAllBytes();
-        }
-        String contentType = storage.contentType(photo.getStorageKey()).orElse("application/octet-stream");
-        return new PhotoFile(bytes, contentType);
-    }
 
     private void requirePhotos(UUID projectId, UUID ownerId) {
         featureGuard.requireFeature(loadUser(ownerId), Feature.PHOTO_REPORTS);

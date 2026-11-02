@@ -17,9 +17,9 @@ spring:
     restart:
       enabled: true
 
-# The default profile (SPRING_PROFILES_ACTIVE defaults to `dev`), so this also
-# covers local dev AND the Playwright e2e backend. The register/forgot IP limits
-# are effectively lifted here so repeated e2e runs never hit a false 429; prod
+# `./gradlew bootRun` runs under this profile unless told otherwise (build.gradle.kts), so it covers
+# local dev AND the Playwright e2e backend. A packaged jar never gets here by accident. The
+# register/forgot IP limits are effectively lifted so repeated e2e runs never hit a false 429; prod
 # runs under the `prod` profile and inherits the real base caps (5/hour/IP).
 app:
   rate-limit:
@@ -29,6 +29,8 @@ app:
     forgot:
       max-attempts: 100000
       window-minutes: 1
+  billing:
+    allow-dev-simulation: ${BILLING_ALLOW_DEV_SIM:true}
 
 logging:
   level:

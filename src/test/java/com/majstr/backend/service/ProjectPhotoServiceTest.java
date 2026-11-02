@@ -60,6 +60,7 @@ class ProjectPhotoServiceTest {
     @Mock private LimitService limitService;
     @Mock private StorageService storage;
     @Mock private StorageCleanup cleanup;
+    @Mock private org.springframework.transaction.PlatformTransactionManager transactionManager;
 
     private ProjectPhotoService service;
 
@@ -74,7 +75,7 @@ class ProjectPhotoServiceTest {
     @BeforeEach
     void setUp() {
         service = new ProjectPhotoService(photoRepository, folderRepository, projectService,
-                estimateService, userRepository, featureGuard, limitService, storage, cleanup);
+                estimateService, userRepository, featureGuard, limitService, storage, cleanup, transactionManager);
     }
 
     @Test
@@ -272,6 +273,100 @@ class ProjectPhotoServiceTest {
 
         assertThatThrownBy(() -> service.readSharedFile(projectId, photoId))
                 .isInstanceOf(com.majstr.backend.exception.ResourceNotFoundException.class);
+    }
+
+    @Test
+    void upload_asksTheCapAgainInTheTransaction_afterTheFileIsStored() throws Exception {
+        // The first answer only saves a pointless upload: the lock that makes the cap true is held
+        // from the transaction on, and the file must not be going out under it (review B-121).
+        stubGate();
+        given(storage.store(any(), anyLong(), anyString(), anyString(), anyString()))
+                .willReturn(new StoredObject("photos/a.jpg", 8, "image/jpeg"));
+        given(photoRepository.save(any(ProjectPhoto.class))).willAnswer(inv -> inv.getArgument(0));
+
+        service.upload(projectId, ownerId, file(JPEG), PhotoSource.MANUAL, null, null, null);
+
+        var order = org.mockito.Mockito.inOrder(limitService, storage, transactionManager, photoRepository);
+        order.verify(limitService).requireCanAddPhoto(ownerId, projectId, PhotoSource.MANUAL);
+        order.verify(storage).store(any(), anyLong(), anyString(), anyString(), anyString());
+        order.verify(transactionManager).getTransaction(any());
+        order.verify(limitService).requireCanAddPhoto(ownerId, projectId, PhotoSource.MANUAL);
+        order.verify(photoRepository).save(any(ProjectPhoto.class));
+    }
+
+    @Test
+    void upload_dropsTheStoredFile_whenTheCapRefusesInTheTransaction() throws Exception {
+        stubGate();
+        given(storage.store(any(), anyLong(), anyString(), anyString(), anyString()))
+                .willReturn(new StoredObject("photos/a.jpg", 8, "image/jpeg"));
+        org.mockito.BDDMockito.willDoNothing().willThrow(new IllegalStateException("cap"))
+                .given(limitService).requireCanAddPhoto(ownerId, projectId, PhotoSource.MANUAL);
+
+        assertThatThrownBy(() -> service.upload(projectId, ownerId, file(JPEG), PhotoSource.MANUAL, null, null, null))
+                .isInstanceOf(IllegalStateException.class);
+
+        verify(cleanup).afterCommit("photos/a.jpg");
+        verify(photoRepository, never()).save(any());
+    }
+
+    @Test
+    void upload_refusesAnImageDeclaringEnormousDimensions_beforeStoringIt() throws Exception {
+        stubGate();
+
+        assertThatThrownBy(() -> service.upload(projectId, ownerId, file(pngDeclaring(30_000, 30_000)),
+                PhotoSource.MANUAL, null, null, null))
+                .isInstanceOf(com.majstr.backend.storage.UnsupportedMediaTypeException.class);
+
+        verify(storage, never()).store(any(), anyLong(), anyString(), anyString(), anyString());
+    }
+
+    @Test
+    void aPhotoFileHandsOverAnOpenStream_notTheBytes() throws Exception {
+        java.util.concurrent.atomic.AtomicBoolean closed = new java.util.concurrent.atomic.AtomicBoolean();
+        java.io.InputStream stream = new java.io.FilterInputStream(new ByteArrayInputStream(new byte[]{1, 2})) {
+            @Override
+            public void close() throws java.io.IOException {
+                closed.set(true);
+                super.close();
+            }
+        };
+        given(photoRepository.findByIdAndProjectId(photoId, projectId))
+                .willReturn(Optional.of(photo(PhotoSource.MANUAL, PhotoVisibility.SHARED)));
+        given(storage.open(anyString())).willReturn(Optional.of(stream));
+        given(storage.contentType(anyString())).willReturn(Optional.of("image/jpeg"));
+
+        ProjectPhotoService.PhotoFile file = service.readSharedFile(projectId, photoId);
+
+        assertThat(file.content()).isSameAs(stream);
+        assertThat(closed).isFalse();
+        assertThat(file.readAll()).containsExactly(1, 2);
+        assertThat(closed).isTrue();
+    }
+
+    @Test
+    void openingAFileClosesTheStream_whenTheContentTypeLookupFails() throws Exception {
+        java.util.concurrent.atomic.AtomicBoolean closed = new java.util.concurrent.atomic.AtomicBoolean();
+        java.io.InputStream stream = new java.io.FilterInputStream(new ByteArrayInputStream(new byte[]{1})) {
+            @Override
+            public void close() {
+                closed.set(true);
+            }
+        };
+        given(storage.open("k")).willReturn(Optional.of(stream));
+        given(storage.contentType("k")).willThrow(new IllegalStateException("storage down"));
+
+        assertThatThrownBy(() -> ProjectPhotoService.open(storage, "k", "gone"))
+                .isInstanceOf(IllegalStateException.class);
+
+        assertThat(closed).isTrue();
+    }
+
+    private static byte[] pngDeclaring(int width, int height) {
+        return java.nio.ByteBuffer.allocate(33)
+                .put(new byte[]{(byte) 0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A})
+                .putInt(13).put("IHDR".getBytes(java.nio.charset.StandardCharsets.US_ASCII))
+                .putInt(width).putInt(height).put(new byte[]{8, 6, 0, 0, 0})
+                .array();
     }
 
     // ---- helpers ----------------------------------------------------------

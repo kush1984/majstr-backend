@@ -18,6 +18,7 @@ import com.majstr.backend.service.SignedSnapshot.ActDoc;
 import com.majstr.backend.service.SignedSnapshot.EstimateDoc;
 import com.majstr.backend.storage.StorageService;
 import com.majstr.backend.storage.StoredObject;
+import com.lowagie.text.DocumentException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
@@ -61,6 +62,7 @@ public class SignedDocumentService {
     private final FeatureGuard featureGuard;
     private final WorkActPdfService actPdf;
     private final EstimatePdfService estimatePdf;
+    private final HeavyWork heavyWork;
 
     /** What a fresh signature hands back: the stamp, and the stamped PDF for the client's email. */
     public record Frozen(String docHash, byte[] stampedPdf) { }
@@ -70,7 +72,7 @@ public class SignedDocumentService {
                             List<WorkActItem> items, List<WorkActReceipt> receipts,
                             Map<UUID, String> estimateNames,
                             WorkActPdfService.CumulativeReference cumulative,
-                            String docHash, boolean branded) {
+                            String docHash, boolean branded, String pdfKey) {
         public List<WorkActPdfService.ReceiptRow> receiptRows() {
             return receipts.stream().map(WorkActPdfService.ReceiptRow::from).toList();
         }
@@ -83,7 +85,7 @@ public class SignedDocumentService {
 
     /** A signed estimate rebuilt from its snapshot. */
     public record FrozenEstimate(User contractor, Project project, Client client, Estimate estimate,
-                                 List<EstimateItem> items, String docHash, boolean branded) {
+                                 List<EstimateItem> items, String docHash, boolean branded, String pdfKey) {
         public EstimatePdfService.PdfModel pdfModel(List<byte[]> receiptImages) {
             return new EstimatePdfService.PdfModel(contractor, project, client, estimate, items,
                     receiptImages, docHash, branded);
@@ -203,6 +205,38 @@ public class SignedDocumentService {
                 .map(row -> rebuild(row, SignedSnapshot.read(row.getSnapshot(), EstimateDoc.class), live));
     }
 
+    /**
+     * Print an act with no transaction open. A signed one is the file the client was sent, served as
+     * stored rather than rendered again for every anonymous GET; a render is the fallback for one that
+     * has none.
+     */
+    public byte[] print(WorkActPdfService.PdfJob job) throws IOException, DocumentException {
+        Optional<byte[]> stored = readPdf(job.storedPdfKey());
+        if (stored.isPresent()) {
+            return stored.get();
+        }
+        return heavyWork.pdf(() -> actPdf.render(job.model()));
+    }
+
+    /** Empty when no file was stored or it has gone: the snapshot is the record, and renders it. */
+    public Optional<byte[]> readPdf(String key) {
+        if (key == null || key.isBlank()) {
+            return Optional.empty();
+        }
+        try {
+            Optional<InputStream> stream = storage.open(key);
+            if (stream.isEmpty()) {
+                return Optional.empty();
+            }
+            try (InputStream in = stream.get()) {
+                return Optional.of(in.readAllBytes());
+            }
+        } catch (IOException | RuntimeException e) {
+            log.warn("Could not read a signed document's stored PDF {}: {}", key, e.getMessage());
+            return Optional.empty();
+        }
+    }
+
     // ---- rebuilding detached entities ----------------------------------------------------------
 
     private FrozenAct rebuild(SignedDocument row, ActDoc doc, WorkAct live) {
@@ -249,7 +283,7 @@ public class SignedDocumentService {
                 : new WorkActPdfService.CumulativeReference(doc.cumulative().accepted(), doc.cumulative().contracted());
         return new FrozenAct(contractor, project, client, act, items, receipts,
                 doc.estimateNames() == null ? Map.of() : doc.estimateNames(), cumulative,
-                row.getDocHash(), doc.contractor().branded());
+                row.getDocHash(), doc.contractor().branded(), row.getPdfKey());
     }
 
     private FrozenEstimate rebuild(SignedDocument row, EstimateDoc doc, Estimate live) {
@@ -287,7 +321,7 @@ public class SignedDocumentService {
                 .percentBaseItemId(l.percentBaseItemId()).baseOriginLabel(l.baseOriginLabel())
                 .sortOrder(l.sortOrder()).build()).toList();
         return new FrozenEstimate(contractor, project, client, estimate, items, row.getDocHash(),
-                doc.contractor().branded());
+                doc.contractor().branded(), row.getPdfKey());
     }
 
     private static User contractor(SignedSnapshot.Contractor c, String logoKey, UUID ownerId) {

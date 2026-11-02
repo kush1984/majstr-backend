@@ -45,7 +45,7 @@ public class ResendEmailService implements EmailService {
     }
 
     @Override
-    @Async
+    @Async("mailExecutor")
     public void sendVerificationEmail(User user, String token) {
         String link = props.appUrl() + "/verify-email?token=" + URLEncoder.encode(token, StandardCharsets.UTF_8);
         if (!props.isConfigured()) {
@@ -57,7 +57,7 @@ public class ResendEmailService implements EmailService {
     }
 
     @Override
-    @Async
+    @Async("mailExecutor")
     public void sendPasswordResetEmail(User user, String token) {
         String link = props.appUrl() + "/reset-password?token=" + URLEncoder.encode(token, StandardCharsets.UTF_8);
         if (!props.isConfigured()) {
@@ -69,7 +69,7 @@ public class ResendEmailService implements EmailService {
     }
 
     @Override
-    @Async
+    @Async("mailExecutor")
     public void sendEstimateShareEmail(String toEmail, String clientName, String contractorName,
                                        String projectName, String shareUrl) {
         if (!props.isConfigured()) {
@@ -81,7 +81,7 @@ public class ResendEmailService implements EmailService {
     }
 
     @Override
-    @Async
+    @Async("mailExecutor")
     public void sendSignedActCopyEmail(String toEmail, String clientName, String contractorName,
                                        String actNumber, byte[] pdf) {
         if (!props.isConfigured()) {
@@ -116,7 +116,7 @@ public class ResendEmailService implements EmailService {
             DateTimeFormatter.ofPattern("dd.MM.yyyy").withLocale(Locale.forLanguageTag("uk"));
 
     @Override
-    @Async
+    @Async("mailExecutor")
     public void sendRenewReminderEmail(User user, Instant chargeDate, BigDecimal amount) {
         String manageUrl = props.appUrl() + "/profile";
         if (!props.isConfigured()) {
@@ -128,7 +128,7 @@ public class ResendEmailService implements EmailService {
     }
 
     @Override
-    @Async
+    @Async("mailExecutor")
     public void sendTrialEndingEmail(User user, Instant endsAt, long daysLeft) {
         String upgradeUrl = props.appUrl() + "/profile";
         if (!props.isConfigured()) {
@@ -142,7 +142,7 @@ public class ResendEmailService implements EmailService {
     }
 
     @Override
-    @Async
+    @Async("mailExecutor")
     public void sendRenewReceiptEmail(User user, Instant until, BigDecimal amount) {
         if (!props.isConfigured()) {
             log.warn("RESEND_API_KEY not set — skipping renew receipt to {} (until {})", user.getEmail(), fmt(until));
@@ -153,7 +153,7 @@ public class ResendEmailService implements EmailService {
     }
 
     @Override
-    @Async
+    @Async("mailExecutor")
     public void sendRenewFailedEmail(User user, Instant accessUntil, BigDecimal amount) {
         String updateUrl = props.appUrl() + "/profile";
         if (!props.isConfigured()) {

@@ -49,15 +49,18 @@ public class MessageFileService {
     /** The bytes of one attachment plus what is needed to serve it. */
     public record MessageFileContent(byte[] bytes, String contentType, String downloadName) {}
 
+    /** One attachment already in storage, waiting for its row. */
+    public record StoredUpload(String key, String originalName, String contentType, long sizeBytes) {}
+
+    private record Checked(MultipartFile file, byte[] content, AttachmentKind kind) {}
+
     /**
-     * Store the files that came with a message.
-     *
-     * <p>Called inside the message's own transaction: a file that cannot be stored must take the whole
-     * submission down, so the sender is told it failed and can retry, rather than getting a cheerful
-     * "надіслано" for a message whose invoice never arrived.</p>
+     * Store the files that came with a message, outside any transaction. Every file is checked before
+     * the first one is stored, so a bad fifth attachment costs no uploads. A file that cannot be stored
+     * must take the whole submission down, so the sender is told it failed and can retry; what was
+     * stored before it is removed.
      */
-    @Transactional
-    public List<ProjectMessageFile> attach(ProjectMessage message, List<MultipartFile> files) {
+    public List<StoredUpload> store(List<MultipartFile> files) {
         if (files == null || files.isEmpty()) {
             return List.of();
         }
@@ -68,9 +71,39 @@ public class MessageFileService {
         if (real.size() > MAX_FILES_PER_MESSAGE) {
             throw new UnsupportedMediaTypeException("error.upload.too-many");
         }
-        List<ProjectMessageFile> stored = new ArrayList<>(real.size());
-        for (MultipartFile file : real) {
-            stored.add(store(message, file));
+        List<Checked> checked = real.stream().map(MessageFileService::check).toList();
+        List<StoredUpload> stored = new ArrayList<>(checked.size());
+        try {
+            for (Checked file : checked) {
+                stored.add(store(file));
+            }
+        } catch (RuntimeException e) {
+            discard(stored);
+            throw e;
+        }
+        return stored;
+    }
+
+    /** Remove uploads whose message never landed. Nothing can find these keys afterwards. */
+    public void discard(List<StoredUpload> uploads) {
+        cleanup.afterCommit(uploads.stream().map(StoredUpload::key).toList());
+    }
+
+    /** Give stored files their rows, inside the message's own transaction. */
+    @Transactional
+    public List<ProjectMessageFile> attach(ProjectMessage message, List<StoredUpload> uploads) {
+        if (uploads.isEmpty()) {
+            return List.of();
+        }
+        List<ProjectMessageFile> stored = new ArrayList<>(uploads.size());
+        for (StoredUpload upload : uploads) {
+            stored.add(fileRepository.save(ProjectMessageFile.builder()
+                    .message(message)
+                    .storageKey(upload.key())
+                    .originalName(upload.originalName())
+                    .contentType(upload.contentType())
+                    .sizeBytes(upload.sizeBytes())
+                    .build()));
         }
         // Keep the message's own list in step. A freshly built entity carries the plain ArrayList from
         // its builder, not a Hibernate collection, so rows saved here would otherwise be invisible to
@@ -81,7 +114,7 @@ public class MessageFileService {
         return stored;
     }
 
-    private ProjectMessageFile store(ProjectMessage message, MultipartFile file) {
+    private static Checked check(MultipartFile file) {
         // Checked before reading the bytes into memory: the servlet's own multipart limit is the real
         // defence, this is the one that produces a message the sender can understand.
         if (file.getSize() > MAX_FILE_BYTES) {
@@ -98,23 +131,20 @@ public class MessageFileService {
             throw new UnsupportedMediaTypeException("error.upload.too-large");
         }
         byte[] header = Arrays.copyOf(content, Math.min(HEADER_PEEK_BYTES, content.length));
-        AttachmentKind kind = AttachmentContentTypeDetector.detect(header);
+        return new Checked(file, content, AttachmentContentTypeDetector.detect(header));
+    }
 
-        StoredObject stored;
+    private StoredUpload store(Checked file) {
+        AttachmentKind kind = file.kind();
         try {
-            stored = storage.store(new ByteArrayInputStream(content), content.length,
+            StoredObject stored = storage.store(new ByteArrayInputStream(file.content()), file.content().length,
                     PREFIX, kind.extension, kind.contentType);
+            return new StoredUpload(stored.key(), safeName(file.file().getOriginalFilename(), kind),
+                    kind.contentType, file.content().length);
         } catch (IOException e) {
-            // Rolls the submission back on purpose — see attach().
+            // Takes the submission down on purpose — see store(List).
             throw new IllegalStateException("Could not store a message attachment", e);
         }
-        return fileRepository.save(ProjectMessageFile.builder()
-                .message(message)
-                .storageKey(stored.key())
-                .originalName(safeName(file.getOriginalFilename(), kind))
-                .contentType(kind.contentType)
-                .sizeBytes(content.length)
-                .build());
     }
 
     /**

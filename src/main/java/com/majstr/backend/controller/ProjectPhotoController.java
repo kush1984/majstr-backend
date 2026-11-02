@@ -13,6 +13,8 @@ import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.core.io.InputStreamResource;
+import org.springframework.core.io.Resource;
 import org.springframework.http.CacheControl;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
@@ -127,7 +129,7 @@ public class ProjectPhotoController {
 
     @Operation(summary = "Stream a photo file (authenticated owner)")
     @GetMapping("/{photoId}/file")
-    public ResponseEntity<byte[]> file(@PathVariable UUID projectId,
+    public ResponseEntity<Resource> file(@PathVariable UUID projectId,
                                        @PathVariable UUID photoId,
                                        @AuthenticationPrincipal UserPrincipal principal) throws IOException {
         PhotoFile f = photoService.readOwnedFile(projectId, photoId, principal.id());
@@ -135,6 +137,6 @@ public class ProjectPhotoController {
                 .contentType(MediaType.parseMediaType(f.contentType()))
                 .cacheControl(CacheControl.maxAge(Duration.ofMinutes(10)).cachePrivate())
                 .header(HttpHeaders.CONTENT_DISPOSITION, "inline")
-                .body(f.bytes());
+                .body(new InputStreamResource(f.content()));
     }
 }

@@ -509,6 +509,15 @@ public class GlobalExceptionHandler {
                 .body(body);
     }
 
+    /** Expected under load, so no Sentry event: the master is told to retry, and the outbox will. */
+    @ExceptionHandler(ServerBusyException.class)
+    public ResponseEntity<ErrorResponse> handleServerBusy(ServerBusyException ex, HttpServletRequest req) {
+        ErrorResponse body = ErrorResponse.busy(msg(ex.getMessage()), req.getRequestURI(), ex.getRetryAfterSeconds());
+        return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
+                .header("Retry-After", String.valueOf(ex.getRetryAfterSeconds()))
+                .body(body);
+    }
+
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ErrorResponse> handleAny(Exception ex, HttpServletRequest req) {
         if (isClientDisconnect(ex)) {

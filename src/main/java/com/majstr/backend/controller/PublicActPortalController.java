@@ -15,6 +15,8 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.core.io.InputStreamResource;
+import org.springframework.core.io.Resource;
 import org.springframework.http.CacheControl;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
@@ -89,13 +91,13 @@ public class PublicActPortalController {
 
     @Operation(summary = "Stream a receipt photo attached to the act (public, token-scoped)")
     @GetMapping("/{token}/receipts/{receiptId}/file")
-    public ResponseEntity<byte[]> receiptFile(@PathVariable String token,
+    public ResponseEntity<Resource> receiptFile(@PathVariable String token,
                                               @PathVariable UUID receiptId) throws IOException {
         PhotoFile f = service.receiptFile(token, receiptId);
         return ResponseEntity.ok()
                 .contentType(MediaType.parseMediaType(f.contentType()))
                 .cacheControl(CacheControl.maxAge(Duration.ofMinutes(10)).cachePrivate())
                 .header(HttpHeaders.CONTENT_DISPOSITION, "inline")
-                .body(f.bytes());
+                .body(new InputStreamResource(f.content()));
     }
 }

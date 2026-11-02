@@ -73,6 +73,10 @@ class MessageFileServiceTest {
         given(fileRepository.save(any(ProjectMessageFile.class))).willAnswer(i -> i.getArgument(0));
     }
 
+    private List<ProjectMessageFile> attach(ProjectMessage message, List<MultipartFile> files) {
+        return service.attach(message, service.store(files));
+    }
+
     private static MultipartFile file(String name, String declaredType, byte[] content) {
         return new MockMultipartFile("files", name, declaredType, content);
     }
@@ -84,7 +88,7 @@ class MessageFileServiceTest {
         storageAccepts();
         ProjectMessage m = message();
 
-        List<ProjectMessageFile> saved = service.attach(m, List.of(
+        List<ProjectMessageFile> saved = attach(m, List.of(
                 file("wall.png", "image/png", PNG_HEADER),
                 file("invoice.pdf", "application/pdf", PDF_HEADER)));
 
@@ -96,10 +100,34 @@ class MessageFileServiceTest {
     }
 
     @Test
+    void aBadLastFileCostsNoUploads() throws IOException {
+        assertThatThrownBy(() -> service.store(List.of(
+                file("wall.png", "image/png", PNG_HEADER),
+                file("x.zip", "application/zip", new byte[]{0x50, 0x4B, 0x03, 0x04, 0, 0, 0, 0}))))
+                .isInstanceOf(UnsupportedMediaTypeException.class);
+
+        verify(storage, never()).store(any(), anyLong(), anyString(), anyString(), anyString());
+    }
+
+    @Test
+    void whatWasStoredIsRemoved_whenALaterFileCannotBe() throws IOException {
+        given(storage.store(any(), anyLong(), anyString(), anyString(), anyString()))
+                .willReturn(new StoredObject("messages/first.png", 12, "image/png"))
+                .willThrow(new IOException("storage down"));
+
+        assertThatThrownBy(() -> service.store(List.of(
+                file("a.png", "image/png", PNG_HEADER),
+                file("b.png", "image/png", PNG_HEADER))))
+                .isInstanceOf(IllegalStateException.class);
+
+        verify(cleanup).afterCommit(List.of("messages/first.png"));
+    }
+
+    @Test
     void refusesAFileWhoseBytesAreNotWhatItsNameClaims() {
         // The whole point of sniffing. A stranger uploading script.png that is not a PNG must not end
         // up with those bytes stored under an image content type and handed to the master's browser.
-        assertThatThrownBy(() -> service.attach(message(), List.of(
+        assertThatThrownBy(() -> attach(message(), List.of(
                 file("photo.png", "image/png", "<?php echo 1; ?>".getBytes(StandardCharsets.UTF_8)))))
                 .isInstanceOf(UnsupportedMediaTypeException.class)
                 .hasMessage("error.upload.attachment-type");
@@ -107,7 +135,7 @@ class MessageFileServiceTest {
 
     @Test
     void refusesAnythingThatIsNeitherPhotoNorPdf() {
-        assertThatThrownBy(() -> service.attach(message(), List.of(
+        assertThatThrownBy(() -> attach(message(), List.of(
                 file("archive.zip", "application/zip",
                         new byte[]{0x50, 0x4B, 0x03, 0x04, 0, 0, 0, 0}))))
                 .isInstanceOf(UnsupportedMediaTypeException.class)
@@ -123,7 +151,7 @@ class MessageFileServiceTest {
             six.add(file("p" + i + ".png", "image/png", PNG_HEADER));
         }
 
-        assertThatThrownBy(() -> service.attach(message(), six))
+        assertThatThrownBy(() -> attach(message(), six))
                 .isInstanceOf(UnsupportedMediaTypeException.class)
                 .hasMessage("error.upload.too-many");
         verify(storage, never()).store(any(), anyLong(), anyString(), anyString(), anyString());
@@ -134,7 +162,7 @@ class MessageFileServiceTest {
         byte[] big = new byte[(int) MessageFileService.MAX_FILE_BYTES + 1];
         System.arraycopy(PNG_HEADER, 0, big, 0, PNG_HEADER.length);
 
-        assertThatThrownBy(() -> service.attach(message(), List.of(file("huge.png", "image/png", big))))
+        assertThatThrownBy(() -> attach(message(), List.of(file("huge.png", "image/png", big))))
                 .isInstanceOf(UnsupportedMediaTypeException.class)
                 .hasMessage("error.upload.too-large");
     }
@@ -145,7 +173,7 @@ class MessageFileServiceTest {
         // a name that looks like one must not survive as one.
         storageAccepts();
 
-        service.attach(message(), List.of(
+        attach(message(), List.of(
                 file("../../../etc/passwd.png", "image/png", PNG_HEADER)));
 
         ArgumentCaptor<ProjectMessageFile> saved = ArgumentCaptor.forClass(ProjectMessageFile.class);
@@ -157,7 +185,7 @@ class MessageFileServiceTest {
     void namesAnUnnamedUploadAfterWhatItActuallyIs() throws IOException {
         storageAccepts();
 
-        service.attach(message(), List.of(file(null, "application/pdf", PDF_HEADER)));
+        attach(message(), List.of(file(null, "application/pdf", PDF_HEADER)));
 
         ArgumentCaptor<ProjectMessageFile> saved = ArgumentCaptor.forClass(ProjectMessageFile.class);
         verify(fileRepository).save(saved.capture());
@@ -167,7 +195,7 @@ class MessageFileServiceTest {
     @Test
     void ignoresEmptyPartsRatherThanStoringZeroByteFiles() throws IOException {
         // A form submitted with the file input untouched still sends an empty part in some browsers.
-        List<ProjectMessageFile> saved = service.attach(message(),
+        List<ProjectMessageFile> saved = attach(message(),
                 List.of(file("", "application/octet-stream", new byte[0])));
 
         assertThat(saved).isEmpty();

@@ -50,6 +50,9 @@ then:
 ./gradlew bootRun
 ```
 
+`bootRun` runs under the `dev` profile unless `SPRING_PROFILES_ACTIVE` says otherwise. Run any other
+way (an IDE, a packaged jar), the app refuses to start until that variable is `dev` or `prod`.
+
 > If you don't have `./gradlew` yet, generate it once with
 > `gradle wrapper --gradle-version 9.3` — you'll need a system Gradle
 > 8.5+ for Java 21 toolchain support.

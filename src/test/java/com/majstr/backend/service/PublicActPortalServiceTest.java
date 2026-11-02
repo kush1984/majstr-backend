@@ -54,7 +54,7 @@ class PublicActPortalServiceTest {
     @Mock WorkActReceiptRepository receiptRepository;
     @Mock EstimateRepository estimateRepository;
     @Mock ProjectMessageRepository messageRepository;
-    @Mock WorkActPdfService pdfService;
+    @Mock org.springframework.transaction.PlatformTransactionManager transactionManager;
     @Mock ActCumulativeCalculator cumulativeCalculator;
     @Mock ActAddendumCreator addendumCreator;
     @Mock ActReceiptReconciler receiptReconciler;

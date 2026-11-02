@@ -49,7 +49,7 @@ public class BroadcastDispatcher {
     private final EmailProperties emailProperties;
     private final PortalProperties portalProperties;
 
-    @Async
+    @Async("broadcastExecutor")
     public void dispatch(UUID broadcastId) {
         try {
             run(broadcastId);

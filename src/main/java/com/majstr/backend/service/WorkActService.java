@@ -30,6 +30,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.io.IOException;
@@ -89,6 +90,7 @@ public class WorkActService {
     private final ProjectService projectService;
     private final EstimateRepository estimateRepository;
     private final EstimateItemRepository estimateItemRepository;
+    private final PlatformTransactionManager transactionManager;
 
     // ---- reads (owner-scoped, ungated) ------------------------------------
 
@@ -111,24 +113,25 @@ public class WorkActService {
 
     /** Owner download of the act PDF. Estimate group names are resolved from the referenced
      *  estimates (a null/blank name falls back to «Кошторис»). */
-    @Transactional(readOnly = true)
     public byte[] renderPdf(UUID id, UUID ownerId) throws IOException, DocumentException {
-        WorkAct act = loadOwned(id, ownerId);
-        // A signed act is printed from what was signed (B-76), not from today's requisites.
-        Optional<SignedDocumentService.FrozenAct> frozen = signedDocuments.act(act);
-        if (frozen.isPresent()) {
-            return pdfService.render(frozen.get().pdfModel());
-        }
-        List<WorkActItem> items = itemRepository.findByWorkActIdOrderBySortOrderAscIdAsc(id);
-        Map<UUID, String> names = new HashMap<>();
-        items.stream().map(WorkActItem::getEstimateId).filter(Objects::nonNull).distinct().forEach(estId ->
-                estimateRepository.findById(estId).ifPresent(e ->
-                        names.put(estId, e.getName() == null || e.getName().isBlank() ? "Кошторис" : e.getName().trim())));
-        Project project = act.getProject();
-        return pdfService.render(new WorkActPdfService.PdfModel(
-                project.getOwner(), project, project.getClient(), act, items,
-                receiptRows(id), names, act.getDocHash(),
-                cumulativeCalculator.forDownload(act, items, receiptRepository.sumByWorkActId(id))));
+        return signedDocuments.print(Transactions.read(transactionManager, () -> {
+            WorkAct act = loadOwned(id, ownerId);
+            // A signed act is printed from what was signed (B-76), not from today's requisites.
+            Optional<SignedDocumentService.FrozenAct> frozen = signedDocuments.act(act);
+            if (frozen.isPresent()) {
+                return new WorkActPdfService.PdfJob(frozen.get().pdfModel(), frozen.get().pdfKey());
+            }
+            List<WorkActItem> items = itemRepository.findByWorkActIdOrderBySortOrderAscIdAsc(id);
+            Map<UUID, String> names = new HashMap<>();
+            items.stream().map(WorkActItem::getEstimateId).filter(Objects::nonNull).distinct().forEach(estId ->
+                    estimateRepository.findById(estId).ifPresent(e ->
+                            names.put(estId, e.getName() == null || e.getName().isBlank() ? "Кошторис" : e.getName().trim())));
+            Project project = act.getProject();
+            return new WorkActPdfService.PdfJob(new WorkActPdfService.PdfModel(
+                    project.getOwner(), project, project.getClient(), act, items,
+                    receiptRows(id), names, act.getDocHash(),
+                    cumulativeCalculator.forDownload(act, items, receiptRepository.sumByWorkActId(id))).loaded(), null);
+        }));
     }
 
     /**

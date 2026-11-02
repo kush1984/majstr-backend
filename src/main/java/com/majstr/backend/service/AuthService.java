@@ -14,6 +14,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
@@ -36,13 +37,22 @@ public class AuthService {
     private final ReferralService referralService;
     private final EmailPolicyService emailPolicyService;
     private final ProfileService profileService;
+    private final PlatformTransactionManager transactionManager;
 
-    @Transactional
+    /**
+     * The DNS lookup and the password hash come before the transaction: both are slow, this door is
+     * anonymous, and neither needs a connection (review B-121).
+     */
     public AuthResponse register(RegisterRequest req) {
         String email = req.email().toLowerCase(Locale.ROOT).trim();
         // Anti-abuse: reject disposable/no-mail domains (fail-open on DNS), and dedupe
         // on the canonical form so gmail aliases can't spawn parallel accounts.
         emailPolicyService.assertAcceptable(email);
+        String passwordHash = passwordEncoder.encode(req.password());
+        return Transactions.write(transactionManager, () -> createAccount(req, email, passwordHash));
+    }
+
+    private AuthResponse createAccount(RegisterRequest req, String email, String passwordHash) {
         String canonical = emailPolicyService.canonicalize(email);
         // Serialise same-canonical registrations before the check: otherwise a burst of
         // gmail aliases all read "not taken" together and every one of them gets an account,
@@ -58,7 +68,7 @@ public class AuthService {
         User user = User.builder()
                 .email(email)
                 .emailCanonical(canonical)
-                .passwordHash(passwordEncoder.encode(req.password()))
+                .passwordHash(passwordHash)
                 .fullName(req.fullName().trim())
                 .trades(new LinkedHashSet<>(req.trades()))
                 .phone(req.phone().trim())
@@ -122,14 +132,16 @@ public class AuthService {
         }
     }
 
-    @Transactional
+    /** The password check runs with no connection held (review B-121): about 250 ms, on an anonymous door. */
     public AuthResponse login(LoginRequest req) {
         User user = userRepository.findByEmailIgnoreCase(req.email().trim())
                 .orElseThrow(() -> new BadCredentialsException("Invalid email or password"));
         if (!passwordEncoder.matches(req.password(), user.getPasswordHash())) {
             throw new BadCredentialsException("Invalid email or password");
         }
-        return issueTokens(user);
+        return Transactions.write(transactionManager, () -> issueTokens(
+                userRepository.findById(user.getId()).orElseThrow(
+                        () -> new BadCredentialsException("Invalid email or password"))));
     }
 
     @Transactional

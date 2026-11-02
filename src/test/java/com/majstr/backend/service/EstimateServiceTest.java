@@ -91,6 +91,8 @@ class EstimateServiceTest {
     @Mock private WorkActRepository workActRepository;
     @Mock private com.majstr.backend.repository.ShoppingListItemRepository shoppingListItemRepository;
     @Mock private MaterialParamService materialParamService;
+    @Mock private org.springframework.transaction.PlatformTransactionManager transactionManager;
+    @org.mockito.Spy private HeavyWork heavyWork = new HeavyWork(1, 1, 0);
 
     @InjectMocks private EstimateService estimateService;
 
@@ -199,6 +201,66 @@ class EstimateServiceTest {
         List<byte[]> embedded = captor.getValue().receiptImages();
         assertThat(embedded).hasSize(1);
         assertThat(embedded.get(0)).containsExactly(9, 9, 9);
+    }
+
+    @Test
+    void renderPdf_stopsAddingChosenPhotosAtTheAppendixBudget() throws Exception {
+        Estimate estimate = ownedEstimate(ownerId);
+        estimate.getProject().getOwner().setEmailVerified(true);
+        given(estimateRepository.findById(estimateId)).willReturn(Optional.of(estimate));
+        given(itemRepository.findByEstimateIdOrderBySortOrderAscIdAsc(estimateId)).willReturn(List.of());
+        UUID first = UUID.randomUUID();
+        UUID second = UUID.randomUUID();
+        UUID third = UUID.randomUUID();
+        for (UUID id : List.of(first, second, third)) {
+            given(photoRepository.findByIdAndProjectId(id, projectId)).willReturn(Optional.of(ProjectPhoto.builder()
+                    .id(id).projectId(projectId).storageKey(id.toString())
+                    .source(PhotoSource.RECEIPT).visibility(PhotoVisibility.PRIVATE).build()));
+        }
+        byte[] large = new byte[(int) (WorkActPdfService.MAX_PHOTO_APPENDIX_BYTES / 2 + 1)];
+        given(storage.open(first.toString())).willReturn(Optional.of(new ByteArrayInputStream(new byte[]{1})));
+        given(storage.open(second.toString())).willReturn(Optional.of(new ByteArrayInputStream(large)));
+        given(storage.open(third.toString())).willReturn(Optional.of(new ByteArrayInputStream(large)));
+        ArgumentCaptor<EstimatePdfService.PdfModel> captor =
+                ArgumentCaptor.forClass(EstimatePdfService.PdfModel.class);
+        given(pdfService.render(captor.capture())).willReturn(new byte[]{1});
+
+        estimateService.renderPdf(estimateId, ownerId, List.of(first, second, third));
+
+        assertThat(captor.getValue().receiptImages()).hasSize(2);
+    }
+
+    @Test
+    void render_servesTheStoredFile_ofASignedEstimateWithNothingAddedToIt() throws Exception {
+        EstimatePdfService.PdfModel model = new EstimatePdfService.PdfModel(null, null, null, null, List.of(), List.of());
+        given(signedDocuments.readPdf("signed-docs/a.pdf")).willReturn(Optional.of(new byte[]{5}));
+
+        byte[] pdf = estimateService.render(new EstimateService.PdfJob(model, "signed-docs/a.pdf", List.of()));
+
+        assertThat(pdf).containsExactly(5);
+        verify(pdfService, never()).render(any());
+    }
+
+    @Test
+    void render_rendersFromTheSnapshot_whenTheStoredFileIsGone() throws Exception {
+        EstimatePdfService.PdfModel model = new EstimatePdfService.PdfModel(null, null, null, null, List.of(), List.of());
+        given(signedDocuments.readPdf("signed-docs/a.pdf")).willReturn(Optional.empty());
+        given(pdfService.render(any())).willReturn(new byte[]{6});
+
+        assertThat(estimateService.render(new EstimateService.PdfJob(model, "signed-docs/a.pdf", List.of())))
+                .containsExactly(6);
+    }
+
+    @Test
+    void render_rendersASignedEstimate_whenPhotosWereChosen() throws Exception {
+        // The stored file is what the client received, and it has no receipts in it.
+        EstimatePdfService.PdfModel model = new EstimatePdfService.PdfModel(null, null, null, null, List.of(), List.of());
+        given(storage.open("photos/a.jpg")).willReturn(Optional.of(new ByteArrayInputStream(new byte[]{9})));
+        given(pdfService.render(any())).willReturn(new byte[]{7});
+
+        assertThat(estimateService.render(new EstimateService.PdfJob(model, "signed-docs/a.pdf", List.of("photos/a.jpg"))))
+                .containsExactly(7);
+        verify(signedDocuments, never()).readPdf(any());
     }
 
     @Test

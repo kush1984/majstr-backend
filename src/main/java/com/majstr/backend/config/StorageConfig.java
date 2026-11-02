@@ -14,6 +14,7 @@ import software.amazon.awssdk.regions.Region;
 import software.amazon.awssdk.services.s3.S3Client;
 
 import java.net.URI;
+import java.time.Duration;
 
 /**
  * Selects the single {@link StorageService} bean from {@code app.storage.kind}.
@@ -52,6 +53,11 @@ public class StorageConfig {
                         AwsBasicCredentials.create(s3.accessKeyId(), s3.secretAccessKey())))
                 .forcePathStyle(true)
                 .httpClientBuilder(UrlConnectionHttpClient.builder())
+                // Unset, a stalled store is bounded only by the socket timeout times the SDK's retries.
+                // A signature still holds a row lock across these calls, so the ceiling matters.
+                .overrideConfiguration(c -> c
+                        .apiCallAttemptTimeout(Duration.ofSeconds(30))
+                        .apiCallTimeout(Duration.ofSeconds(60)))
                 .build();
     }
 }

@@ -1,14 +1,37 @@
 spring:
   application:
     name: majstr-backend
-  profiles:
-    active: ${SPRING_PROFILES_ACTIVE:dev}
+  # No default profile, on purpose: SPRING_PROFILES_ACTIVE binds by itself, and ActiveProfileGuard
+  # refuses to start without a known one. `./gradlew bootRun` defaults to dev (build.gradle.kts).
   datasource:
     url: ${DB_URL:jdbc:postgresql://localhost:5432/majstr}
     username: ${DB_USERNAME:majstr}
     password: ${DB_PASSWORD:majstr}
     hikari:
       maximum-pool-size: 10
+      # Tomcat allows 200 threads against these ten. Waiting 30 s (the default) for a connection only
+      # stacks the queue; a request that cannot get one soon should fail and be retried.
+      connection-timeout: 5000
+      # A log line, nothing more: the name of whatever holds a connection this long.
+      leak-detection-threshold: 20000
+      data-source-properties:
+        # A statement waiting on a row lock waits forever otherwise, with a connection in hand. Flyway
+        # connects without this (FlywayConnectionConfig).
+        options: -c statement_timeout=30000
+  # A plain @Async keeps Boot's executor although AsyncExecutorsConfig declares named ones.
+  task:
+    execution:
+      mode: force
+      pool:
+        max-size: 16
+        queue-capacity: 500
+      shutdown:
+        await-termination: true
+        await-termination-period: 20s
+    scheduling:
+      # One stuck job must not hold up billing and token cleanup behind it.
+      pool:
+        size: 3
   jpa:
     hibernate:
       ddl-auto: validate
@@ -304,9 +327,9 @@ app:
     # call), so the flow is testable without a merchant account.
     monobank-token: ${MONOBANK_TOKEN:}
     monobank-api-base: ${MONOBANK_API_BASE:https://api.monobank.ua}
-    # Dev-simulation (grant PRO with no token) is allowed in dev; prod forces this
-    # false (application-prod.yml) so a missing token can never hand out free PRO.
-    allow-dev-simulation: ${BILLING_ALLOW_DEV_SIM:true}
+    # Dev-simulation (grant PRO with no token) is switched on by application-dev.yml alone, and prod
+    # forces it off, so a missing token can never hand out free PRO.
+    allow-dev-simulation: false
     # Days before expiry to send the auto-renew warning email (T-N).
     renew-reminder-days: ${BILLING_RENEW_REMINDER_DAYS:3}
     # PRO price (UAH/month) and the granted period.
