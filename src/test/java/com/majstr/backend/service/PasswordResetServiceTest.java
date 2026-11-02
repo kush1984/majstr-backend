@@ -88,6 +88,7 @@ class PasswordResetServiceTest {
         assertThat(user.getPasswordHash()).isEqualTo("HASHED");
         assertThat(token.getUsedAt()).isNotNull();          // single-use
         verify(refreshTokenRepository).revokeAllForUser(user.getId()); // all sessions out
+        org.assertj.core.api.Assertions.assertThat(user.getTokensValidAfter()).isNotNull(); // access tokens too
     }
 
     @Test

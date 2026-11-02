@@ -18,8 +18,34 @@ public record RateLimitProperties(
         ReceiptScan receiptScan,
         QrScan qrScan,
         Dictation dictation,
-        PublicCalc publicCalc
+        PublicCalc publicCalc,
+        AiImport aiImport,
+        LoginGuard loginGuard,
+        ForgotGuard forgotGuard,
+        Anonymous anonymous,
+        EmailChange emailChange
 ) {
+    /** Model calls through the import endpoints, per account. See {@code AbuseLimits}. */
+    public record AiImport(@Positive int maxPerHour) {}
+
+    /** Beside the email+IP key: failed passwords per account from anywhere, and attempts per IP. */
+    public record LoginGuard(
+            @Positive int failuresPerAccountPerHour,
+            @Positive int attemptsPerIpPerQuarter
+    ) {}
+
+    /** Beside the IP+email key: reset mail to one address from anywhere, and from one IP to many. */
+    public record ForgotGuard(
+            @Positive int perAddressPerHour,
+            @Positive int perIpPerHour
+    ) {}
+
+    /** A coarse ceiling on the anonymous endpoints nothing else limits. */
+    public record Anonymous(@Positive int perIpPerMinute) {}
+
+    /** Each change mails a new address, which the resend limiter does not see. */
+    public record EmailChange(@Positive int maxPerDay) {}
+
     public record Login(
             @Positive int maxAttempts,
             @Positive int windowMinutes

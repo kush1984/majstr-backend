@@ -25,7 +25,7 @@ class TokenCleanupServiceTest {
 
     @Test
     void purge_deletesDeadRefreshAndExpiredVerificationAndResetTokens() {
-        given(refreshTokenRepository.deleteExpiredOrRevoked(any(Instant.class))).willReturn(3);
+        given(refreshTokenRepository.deleteExpiredOrRevoked(any(Instant.class), any(Instant.class))).willReturn(3);
         given(verificationTokenRepository.deleteExpired(any(Instant.class))).willReturn(2);
         // The password-reset sweep joined the same daily job — reset tokens are bearer
         // credentials, so they must not outlive their TTL in the table either.
@@ -33,7 +33,7 @@ class TokenCleanupServiceTest {
 
         service.purgeDeadTokens();
 
-        verify(refreshTokenRepository).deleteExpiredOrRevoked(any(Instant.class));
+        verify(refreshTokenRepository).deleteExpiredOrRevoked(any(Instant.class), any(Instant.class));
         verify(verificationTokenRepository).deleteExpired(any(Instant.class));
         verify(passwordResetTokenRepository).deleteExpired(any(Instant.class));
     }

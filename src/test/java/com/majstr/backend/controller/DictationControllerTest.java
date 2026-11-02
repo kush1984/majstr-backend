@@ -49,6 +49,9 @@ class DictationControllerTest {
 
     @Mock private DictationService dictationService;
     @Mock private DictationRateLimiter dictationRateLimiter;
+    @Mock
+    private com.majstr.backend.service.ai.AiAccess aiAccess;
+
     @InjectMocks private DictationController controller;
 
     private MockMvc mockMvc;

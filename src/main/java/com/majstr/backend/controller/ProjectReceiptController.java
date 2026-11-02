@@ -15,6 +15,7 @@ import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
+import com.majstr.backend.service.ai.AiAccess;
 import lombok.RequiredArgsConstructor;
 import org.springframework.core.io.InputStreamResource;
 import org.springframework.core.io.Resource;
@@ -60,6 +61,7 @@ public class ProjectReceiptController {
 
     private final ProjectReceiptService receiptService;
     private final ReceiptScanRateLimiter receiptScanRateLimiter;
+    private final AiAccess aiAccess;
     private final QrScanRateLimiter qrScanRateLimiter;
 
     @Operation(summary = "The object's receipts plus the receivable / own-cost totals")
@@ -112,6 +114,7 @@ public class ProjectReceiptController {
     public ReceiptRecognizeResponse recognize(@PathVariable UUID id,
                                               @PathVariable UUID receiptId,
                                               @AuthenticationPrincipal UserPrincipal principal) throws IOException {
+        aiAccess.requireAllowed(principal.id());
         ReceiptScanRateLimiter.ConsumeResult probe = receiptScanRateLimiter.tryConsume(principal.id());
         if (!probe.allowed()) {
             throw new TooManyRequestsException("error.rate.receipt-scan", probe.retryAfterSeconds());

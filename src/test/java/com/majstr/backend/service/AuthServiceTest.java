@@ -44,6 +44,7 @@ class AuthServiceTest {
     @Mock ReferralService referralService;
     @Mock EmailPolicyService emailPolicyService;
     @Mock ProfileService profileService;
+    @Mock AbuseLimits abuseLimits;
     @Mock org.springframework.transaction.PlatformTransactionManager transactionManager;
     @InjectMocks AuthService authService;
 
@@ -242,6 +243,50 @@ class AuthServiceTest {
         order.verify(passwordEncoder).matches("secret", "hash");
         order.verify(transactionManager).getTransaction(any());
         order.verify(refreshTokenService).issue(user);
+    }
+
+    @Test
+    void login_anUnknownAddressSpendsTheSameTimeAndTheSameLimit() {
+        given(userRepository.findByEmailIgnoreCase("nobody@b.c")).willReturn(java.util.Optional.empty());
+        given(passwordEncoder.encode(any())).willReturn("dummy");
+
+        org.assertj.core.api.Assertions.assertThatThrownBy(
+                () -> authService.login(new com.majstr.backend.dto.LoginRequest("nobody@b.c", "guess")))
+                .isInstanceOf(org.springframework.security.authentication.BadCredentialsException.class);
+
+        verify(passwordEncoder).matches("guess", "dummy");
+        verify(abuseLimits).recordLoginFailure("nobody@b.c");
+    }
+
+    @Test
+    void login_aBlockedAccountIsRefusedBeforeThePasswordIsChecked() {
+        UUID id = UUID.randomUUID();
+        given(userRepository.findByEmailIgnoreCase("a@b.c")).willReturn(java.util.Optional.of(
+                User.builder().id(id).email("a@b.c").passwordHash("hash").build()));
+        org.mockito.BDDMockito.willThrow(new com.majstr.backend.exception.TooManyRequestsException("error.rate.login", 60))
+                .given(abuseLimits).requireLoginNotBlocked(id.toString());
+
+        org.assertj.core.api.Assertions.assertThatThrownBy(
+                () -> authService.login(new com.majstr.backend.dto.LoginRequest("a@b.c", "secret")))
+                .isInstanceOf(com.majstr.backend.exception.TooManyRequestsException.class);
+
+        verify(passwordEncoder, never()).matches(any(), any());
+    }
+
+    @Test
+    void login_onlyAFailureSpendsTheAccountLimit() {
+        UUID id = UUID.randomUUID();
+        User user = User.builder().id(id).email("a@b.c").passwordHash("hash").fullName("Іван")
+                .trades(new java.util.LinkedHashSet<>()).build();
+        given(userRepository.findByEmailIgnoreCase("a@b.c")).willReturn(java.util.Optional.of(user));
+        given(passwordEncoder.matches("secret", "hash")).willReturn(true);
+        given(userRepository.findById(id)).willReturn(java.util.Optional.of(user));
+        given(jwtService.generateAccessToken(any(), any())).willReturn("access");
+        given(refreshTokenService.issue(user)).willReturn("refresh");
+
+        authService.login(new com.majstr.backend.dto.LoginRequest("a@b.c", "secret"));
+
+        verify(abuseLimits, never()).recordLoginFailure(any());
     }
 
     @Test

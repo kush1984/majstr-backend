@@ -32,10 +32,12 @@ class RefreshTokenServiceTest {
     @Mock RefreshTokenRepository repository;
     @Mock UserRepository userRepository;
     @Mock JwtProperties jwtProperties;
+    @Mock RefreshTokenFamilies families;
     @InjectMocks RefreshTokenService service;
 
     private final UUID userId = UUID.randomUUID();
     private final User user = User.builder().id(userId).email("ivan@example.com").build();
+    private final UUID familyId = UUID.randomUUID();
 
     private RefreshToken stored(boolean revoked, Instant expiresAt) {
         return stored(revoked, expiresAt, null);
@@ -47,6 +49,7 @@ class RefreshTokenServiceTest {
                 .id(UUID.randomUUID())
                 .userId(userId)
                 .tokenHash("some-hash")
+                .familyId(familyId)
                 .expiresAt(expiresAt)
                 .revoked(revoked)
                 .rotatedAt(rotatedAt)
@@ -74,16 +77,54 @@ class RefreshTokenServiceTest {
         given(repository.findByTokenHash(anyString())).willReturn(Optional.of(old));
         given(userRepository.findById(userId)).willReturn(Optional.of(user));
         given(jwtProperties.refreshTokenExpirationDays()).willReturn(30L);
+        given(repository.markRotated(any(), any())).willReturn(1);
 
         RefreshTokenService.RotationResult result = service.rotate("old-raw");
 
-        assertThat(old.isRevoked()).isTrue();               // old invalidated
         // Stamped as rotated (not logged out) — this is what earns the replay grace below.
-        assertThat(old.getRotatedAt()).isNotNull();
+        verify(repository).markRotated(any(), any());
         assertThat(result.user()).isEqualTo(user);
         assertThat(result.newRefreshToken()).isNotBlank();
-        // Two saves: the revoked old row + the freshly issued one.
-        verify(repository, org.mockito.Mockito.times(2)).save(any(RefreshToken.class));
+        // The child stays in the family, which is what lets a later replay end the whole chain.
+        ArgumentCaptor<RefreshToken> child = ArgumentCaptor.forClass(RefreshToken.class);
+        verify(repository).save(child.capture());
+        assertThat(child.getValue().getFamilyId()).isEqualTo(familyId);
+    }
+
+    @Test
+    void rotate_aRequestThatLostTheRaceToRotateIsTreatedAsAReplay() {
+        given(repository.findByTokenHash(anyString()))
+                .willReturn(Optional.of(stored(false, Instant.now().plus(Duration.ofDays(5)))));
+        given(repository.markRotated(any(), any())).willReturn(0);
+        given(jwtProperties.refreshRotationGraceSeconds()).willReturn(60L);
+        given(repository.spendGrace(any(), org.mockito.ArgumentMatchers.anyShort())).willReturn(1);
+        given(userRepository.findById(userId)).willReturn(Optional.of(user));
+        given(jwtProperties.refreshTokenExpirationDays()).willReturn(30L);
+
+        assertThat(service.rotate("old-raw").newRefreshToken()).isNotBlank();
+    }
+
+    @Test
+    void rotate_withTheGraceTurnedOff_theLoserOfARaceIsRefused() {
+        given(repository.findByTokenHash(anyString()))
+                .willReturn(Optional.of(stored(false, Instant.now().plus(Duration.ofDays(5)))));
+        given(repository.markRotated(any(), any())).willReturn(0);
+        given(jwtProperties.refreshRotationGraceSeconds()).willReturn(0L);
+
+        assertThatThrownBy(() -> service.rotate("old-raw")).isInstanceOf(InvalidTokenException.class);
+    }
+
+    @Test
+    void rotate_theReplayAllowanceSpent_isRefusedWithoutEndingTheFamily() {
+        // Tabs racing on one wake-up are not a theft, so running out here only refuses this one.
+        given(repository.findByTokenHash(anyString())).willReturn(Optional.of(
+                stored(true, Instant.now().plus(Duration.ofDays(5)), Instant.now().minus(Duration.ofSeconds(5)))));
+        given(jwtProperties.refreshRotationGraceSeconds()).willReturn(60L);
+        given(repository.spendGrace(any(), org.mockito.ArgumentMatchers.anyShort())).willReturn(0);
+
+        assertThatThrownBy(() -> service.rotate("old-raw")).isInstanceOf(InvalidTokenException.class);
+
+        verify(families, never()).revoke(any());
     }
 
     @Test
@@ -93,7 +134,6 @@ class RefreshTokenServiceTest {
         // may never have reached the client.
         given(repository.findByTokenHash(anyString()))
                 .willReturn(Optional.of(stored(true, Instant.now().plus(Duration.ofDays(5)))));
-        given(jwtProperties.refreshRotationGraceSeconds()).willReturn(60L);
 
         assertThatThrownBy(() -> service.rotate("old-raw"))
                 .isInstanceOf(InvalidTokenException.class);
@@ -110,6 +150,7 @@ class RefreshTokenServiceTest {
                 Instant.now().minus(Duration.ofSeconds(5)));
         given(repository.findByTokenHash(anyString())).willReturn(Optional.of(rotatedSecondsAgo));
         given(jwtProperties.refreshRotationGraceSeconds()).willReturn(60L);
+        given(repository.spendGrace(any(), org.mockito.ArgumentMatchers.anyShort())).willReturn(1);
         given(userRepository.findById(userId)).willReturn(Optional.of(user));
         given(jwtProperties.refreshTokenExpirationDays()).willReturn(30L);
 
@@ -120,11 +161,12 @@ class RefreshTokenServiceTest {
         // Only the NEW row is written: the replay must not re-stamp rotatedAt, or a client
         // stuck in a retry loop would keep pushing the window forward indefinitely.
         verify(repository, org.mockito.Mockito.times(1)).save(any(RefreshToken.class));
+        verify(repository, never()).markRotated(any(), any());
         assertThat(rotatedSecondsAgo.getRotatedAt()).isBefore(Instant.now().minus(Duration.ofSeconds(4)));
     }
 
     @Test
-    void rotate_replayedAfterTheGraceExpired_isRejected() {
+    void rotate_replayedAfterTheGraceExpired_isRejectedAndEndsTheFamily() {
         RefreshToken rotatedLongAgo = stored(true, Instant.now().plus(Duration.ofDays(5)),
                 Instant.now().minus(Duration.ofMinutes(10)));
         given(repository.findByTokenHash(anyString())).willReturn(Optional.of(rotatedLongAgo));
@@ -133,6 +175,7 @@ class RefreshTokenServiceTest {
         assertThatThrownBy(() -> service.rotate("old-raw"))
                 .isInstanceOf(InvalidTokenException.class);
         verify(userRepository, never()).findById(any());
+        verify(families).revoke(familyId);
     }
 
     @Test
@@ -166,14 +209,13 @@ class RefreshTokenServiceTest {
     }
 
     @Test
-    void revoke_marksStoredTokenRevoked() {
+    void revoke_endsTheWholeChain() {
         RefreshToken token = stored(false, Instant.now().plus(Duration.ofDays(5)));
         given(repository.findByTokenHash(anyString())).willReturn(Optional.of(token));
 
         service.revoke("raw");
 
-        assertThat(token.isRevoked()).isTrue();
-        verify(repository).save(token);
+        verify(repository).revokeFamily(familyId);
     }
 
     @Test
@@ -182,7 +224,7 @@ class RefreshTokenServiceTest {
 
         service.revoke("raw"); // must not throw
 
-        verify(repository, never()).save(any());
+        verify(repository, never()).revokeFamily(any());
     }
 
     @Test
@@ -190,6 +232,6 @@ class RefreshTokenServiceTest {
         service.revoke("  ");
 
         verify(repository, never()).findByTokenHash(any());
-        verify(repository, never()).save(any());
+        verify(repository, never()).revokeFamily(any());
     }
 }

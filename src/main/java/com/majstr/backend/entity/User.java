@@ -149,6 +149,10 @@ public class User {
     @Column(name = "last_active_at")
     private Instant lastActiveAt;
 
+    /** An access token issued before this is refused: a password reset ends them at once (B-126). */
+    @Column(name = "tokens_valid_after")
+    private Instant tokensValidAfter;
+
     /** Device the master last used, parsed from the User-Agent (throttled with
      *  last_active_at). MOBILE/TABLET/DESKTOP/UNKNOWN; null until first seen. */
     @Column(name = "last_device_type", length = 20)

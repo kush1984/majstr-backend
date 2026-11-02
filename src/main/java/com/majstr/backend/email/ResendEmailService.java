@@ -49,8 +49,10 @@ public class ResendEmailService implements EmailService {
     public void sendVerificationEmail(User user, String token) {
         String link = props.appUrl() + "/verify-email?token=" + URLEncoder.encode(token, StandardCharsets.UTF_8);
         if (!props.isConfigured()) {
-            log.warn("RESEND_API_KEY not set — skipping verification email to {}. Verify link: {}",
-                    user.getEmail(), link);
+            // The link is a credential, so production's log never gets it. Debug is on in dev, where it is
+            // the only way to reach it.
+            log.warn("RESEND_API_KEY not set — skipping verification email to {}", user.getEmail());
+            log.debug("Verify link: {}", link);
             return;
         }
         send(user.getEmail(), "Підтвердіть email — Majstr", verificationHtml(user.getFullName(), link));
@@ -61,8 +63,8 @@ public class ResendEmailService implements EmailService {
     public void sendPasswordResetEmail(User user, String token) {
         String link = props.appUrl() + "/reset-password?token=" + URLEncoder.encode(token, StandardCharsets.UTF_8);
         if (!props.isConfigured()) {
-            log.warn("RESEND_API_KEY not set — skipping password-reset email to {}. Reset link: {}",
-                    user.getEmail(), link);
+            log.warn("RESEND_API_KEY not set — skipping password-reset email to {}", user.getEmail());
+            log.debug("Reset link: {}", link);
             return;
         }
         send(user.getEmail(), "Скидання пароля — Majstr", passwordResetHtml(user.getFullName(), link));
@@ -73,7 +75,8 @@ public class ResendEmailService implements EmailService {
     public void sendEstimateShareEmail(String toEmail, String clientName, String contractorName,
                                        String projectName, String shareUrl) {
         if (!props.isConfigured()) {
-            log.warn("RESEND_API_KEY not set — skipping estimate email to {}. Portal link: {}", toEmail, shareUrl);
+            log.warn("RESEND_API_KEY not set — skipping estimate email to {}", toEmail);
+            log.debug("Portal link: {}", shareUrl);
             return;
         }
         send(toEmail, "Кошторис від " + oneLine(contractorName),

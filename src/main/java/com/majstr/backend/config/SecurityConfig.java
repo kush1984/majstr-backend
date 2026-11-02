@@ -1,5 +1,6 @@
 package com.majstr.backend.config;
 
+import com.majstr.backend.security.AnonymousRateLimitFilter;
 import com.majstr.backend.security.JwtAuthenticationFilter;
 import com.majstr.backend.security.LoginRateLimitFilter;
 import com.majstr.backend.security.PublicPortalRateLimitFilter;
@@ -68,6 +69,7 @@ public class SecurityConfig {
     private final LoginRateLimitFilter loginRateLimitFilter;
     private final RegisterRateLimitFilter registerRateLimitFilter;
     private final PublicPortalRateLimitFilter publicPortalRateLimitFilter;
+    private final AnonymousRateLimitFilter anonymousRateLimitFilter;
     private final RestAuthenticationEntryPoint restAuthenticationEntryPoint;
     private final RestAccessDeniedHandler restAccessDeniedHandler;
     private final CorsProperties corsProperties;
@@ -104,6 +106,7 @@ public class SecurityConfig {
                 .addFilterBefore(loginRateLimitFilter, UsernamePasswordAuthenticationFilter.class)
                 .addFilterBefore(registerRateLimitFilter, UsernamePasswordAuthenticationFilter.class)
                 .addFilterBefore(publicPortalRateLimitFilter, UsernamePasswordAuthenticationFilter.class)
+                .addFilterBefore(anonymousRateLimitFilter, UsernamePasswordAuthenticationFilter.class)
                 .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
         return http.build();
     }

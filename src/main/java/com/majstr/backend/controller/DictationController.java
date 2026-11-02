@@ -13,6 +13,7 @@ import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
+import com.majstr.backend.service.ai.AiAccess;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -40,6 +41,7 @@ public class DictationController {
 
     private final DictationService dictationService;
     private final DictationRateLimiter dictationRateLimiter;
+    private final AiAccess aiAccess;
 
     @Operation(summary = "Parse dictated text into positions matched against the master's catalog "
             + "— returns a review proposal (no write)")
@@ -47,6 +49,7 @@ public class DictationController {
     public DictationParseResponse parse(@PathVariable UUID id,
                                         @Valid @RequestBody DictationParseRequest req,
                                         @AuthenticationPrincipal UserPrincipal principal) {
+        aiAccess.requireAllowed(principal.id());
         ReceiptScanRateLimiter.ConsumeResult probe = dictationRateLimiter.tryConsume(principal.id());
         if (!probe.allowed()) {
             throw new TooManyRequestsException("error.rate.dictation", probe.retryAfterSeconds());

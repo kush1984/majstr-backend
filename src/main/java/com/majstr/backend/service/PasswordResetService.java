@@ -17,6 +17,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.security.SecureRandom;
 import java.time.Duration;
 import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 import java.util.Base64;
 
 /**
@@ -80,6 +81,8 @@ public class PasswordResetService {
         User user = token.getUser();
         user.setPasswordHash(passwordEncoder.encode(newPassword));
         token.setUsedAt(Instant.now());
+        // Whole seconds, as a JWT's iat is: a token issued by the login right after this must pass.
+        user.setTokensValidAfter(Instant.now().truncatedTo(ChronoUnit.SECONDS));
         int revoked = refreshTokenRepository.revokeAllForUser(user.getId());
         log.info("Password reset for user {} — {} session(s) revoked", user.getId(), revoked);
     }

@@ -1,5 +1,16 @@
 package com.majstr.backend.exception;
 
+import com.majstr.backend.security.SafePath;
+import io.sentry.SentryLevel;
+import org.springframework.beans.TypeMismatchException;
+import org.springframework.http.HttpMethod;
+import org.springframework.web.HttpMediaTypeNotSupportedException;
+import org.springframework.web.HttpRequestMethodNotSupportedException;
+import org.springframework.web.bind.ServletRequestBindingException;
+import org.springframework.web.method.annotation.HandlerMethodValidationException;
+import org.springframework.web.multipart.MultipartException;
+import org.springframework.web.multipart.support.MissingServletRequestPartException;
+import org.springframework.web.server.ResponseStatusException;
 import com.majstr.backend.config.LocalizationConfig;
 import com.majstr.backend.dto.ErrorResponse;
 import com.majstr.backend.feature.FeatureNotAvailableException;
@@ -58,7 +69,7 @@ public class GlobalExceptionHandler {
         // Never «fullName: must not be blank» in front of a master (review P1-22): the field's own
         // Ukrainian name where the bundle has one, the generic sentence otherwise. The raw detail
         // stays in the log.
-        log.debug("Validation failed at {}: {}", req.getRequestURI(), ex.getBindingResult().getFieldErrors().stream()
+        log.debug("Validation failed at {}: {}", SafePath.of(req.getRequestURI()), ex.getBindingResult().getFieldErrors().stream()
                 .map(this::formatFieldError).collect(Collectors.joining("; ")));
         java.util.List<String> labels = ex.getBindingResult().getFieldErrors().stream()
                 .map(err -> fieldLabel(err.getField()))
@@ -83,7 +94,7 @@ public class GlobalExceptionHandler {
         // text body validation already uses. (Per-FIELD messages stay un-localized by
         // design — the PWA validates client-side with its own texts; this is the
         // parameter-level path, which has no such counterpart.)
-        log.debug("Constraint violation on {}: {}", req.getRequestURI(), ex.getMessage());
+        log.debug("Constraint violation on {}: {}", SafePath.of(req.getRequestURI()), ex.getMessage());
         return build(HttpStatus.BAD_REQUEST, msg("error.validation-failed"), req);
     }
 
@@ -239,7 +250,7 @@ public class GlobalExceptionHandler {
         // Unknown path — almost always a bot/scanner probe (e.g. /admin/phpinfo.php).
         // A plain 404, NOT the catch-all 500, and deliberately NOT reported to
         // Sentry: it's internet background noise, not an application fault.
-        log.debug("No resource for {} {}", req.getMethod(), req.getRequestURI());
+        log.debug("No resource for {} {}", req.getMethod(), SafePath.of(req.getRequestURI()));
         return build(HttpStatus.NOT_FOUND, msg("error.not-found"), req);
     }
 
@@ -250,7 +261,7 @@ public class GlobalExceptionHandler {
         // is almost always a link-preview bot (WhatsApp/Telegram/Viber unfurling a shared portal
         // link) sending a narrow "Accept: text/html". Not an application fault, same reasoning as
         // the quiet 404 below: a correct 406, no Sentry noise.
-        log.debug("Not acceptable for {} {}: {}", req.getMethod(), req.getRequestURI(), ex.getMessage());
+        log.debug("Not acceptable for {} {}: {}", req.getMethod(), SafePath.of(req.getRequestURI()), ex.getMessage());
         return build(HttpStatus.NOT_ACCEPTABLE, msg("error.not-acceptable"), req);
     }
 
@@ -291,7 +302,7 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ErrorResponse> handleAiExtraction(AiExtractionException ex, HttpServletRequest req) {
         // Not configured (dev) or an upstream/parse failure — the AI couldn't do it
         // right now. 503 + a machine code so the PWA can offer "enter manually".
-        log.warn("AI extraction unavailable at {} {}: {}", req.getMethod(), req.getRequestURI(), ex.getMessage());
+        log.warn("AI extraction unavailable at {} {}: {}", req.getMethod(), SafePath.of(req.getRequestURI()), ex.getMessage());
         ErrorResponse body = ErrorResponse.coded(HttpStatus.SERVICE_UNAVAILABLE.value(),
                 HttpStatus.SERVICE_UNAVAILABLE.getReasonPhrase(), msg(ex.getMessage()), req.getRequestURI(), "AI_UNAVAILABLE");
         return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).body(body);
@@ -518,6 +529,63 @@ public class GlobalExceptionHandler {
                 .body(body);
     }
 
+    /**
+     * Spring's own answers to a malformed request. They used to fall through to {@link #handleAny} as a 500,
+     * so anyone could raise Sentry events at will, and the PWA's outbox retried a deterministic 400 eight
+     * times (review B-129).
+     */
+    @ExceptionHandler({TypeMismatchException.class, ServletRequestBindingException.class,
+            MissingServletRequestPartException.class, MultipartException.class,
+            HandlerMethodValidationException.class})
+    public ResponseEntity<ErrorResponse> handleMalformedRequest(Exception ex, HttpServletRequest req) {
+        return clientMistake(HttpStatus.BAD_REQUEST, "error.request.invalid", ex, req);
+    }
+
+    @ExceptionHandler(HttpRequestMethodNotSupportedException.class)
+    public ResponseEntity<ErrorResponse> handleMethodNotSupported(HttpRequestMethodNotSupportedException ex,
+                                                                  HttpServletRequest req) {
+        ResponseEntity<ErrorResponse> answer =
+                clientMistake(HttpStatus.METHOD_NOT_ALLOWED, "error.request.method", ex, req);
+        if (ex.getSupportedHttpMethods() == null) {
+            return answer;
+        }
+        return ResponseEntity.status(answer.getStatusCode())
+                .allow(ex.getSupportedHttpMethods().toArray(HttpMethod[]::new))
+                .body(answer.getBody());
+    }
+
+    @ExceptionHandler(HttpMediaTypeNotSupportedException.class)
+    public ResponseEntity<ErrorResponse> handleMediaTypeNotSupported(HttpMediaTypeNotSupportedException ex,
+                                                                     HttpServletRequest req) {
+        return clientMistake(HttpStatus.UNSUPPORTED_MEDIA_TYPE, "error.request.media-type", ex, req);
+    }
+
+    @ExceptionHandler(ResponseStatusException.class)
+    public ResponseEntity<ErrorResponse> handleResponseStatus(ResponseStatusException ex, HttpServletRequest req) {
+        HttpStatus status = HttpStatus.valueOf(ex.getStatusCode().value());
+        if (status.is5xxServerError()) {
+            reportToSentry(ex, req);
+        }
+        return build(status, ex.getReason() != null ? msg(ex.getReason()) : status.getReasonPhrase(), req);
+    }
+
+    /**
+     * An anonymous one is a scanner's. One from a signed-in account is usually our own front-end: a 415 on
+     * every upload is how a real bug was once found, so those stay visible, as warnings.
+     */
+    private ResponseEntity<ErrorResponse> clientMistake(HttpStatus status, String messageKey, Exception ex,
+                                                        HttpServletRequest req) {
+        log.debug("{} at {} {}: {}", status.value(), req.getMethod(), SafePath.of(req.getRequestURI()), ex.getMessage());
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        if (auth != null && auth.getPrincipal() instanceof UserPrincipal) {
+            Sentry.withScope(scope -> {
+                scope.setLevel(SentryLevel.WARNING);
+                reportToSentry(ex, req);
+            });
+        }
+        return build(status, msg(messageKey), req);
+    }
+
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ErrorResponse> handleAny(Exception ex, HttpServletRequest req) {
         if (isClientDisconnect(ex)) {
@@ -525,10 +593,10 @@ public class GlobalExceptionHandler {
             // quiet 404 above: not an application fault, so no ERROR stack trace and no Sentry.
             // Returning null is the point, not a shortcut: there is no socket left to write to, and
             // an error body would only be a second failed write on the same dead connection.
-            log.debug("Client disconnected during {} {}", req.getMethod(), req.getRequestURI());
+            log.debug("Client disconnected during {} {}", req.getMethod(), SafePath.of(req.getRequestURI()));
             return null;
         }
-        log.error("Unhandled exception at {} {}", req.getMethod(), req.getRequestURI(), ex);
+        log.error("Unhandled exception at {} {}", req.getMethod(), SafePath.of(req.getRequestURI()), ex);
         reportToSentry(ex, req);
         // Generic message only — the stack trace stays in the server log, never in the body.
         return build(HttpStatus.INTERNAL_SERVER_ERROR, msg("error.internal"), req);
@@ -575,7 +643,7 @@ public class GlobalExceptionHandler {
      */
     private void reportToSentry(Exception ex, HttpServletRequest req) {
         Sentry.withScope(scope -> {
-            scope.setTag("endpoint", req.getMethod() + " " + req.getRequestURI());
+            scope.setTag("endpoint", req.getMethod() + " " + SafePath.of(req.getRequestURI()));
             Authentication auth = SecurityContextHolder.getContext().getAuthentication();
             if (auth != null && auth.getPrincipal() instanceof UserPrincipal principal) {
                 io.sentry.protocol.User user = new io.sentry.protocol.User();

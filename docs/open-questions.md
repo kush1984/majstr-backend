@@ -689,6 +689,8 @@ one-line summary — keep the item in the file as a record.
 
 ### Refresh-token reuse detection (session-family revocation)
 - **Status:** OPEN — but see the note below; the *first* half shipped 2026-07-26
+- **2026-11-02 — the second half shipped too (round 5 P1, B-126, V181):** families, and a replay past the grace window ends
+  one. See [iteration-review-round-5-p1.md](iteration-review-round-5-p1.md). Close this when the owner agrees.
 - **Since:** Fix I code review (2026-06-10)
 - **2026-07-26 — the other half of this item shipped first, deliberately.** This item's own
   note warned "needs care not to punish the PWA's legitimate single-flight races". That risk
@@ -810,6 +812,8 @@ one-line summary — keep the item in the file as a record.
 ### PostHog: verify masking on a real recording
 - **Status:** OPEN
 - **Since:** PostHog iteration (2026-08-30); narrowed 2026-08-31 once the key went live
+- **2026-11-02 (P-77):** replay now masks ALL text and opts out through `.ph-unmask`, so a new screen is safe by default.
+  What this item asks is unchanged and more pressing: watch one real recording, and confirm the words are gone.
 - **Context:** The deployment half is DONE — an EU (Frankfurt) project exists and
   `VITE_POSTHOG_KEY` is set on the **Cloudflare Pages** build of the PWA (not on the Railway
   backend, which was the first attempt and reads no `VITE_*` at all). Confirmed the only way
@@ -3886,6 +3890,8 @@ one-line summary — keep the item in the file as a record.
 ### Smart Sentry filter for client 4xx (mute external/bot, keep our own front-end)
 - **Status:** OPEN
 - **Since:** Multipart-415 fix (2026-07-19)
+- **2026-11-02 (B-129):** the first rule landed: Spring's own client errors answer 4xx and reach Sentry only from a signed-in
+  caller, as warnings. Unknown paths were already quiet.
 - **Context:** Client 4xx look like noise, so the tempting move is to drop them from Sentry.
   This fix is the counter-example: a 415 (`HttpMediaTypeNotSupportedException`) was a REAL
   front-end bug — every file upload was sent as application/json and the new sketch feature
@@ -3952,6 +3958,8 @@ one-line summary — keep the item in the file as a record.
 
 ### Multi-account abuse: AI-call daily quota + blocklist upkeep
 - **Status:** OPEN
+- **2026-11-02 (B-125):** the quota half shipped as hourly limits: per account on imports, per flow across everyone, and FREE
+  needs a confirmed address for a model call. The blocklist upkeep is what is left.
 - **Since:** anti-abuse-email iteration
 - **Context:** The anti-abuse iteration closed the sharp edges — trial + client PDF now require a verified email, registration blocks disposable/no-MX domains and dedupes gmail aliases (`email_canonical`, V55). Not taken: option **E**, a hard per-user/day cap on LLM extraction calls (estimate/receipt import) — the strongest ceiling on live API cost if a determined abuser still verifies throwaway inboxes. Also: the disposable-domain blocklist is curated, not exhaustive; the SQL backfill only canonicalizes gmail (legacy non-gmail plus-aliases aren't retro-deduped).
 - **Notes / options:** Add a daily AI-call quota keyed by user (even for PRO/trial) if trial abuse persists. Periodically refresh the blocklist from a maintained public list. Consider device/IP signals only if email-level guards prove insufficient.

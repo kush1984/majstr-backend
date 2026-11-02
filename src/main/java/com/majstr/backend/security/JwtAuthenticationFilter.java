@@ -1,6 +1,8 @@
 package com.majstr.backend.security;
 
 import com.majstr.backend.repository.UserRepository;
+import com.majstr.backend.entity.User;
+import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.JwtException;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
@@ -16,6 +18,7 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
+import java.time.Instant;
 import java.util.UUID;
 
 @Slf4j
@@ -36,8 +39,9 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         String token = extractToken(request);
         if (token != null && SecurityContextHolder.getContext().getAuthentication() == null) {
             try {
-                UUID userId = jwtService.parseUserId(token);
-                userRepository.findById(userId).ifPresent(user -> {
+                Claims claims = jwtService.parseClaims(token);
+                UUID userId = UUID.fromString(claims.getSubject());
+                userRepository.findById(userId).filter(user -> stillValid(user, claims)).ifPresent(user -> {
                     UserPrincipal principal = UserPrincipal.from(user);
                     UsernamePasswordAuthenticationToken auth =
                             new UsernamePasswordAuthenticationToken(principal, null, principal.getAuthorities());
@@ -52,6 +56,12 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             }
         }
         chain.doFilter(request, response);
+    }
+
+    private static boolean stillValid(User user, Claims claims) {
+        Instant validAfter = user.getTokensValidAfter();
+        return validAfter == null
+                || (claims.getIssuedAt() != null && !claims.getIssuedAt().toInstant().isBefore(validAfter));
     }
 
     private String extractToken(HttpServletRequest request) {

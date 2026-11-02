@@ -13,13 +13,13 @@ import com.majstr.backend.repository.UserRepository;
 import com.majstr.backend.repository.UserTradeRepository;
 import com.majstr.backend.security.ClientIp;
 import com.majstr.backend.security.UserPrincipal;
+import com.majstr.backend.service.AbuseLimits;
 import com.majstr.backend.service.AuthService;
 import com.majstr.backend.service.EmailVerificationService;
 import com.majstr.backend.service.ForgotPasswordRateLimiter;
 import com.majstr.backend.service.PasswordResetService;
 import com.majstr.backend.service.VerificationEmailRateLimiter;
 import jakarta.servlet.http.HttpServletRequest;
-import java.util.Locale;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -49,6 +49,7 @@ public class AuthController {
     private final VerificationEmailRateLimiter verificationEmailRateLimiter;
     private final PasswordResetService passwordResetService;
     private final ForgotPasswordRateLimiter forgotPasswordRateLimiter;
+    private final AbuseLimits abuseLimits;
 
     @Operation(summary = "Register a new contractor")
     @PostMapping("/register")
@@ -87,13 +88,14 @@ public class AuthController {
     @PostMapping("/forgot")
     public ResponseEntity<Void> forgotPassword(@Valid @RequestBody ForgotPasswordRequest request,
                                                HttpServletRequest http) {
-        // Key by IP+email so a spammer can't hammer reset mail at one address, and one IP
-        // can't churn many addresses. The limit itself never leaks account existence.
-        String key = ClientIp.of(http) + "|" + request.email().trim().toLowerCase(Locale.ROOT);
+        // The pair limits one sender at one address; requireForgot is what stops many addresses from one
+        // IP and one address from many IPs. None of them leaks whether the account exists.
+        String key = ClientIp.of(http) + "|" + AbuseLimits.foldEmail(request.email());
         ForgotPasswordRateLimiter.ConsumeResult probe = forgotPasswordRateLimiter.tryConsume(key);
         if (!probe.allowed()) {
             throw new TooManyRequestsException("error.rate.forgot", probe.retryAfterSeconds());
         }
+        abuseLimits.requireForgot(ClientIp.of(http), request.email());
         passwordResetService.requestReset(request.email());
         // Always 200, whether or not the account exists — the PWA shows a neutral screen.
         return ResponseEntity.ok().build();

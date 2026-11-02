@@ -9,6 +9,10 @@ import javax.naming.directory.Attribute;
 import javax.naming.directory.Attributes;
 import javax.naming.directory.DirContext;
 import javax.naming.directory.InitialDirContext;
+import java.time.Duration;
+import java.time.Instant;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
@@ -51,7 +55,13 @@ public class EmailPolicyService {
     /** Google domains additionally ignore dots in the local part. */
     private static final Set<String> DOT_INSENSITIVE_PROVIDERS = Set.of("gmail.com", "googlemail.com");
 
+    private static final Duration MX_CACHE_TTL = Duration.ofHours(1);
+    private static final int MX_CACHE_LIMIT = 10_000;
+
+    private record MxAnswer(boolean accepts, Instant expiresAt) { }
+
     private final Set<String> disposableDomains;
+    private final Map<String, MxAnswer> mxAnswers = new ConcurrentHashMap<>();
 
     public EmailPolicyService() {
         this.disposableDomains = loadBlocklist();
@@ -88,8 +98,9 @@ public class EmailPolicyService {
 
     /**
      * Rejects a disposable-domain or non-mail-receiving address. Format is assumed
-     * already valid (jakarta {@code @Email} on the request). Safe to call inside a
-     * transaction — the MX lookup is bounded (2s) and fail-open.
+     * already valid (jakarta {@code @Email} on the request). Call it BEFORE a transaction:
+     * the MX lookup is bounded and fail-open, but seconds with a pooled connection held is
+     * what a domain with slow DNS and ten parallel requests would use to starve the pool.
      */
     public void assertAcceptable(String rawEmail) {
         String email = rawEmail == null ? "" : rawEmail.toLowerCase(Locale.ROOT).trim();
@@ -113,6 +124,20 @@ public class EmailPolicyService {
      * a transient DNS problem never blocks a real user.
      */
     private boolean hasMailExchanger(String domain) {
+        Instant now = Instant.now();
+        MxAnswer cached = mxAnswers.get(domain);
+        if (cached != null && cached.expiresAt().isAfter(now)) {
+            return cached.accepts();
+        }
+        boolean accepts = lookUpMailExchanger(domain);
+        if (mxAnswers.size() >= MX_CACHE_LIMIT) {
+            mxAnswers.clear();
+        }
+        mxAnswers.put(domain, new MxAnswer(accepts, now.plus(MX_CACHE_TTL)));
+        return accepts;
+    }
+
+    private boolean lookUpMailExchanger(String domain) {
         try {
             Hashtable<String, String> env = new Hashtable<>();
             env.put("java.naming.factory.initial", "com.sun.jndi.dns.DnsContextFactory");

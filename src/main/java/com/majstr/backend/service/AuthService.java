@@ -21,6 +21,7 @@ import java.time.Instant;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.TreeSet;
+import java.util.UUID;
 import java.util.Locale;
 
 @Service
@@ -38,6 +39,8 @@ public class AuthService {
     private final EmailPolicyService emailPolicyService;
     private final ProfileService profileService;
     private final PlatformTransactionManager transactionManager;
+    private final AbuseLimits abuseLimits;
+    private volatile String dummyHash;
 
     /**
      * The DNS lookup and the password hash come before the transaction: both are slow, this door is
@@ -101,6 +104,13 @@ public class AuthService {
         return issueTokens(user);
     }
 
+    private String dummyHash() {
+        if (dummyHash == null) {
+            dummyHash = passwordEncoder.encode(UUID.randomUUID().toString());
+        }
+        return dummyHash;
+    }
+
     /** A blank UTM tag is no tag: NULL is the value that means "arrived without marks". */
     private static String trimToNull(String raw) {
         if (raw == null) {
@@ -132,11 +142,21 @@ public class AuthService {
         }
     }
 
-    /** The password check runs with no connection held (review B-121): about 250 ms, on an anonymous door. */
+    /**
+     * The password check runs with no connection held (review B-121): about 250 ms, on an anonymous door.
+     * An unknown address spends the same time and the same limit as a real one, so neither the clock nor
+     * a 429 says which addresses have accounts (B-128).
+     */
     public AuthResponse login(LoginRequest req) {
-        User user = userRepository.findByEmailIgnoreCase(req.email().trim())
-                .orElseThrow(() -> new BadCredentialsException("Invalid email or password"));
-        if (!passwordEncoder.matches(req.password(), user.getPasswordHash())) {
+        String email = req.email().trim();
+        User user = userRepository.findByEmailIgnoreCase(email).orElse(null);
+        String accountKey = user != null ? user.getId().toString() : AbuseLimits.foldEmail(email);
+        abuseLimits.requireLoginNotBlocked(accountKey);
+        if (user == null) {
+            passwordEncoder.matches(req.password(), dummyHash());
+        }
+        if (user == null || !passwordEncoder.matches(req.password(), user.getPasswordHash())) {
+            abuseLimits.recordLoginFailure(accountKey);
             throw new BadCredentialsException("Invalid email or password");
         }
         return Transactions.write(transactionManager, () -> issueTokens(

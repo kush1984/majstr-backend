@@ -4,6 +4,12 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.client.ResourceAccessException;
 import org.springframework.web.client.RestClientResponseException;
 
+import java.net.ConnectException;
+import java.net.NoRouteToHostException;
+import java.net.SocketTimeoutException;
+import java.net.UnknownHostException;
+import java.time.Duration;
+import java.util.Locale;
 import java.util.Map;
 import java.util.function.Supplier;
 
@@ -20,6 +26,8 @@ public final class AiHttp {
 
     static final int MAX_ATTEMPTS = 3;
     static final long BACKOFF_BASE_MS = 400L;
+    /** One more attempt may itself take {@code HttpClients.forLlm}'s 170 s, and the PWA gives up at 180 s. */
+    private static final Duration RETRY_WINDOW = Duration.ofSeconds(9);
 
     private AiHttp() {}
 
@@ -29,21 +37,43 @@ public final class AiHttp {
     }
 
     public static Map<String, Object> withRetry(String provider, Supplier<Map<String, Object>> call) {
+        long startedAt = System.nanoTime();
         for (int attempt = 1; ; attempt++) {
             try {
                 return call.get();
             } catch (RestClientResponseException e) { // carries the HTTP status
-                if (attempt >= MAX_ATTEMPTS || !isTransient(e.getStatusCode().value())) {
+                if (attempt >= MAX_ATTEMPTS || !isTransient(e.getStatusCode().value()) || tooLate(startedAt)) {
                     throw e;
                 }
                 backoff(provider, attempt, e);
-            } catch (ResourceAccessException e) { // connection reset / read timeout
-                if (attempt >= MAX_ATTEMPTS) {
+            } catch (ResourceAccessException e) {
+                // Only a failure to connect. A read timeout or a reset may have reached the model, which
+                // bills for it whether or not we hear back: three of those held a Tomcat thread for
+                // 8.5 minutes and paid three times, long after the master had given up.
+                if (attempt >= MAX_ATTEMPTS || !neverReachedTheServer(e) || tooLate(startedAt)) {
                     throw e;
                 }
                 backoff(provider, attempt, e);
             }
         }
+    }
+
+    private static boolean tooLate(long startedAt) {
+        return System.nanoTime() - startedAt > RETRY_WINDOW.toNanos();
+    }
+
+    static boolean neverReachedTheServer(Throwable failure) {
+        for (Throwable t = failure; t != null; t = t.getCause()) {
+            if (t instanceof ConnectException || t instanceof NoRouteToHostException
+                    || t instanceof UnknownHostException) {
+                return true;
+            }
+            if (t instanceof SocketTimeoutException
+                    && String.valueOf(t.getMessage()).toLowerCase(Locale.ROOT).contains("connect")) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private static void backoff(String provider, int attempt, RuntimeException cause) {

@@ -1,10 +1,14 @@
 package com.majstr.backend.config;
 
+import com.majstr.backend.security.UserPrincipal;
+import com.majstr.backend.service.AbuseLimits;
 import com.majstr.backend.service.HeavyWork;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.servlet.HandlerInterceptor;
 import org.springframework.web.servlet.config.annotation.InterceptorRegistry;
 import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
@@ -26,12 +30,27 @@ public class HeavyImportConfig implements WebMvcConfigurer {
             "/api/projects/*/measurements/electrical/plan/parse",
     };
 
+    /** The title pass reads text rather than a file, so it holds no gate, but it still spends a model call. */
+    static final String TRIAGE_PATH = "/api/projects/*/measurements/project/triage";
+
     private static final String ENTERED = HeavyImportConfig.class.getName() + ".entered";
 
     private final HeavyWork heavyWork;
+    private final AbuseLimits abuseLimits;
 
     @Override
     public void addInterceptors(InterceptorRegistry registry) {
+        // First, so a flood is turned away before it can hold a permit (B-125).
+        registry.addInterceptor(new HandlerInterceptor() {
+            @Override
+            public boolean preHandle(HttpServletRequest request, HttpServletResponse response, Object handler) {
+                Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+                if (auth != null && auth.getPrincipal() instanceof UserPrincipal principal) {
+                    abuseLimits.requireAiImport(principal.id());
+                }
+                return true;
+            }
+        }).addPathPatterns(IMPORT_PATHS).addPathPatterns(TRIAGE_PATH);
         registry.addInterceptor(new HandlerInterceptor() {
             @Override
             public boolean preHandle(HttpServletRequest request, HttpServletResponse response, Object handler) {

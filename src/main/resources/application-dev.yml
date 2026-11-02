@@ -29,6 +29,14 @@ app:
     forgot:
       max-attempts: 100000
       window-minutes: 1
+    login-guard:
+      failures-per-account-per-hour: 100000
+      attempts-per-ip-per-quarter: 100000
+    forgot-guard:
+      per-address-per-hour: 100000
+      per-ip-per-hour: 100000
+    anonymous:
+      per-ip-per-minute: 100000
   billing:
     allow-dev-simulation: ${BILLING_ALLOW_DEV_SIM:true}
 

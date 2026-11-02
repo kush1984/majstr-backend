@@ -43,11 +43,6 @@ public class JwtService {
         return accessTtl.toSeconds();
     }
 
-    public UUID parseUserId(String token) {
-        Claims claims = parseClaims(token);
-        return UUID.fromString(claims.getSubject());
-    }
-
     public Claims parseClaims(String token) throws JwtException {
         return Jwts.parser()
                 .verifyWith(signingKey)

@@ -40,7 +40,7 @@ class AiExtractorsTest {
 
     private static AiExtractors extractors(Map<String, String> flows) {
         return new AiExtractors(new AiFlowsProperties("anthropic", null, flows),
-                ANTHROPIC, OPENAI, DEFAULT);
+                ANTHROPIC, OPENAI, DEFAULT, new com.majstr.backend.service.ai.AiFlowBudget(1000));
     }
 
     @Test
@@ -48,7 +48,7 @@ class AiExtractorsTest {
         AiExtractors extractors = extractors(null);
 
         for (AiFlow flow : AiFlow.values()) {
-            assertThat(extractors.forFlow(flow)).isSameAs(DEFAULT);
+            assertThat(extractors.resolved(flow)).isSameAs(DEFAULT);
         }
     }
 
@@ -58,8 +58,8 @@ class AiExtractorsTest {
         // the same trap that once turned an unset provider into 25 failed integration tests.
         AiExtractors extractors = extractors(Map.of("receipt", "", "sketch", "   "));
 
-        assertThat(extractors.forFlow(AiFlow.RECEIPT)).isSameAs(DEFAULT);
-        assertThat(extractors.forFlow(AiFlow.SKETCH)).isSameAs(DEFAULT);
+        assertThat(extractors.resolved(AiFlow.RECEIPT)).isSameAs(DEFAULT);
+        assertThat(extractors.resolved(AiFlow.SKETCH)).isSameAs(DEFAULT);
     }
 
     @Test
@@ -70,9 +70,9 @@ class AiExtractorsTest {
                 "receipt", "anthropic:claude-sonnet-5",
                 "project-docs", "openai:gpt-5.6"));
 
-        assertThat(extractors.forFlow(AiFlow.RECEIPT).providerName()).isEqualTo("anthropic:claude-sonnet-5");
-        assertThat(extractors.forFlow(AiFlow.PROJECT_DOCS).providerName()).isEqualTo("openai:gpt-5.6");
-        assertThat(extractors.forFlow(AiFlow.ESTIMATE)).isSameAs(DEFAULT);
+        assertThat(extractors.resolved(AiFlow.RECEIPT).providerName()).isEqualTo("anthropic:claude-sonnet-5");
+        assertThat(extractors.resolved(AiFlow.PROJECT_DOCS).providerName()).isEqualTo("openai:gpt-5.6");
+        assertThat(extractors.resolved(AiFlow.ESTIMATE)).isSameAs(DEFAULT);
     }
 
     @Test
@@ -82,8 +82,8 @@ class AiExtractorsTest {
                 "receipt", "claude-sonnet-5",   // model only → the configured vendor
                 "sketch", "openai"));           // vendor only → that vendor's own model
 
-        assertThat(extractors.forFlow(AiFlow.RECEIPT).providerName()).isEqualTo("anthropic:claude-sonnet-5");
-        assertThat(extractors.forFlow(AiFlow.SKETCH).providerName()).isEqualTo("openai:gpt-5.6");
+        assertThat(extractors.resolved(AiFlow.RECEIPT).providerName()).isEqualTo("anthropic:claude-sonnet-5");
+        assertThat(extractors.resolved(AiFlow.SKETCH).providerName()).isEqualTo("openai:gpt-5.6");
     }
 
     @Test
@@ -92,30 +92,30 @@ class AiExtractorsTest {
                 "receipt", "anthropic:claude-sonnet-5",
                 "estimate", "anthropic:claude-sonnet-5"));
 
-        assertThat(extractors.forFlow(AiFlow.RECEIPT))
-                .isSameAs(extractors.forFlow(AiFlow.ESTIMATE));
+        assertThat(extractors.resolved(AiFlow.RECEIPT))
+                .isSameAs(extractors.resolved(AiFlow.ESTIMATE));
     }
 
     @Test
     void aTypoDisablesThatFlowAlone_andSaysWhat() {
         AiExtractors extractors = extractors(Map.of("receipt", "antropic:claude-sonnet-5"));
 
-        JsonExtractor broken = extractors.forFlow(AiFlow.RECEIPT);
+        JsonExtractor broken = extractors.resolved(AiFlow.RECEIPT);
         assertThat(broken).isInstanceOf(MisconfiguredJsonExtractor.class);
         assertThat(broken.providerName()).contains("antropic");
         assertThatThrownBy(() -> broken.requestJson(AiInput.text("x"), "system", Map.of()))
                 .isInstanceOf(AiExtractionException.class);
         // The other flows are untouched — one wrong line in config is not an outage.
-        assertThat(extractors.forFlow(AiFlow.ESTIMATE)).isSameAs(DEFAULT);
+        assertThat(extractors.resolved(AiFlow.ESTIMATE)).isSameAs(DEFAULT);
     }
 
     @Test
     void aFlowPointedAtAVendorWithNoKeyIsDisabled_notSilentlyRerouted() {
         AiExtractors extractors = new AiExtractors(
                 new AiFlowsProperties("anthropic", null, Map.of("electrical", "openai:gpt-5.6")),
-                ANTHROPIC, new OpenAiProperties("", "gpt-5.6", 8000, null), DEFAULT);
+                ANTHROPIC, new OpenAiProperties("", "gpt-5.6", 8000, null), DEFAULT, new com.majstr.backend.service.ai.AiFlowBudget(1000));
 
-        JsonExtractor electrical = extractors.forFlow(AiFlow.ELECTRICAL);
+        JsonExtractor electrical = extractors.resolved(AiFlow.ELECTRICAL);
         assertThat(electrical).isInstanceOf(MisconfiguredJsonExtractor.class);
         assertThat(electrical.providerName()).contains("OPENAI_API_KEY");
     }

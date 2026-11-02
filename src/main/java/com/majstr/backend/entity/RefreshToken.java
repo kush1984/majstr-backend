@@ -56,10 +56,21 @@ public class RefreshToken {
     @Column(name = "rotated_at")
     private Instant rotatedAt;
 
+    /** The rotation chain this token belongs to, one per login. A replay long after rotation ends all of it. */
+    @Column(name = "family_id", nullable = false, updatable = false)
+    private UUID familyId;
+
+    /** How many times this token was replayed within the grace window. See {@code RefreshTokenService}. */
+    @Column(name = "grace_uses", nullable = false)
+    private short graceUses;
+
     @PrePersist
     void onCreate() {
         if (id == null) {
             id = UUID.randomUUID();
+        }
+        if (familyId == null) {
+            familyId = id;
         }
         if (createdAt == null) {
             createdAt = Instant.now();

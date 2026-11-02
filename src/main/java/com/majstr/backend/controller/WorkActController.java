@@ -25,6 +25,7 @@ import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
+import com.majstr.backend.service.ai.AiAccess;
 import lombok.RequiredArgsConstructor;
 import org.springframework.core.io.InputStreamResource;
 import org.springframework.core.io.Resource;
@@ -64,6 +65,7 @@ public class WorkActController {
     private final ProjectPortalService portalService;
     private final WorkActReceiptService receiptService;
     private final ReceiptScanRateLimiter receiptScanRateLimiter;
+    private final AiAccess aiAccess;
     private final QrScanRateLimiter qrScanRateLimiter;
 
     // ---- under a project --------------------------------------------------
@@ -206,6 +208,7 @@ public class WorkActController {
             @PathVariable UUID id,
             @RequestParam("file") MultipartFile file,
             @AuthenticationPrincipal UserPrincipal principal) throws IOException {
+        aiAccess.requireAllowed(principal.id());
         ReceiptScanRateLimiter.ConsumeResult probe = receiptScanRateLimiter.tryConsume(principal.id());
         if (!probe.allowed()) {
             throw new TooManyRequestsException("error.rate.receipt-scan", probe.retryAfterSeconds());
@@ -221,6 +224,7 @@ public class WorkActController {
             @PathVariable UUID id,
             @PathVariable UUID receiptId,
             @AuthenticationPrincipal UserPrincipal principal) throws IOException {
+        aiAccess.requireAllowed(principal.id());
         ReceiptScanRateLimiter.ConsumeResult probe = receiptScanRateLimiter.tryConsume(principal.id());
         if (!probe.allowed()) {
             throw new TooManyRequestsException("error.rate.receipt-scan", probe.retryAfterSeconds());

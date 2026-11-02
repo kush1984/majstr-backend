@@ -45,6 +45,7 @@ public class ProfileService {
     private final EmailVerificationService emailVerificationService;
     private final EmailPolicyService emailPolicyService;
     private final PlatformTransactionManager transactionManager;
+    private final AbuseLimits abuseLimits;
 
     /** Stamp privacy-policy consent (one-time login modal for users who predate the
      *  registration checkbox). Idempotent — a prior stamp is kept. */
@@ -90,8 +91,22 @@ public class ProfileService {
         return UserResponse.from(user, userTradeRepository.findByUserIdOrderBySortOrderAscIdAsc(user.getId()));
     }
 
-    @Transactional
+    /**
+     * The address check comes before the transaction, since it can wait on DNS for seconds, and so does
+     * the limit on changes: each one mails a new address, which the resend limiter never sees (B-127).
+     */
     public UserResponse updateProfile(UUID userId, ProfileUpdateRequest req) {
+        User current = userRepository.findById(userId)
+                .orElseThrow(() -> new ResourceNotFoundException("User not found: " + userId));
+        String changedEmail = changedEmail(current, req.email());
+        if (changedEmail != null) {
+            emailPolicyService.assertAcceptable(changedEmail);
+            abuseLimits.requireEmailChange(userId);
+        }
+        return Transactions.write(transactionManager, () -> saveProfile(userId, req));
+    }
+
+    private UserResponse saveProfile(UUID userId, ProfileUpdateRequest req) {
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new ResourceNotFoundException("User not found: " + userId));
         user.setFullName(req.fullName().trim());
@@ -195,6 +210,15 @@ public class ProfileService {
         return response(user);
     }
 
+    /** The new address, or null when this request changes nothing: blank, the same, or locked as verified. */
+    private static String changedEmail(User user, String rawEmail) {
+        if (rawEmail == null || rawEmail.isBlank() || user.isEmailVerified()) {
+            return null;
+        }
+        String newEmail = rawEmail.toLowerCase(Locale.ROOT).trim();
+        return newEmail.equals(user.getEmail()) ? null : newEmail;
+    }
+
     private UserTrade loadOwnedCustomTrade(UUID tradeId, UUID userId) {
         return userTradeRepository.findByIdAndUserId(tradeId, userId)
                 .orElseThrow(() -> new ResourceNotFoundException("Custom trade not found: " + tradeId));
@@ -208,16 +232,13 @@ public class ProfileService {
      * verification to the new address.
      */
     private void applyEmailChange(User user, String rawEmail) {
-        if (rawEmail == null || rawEmail.isBlank()) {
+        String newEmail = changedEmail(user, rawEmail);
+        if (newEmail == null) {
             return;
         }
-        String newEmail = rawEmail.toLowerCase(Locale.ROOT).trim();
-        if (newEmail.equals(user.getEmail()) || user.isEmailVerified()) {
-            return; // unchanged, or locked because already verified
-        }
-        // Same anti-abuse guards as registration (a typo-fix must not become a bypass).
-        emailPolicyService.assertAcceptable(newEmail);
         String canonical = emailPolicyService.canonicalize(newEmail);
+        // Same serialisation as registration, or two parallel changes both read "not taken".
+        userRepository.lockCanonicalEmail(canonical);
         if (userRepository.existsByEmailIgnoreCase(newEmail) || userRepository.existsByEmailCanonical(canonical)) {
             throw new EmailAlreadyExistsException(newEmail);
         }
@@ -229,7 +250,7 @@ public class ProfileService {
     /** Not {@code @Transactional}: the upload is a network round trip with a pooled connection idle (B-121). */
     public String uploadLogo(UUID userId, MultipartFile file) throws IOException {
         if (file == null || file.isEmpty()) {
-            throw new IllegalArgumentException("Logo file is empty");
+            throw new UnsupportedMediaTypeException("error.upload.empty");
         }
 
         // Read the upload once. Earlier versions peeked the stream and tried to re-open it —

@@ -62,7 +62,7 @@ class SketchImportServiceTest {
     /** Every flow answered by one stub — these tests are about the service, not the routing. */
     private static AiExtractors allFlows(JsonExtractor extractor) {
         return new AiExtractors(new AiFlowsProperties(null, null, null),
-                new AnthropicProperties("", "m", 1), new OpenAiProperties("", "m", 1, null), extractor);
+                new AnthropicProperties("", "m", 1), new OpenAiProperties("", "m", 1, null), extractor, new com.majstr.backend.service.ai.AiFlowBudget(1000));
     }
 
     private final UUID ownerId = UUID.randomUUID();

@@ -9,6 +9,7 @@ import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Duration;
 import java.time.Instant;
 
 /**
@@ -22,6 +23,9 @@ import java.time.Instant;
 @RequiredArgsConstructor
 public class TokenCleanupService {
 
+    /** How long a rotated token can still be recognised as a replay (B-126). */
+    private static final Duration KEEP_ROTATED = Duration.ofDays(7);
+
     private final RefreshTokenRepository refreshTokenRepository;
     private final EmailVerificationTokenRepository verificationTokenRepository;
     private final PasswordResetTokenRepository passwordResetTokenRepository;
@@ -30,7 +34,7 @@ public class TokenCleanupService {
     @Transactional
     public void purgeDeadTokens() {
         Instant now = Instant.now();
-        int refresh = refreshTokenRepository.deleteExpiredOrRevoked(now);
+        int refresh = refreshTokenRepository.deleteExpiredOrRevoked(now, now.minus(KEEP_ROTATED));
         int verification = verificationTokenRepository.deleteExpired(now);
         int reset = passwordResetTokenRepository.deleteExpired(now);
         if (refresh > 0 || verification > 0 || reset > 0) {

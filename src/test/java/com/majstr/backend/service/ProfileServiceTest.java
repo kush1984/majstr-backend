@@ -39,6 +39,7 @@ class ProfileServiceTest {
     @Mock StorageService storage;                       // unused here, needed for @InjectMocks
     @Mock EmailVerificationService emailVerificationService;
     @Mock EmailPolicyService emailPolicyService;
+    @Mock com.majstr.backend.service.AbuseLimits abuseLimits;
     @Mock org.springframework.transaction.PlatformTransactionManager transactionManager;
     @InjectMocks ProfileService profileService;
 
@@ -226,6 +227,31 @@ class ProfileServiceTest {
                 .isInstanceOf(com.majstr.backend.storage.UnsupportedMediaTypeException.class);
 
         verify(storage, never()).store(any(), anyLong(), any(), any(), any());
+    }
+
+    @Test
+    void changingAnEmail_checksTheAddressAndTheLimitBeforeTheTransaction_andLocksTheCanonicalForm() {
+        User u = user(false, "old@example.com");
+        given(userRepository.findById(userId)).willReturn(Optional.of(u));
+        given(emailPolicyService.canonicalize("new@example.com")).willReturn("new@example.com");
+
+        profileService.updateProfile(userId, req("New@Example.com"));
+
+        var order = org.mockito.Mockito.inOrder(emailPolicyService, abuseLimits, transactionManager, userRepository);
+        order.verify(emailPolicyService).assertAcceptable("new@example.com");
+        order.verify(abuseLimits).requireEmailChange(userId);
+        order.verify(transactionManager).getTransaction(any());
+        order.verify(userRepository).lockCanonicalEmail("new@example.com");
+    }
+
+    @Test
+    void savingAProfileWithTheSameEmail_spendsNoLimitAndNoLookup() {
+        given(userRepository.findById(userId)).willReturn(Optional.of(user(false, "same@example.com")));
+
+        profileService.updateProfile(userId, req("same@example.com"));
+
+        verify(abuseLimits, never()).requireEmailChange(any());
+        verify(emailPolicyService, never()).assertAcceptable(any());
     }
 
     private static final byte[] JPEG = {(byte) 0xFF, (byte) 0xD8, (byte) 0xFF, (byte) 0xE0, 0, 0, 0, 0};

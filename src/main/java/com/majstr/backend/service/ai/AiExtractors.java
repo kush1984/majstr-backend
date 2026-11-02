@@ -8,6 +8,7 @@ import org.springframework.stereotype.Component;
 
 import java.util.EnumMap;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 
@@ -33,11 +34,14 @@ import java.util.Map;
 public class AiExtractors {
 
     private final Map<AiFlow, JsonExtractor> byFlow = new EnumMap<>(AiFlow.class);
+    private final AiFlowBudget budget;
 
     public AiExtractors(AiFlowsProperties props,
                         AnthropicProperties anthropic,
                         OpenAiProperties openAi,
-                        JsonExtractor defaultExtractor) {
+                        JsonExtractor defaultExtractor,
+                        AiFlowBudget budget) {
+        this.budget = budget;
         // One instance per distinct spec: two flows on the same vendor+model share a client rather
         // than opening a second one for the same destination.
         Map<String, JsonExtractor> cache = new HashMap<>();
@@ -53,8 +57,13 @@ public class AiExtractors {
                 log.info("AI flow {} → {}", flow.key(), extractor.providerName()));
     }
 
-    /** The extractor for one job. Resolved at startup; this is a lookup, not a decision. */
+    /** The extractor for one job, behind that job's hourly budget (B-125). */
     public JsonExtractor forFlow(AiFlow flow) {
+        return new Budgeted(resolved(flow), flow, budget);
+    }
+
+    /** Resolved at startup; this is a lookup, not a decision. */
+    JsonExtractor resolved(AiFlow flow) {
         JsonExtractor extractor = byFlow.get(flow);
         if (extractor == null) {
             // Unreachable while every enum constant is resolved in the constructor — but a new flow
@@ -97,6 +106,19 @@ public class AiExtractors {
             default -> new MisconfiguredJsonExtractor(
                     "unknown vendor in '" + spec + "' — expected anthropic or openai");
         };
+    }
+
+    private record Budgeted(JsonExtractor delegate, AiFlow flow, AiFlowBudget budget) implements JsonExtractor {
+        @Override
+        public String requestJson(List<AiInput> input, String systemPrompt, Map<String, Object> schema) {
+            budget.spend(flow);
+            return delegate.requestJson(input, systemPrompt, schema);
+        }
+
+        @Override
+        public String providerName() {
+            return delegate.providerName();
+        }
     }
 
     private static boolean isVendor(String value) {

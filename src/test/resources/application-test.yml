@@ -11,6 +11,17 @@ app:
     login:
       max-attempts: 5
       window-minutes: 15
+    # Every test shares one address and one context, so an IP ceiling would count across the suite.
+    login-guard:
+      failures-per-account-per-hour: 100000
+      attempts-per-ip-per-quarter: 100000
+    forgot-guard:
+      per-address-per-hour: 100000
+      per-ip-per-hour: 100000
+    anonymous:
+      per-ip-per-minute: 100000
+    ai-import:
+      max-per-hour: 100000
   broadcast:
     send-interval-ms: 0
   email:

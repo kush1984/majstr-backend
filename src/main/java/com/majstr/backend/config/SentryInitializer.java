@@ -1,6 +1,8 @@
 package com.majstr.backend.config;
 
+import com.majstr.backend.security.SafePath;
 import io.sentry.Sentry;
+import io.sentry.SentryEvent;
 import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -32,10 +34,27 @@ public class SentryInitializer {
             options.setEnvironment(properties.environment());
             // Never collect PII automatically — we attach only a user id explicitly.
             options.setSendDefaultPii(false);
+            // The backstop behind SafePath at the call sites: nothing that names a public token leaves.
+            options.setBeforeSend((event, hint) -> scrub(event));
             if (properties.tracesSampleRate() != null) {
                 options.setTracesSampleRate(properties.tracesSampleRate());
             }
         });
         log.info("Sentry initialized (environment={})", properties.environment());
+    }
+
+    static SentryEvent scrub(SentryEvent event) {
+        event.setTransaction(SafePath.of(event.getTransaction()));
+        if (event.getTags() != null) {
+            event.getTags().replaceAll((name, value) -> SafePath.of(value));
+        }
+        if (event.getMessage() != null) {
+            event.getMessage().setFormatted(SafePath.of(event.getMessage().getFormatted()));
+            event.getMessage().setMessage(SafePath.of(event.getMessage().getMessage()));
+        }
+        if (event.getExceptions() != null) {
+            event.getExceptions().forEach(e -> e.setValue(SafePath.of(e.getValue())));
+        }
+        return event;
     }
 }

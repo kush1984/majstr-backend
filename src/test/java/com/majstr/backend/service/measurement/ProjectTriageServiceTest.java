@@ -55,7 +55,7 @@ class ProjectTriageServiceTest {
     @BeforeEach
     void setUp() {
         AiExtractors extractors = new AiExtractors(new AiFlowsProperties(null, null, null),
-                new AnthropicProperties("", "m", 1), new OpenAiProperties("", "m", 1, null), extractor);
+                new AnthropicProperties("", "m", 1), new OpenAiProperties("", "m", 1, null), extractor, new com.majstr.backend.service.ai.AiFlowBudget(1000));
         service = new ProjectTriageService(featureGuard, projectService, extractors, userRepository,
                 JsonMapper.builder().build());
         given(userRepository.findById(ownerId))

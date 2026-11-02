@@ -3,6 +3,8 @@ package com.majstr.backend.security;
 import com.majstr.backend.config.LocalizationConfig;
 import com.majstr.backend.dto.ErrorResponse;
 import com.majstr.backend.dto.LoginRequest;
+import com.majstr.backend.exception.TooManyRequestsException;
+import com.majstr.backend.service.AbuseLimits;
 import com.majstr.backend.service.LoginRateLimiter;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
@@ -21,7 +23,6 @@ import tools.jackson.databind.ObjectMapper;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
-import java.util.Locale;
 
 @Slf4j
 @Component
@@ -31,6 +32,7 @@ public class LoginRateLimitFilter extends OncePerRequestFilter {
     private static final String LOGIN_PATH = "/api/auth/login";
 
     private final LoginRateLimiter rateLimiter;
+    private final AbuseLimits abuseLimits;
     private final ObjectMapper objectMapper;
     private final MessageSource messages;
 
@@ -46,8 +48,14 @@ public class LoginRateLimitFilter extends OncePerRequestFilter {
         CachedBodyHttpServletRequest cached = new CachedBodyHttpServletRequest(request);
         String email = extractEmail(cached.getBody());
         String ip = ClientIp.of(request);
-        String key = (email == null ? "<unknown>" : email.toLowerCase(Locale.ROOT)) + "|" + ip;
+        String key = (email == null ? "<unknown>" : AbuseLimits.foldEmail(email)) + "|" + ip;
 
+        try {
+            abuseLimits.requireLoginFromIp(ip);
+        } catch (TooManyRequestsException e) {
+            writeRateLimitResponse(request, response, e.getRetryAfterSeconds());
+            return;
+        }
         LoginRateLimiter.ConsumeResult result = rateLimiter.tryConsume(key);
         if (!result.allowed()) {
             writeRateLimitResponse(request, response, result.retryAfterSeconds());

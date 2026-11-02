@@ -55,6 +55,9 @@ class ProjectReceiptControllerTest {
     @Mock private ProjectReceiptService receiptService;
     @Mock private ReceiptScanRateLimiter receiptScanRateLimiter;
     @Mock private QrScanRateLimiter qrScanRateLimiter;
+    @Mock
+    private com.majstr.backend.service.ai.AiAccess aiAccess;
+
     @InjectMocks private ProjectReceiptController controller;
 
     private MockMvc mockMvc;

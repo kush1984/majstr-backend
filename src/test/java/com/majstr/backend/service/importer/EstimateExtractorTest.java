@@ -42,7 +42,7 @@ class EstimateExtractorTest {
 
     private final EstimateExtractor extractor = new EstimateExtractor(
             new AiExtractors(new AiFlowsProperties(null, null, null),
-                    new AnthropicProperties("", "m", 1), new OpenAiProperties("", "m", 1, null), NO_PROVIDER),
+                    new AnthropicProperties("", "m", 1), new OpenAiProperties("", "m", 1, null), NO_PROVIDER, new com.majstr.backend.service.ai.AiFlowBudget(1000)),
             JsonMapper.builder().build());
 
     /**
@@ -76,7 +76,7 @@ class EstimateExtractorTest {
         };
         EstimateExtractor withProvider = new EstimateExtractor(
                 new AiExtractors(new AiFlowsProperties(null, null, null),
-                        new AnthropicProperties("", "m", 1), new OpenAiProperties("", "m", 1, null), recording),
+                        new AnthropicProperties("", "m", 1), new OpenAiProperties("", "m", 1, null), recording, new com.majstr.backend.service.ai.AiFlowBudget(1000)),
                 JsonMapper.builder().build());
 
         Extracted result = withProvider.extractFromImage("image/jpeg", new byte[]{1});

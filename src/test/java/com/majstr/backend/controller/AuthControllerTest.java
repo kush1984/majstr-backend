@@ -68,6 +68,9 @@ class AuthControllerTest {
     @Mock
     private ForgotPasswordRateLimiter forgotPasswordRateLimiter;
 
+    @Mock
+    private com.majstr.backend.service.AbuseLimits abuseLimits;
+
     @InjectMocks
     private AuthController controller;
 
