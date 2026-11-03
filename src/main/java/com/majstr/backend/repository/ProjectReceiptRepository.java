@@ -90,6 +90,17 @@ public interface ProjectReceiptRepository extends JpaRepository<ProjectReceipt, 
             """)
     BigDecimal sumReimbursable(@Param("projectId") UUID projectId);
 
+    /** {@link #sumReimbursable} for every object of one master at once, as
+     *  {@code [projectId, sum]} rows — «Мої гроші» lists what each client still owes for material.
+     *  The SAME filter, so the per-object line and the object's own card can never disagree. */
+    @Query("""
+            SELECT r.projectId, COALESCE(SUM(r.amount), 0) FROM ProjectReceipt r
+            WHERE r.reimbursable = true AND r.billedOnActId IS NULL
+              AND r.projectId IN (SELECT p.id FROM Project p WHERE p.owner.id = :ownerId)
+            GROUP BY r.projectId
+            """)
+    List<Object[]> sumReimbursableByOwner(@Param("ownerId") UUID ownerId);
+
     /** Counts exactly what {@link #sumReimbursable} sums — the two are shown side by side («N чеків
      *  на X ₴»), so they must never filter differently. */
     @Query("""

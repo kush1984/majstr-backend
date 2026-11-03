@@ -163,4 +163,33 @@ public interface WorkActReceiptRepository extends JpaRepository<WorkActReceipt, 
             WHERE r.workAct.project.id = :projectId
             """)
     List<String> findStorageKeysByProjectId(@Param("projectId") UUID projectId);
+
+    /**
+     * Every SIGNED act of the master that bills receipts, with what they bill (paid less returned),
+     * oldest signature first — the material the client's «на матеріал» money is applied to,
+     * act by act ({@code MaterialRefundSplit.toActs}). Row: project id, act id, act number,
+     * signed at, sum.
+     */
+    @Query("""
+            SELECT wa.project.id, wa.id, wa.number, wa.signedAt, SUM(r.amount - r.returnedAmount)
+            FROM WorkActReceipt r JOIN r.workAct wa
+            WHERE wa.userId = :ownerId
+              AND wa.status = com.majstr.backend.entity.WorkActStatus.SIGNED
+              AND r.itemized = false
+            GROUP BY wa.project.id, wa.id, wa.number, wa.signedAt
+            HAVING SUM(r.amount - r.returnedAmount) > 0
+            ORDER BY wa.signedAt ASC, wa.id ASC
+            """)
+    List<Object[]> sumSignedActReceiptsByActForOwner(@Param("ownerId") UUID ownerId);
+
+    /** The billed receipts of these acts, oldest first — the rows an act that posts no expenses
+     *  shows in «Мої гроші», and so what the client's material money is spread over there. */
+    @Query("""
+            SELECT r FROM WorkActReceipt r
+            WHERE r.workAct.id IN :actIds
+              AND r.itemized = false
+              AND r.amount - r.returnedAmount > 0
+            ORDER BY r.createdAt ASC, r.id ASC
+            """)
+    List<WorkActReceipt> findBilledByWorkActIds(@Param("actIds") java.util.Collection<UUID> actIds);
 }

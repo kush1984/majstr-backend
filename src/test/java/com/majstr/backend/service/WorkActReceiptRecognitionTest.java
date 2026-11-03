@@ -42,6 +42,8 @@ import static org.mockito.Mockito.when;
 @MockitoSettings(strictness = Strictness.LENIENT)
 class WorkActReceiptRecognitionTest {
 
+    /** Recent on purpose: a vision-read date more than a year back is dropped as a misread. */
+    private static final LocalDate RECENT = LocalDate.now(com.majstr.backend.config.LocalizationConfig.ZONE).minusDays(10);
     private static final UUID ACT = UUID.randomUUID();
     private static final UUID OWNER = UUID.randomUUID();
 
@@ -59,14 +61,14 @@ class WorkActReceiptRecognitionTest {
     void recognitionIsFree_andReadsTheFooterOnly() throws IOException {
         when(actService.get(ACT, OWNER)).thenReturn(act(WorkActStatus.DRAFT));
         when(recognizer.extractMeta(anyString(), any())).thenReturn(new ActReceiptExtractor.Recognized(
-                "Епіцентр", LocalDate.of(2026, 8, 18), new BigDecimal("483.50")));
+                "Епіцентр", RECENT, new BigDecimal("483.50")));
 
         ReceiptRecognizeResponse read = service.recognize(ACT, OWNER, jpeg());
 
         assertThat(read.recognized()).isTrue();
         assertThat(read.label()).isEqualTo("Епіцентр");
         assertThat(read.amount()).isEqualByComparingTo("483.50");
-        assertThat(read.issuedAt()).isEqualTo(LocalDate.of(2026, 8, 18));
+        assertThat(read.issuedAt()).isEqualTo(RECENT);
     }
 
     @Test
@@ -134,7 +136,7 @@ class WorkActReceiptRecognitionTest {
         when(storage.open("receipts/x.jpg")).thenReturn(Optional.of(new java.io.ByteArrayInputStream(jpeg().getBytes())));
         when(storage.contentType("receipts/x.jpg")).thenReturn(Optional.of("image/jpeg"));
         when(recognizer.extractMeta(anyString(), any())).thenReturn(new ActReceiptExtractor.Recognized(
-                "Епіцентр", LocalDate.of(2026, 8, 18), new BigDecimal("483.50")));
+                "Епіцентр", RECENT, new BigDecimal("483.50")));
 
         ReceiptRecognizeResponse read = service.recognizeStored(ACT, RECEIPT, OWNER);
 

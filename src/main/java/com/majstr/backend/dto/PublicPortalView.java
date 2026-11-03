@@ -43,12 +43,17 @@ public record PublicPortalView(
             BigDecimal received,
             BigDecimal remaining,
             /** Of {@code received}, how much was the client paying the master back for material
-             *  (review B-65) — the APPLIED part, capped by what there was to reimburse, because
-             *  that is exactly the gap between «Отримано» and what bought work. It is money that
+             *  (review B-65) — every payment ticked «на матеріал» (object-money iteration: no longer
+             *  capped at the receipts), because that is exactly the gap between «Отримано» and what
+             *  bought work. It is money that
              *  arrived, so it stays inside {@code received} and the itemized rows still add up; it
              *  bought no work, so {@code remaining} does not shrink by it. Named here so the client
              *  is told why, instead of being handed two figures that look like a slip. */
             BigDecimal materialRefundApplied,
+            /** Of the client's material money, what paid for the material his signed acts bill
+             *  ({@code MaterialRefundSplit.toActs}) — counted as paid, so {@code remaining} does
+             *  shrink by it; named so the client sees where his «на матеріал» money went. */
+            BigDecimal materialToActs,
             List<PaymentRow> payments,
             /** Receipts with no matching plan stage ("Своє") — {@code received} above already
              *  includes them, so without this list the client sees a total that the itemized

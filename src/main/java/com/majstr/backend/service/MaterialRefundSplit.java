@@ -3,45 +3,71 @@ package com.majstr.backend.service;
 import java.math.BigDecimal;
 
 /**
- * Where a «повернення за матеріал» actually lands (review B-65).
+ * The client's MATERIAL money on one object, kept apart from the money for the work
+ * (object-money iteration; replaces the B-65 cap).
  *
- * <p>A {@code payment_receipt} ticked {@code materialRefund} is money the client handed back for
- * material the master bought at the till. Until this existed, every screen simply added it to
- * «Отримано» and subtracted it from «За договором» — so a 2 000 ₴ refund paid off 2 000 ₴ of WORK
- * that nobody had paid for. Reproduced on live figures: contract 11 800, work paid 5 000, a 2 000
- * refund → «залишок 4 800» when the client still owed 6 800, the materials card still asking for
- * the 2 000 it had just been given, and «Усе сплачено ✓» arriving with 2 000 of work unpaid.</p>
+ * <p>Two kinds of row feed it. A {@code payment_receipt} ticked {@code materialRefund} is money the
+ * client handed over FOR material — paid back after the master bought it, or handed over BEFORE he
+ * did. A till receipt marked «клієнт поверне» is material the master bought for the client. Neither
+ * is the master's money: the screens keep both out of «Прийшло»/«Витрачено» and show the balance on
+ * its own line.</p>
  *
- * <p>The rule is one line: a refund pays off MATERIAL first, and only what there is material to pay
- * off. {@code applied = min(Σ refunds, reimbursable)} — the cap is what makes the two axes add up,
- * because anything above it has no receivable to settle and is therefore payment for work like any
- * other. Nothing is clamped silently: the surplus stays inside {@code workPaid}, where it becomes
- * an overpayment the master can see rather than a figure that quietly went missing.</p>
+ * <p>B-65 capped the refund at what was owed and called the surplus work money. That made the one
+ * case the master named himself — «клієнт дав гроші на матеріал наперед» — pay off work before a
+ * single receipt existed. So material money stays material: it covers the till receipts first,
+ * and what is left of it covers the MATERIAL billed through signed acts ({@code toActs}) — receipts
+ * on an act are material too, bought with the master's money and re-billed to the client. Only what
+ * covers neither is still the client's, unspent: a NEGATIVE balance, «лишилось з грошей клієнта».
+ * The owner's case (2026-11-03): 5 000 ₴ given, 763,72 ₴ of till receipts, then an act billing
+ * 16 388 ₴ of receipts — the 4 236,28 ₴ left must pay that act, not sit beside a debt of 20 138 ₴.</p>
  *
- * @param refunds     Σ of the object's receipts ticked «повернення за матеріал»
- * @param reimbursable Σ of the till receipts still marked «клієнт відшкодовує» — the same figure the
- *                     materials axis shows, so the two can never disagree about what is owed
- * @param applied     how much of the refund a receivable actually absorbed
- * @param materialsOutstanding what the client still owes for material, after the refund
+ * <p>Computed, never stored: the order in which the money, the receipts and the acts arrived does
+ * not matter, and a reopened act takes its share back by itself.</p>
+ *
+ * @param refunds      Σ of the object's payments ticked «на матеріал»
+ * @param reimbursable Σ of the till receipts marked «клієнт поверне» and not billed on an act — the
+ *                     same figure the materials axis counts
+ * @param actMaterials Σ of the receipts on the object's SIGNED acts (paid less returned)
+ * @param toActs       the material money that paid for {@code actMaterials}: what is left of
+ *                     {@code refunds} once the till receipts are covered, at most {@code actMaterials}.
+ *                     It is payment for an act, so it counts as received on the works axis and as
+ *                     the master's income
+ * @param applied      the material money kept OFF the works axis — {@code refunds − toActs}
+ * @param materialsOutstanding {@code reimbursable − applied}: positive = the client still owes for
+ *                     material, negative = his money the master has not spent yet
  */
 public record MaterialRefundSplit(
         BigDecimal refunds,
         BigDecimal reimbursable,
+        BigDecimal actMaterials,
+        BigDecimal toActs,
         BigDecimal applied,
         BigDecimal materialsOutstanding
 ) {
 
-    public static MaterialRefundSplit of(BigDecimal refunds, BigDecimal reimbursable) {
-        BigDecimal paid = refunds == null ? BigDecimal.ZERO : refunds;
-        BigDecimal owed = reimbursable == null ? BigDecimal.ZERO : reimbursable;
-        BigDecimal applied = paid.min(owed).max(BigDecimal.ZERO);
-        return new MaterialRefundSplit(paid, owed, applied, owed.subtract(applied));
+    public static MaterialRefundSplit of(BigDecimal refunds, BigDecimal reimbursable, BigDecimal actMaterials) {
+        BigDecimal paid = orZero(refunds);
+        BigDecimal owed = orZero(reimbursable);
+        BigDecimal acts = orZero(actMaterials).max(BigDecimal.ZERO);
+        BigDecimal spare = paid.subtract(owed).max(BigDecimal.ZERO);
+        BigDecimal toActs = spare.min(acts);
+        BigDecimal applied = paid.subtract(toActs);
+        return new MaterialRefundSplit(paid, owed, acts, toActs, applied, owed.subtract(applied));
     }
 
-    /** What of «Отримано» was payment for the WORK — the only half «За договором» may be measured
-     *  against. {@code received} stays gross everywhere it is shown: the money really did arrive,
-     *  and a total the itemized rows do not add up to is its own bug. */
+    /** An object with no material on signed acts. */
+    public static MaterialRefundSplit of(BigDecimal refunds, BigDecimal reimbursable) {
+        return of(refunds, reimbursable, BigDecimal.ZERO);
+    }
+
+    /** What of «Отримано» was payment for the WORK and the acts — the only part «За договором» may be
+     *  measured against. {@code received} stays gross everywhere it is shown: the money really did
+     *  arrive, and a total the itemized rows do not add up to is its own bug. */
     public BigDecimal workPaid(BigDecimal received) {
         return received.subtract(applied);
+    }
+
+    private static BigDecimal orZero(BigDecimal v) {
+        return v == null ? BigDecimal.ZERO : v;
     }
 }

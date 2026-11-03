@@ -64,6 +64,10 @@ public class ObjectExpense {
     @Column(name = "spent_at", nullable = false)
     private LocalDate spentAt;
 
+    /** The signed act this receipt expense was posted for (V184), null for everything else. */
+    @Column(name = "work_act_id", updatable = false)
+    private UUID workActId;
+
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
 

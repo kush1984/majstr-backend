@@ -6,6 +6,7 @@ import com.majstr.backend.entity.WorkActStatus;
 import jakarta.persistence.LockModeType;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Lock;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
@@ -93,4 +94,13 @@ public interface WorkActRepository extends JpaRepository<WorkAct, UUID> {
             FROM work_act WHERE user_id = :userId
             """, nativeQuery = true)
     int maxNumberSeqForUser(@Param("userId") UUID userId);
+
+    /**
+     * The admin's account delete, run before the user row goes: {@code work_act.user_id} is the
+     * one FK to {@code users} with no ON DELETE action, and Postgres checks it before the cascade
+     * through {@code projects} has reached the acts.
+     */
+    @Modifying(flushAutomatically = true)
+    @Query(value = "DELETE FROM work_act WHERE user_id = :userId", nativeQuery = true)
+    int deleteByUserId(@Param("userId") UUID userId);
 }

@@ -402,7 +402,7 @@ public class ProjectReceiptService {
         }
     }
 
-    private static ImageKind requireImage(byte[] content) {
+    static ImageKind requireImage(byte[] content) {
         if (content.length < 4) {
             throw new UnsupportedMediaTypeException("error.upload.empty");
         }

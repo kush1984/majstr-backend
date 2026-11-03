@@ -378,8 +378,8 @@ public class PublicEstimateService {
 
         // The client was shown the same wrong remaining the master was (B-65): a payment ticked
         // «повернення за матеріал» paid off work it never bought, so the portal said the object was
-        // settled while part of the contract was still unpaid. The refund is capped by what there
-        // is to reimburse, exactly as on the master's side.
+        // settled while part of the contract was still unpaid. Material money is material in full,
+        // exactly as on the master's side.
         MaterialRefundSplit split = refundCalculator.forObject(objectId);
         BigDecimal remaining = contracted.subtract(split.workPaid(received)).max(BigDecimal.ZERO);
         LocalDate today = LocalDate.now(LocalizationConfig.ZONE);
@@ -396,7 +396,7 @@ public class PublicEstimateService {
                             p.getDueDate(), p.getNextStage(), p.status(today, stageReceived));
                 })
                 .toList();
-        return new PublicPortalView.PaymentsCard(contracted, received, remaining, split.applied(),
+        return new PublicPortalView.PaymentsCard(contracted, received, remaining, split.applied(), split.toActs(),
                 paymentRows, unplannedRows);
     }
 

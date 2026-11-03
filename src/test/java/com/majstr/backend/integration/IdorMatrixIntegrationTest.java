@@ -313,6 +313,12 @@ class IdorMatrixIntegrationTest extends IntegrationTestBase {
         c.add(withQuery(del("/api/cash/{id}", a.paymentReceipt), "kind=OBJECT_PAYMENT"));
         c.add(withQuery(del("/api/cash/{id}", a.expense), "kind=OBJECT_EXPENSE"));
         c.add(withQuery(del("/api/cash/{id}", a.projectReceipt), "kind=OBJECT_RECEIPT"));
+        // A personal row's photo: every door loads through `findByIdAndOwnerId`, so a foreign id
+        // is «not found» before a byte of the upload is read.
+        c.add(upload("POST", "/api/cash/{id}/photo", a.cash));
+        c.add(get("/api/cash/{id}/photo", a.cash));
+        c.add(watching(del("/api/cash/{id}/photo", a.cash), "cash_entry", a.cash));
+        c.add(get("/api/projects/{id}/money", a.project));
         c.add(json("PATCH", "/api/profile/custom-trades/{id}", B_CUSTOM_TRADE, a.customTrade));
         c.add(watching(del("/api/profile/custom-trades/{id}", a.customTrade),
                 "user_trade", a.customTrade));

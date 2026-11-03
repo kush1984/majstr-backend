@@ -62,6 +62,15 @@ public interface PaymentReceiptRepository extends JpaRepository<PaymentReceipt, 
             """)
     BigDecimal sumMaterialRefunds(@Param("projectId") UUID projectId);
 
+    /** {@link #sumMaterialRefunds} for every object of one master at once, as
+     *  {@code [projectId, sum]} rows — the other half of the per-object material balance. */
+    @Query("""
+            SELECT r.project.id, COALESCE(SUM(r.amount), 0) FROM PaymentReceipt r
+            WHERE r.project.owner.id = :ownerId AND r.materialRefund = true
+            GROUP BY r.project.id
+            """)
+    List<Object[]> sumMaterialRefundsByOwner(@Param("ownerId") UUID ownerId);
+
     /** Whether any money was ever received on the object — the delete guard (review B-70). */
     boolean existsByProjectId(UUID projectId);
 }

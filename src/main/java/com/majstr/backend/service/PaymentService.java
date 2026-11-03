@@ -138,8 +138,8 @@ public class PaymentService {
         // A refund pays off MATERIAL, never work (B-65). Measuring «За договором» against the gross
         // received let a 2 000 ₴ reimbursement close 2 000 ₴ of unpaid work and announce «Усе
         // сплачено» over it, while the materials card went on asking for the money it had just been
-        // handed. The cap is what keeps the two axes adding up; the surplus above it has no
-        // receivable to settle and is therefore work money like any other.
+        // handed. Since the object-money iteration ALL material money stays material, including
+        // what the client handed over before any receipt existed.
         MaterialRefundSplit split = refundCalculator.forObject(objectId);
         BigDecimal workPaid = split.workPaid(totalReceived);
         BigDecimal remaining = contracted.subtract(workPaid).max(BigDecimal.ZERO);
@@ -233,7 +233,6 @@ public class PaymentService {
         requireNoRefundOnStage(req.materialRefund(), req.planPaymentId() != null);
         if (req.planPaymentId() == null) {
             String label = requireLabel(req.label());
-            validateUnplannedLabel(objectId, label);
             PaymentReceipt receipt = PaymentReceipt.builder()
                     .id(requestedId).project(object).amount(req.amount())
                     .receivedAt(req.receivedAt()).materialRefund(req.materialRefund())
@@ -299,9 +298,7 @@ public class PaymentService {
         requireEconomy(objectId, ownerId);
         PaymentReceipt receipt = loadReceipt(objectId, receiptId);
         if (receipt.getPlanPayment() == null) {
-            String label = requireLabel(req.label());
-            validateUnplannedLabel(objectId, label);
-            receipt.setLabel(label);
+            receipt.setLabel(requireLabel(req.label()));
         }
         requireNoRefundOnStage(Boolean.TRUE.equals(req.materialRefund()), receipt.getPlanPayment() != null);
         receipt.setAmount(req.amount());
@@ -416,16 +413,6 @@ public class PaymentService {
             }
         }
         return Optional.empty();
-    }
-
-    /** An unplanned receipt's name must not read as one of the object's own plan stages — that
-     *  is exactly the "Аванс/Аванс" duplicate confusion this whole model exists to remove. */
-    private void validateUnplannedLabel(UUID objectId, String label) {
-        boolean conflict = paymentRepository.findByProjectIdOrderBySortOrderAscIdAsc(objectId).stream()
-                .anyMatch(p -> p.getPurpose().equalsIgnoreCase(label));
-        if (conflict) {
-            throw new PaymentValidationException("error.payment.label-conflict");
-        }
     }
 
     private static String requireLabel(String label) {

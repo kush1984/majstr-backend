@@ -74,4 +74,13 @@ public interface ObjectExpenseRepository extends JpaRepository<ObjectExpense, UU
 
     /** Whether the object carries any recorded cost — the delete guard (review B-70). */
     boolean existsByObjectId(UUID objectId);
+
+    /** The receipt expenses posted for these acts (V184), oldest first — what the client's material
+     *  money is spread over, row by row. */
+    @Query("""
+            SELECT e FROM ObjectExpense e
+            WHERE e.workActId IN :actIds
+            ORDER BY e.spentAt ASC, e.createdAt ASC, e.id ASC
+            """)
+    java.util.List<ObjectExpense> findByWorkActIds(@Param("actIds") java.util.Collection<java.util.UUID> actIds);
 }

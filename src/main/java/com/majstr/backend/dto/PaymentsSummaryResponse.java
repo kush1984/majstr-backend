@@ -21,8 +21,8 @@ public record PaymentsSummaryResponse(
         /** Σ of the receipts ticked «повернення за матеріал» — the gap between {@code received}
          *  and {@code workPaid}, named so it is explained rather than mysterious. */
         BigDecimal materialRefunds,
-        /** How much of that refund a till receivable actually absorbed: {@code min(refunds,
-         *  reimbursable)}. Anything above it had no material left to pay off and stays work money. */
+        /** The material money taken out of the work axis — all of {@code materialRefunds} since the
+         *  object-money iteration (B-65 used to cap it at the receivable). */
         BigDecimal refundApplied,
         /** {@code received − refundApplied} — the only half «За договором» may be measured against. */
         BigDecimal workPaid,

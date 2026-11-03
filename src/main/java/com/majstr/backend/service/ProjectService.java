@@ -168,29 +168,7 @@ public class ProjectService {
         // …and an object holding a signature or money is not deletable at all (B-70): every other
         // door refuses this one row at a time, and this cascade walked past all of them at once.
         deleteGuard.requireNoSignedMoney(id);
-        // The photo ROWS cascade with the FK, but the stored objects behind them do not:
-        // every project delete used to leak all its files on R2/local storage forever. That
-        // is cost creep, and — since receipt photos are financial personal data — a deletion
-        // that quietly keeps the data. Collect the keys BEFORE the rows disappear.
-        // Three tables hold files, not one (B-26): the gallery, the object's own till receipts
-        // (V129) and the receipts frozen into this object's acts (V110). The last two are the ones
-        // that matter most — a photographed receipt is financial personal data, and it used to
-        // survive the object it belonged to.
-        // FOUR tables, not three (review B-48): the client's own message attachments were the one
-        // B-26 missed, and the worst to miss — `MessageFileRetentionService` finds files THROUGH
-        // their rows, so a key orphaned here could never be cleaned by anything afterwards.
-        List<String> blobKeys = Stream.of(
-                        photoRepository.findByProjectIdOrderByCreatedAtDesc(id).stream()
-                                .map(ProjectPhoto::getStorageKey),
-                        projectReceiptRepository.findStorageKeysByProjectId(id).stream(),
-                        workActReceiptRepository.findStorageKeysByProjectId(id).stream(),
-                        messageFileRepository.findStorageKeysByProjectId(id).stream(),
-                        // A signature's stored PDF and logo copy (B-76): an object holding a live
-                        // signature is never deleted, but a REOPENED estimate keeps its snapshots.
-                        signedDocumentRepository.findStorageKeysByProjectId(id).stream())
-                .flatMap(s -> s)
-                .filter(k -> k != null && !k.isBlank())
-                .toList();
+        List<String> blobKeys = blobKeysOf(id);
 
         // The shopping rows go first. They hang off the list (CASCADE) and off `estimates` (SET
         // NULL) — two SIBLING branches of this one cascade, and Postgres does not define which
@@ -205,6 +183,36 @@ public class ProjectService {
         // master already confirmed — a leftover object is recoverable, a half-deleted project is
         // not — and files must not go while the rows that point at them might still come back.
         cleanup.afterCommit(blobKeys);
+    }
+
+    /**
+     * Every stored file this object's rows point at — collected BEFORE a delete, since the cascade
+     * takes the only pointer to them. Shared with the admin's whole-account delete.
+     */
+    public List<String> blobKeysOf(UUID id) {
+        // The photo ROWS cascade with the FK, but the stored objects behind them do not:
+        // every project delete used to leak all its files on R2/local storage forever. That
+        // is cost creep, and — since receipt photos are financial personal data — a deletion
+        // that quietly keeps the data. Collect the keys BEFORE the rows disappear.
+        // Three tables hold files, not one (B-26): the gallery, the object's own till receipts
+        // (V129) and the receipts frozen into this object's acts (V110). The last two are the ones
+        // that matter most — a photographed receipt is financial personal data, and it used to
+        // survive the object it belonged to.
+        // FOUR tables, not three (review B-48): the client's own message attachments were the one
+        // B-26 missed, and the worst to miss — `MessageFileRetentionService` finds files THROUGH
+        // their rows, so a key orphaned here could never be cleaned by anything afterwards.
+        return Stream.of(
+                        photoRepository.findByProjectIdOrderByCreatedAtDesc(id).stream()
+                                .map(ProjectPhoto::getStorageKey),
+                        projectReceiptRepository.findStorageKeysByProjectId(id).stream(),
+                        workActReceiptRepository.findStorageKeysByProjectId(id).stream(),
+                        messageFileRepository.findStorageKeysByProjectId(id).stream(),
+                        // A signature's stored PDF and logo copy (B-76): an object holding a live
+                        // signature is never deleted, but a REOPENED estimate keeps its snapshots.
+                        signedDocumentRepository.findStorageKeysByProjectId(id).stream())
+                .flatMap(s -> s)
+                .filter(k -> k != null && !k.isBlank())
+                .toList();
     }
 
     /** Load a project or throw — existence (404) + ownership (403). Public so

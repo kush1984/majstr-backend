@@ -89,6 +89,11 @@ public class CashEntry {
     @Column(name = "material_refund", nullable = false)
     private boolean materialRefund = false;
 
+    /** A photo of the paper (V182) — робочий одяг, a drill — or null. Stored like an object
+     *  receipt's, read only through the owner's authenticated endpoint. */
+    @Column(name = "storage_key", length = 255)
+    private String storageKey;
+
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
 

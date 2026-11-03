@@ -81,6 +81,10 @@ class CashFlowServiceTest {
     @Mock private PaymentService paymentService;
     @Mock private ObjectExpenseService expenseService;
     @Mock private ProjectReceiptService projectReceiptService;
+    @Mock private ProjectService projectService;
+    @Mock private com.majstr.backend.storage.StorageService storage;
+    @Mock private StorageCleanup cleanup;
+    @Mock private com.majstr.backend.service.fiscal.FiscalQrReceiptReader qrReader;
 
     @InjectMocks private CashFlowService service;
 
@@ -204,14 +208,14 @@ class CashFlowServiceTest {
     // ---- the three numbers ------------------------------------------------
 
     /**
-     * The six ways a master can record «work 10 000, material 2 000» (review B-33), each of which
-     * used to answer a different «Заробив» — 8 000, 10 000 or 12 000 — for the same month.
+     * The ways a master can record «work 10 000, material 2 000» (review B-33, object-money
+     * iteration).
      *
-     * <p>The rule that makes them agree is <b>one subtraction</b>: {@code income - expense}. Which
-     * only works if every hryvnia that left his pocket is ON the expense side, material bought at
-     * the till included. V129's «a reimbursable receipt is a receivable, not a cost» still governs
-     * the OBJECT's economy — but here the money is gone until the client hands it back, and the
-     * refund tick is then just a LABEL on the income it comes back as.</p>
+     * <p>«Заробив» is one subtraction over the MASTER's money. The client's material money — a till
+     * receipt «клієнт поверне», a payment «на матеріал» — is in neither total, so the purchase and
+     * its repayment cannot swing the figure, whichever month each lands in. Money the client gave
+     * «на матеріал» against material the master booked as his OWN cost is still the client's money:
+     * it shows as an unspent material balance, never as earnings.</p>
      */
     @ParameterizedTest(name = "{0}")
     @MethodSource("theSixWaysOfRecordingOneJob")
@@ -236,24 +240,25 @@ class CashFlowServiceTest {
                 Arguments.of("reimbursable till receipt, refund arrived",
                         workAndRefund, List.of(), List.of(), List.of(tillReceipt("2000.00")),
                         List.of(), "10000.00"),
-                // 2. The far commoner month: he is 2 000 out of pocket and waiting. Cash is cash.
+                // 2. He bought and is waiting to be paid back. The debt is the material balance,
+                //    not a loss: «Заробив» does not dip for a month and jump back the next.
                 Arguments.of("reimbursable till receipt, refund not yet arrived",
                         workOnly, List.of(), List.of(), List.of(tillReceipt("2000.00")),
-                        List.of(), "8000.00"),
-                // 3. «Це моя витрата» writes an `object_expenses` row and the receipt leaves the
-                //    receivable — so the purchase is counted there and nowhere else.
-                Arguments.of("till receipt marked «моя витрата», payment ticked as a refund",
-                        workAndRefund, List.of(expense("2000.00")), List.of(), List.of(),
                         List.of(), "10000.00"),
+                // 3. «Це моя витрата» writes an `object_expenses` row: his cost. The 2 000 the
+                //    client handed over «на матеріал» stays the client's — unspent, not earned.
+                Arguments.of("till receipt marked «моя витрата», payment ticked as material money",
+                        workAndRefund, List.of(expense("2000.00")), List.of(), List.of(),
+                        List.of(), "8000.00"),
                 // 4. `receipts_to_expenses` ON: signing posted the act receipt as an expense, so the
                 //    query that feeds ACT_RECEIPT rows deliberately skips it.
-                Arguments.of("act receipt posted as an expense, refund ticked",
+                Arguments.of("act receipt posted as an expense, material money ticked",
                         workAndRefund, List.of(expense("2000.00")), List.of(), List.of(),
-                        List.of(), "10000.00"),
+                        List.of(), "8000.00"),
                 // 5. He typed the purchase here himself instead of photographing it.
-                Arguments.of("personal MATERIALS row, refund ticked",
+                Arguments.of("personal MATERIALS row, material money ticked",
                         workAndRefund, List.of(), List.of(personal(CashDirection.EXPENSE, "2000.00")),
-                        List.of(), List.of(), "10000.00"),
+                        List.of(), List.of(), "8000.00"),
                 // 6. `receipts_to_expenses` OFF: the client paid 12 000 on the act and nothing else
                 //    records the 2 000, which is exactly what the ACT_RECEIPT row is for.
                 Arguments.of("act with receipts_to_expenses off",
@@ -261,17 +266,220 @@ class CashFlowServiceTest {
                         List.of(actReceipt("2000.00", "0.00")), "10000.00"));
     }
 
-    /** The refund tick still SAYS which part of «Прийшло» was not payment for work. */
+    /**
+     * The client's material money is shown and counted nowhere: neither «Прийшло» nor «Витрачено»
+     * carries it, and both rows come back marked so the screen can draw them without a sign.
+     */
     @Test
-    void aRefundIsReportedAndSubtractedFromNothing() {
+    void theClientsMaterialMoneyIsInNeitherTotal() {
         seedFeed(List.of(receipt("10000.00", false), receipt("2000.00", true)),
                 List.of(), List.of(), List.of(tillReceipt("2000.00")), List.of());
 
         CashFlowResponse flow = service.flow(OWNER, DAY.withDayOfMonth(1), DAY.withDayOfMonth(30), false);
 
-        assertThat(flow.income()).isEqualByComparingTo("12000.00");
+        assertThat(flow.income()).isEqualByComparingTo("10000.00");
+        assertThat(flow.expense()).isEqualByComparingTo("0.00");
         assertThat(flow.refunds()).isEqualByComparingTo("2000.00");
+        assertThat(flow.entries()).filteredOn(CashFlowResponse.Entry::clientMaterial).hasSize(2);
+    }
+
+    /** A till receipt an act has billed is repaid inside the act, as work money: his expense. */
+    @Test
+    void aTillReceiptBilledOnAnActIsTheMastersExpense() {
+        ProjectReceipt billed = tillReceipt("2000.00");
+        billed.setBilledOnActId(UUID.randomUUID());
+        seedFeed(List.of(receipt("12000.00", false)), List.of(), List.of(), List.of(billed), List.of());
+
+        CashFlowResponse flow = service.flow(OWNER, DAY.withDayOfMonth(1), DAY.withDayOfMonth(30), false);
+
         assertThat(flow.expense()).isEqualByComparingTo("2000.00");
+        assertThat(flow.earned()).isEqualByComparingTo("10000.00");
+    }
+
+    /**
+     * What each client still owes for material is ALL TIME and per object, from the same two sums
+     * the object's own card reads — and an object whose balance is settled is not listed.
+     */
+    @Test
+    void theMaterialDebtIsListedPerObjectAndASettledOneIsNot() {
+        UUID settled = UUID.randomUUID();
+        UUID credit = UUID.randomUUID();
+        seedFeed(List.of(), List.of(), List.of());
+        when(projectReceiptRepository.sumReimbursableByOwner(OWNER)).thenReturn(List.of(
+                new Object[]{PROJECT, new BigDecimal("5000.00")},
+                new Object[]{settled, new BigDecimal("700.00")}));
+        when(receiptRepository.sumMaterialRefundsByOwner(OWNER)).thenReturn(List.of(
+                new Object[]{PROJECT, new BigDecimal("1200.00")},
+                new Object[]{settled, new BigDecimal("700.00")},
+                new Object[]{credit, new BigDecimal("3000.00")}));
+
+        CashFlowResponse flow = service.flow(OWNER, DAY.withDayOfMonth(1), DAY.withDayOfMonth(30), false);
+
+        assertThat(flow.materials()).extracting(CashFlowResponse.MaterialBalance::projectId)
+                .containsExactly(PROJECT, credit);
+        assertThat(flow.materials().get(0).outstanding()).isEqualByComparingTo("3800.00");
+        assertThat(flow.materials().get(1).outstanding()).isEqualByComparingTo("-3000.00");
+    }
+
+    /**
+     * The period split into objects and «особисте» — the master's ask, so he can tell his own
+     * spending from the jobs'. The slices are cut by the same rule as the totals and add up to them,
+     * and an object that only moved the client's material money is listed with zeros.
+     */
+    @Test
+    void thePeriodSplitsIntoObjectsAndPersonal_andTheSlicesAddUpToTheTotals() {
+        UUID other = UUID.randomUUID();
+        PaymentReceipt materialOnly = receipt("5000.00", true);
+        materialOnly.setProject(Project.builder().id(other).name("Тест Б").owner(owner()).build());
+        seedFeed(List.of(receipt("10000.00", false), materialOnly), List.of(expense("500.00")),
+                List.of(personal(CashDirection.EXPENSE, "800.00")));
+
+        CashFlowResponse flow = service.flow(OWNER, DAY.withDayOfMonth(1), DAY.withDayOfMonth(30), false);
+
+        assertThat(flow.objects()).extracting(CashFlowResponse.ScopeTotal::projectId)
+                .containsExactlyInAnyOrder(PROJECT, other);
+        CashFlowResponse.ScopeTotal job = flow.objects().stream()
+                .filter(o -> PROJECT.equals(o.projectId())).findFirst().orElseThrow();
+        assertThat(job.earned()).isEqualByComparingTo("9500.00");
+        CashFlowResponse.ScopeTotal clientOnly = flow.objects().stream()
+                .filter(o -> other.equals(o.projectId())).findFirst().orElseThrow();
+        assertThat(clientOnly.income()).isEqualByComparingTo("0.00");
+        assertThat(clientOnly.earned()).isEqualByComparingTo("0.00");
+        assertThat(flow.personal()).isNotNull();
+        assertThat(flow.personal().projectId()).isNull();
+        assertThat(flow.personal().earned()).isEqualByComparingTo("-800.00");
+
+        BigDecimal slices = flow.objects().stream().map(CashFlowResponse.ScopeTotal::earned)
+                .reduce(flow.personal().earned(), BigDecimal::add);
+        assertThat(slices).isEqualByComparingTo(flow.earned());
+    }
+
+    @Test
+    void noPersonalRowsMeansNoPersonalSlice() {
+        seedFeed(List.of(receipt("10000.00", false)), List.of(), List.of());
+
+        CashFlowResponse flow = service.flow(OWNER, DAY.withDayOfMonth(1), DAY.withDayOfMonth(30), false);
+
+        assertThat(flow.personal()).isNull();
+        assertThat(flow.objects()).singleElement()
+                .satisfies(o -> assertThat(o.projectName()).isEqualTo("Квартира на Лесі"));
+    }
+
+    /**
+     * The owner's «Тест Б»: 5 000 ₴ given for material, 763,72 ₴ of till receipts «клієнт поверне»,
+     * then act № 9 billing 16 388 ₴ of receipts. What is left of the material money paid part of
+     * that purchase — not income (owner's ruling), the part that did not leave his own pocket: the
+     * act's expense row shows 12 151,72 ₴ of his own and 4 236,28 ₴ of the client's.
+     */
+    @Test
+    void whatIsLeftOfTheMaterialMoneyPaysPartOfTheActsPurchase_notHisIncome() {
+        UUID act = UUID.randomUUID();
+        ObjectExpense posted = expense("16388.00");
+        posted.setWorkActId(act);
+        posted.setNote("Чек до акта № 9: Електромаркет");
+        seedFeed(List.of(receipt("5000.00", true)), List.of(posted), List.of(), List.of(tillReceipt("763.72")), List.of());
+        when(receiptRepository.sumMaterialRefundsByOwner(OWNER))
+                .thenReturn(List.<Object[]>of(new Object[]{PROJECT, new BigDecimal("5000.00")}));
+        when(projectReceiptRepository.sumReimbursableByOwner(OWNER))
+                .thenReturn(List.<Object[]>of(new Object[]{PROJECT, new BigDecimal("763.72")}));
+        Instant signed = DAY.atTime(15, 0).atZone(LocalizationConfig.ZONE).toInstant();
+        when(actReceiptRepository.sumSignedActReceiptsByActForOwner(OWNER))
+                .thenReturn(List.<Object[]>of(new Object[]{PROJECT, act, "9", signed, new BigDecimal("16388.00")}));
+        when(expenseRepository.findByWorkActIds(any())).thenReturn(List.of(posted));
+
+        CashFlowResponse flow = service.flow(OWNER, DAY.withDayOfMonth(1), DAY.withDayOfMonth(30), false);
+
+        assertThat(flow.entries()).filteredOn(e -> e.id().equals(posted.getId())).singleElement()
+                .satisfies(e -> {
+                    assertThat(e.amount()).isEqualByComparingTo("12151.72");
+                    assertThat(e.clientShare()).isEqualByComparingTo("4236.28");
+                });
+        assertThat(flow.income()).isEqualByComparingTo("0.00");
+        assertThat(flow.expense()).isEqualByComparingTo("12151.72");
+        // Settled: 763,72 bought + 4 236,28 into the act = the 5 000 given.
+        assertThat(flow.materials()).isEmpty();
+    }
+
+    /** The object filter narrows the rows, the totals AND the material lines alike. */
+    @Test
+    void anObjectFilterNarrowsEverything() {
+        UUID other = UUID.randomUUID();
+        PaymentReceipt elsewhere = receipt("4000.00", false);
+        elsewhere.setProject(Project.builder().id(other).name("Інший").owner(owner()).build());
+        seedFeed(List.of(receipt("10000.00", false), elsewhere), List.of(),
+                List.of(personal(CashDirection.EXPENSE, "300.00")));
+        when(projectRepository.findById(PROJECT)).thenReturn(Optional.of(project()));
+        when(projectReceiptRepository.sumReimbursableByOwner(OWNER)).thenReturn(List.of(
+                new Object[]{PROJECT, new BigDecimal("500.00")},
+                new Object[]{other, new BigDecimal("900.00")}));
+
+        CashFlowResponse one = service.flow(OWNER, DAY.withDayOfMonth(1), DAY.withDayOfMonth(30), false,
+                CashScope.object(PROJECT));
+        CashFlowResponse none = service.flow(OWNER, DAY.withDayOfMonth(1), DAY.withDayOfMonth(30), false,
+                CashScope.OFF_OBJECT);
+
+        assertThat(one.income()).isEqualByComparingTo("10000.00");
+        assertThat(one.expense()).isEqualByComparingTo("0.00");
+        assertThat(one.materials()).singleElement()
+                .satisfies(m -> assertThat(m.projectId()).isEqualTo(PROJECT));
+        assertThat(none.income()).isEqualByComparingTo("0.00");
+        assertThat(none.expense()).isEqualByComparingTo("300.00");
+        assertThat(none.materials()).isEmpty();
+    }
+
+    /** Filtering by an object that is not his answers «not found», like any foreign money id. */
+    @Test
+    void filteringByAnotherMastersObjectIsNotFound() {
+        Project foreign = Project.builder().id(PROJECT).name("Чужий")
+                .owner(com.majstr.backend.entity.User.builder().id(UUID.randomUUID()).build()).build();
+        when(projectRepository.findById(PROJECT)).thenReturn(Optional.of(foreign));
+
+        assertThatThrownBy(() -> service.flow(OWNER, DAY.withDayOfMonth(1), DAY.withDayOfMonth(30),
+                false, CashScope.object(PROJECT)))
+                .isInstanceOf(ResourceNotFoundException.class);
+    }
+
+    /**
+     * «Гроші обʼєкта» is the same feed narrowed to one object: the same «Заробив», the material
+     * balance on its own line, and an honest word when no crew pay was ever recorded.
+     */
+    @Test
+    void anObjectsMoneyIsTheFeedNarrowedToIt() {
+        UUID other = UUID.randomUUID();
+        PaymentReceipt elsewhere = receipt("4000.00", false);
+        elsewhere.setProject(Project.builder().id(other).name("Інший").owner(owner()).build());
+        ObjectExpense crew = expense("3000.00");
+        crew.setCategory(ExpenseCategory.LABOR);
+        seedFeed(List.of(receipt("10000.00", false), receipt("1000.00", true), elsewhere),
+                List.of(crew), List.of(personal(CashDirection.EXPENSE, "300.00")),
+                List.of(tillReceipt("2500.00")), List.of());
+        when(projectService.loadOwned(PROJECT, OWNER)).thenReturn(project());
+        when(receiptRepository.sumMaterialRefunds(PROJECT)).thenReturn(new BigDecimal("1000.00"));
+        when(projectReceiptRepository.sumReimbursable(PROJECT)).thenReturn(new BigDecimal("2500.00"));
+
+        com.majstr.backend.dto.ObjectMoneyResponse money = service.objectMoney(OWNER, PROJECT);
+
+        assertThat(money.income()).isEqualByComparingTo("10000.00");
+        assertThat(money.expense()).isEqualByComparingTo("3000.00");
+        assertThat(money.earned()).isEqualByComparingTo("7000.00");
+        assertThat(money.crewRecorded()).isTrue();
+        assertThat(money.materials().bought()).isEqualByComparingTo("2500.00");
+        assertThat(money.materials().given()).isEqualByComparingTo("1000.00");
+        assertThat(money.materials().outstanding()).isEqualByComparingTo("1500.00");
+        assertThat(money.entries()).allSatisfy(e -> assertThat(e.projectId()).isEqualTo(PROJECT));
+    }
+
+    /** Deleting his own row takes its photo with it — after the commit, never before (B-25). */
+    @Test
+    void deletingAPersonalRowDropsItsPhotoAfterTheCommit() {
+        CashEntry own = personal(CashDirection.EXPENSE, "1450.00");
+        own.setStorageKey("cash-receipts/abc.jpg");
+        when(cashRepository.findByIdAndOwnerId(own.getId(), OWNER)).thenReturn(Optional.of(own));
+
+        service.delete(OWNER, own.getId(), CashEntryKind.PERSONAL);
+
+        verify(cashRepository).delete(own);
+        verify(cleanup).afterCommit("cash-receipts/abc.jpg");
     }
 
     /** A month's figures and the year view's must be the same arithmetic, or one of them is a lie. */

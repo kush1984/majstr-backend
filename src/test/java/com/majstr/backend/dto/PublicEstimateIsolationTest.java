@@ -98,8 +98,9 @@ class PublicEstimateIsolationTest {
         // appears twice too (PaymentRow's + UnplannedReceiptRow's).
         // materialRefundApplied is the client's OWN money coming back for material (B-65) — it is
         // what makes `remaining` add up on his screen, and it tells him nothing he did not pay.
+        // materialToActs is the same money again: the part of it that paid his signed acts' receipts.
         assertThat(names).containsExactlyInAnyOrder("contractedTotal", "received", "remaining",
-                "materialRefundApplied", "payments",
+                "materialRefundApplied", "materialToActs", "payments",
                 "purpose", "amount", "received", "lastReceivedAt", "dueDate", "nextStage", "status",
                 "unplannedReceipts", "label", "amount", "receivedAt");
     }

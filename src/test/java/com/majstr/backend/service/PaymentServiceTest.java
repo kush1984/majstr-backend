@@ -253,12 +253,12 @@ class PaymentServiceTest {
     }
 
     /**
-     * The cap is the other half of the rule. A refund above what the object is owed has no
-     * receivable left to settle, so it is work money like any other — otherwise a mistyped
-     * reimbursement would quietly re-open a contract that really is paid.
+     * Money handed over for material BEFORE the receipts exist (object-money iteration). It stays
+     * the client's material money in full — the B-65 cap made the surplus pay off work nobody had
+     * done yet.
      */
     @Test
-    void aRefundBeyondTheReceivableIsWorkMoney() {
+    void moneyForMaterialBeyondTheReceiptsNeverPaysForWork() {
         contracted("10000.00");
         refunds("3000.00", "1000.00");
         received("10000.00", "3000.00");
@@ -266,10 +266,10 @@ class PaymentServiceTest {
         PaymentsSummaryResponse summary = service().summaryUnchecked(objectId);
 
         assertThat(summary.materialRefunds()).isEqualByComparingTo("3000.00");
-        assertThat(summary.refundApplied()).isEqualByComparingTo("1000.00");
-        assertThat(summary.workPaid()).isEqualByComparingTo("12000.00");
+        assertThat(summary.refundApplied()).isEqualByComparingTo("3000.00");
+        assertThat(summary.workPaid()).isEqualByComparingTo("10000.00");
         assertThat(summary.remaining()).isEqualByComparingTo("0.00");
-        assertThat(summary.overpaid()).isEqualByComparingTo("2000.00");
+        assertThat(summary.overpaid()).isEqualByComparingTo("0.00");
     }
 
     private void contracted(String amount) {
@@ -592,26 +592,31 @@ class PaymentServiceTest {
                 .isInstanceOf(PaymentValidationException.class);
     }
 
+    /**
+     * The «Завдаток» chip names a payment the same way the old plan stage did, and the eight stages
+     * still on prod ARE named that. The label-conflict rule (one name per plan stage) is gone with
+     * the plan UI: a name is a label, not an identity.
+     */
     @Test
-    void addReceipt_unplanned_labelCollidingWithAPlanPurpose_isRejected() {
+    void addReceipt_unplanned_mayShareItsNameWithAStage() {
         user(ownerId, Plan.PRO);
         given(projectService.loadOwned(objectId, ownerId)).willReturn(object());
-        given(paymentRepository.findByProjectIdOrderBySortOrderAscIdAsc(objectId))
-                .willReturn(List.of(stage(UUID.randomUUID(), new BigDecimal("500"), "Аванс")));
+        given(receiptRepository.save(any(PaymentReceipt.class))).willAnswer(inv -> {
+            PaymentReceipt r = inv.getArgument(0);
+            if (r.getId() == null) r.setId(UUID.randomUUID());
+            return r;
+        });
 
-        assertThatThrownBy(() -> service().addReceipt(objectId, ownerId,
-                new PaymentReceiptRequest(null, "аванс", new BigDecimal("300.00"), LocalDate.now(), null, false), null))
-                .isInstanceOf(PaymentValidationException.class);
+        List<PaymentReceiptResponse> saved = service().addReceipt(objectId, ownerId,
+                new PaymentReceiptRequest(null, "Завдаток", new BigDecimal("300.00"), LocalDate.now(), null, false), null);
 
-        verify(receiptRepository, never()).save(any(PaymentReceipt.class));
+        assertThat(saved).singleElement().satisfies(r -> assertThat(r.displayLabel()).isEqualTo("Завдаток"));
     }
 
     @Test
     void addReceipt_unplanned_distinctLabel_isSaved() {
         user(ownerId, Plan.PRO);
         given(projectService.loadOwned(objectId, ownerId)).willReturn(object());
-        given(paymentRepository.findByProjectIdOrderBySortOrderAscIdAsc(objectId))
-                .willReturn(List.of(stage(UUID.randomUUID(), new BigDecimal("500"), "Аванс")));
         given(receiptRepository.save(any(PaymentReceipt.class))).willAnswer(inv -> {
             PaymentReceipt r = inv.getArgument(0);
             if (r.getId() == null) r.setId(UUID.randomUUID());
@@ -688,7 +693,6 @@ class PaymentServiceTest {
         // opened up to FREE while the AI-calling flows are hidden to cut AI spend.
         user(ownerId, Plan.FREE);
         given(projectService.loadOwned(objectId, ownerId)).willReturn(object());
-        given(paymentRepository.findByProjectIdOrderBySortOrderAscIdAsc(objectId)).willReturn(List.of());
         given(receiptRepository.save(any(PaymentReceipt.class))).willAnswer(inv -> {
             PaymentReceipt r = inv.getArgument(0);
             if (r.getId() == null) r.setId(UUID.randomUUID());

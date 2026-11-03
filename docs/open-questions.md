@@ -3441,7 +3441,10 @@ one-line summary — keep the item in the file as a record.
   refusal, and it needs the owner's word on whether an un-recorded payment should block a document.
 
 ### `ExpenseRequest.source` is client-settable (B-84 remainder)
-- **Status:** OPEN — low harm, and the fix costs an endpoint (2026-10-01).
+- **Status:** RESOLVED (object-money iteration, 2026-11-02) — the field is gone from
+  `ExpenseRequest`; the server always writes MANUAL. Its one legitimate caller (the estimate receipt
+  import's «Записати у витрати?») was removed in the same round. See
+  [iteration-object-money.md](iteration-object-money.md).
 - **Context:** a hand-entered expense can claim `source = RECEIPT`. There IS a legitimate client
   caller — the estimate-side receipt import offers to save the receipt total as an expense, where
   RECEIPT is the truth — so making the field server-only needs a second door for that flow. A lying
@@ -3606,6 +3609,18 @@ one-line summary — keep the item in the file as a record.
   Function/Worker vs a subdomain) is the open infra decision. Index a directory page only from ≥3
   published profiles (thin content). Validate with a painted-door button first (the PRO-interest
   pattern) or ask at the meetup.
+
+### Payment plan hidden from the object — delete it, or bring it back as a waterfall
+- **Status:** OPEN
+- **Since:** object-money iteration (2026-11-02)
+- **Context:** «Розбити на частки» and «Запланований платіж» are no longer rendered: on prod 7 of 150
+  objects had stages, 8 stages in all, every one a «завдаток». The backend (`project_payment`,
+  split preview/commit, overflow TRANSFER/RESERVE, `surplusIdOf`) and `PaymentsBlock.tsx` still exist,
+  unrendered. Moot while hidden: «Recalculating a payment schedule when the estimate total changes»,
+  «Overpayment TRANSFER: no cascade…», «Client payment reminders».
+- **Notes / options:** after the webinar either delete the dead code, or — if masters ask for a
+  schedule — bring back ONE plan per object whose stages are closed by payments IN ORDER (no
+  per-payment stage pick, no overflow resolution). Portal card: check it with no stages.
 
 ## Features in the catalog enum but not implemented
 

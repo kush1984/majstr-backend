@@ -1,5 +1,7 @@
 package com.majstr.backend.dto;
 
+import com.majstr.backend.config.LocalizationConfig;
+
 import java.math.BigDecimal;
 import java.time.LocalDate;
 
@@ -36,7 +38,19 @@ public record ReceiptRecognizeResponse(
 
     /** A vision read: everything but the printed fiscal identity, which only the QR carries. */
     public static ReceiptRecognizeResponse read(String label, BigDecimal amount, LocalDate issuedAt) {
-        return new ReceiptRecognizeResponse(true, label, amount, issuedAt, null, null);
+        return read(label, amount, issuedAt, LocalDate.now(LocalizationConfig.ZONE));
+    }
+
+    /**
+     * A date a vision read puts more than a year back, or in the future, is dropped: a model reading
+     * «2009» off a faded footer filed the receipt fifteen years back, out of every period «Мої гроші»
+     * shows. With no date the receipt stands on the day it was added, and its card asks to check it.
+     * A QR date is printed by the till and is never second-guessed ({@link #identified}).
+     */
+    static ReceiptRecognizeResponse read(String label, BigDecimal amount, LocalDate issuedAt, LocalDate today) {
+        boolean plausible = issuedAt != null
+                && !issuedAt.isBefore(today.minusYears(1)) && !issuedAt.isAfter(today.plusDays(1));
+        return new ReceiptRecognizeResponse(true, label, amount, plausible ? issuedAt : null, null, null);
     }
 
     /**

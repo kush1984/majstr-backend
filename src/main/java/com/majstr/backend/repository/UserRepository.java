@@ -438,4 +438,12 @@ public interface UserRepository extends JpaRepository<User, UUID> {
     @Query("SELECT u FROM User u WHERE u.role = com.majstr.backend.entity.Role.USER "
             + "AND u.plan = com.majstr.backend.entity.Plan.FREE AND u.broadcastOptOutAt IS NULL")
     List<User> findBroadcastAudience();
+
+    /**
+     * The admin's account delete. Native on purpose: the database cascades every owned row, and an
+     * entity remove would trip over the objects the same session already loaded to collect files.
+     */
+    @Modifying(flushAutomatically = true, clearAutomatically = true)
+    @Query(value = "DELETE FROM users WHERE id = :id", nativeQuery = true)
+    int deleteCascading(@Param("id") UUID id);
 }

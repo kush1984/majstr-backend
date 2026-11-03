@@ -10,6 +10,7 @@ import com.majstr.backend.entity.User;
 import com.majstr.backend.exception.ResourceNotFoundException;
 import com.majstr.backend.repository.UserRepository;
 import com.majstr.backend.security.UserPrincipal;
+import com.majstr.backend.service.AdminUserDeletionService;
 import com.majstr.backend.service.AdminUserService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
@@ -17,8 +18,10 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.PageRequest;
+import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -41,6 +44,7 @@ public class AdminUserController {
 
     private final UserRepository userRepository;
     private final AdminUserService adminUserService;
+    private final AdminUserDeletionService adminUserDeletionService;
 
     @Operation(summary = "Search users with pagination + per-user activity counts "
             + "(email verified, clients, projects, estimates, signed). `search` matches email, "
@@ -90,6 +94,16 @@ public class AdminUserController {
                                                 @AuthenticationPrincipal UserPrincipal principal) {
         adminUserService.updateReferralSource(id, req.source(), principal.email());
         return adminUserService.detail(id);
+    }
+
+    @Operation(summary = "Delete a master's account and everything it owns (objects, estimates, acts, "
+            + "money, catalog, stored files). Irreversible. Refused (409) for your own account and "
+            + "for another admin.")
+    @DeleteMapping("/{id}")
+    public ResponseEntity<Void> delete(@PathVariable UUID id,
+                                       @AuthenticationPrincipal UserPrincipal principal) {
+        adminUserDeletionService.delete(id, principal.id());
+        return ResponseEntity.noContent().build();
     }
 
     private static String blankToNull(String s) {

@@ -104,7 +104,7 @@ public class ObjectExpenseService {
                 .objectId(objectId)
                 .amount(req.amount())
                 .category(req.category())
-                .source(req.source() != null ? req.source() : ExpenseSource.MANUAL)
+                .source(ExpenseSource.MANUAL)
                 .note(trimToNull(req.note()))
                 .spentAt(req.spentAt() != null ? req.spentAt() : LocalDate.now(LocalizationConfig.ZONE))
                 .build();
@@ -200,7 +200,10 @@ public class ObjectExpenseService {
         // into «За договором» by ActAddendumCreator — count one without the other and the axis lies.
         BigDecimal accepted = workActItemRepository.sumSignedActLineTotals(objectId)
                 .add(workActReceiptRepository.sumSignedActReceipts(objectId));
-        BigDecimal received = paymentReceiptRepository.sumByProjectId(objectId);
+        // Payment for the WORK only: the client's material money is his, not progress on the
+        // contract (object-money iteration) — the same split «Залишок» is measured with.
+        BigDecimal received = refundCalculator.forObject(objectId)
+                .workPaid(paymentReceiptRepository.sumByProjectId(objectId));
         return new ObjectEconomyActsResponse(contracted, accepted, received);
     }
 

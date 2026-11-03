@@ -892,6 +892,11 @@
                 <tbody>${d.estimateChurn.map(o => `<tr><td>${escapeHtml(o.name)}</td><td>${o.created}</td><td>${o.deleted > 0 ? '<b style="color:var(--danger)">' + o.deleted + '</b>' : '<span class="muted">0</span>'}</td></tr>`).join('')}</tbody>
             </table>
             <p class="muted" style="font-size:0.8rem">Багато видалень при малій к-ті одночасних = обхід ліміту 3/об'єкт (delete→create). Наразі лише моніторимо.</p>` : ''}
+            ${d.role === 'ADMIN' ? '' : `
+            <div style="margin-top:24px; padding-top:12px; border-top:1px solid #f3c6c6">
+                <button id="user-del" class="danger small">🗑 Видалити користувача</button>
+                <span class="muted" style="font-size:0.8rem">разом з усіма об'єктами, кошторисами, актами, грошима і файлами — назавжди</span>
+            </div>`}
         `;
         document.getElementById('src-save').addEventListener('click', async (ev) => {
             const uid = ev.target.dataset.user;
@@ -903,6 +908,26 @@
             loadUserDetail(uid); // re-render with the saved value
             loadUsers();         // refresh the list column
         });
+        const delBtn = document.getElementById('user-del');
+        if (delBtn) delBtn.addEventListener('click', () => deleteUser(id, d.email));
+    }
+
+    // Irreversible, so the admin types the email back — a confirm() is one Enter away from a slip.
+    async function deleteUser(id, email) {
+        const typed = prompt(`Видалити ${email} назавжди?
+Усі об'єкти, кошториси, акти, гроші й файли зникнуть.
+
+Введіть email, щоб підтвердити:`);
+        if (typed === null) return;
+        if (typed.trim().toLowerCase() !== email.toLowerCase()) { alert('Email не збігається — нічого не видалено'); return; }
+        const resp = await api('/admin/users/' + id, { method: 'DELETE' });
+        if (!resp.ok) {
+            const body = await resp.json().catch(() => null);
+            alert(body && body.message ? body.message : 'Не вдалося видалити користувача');
+            return;
+        }
+        closeDetail();
+        loadUsers();
     }
 
     async function loadGrowth() {

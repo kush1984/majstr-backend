@@ -22,9 +22,10 @@ import java.math.BigDecimal;
  * the gross figure the receipts add up to; {@code outstanding} is what is actually still owed.</p>
  *
  * @param reimbursable  Σ of the object's receipts still marked «клієнт відшкодовує»
- * @param refundApplied how much of that a «повернення за матеріал» payment has already settled —
- *                      capped at {@code reimbursable}, see {@code MaterialRefundSplit}
- * @param outstanding   {@code reimbursable − refundApplied}: what the client still owes for material
+ * @param refundApplied Σ of the client's payments «на матеріал» — before or after the purchase,
+ *                      see {@code MaterialRefundSplit}
+ * @param outstanding   {@code reimbursable − refundApplied}: positive = the client still owes for
+ *                      material, NEGATIVE = his money the master has not spent on material yet
  * @param receiptCount  how many receipts that is — a sum with no count reads as a mystery
  * @param unpricedCount how many receipts are saved but still carry no amount, so the master knows
  *                      the figure above is not yet the whole story

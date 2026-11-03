@@ -208,24 +208,26 @@ class CashFlowIntegrationTest extends IntegrationTestBase {
     }
 
     /**
-     * The V129 ruling — a till receipt the client pays back is a RECEIVABLE, not a cost — governs
-     * the OBJECT's economy and is untouched. On THIS screen the same paper is 2 000 ₴ that left his
-     * pocket (review B-33), so it is spending either way; what may never happen is it counting
-     * TWICE when he flips it to «моя витрата» and the flip writes an {@code object_expenses} row.
+     * A till receipt «клієнт поверне» is the CLIENT's material (object-money iteration): shown,
+     * counted in no total, owed on its own line. Flipped to «моя витрата» it is his cost — and what
+     * may never happen is it counting TWICE once the flip writes an {@code object_expenses} row.
      *
      * <p>That disjointness lives entirely in the {@code reimbursable = true} filter of
      * {@code findOutOfPocketByOwnerAndPeriod}, which is exactly what a real database proves.</p>
      */
     @Test
-    void aTillReceiptIsSpendingWhoeverPaysForIt_andNeverTwice() {
+    void aTillReceiptIsTheClientsUntilItIsHisCost_andNeverCountedTwice() {
         LocalDate day = LocalDate.now();
         UUID receiptId = UUID.randomUUID();
         insertTillReceipt(receiptId, "2000.00");
 
         CashFlowResponse asReceivable = flow(day);
-        assertThat(asReceivable.expense()).isEqualByComparingTo("2000.00");
+        assertThat(asReceivable.expense()).isEqualByComparingTo("0.00");
         assertThat(asReceivable.entries()).extracting(CashFlowResponse.Entry::kind)
                 .containsExactly(CashEntryKind.OBJECT_RECEIPT);
+        assertThat(asReceivable.entries().getFirst().clientMaterial()).isTrue();
+        assertThat(asReceivable.materials()).singleElement()
+                .satisfies(m -> assertThat(m.outstanding()).isEqualByComparingTo("2000.00"));
         assertThat(count("SELECT count(*) FROM object_expenses WHERE object_id = ?", projectId))
                 .isZero();
 
@@ -236,6 +238,7 @@ class CashFlowIntegrationTest extends IntegrationTestBase {
         assertThat(asOwnCost.expense()).isEqualByComparingTo("2000.00");
         assertThat(asOwnCost.entries()).extracting(CashFlowResponse.Entry::kind)
                 .containsExactly(CashEntryKind.OBJECT_EXPENSE);
+        assertThat(asOwnCost.materials()).isEmpty();
     }
 
     /**
@@ -340,8 +343,8 @@ class CashFlowIntegrationTest extends IntegrationTestBase {
     }
 
     /**
-     * The refund tick LABELS income, and since B-33 it subtracts nothing: the purchase it repays is
-     * on the expense side itself, and taking both charged the master for the same material twice.
+     * Money «на матеріал» is the client's, like the receipt it repays: it leaves «Прийшло» and the
+     * pair nets to zero on its own line, so «Заробив» is the work and nothing else.
      *
      * <p>The flag is set by TICKING an object's payment from this screen, which is the only way it
      * can be set on one — so this also proves the edit door carries it into {@code payment_receipt}
@@ -363,10 +366,12 @@ class CashFlowIntegrationTest extends IntegrationTestBase {
                 CashEntryKind.OBJECT_PAYMENT));
 
         CashFlowResponse flow = flow(day);
-        assertThat(flow.income()).isEqualByComparingTo("15000.00");
+        assertThat(flow.income()).isEqualByComparingTo("12000.00");
         assertThat(flow.refunds()).isEqualByComparingTo("3000.00");
-        // The 3 000 came back and the 3 000 went out: 12 000 of work is what he earned.
+        // The 3 000 came back for the 3 000 he laid out: 12 000 of work is what he earned, and the
+        // client owes nothing for material any more.
         assertThat(flow.earned()).isEqualByComparingTo("12000.00");
+        assertThat(flow.materials()).isEmpty();
         // …and the OBJECT's own «Отримано» is untouched by the flag — the standing constraint that
         // existing clients' figures must not shift under them.
         assertThat(jdbc.queryForObject(
@@ -417,6 +422,176 @@ class CashFlowIntegrationTest extends IntegrationTestBase {
 
     private CashFlowResponse flow(LocalDate day) {
         return cashService.flow(ownerId, day.minusDays(5), day.plusDays(5), false);
+    }
+
+    // ---- object-money iteration ----------------------------------------------
+
+    /**
+     * Every row belongs to exactly one slice: one object, or none. So the per-object «Заробив» plus
+     * the off-object one IS «Мої гроші» — the two screens can never tell the master different
+     * stories about the same month.
+     */
+    @Test
+    void theSlicesAddUpToTheWhole() {
+        LocalDate day = LocalDate.now();
+        UUID second = newProject(ownerId, "Будинок на Садовій");
+        insertReceipt("10000.00", day, false);
+        insertReceipt("1500.00", day, true);
+        insertExpense("2500.00", day);
+        insertTillReceipt(UUID.randomUUID(), "4000.00");
+        jdbc.update("""
+                INSERT INTO payment_receipt (id, project_id, amount, received_at, label, material_refund)
+                VALUES (?, ?, 7000.00, ?, 'Оплата', FALSE)
+                """, UUID.randomUUID(), second, day);
+        cashService.create(ownerId, new CashEntryRequest(CashDirection.EXPENSE,
+                new BigDecimal("1450.00"), CashCategory.TOOLS, "Робочий одяг", day, false, null), null);
+
+        CashFlowResponse all = flow(day);
+        BigDecimal sliced = java.util.stream.Stream.of(
+                        com.majstr.backend.service.CashScope.object(projectId),
+                        com.majstr.backend.service.CashScope.object(second),
+                        com.majstr.backend.service.CashScope.OFF_OBJECT)
+                .map(scope -> cashService.flow(ownerId, day.withDayOfMonth(1),
+                        day.withDayOfMonth(day.lengthOfMonth()), false, scope).earned())
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+
+        assertThat(all.earned()).isEqualByComparingTo("13050.00"); // 10 000 + 7 000 − 2 500 − 1 450
+        assertThat(sliced).isEqualByComparingTo(all.earned());
+        assertThat(cashService.objectMoney(ownerId, projectId).earned())
+                .isEqualByComparingTo("7500.00");
+    }
+
+    /**
+     * The case the master named himself: the client hands over 10 000 «на матеріал» BEFORE anything
+     * is bought. Two receipts follow; the balance runs from «лишилось» to «винен» and back to zero
+     * as he pays — and not one hryvnia of it ever pays for the work.
+     */
+    @Test
+    void moneyForMaterialUpFront_isSpentDownByReceipts_andNeverPaysForTheWork() {
+        LocalDate day = LocalDate.now();
+        insertReceipt("10000.00", day, true);
+
+        assertThat(cashService.objectMoney(ownerId, projectId).materials().outstanding())
+                .isEqualByComparingTo("-10000.00");
+
+        insertTillReceipt(UUID.randomUUID(), "4000.00");
+        insertTillReceipt(UUID.randomUUID(), "8500.00");
+        com.majstr.backend.dto.ObjectMoneyResponse owed = cashService.objectMoney(ownerId, projectId);
+        assertThat(owed.materials().outstanding()).isEqualByComparingTo("2500.00");
+        assertThat(owed.income()).isEqualByComparingTo("0.00");
+        assertThat(owed.expense()).isEqualByComparingTo("0.00");
+
+        insertReceipt("2500.00", day, true);
+        assertThat(cashService.objectMoney(ownerId, projectId).materials().outstanding())
+                .isEqualByComparingTo("0.00");
+        // …and the work axis never saw any of it.
+        assertThat(jdbc.queryForObject("SELECT COALESCE(SUM(amount), 0) FROM payment_receipt "
+                        + "WHERE project_id = ? AND material_refund = FALSE", BigDecimal.class, projectId))
+                .isEqualByComparingTo("0.00");
+    }
+
+    /**
+     * The owner's «Тест Б», end to end on the real queries: 5 000 ₴ «на матеріал», 763,72 ₴ of till
+     * receipts, then a SIGNED act billing 16 388 ₴ of receipts. The 4 236,28 ₴ left of the material
+     * money paid part of that purchase: his own spending is 12 151,72 ₴, nothing «came in», and the
+     * balance closes.
+     */
+    @Test
+    void theMaterialMoneyLeftOverPaysPartOfTheReceiptsOnASignedAct() {
+        LocalDate day = LocalDate.now(com.majstr.backend.config.LocalizationConfig.ZONE);
+        insertReceipt("5000.00", day, true);
+        insertTillReceipt(UUID.randomUUID(), "763.72");
+        UUID act = insertSignedAct(false);
+        jdbc.update("UPDATE work_act SET signed_at = now() WHERE id = ?", act);
+        insertActReceipt(act, "16388.00", "0");
+        // An unsigned act's receipts are not billed yet and take nothing.
+        insertActReceipt(insertAct("DRAFT", false), "900.00", "0");
+
+        com.majstr.backend.dto.ObjectMoneyResponse money = cashService.objectMoney(ownerId, projectId);
+        assertThat(money.materials().toActs()).isEqualByComparingTo("4236.28");
+        assertThat(money.materials().outstanding()).isEqualByComparingTo("0.00");
+        assertThat(money.income()).isEqualByComparingTo("0.00");
+        assertThat(money.expense()).isEqualByComparingTo("12151.72");
+        assertThat(money.entries()).filteredOn(e -> e.clientShare() != null).singleElement()
+                .satisfies(e -> assertThat(e.clientShare()).isEqualByComparingTo("4236.28"));
+    }
+
+    /** An act that posts its receipts as expenses: the share lands on the posted row (V184 link). */
+    @Test
+    void theShareLandsOnTheExpenseTheActPosted() {
+        LocalDate day = LocalDate.now(com.majstr.backend.config.LocalizationConfig.ZONE);
+        insertReceipt("1000.00", day, true);
+        UUID act = insertSignedAct(true);
+        jdbc.update("UPDATE work_act SET signed_at = now() WHERE id = ?", act);
+        insertActReceipt(act, "3000.00", "0");
+        UUID expense = UUID.randomUUID();
+        jdbc.update("""
+                INSERT INTO object_expenses (id, object_id, category, source, amount, spent_at, note, work_act_id)
+                VALUES (?, ?, 'MATERIALS', 'RECEIPT', 3000.00, ?, 'Чек до акта № A1: Епіцентр', ?)
+                """, expense, projectId, day, act);
+
+        com.majstr.backend.dto.ObjectMoneyResponse money = cashService.objectMoney(ownerId, projectId);
+
+        assertThat(money.expense()).isEqualByComparingTo("2000.00");
+        assertThat(money.entries()).filteredOn(e -> e.id().equals(expense)).singleElement()
+                .satisfies(e -> {
+                    assertThat(e.amount()).isEqualByComparingTo("2000.00");
+                    assertThat(e.clientShare()).isEqualByComparingTo("1000.00");
+                });
+    }
+
+    /**
+     * A receipt photo on his own row (V182): stored, served back to him, replaced, and gone with
+     * the row. The replaced blob is deleted only after the new key is committed.
+     */
+    @Test
+    void aPersonalRowsPhotoIsStoredReplacedAndDropped() throws Exception {
+        CashFlowResponse.Entry row = cashService.create(ownerId, new CashEntryRequest(
+                CashDirection.EXPENSE, new BigDecimal("1450.00"), CashCategory.TOOLS, "Робочий одяг",
+                LocalDate.now(), false, null), null);
+        byte[] jpeg = {(byte) 0xFF, (byte) 0xD8, (byte) 0xFF, (byte) 0xE0, 0, 0, 0, 0};
+        org.springframework.mock.web.MockMultipartFile photo =
+                new org.springframework.mock.web.MockMultipartFile("file", "r.jpg", "image/jpeg", jpeg);
+
+        assertThat(cashService.attachPhoto(ownerId, row.id(), photo).hasPhoto()).isTrue();
+        String first = jdbc.queryForObject("SELECT storage_key FROM cash_entry WHERE id = ?",
+                String.class, row.id());
+        try (var in = cashService.readPhoto(ownerId, row.id()).content()) {
+            assertThat(in.readAllBytes()).isEqualTo(jpeg);
+        }
+
+        cashService.attachPhoto(ownerId, row.id(), photo);
+        String second = jdbc.queryForObject("SELECT storage_key FROM cash_entry WHERE id = ?",
+                String.class, row.id());
+        assertThat(second).isNotEqualTo(first);
+
+        assertThat(cashService.removePhoto(ownerId, row.id()).hasPhoto()).isFalse();
+        assertThatThrownBy(() -> cashService.readPhoto(ownerId, row.id()))
+                .isInstanceOf(com.majstr.backend.exception.ResourceNotFoundException.class);
+    }
+
+    /** Someone else's row has no photo door: «not found», like every foreign money id. */
+    @Test
+    void anotherMastersRowTakesNoPhoto() {
+        CashFlowResponse.Entry row = cashService.create(ownerId, new CashEntryRequest(
+                CashDirection.EXPENSE, BigDecimal.TEN, null, null, LocalDate.now(), false, null), null);
+        byte[] jpeg = {(byte) 0xFF, (byte) 0xD8, (byte) 0xFF, (byte) 0xE0, 0, 0, 0, 0};
+
+        assertThatThrownBy(() -> cashService.attachPhoto(newOwner(), row.id(),
+                new org.springframework.mock.web.MockMultipartFile("file", "r.jpg", "image/jpeg", jpeg)))
+                .isInstanceOf(com.majstr.backend.exception.ResourceNotFoundException.class);
+    }
+
+    /** V182 applied: a personal row keeps the key of its paper's photo. */
+    @Test
+    void aPersonalRowCarriesItsPhotoKey() {
+        CashFlowResponse.Entry row = cashService.create(ownerId, new CashEntryRequest(
+                CashDirection.EXPENSE, new BigDecimal("1450.00"), CashCategory.TOOLS, "Робочий одяг",
+                LocalDate.now(), false, null), null);
+        jdbc.update("UPDATE cash_entry SET storage_key = 'cash-receipts/a.jpg' WHERE id = ?", row.id());
+
+        assertThat(flow(LocalDate.now()).entries()).singleElement()
+                .satisfies(e -> assertThat(e.hasPhoto()).isTrue());
     }
 
     private UUID newOwner() {

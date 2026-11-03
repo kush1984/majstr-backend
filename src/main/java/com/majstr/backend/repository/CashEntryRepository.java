@@ -34,4 +34,8 @@ public interface CashEntryRepository extends JpaRepository<CashEntry, UUID> {
 
     /** Owner-scoped load: an id alone is never enough to reach someone else's money. */
     Optional<CashEntry> findByIdAndOwnerId(UUID id, UUID ownerId);
+
+    /** Every photo this master's own rows point at — collected before an account delete. */
+    @Query("SELECT c.storageKey FROM CashEntry c WHERE c.ownerId = :ownerId AND c.storageKey IS NOT NULL")
+    List<String> findStorageKeysByOwnerId(@Param("ownerId") UUID ownerId);
 }

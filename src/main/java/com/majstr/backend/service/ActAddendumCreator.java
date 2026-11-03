@@ -147,6 +147,7 @@ class ActAddendumCreator {
                     .source(ExpenseSource.RECEIPT)
                     .note("Чек до акта № " + act.getNumber() + ": " + r.getLabel())
                     .spentAt(addedOn(r))
+                    .workActId(act.getId())
                     .build());
         }
         expenseRepository.saveAll(expenses);

@@ -2,6 +2,7 @@ package com.majstr.backend.service;
 
 import com.majstr.backend.repository.PaymentReceiptRepository;
 import com.majstr.backend.repository.ProjectReceiptRepository;
+import com.majstr.backend.repository.WorkActReceiptRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
@@ -22,10 +23,12 @@ public class MaterialRefundCalculator {
 
     private final PaymentReceiptRepository paymentReceiptRepository;
     private final ProjectReceiptRepository projectReceiptRepository;
+    private final WorkActReceiptRepository workActReceiptRepository;
 
     public MaterialRefundSplit forObject(UUID objectId) {
         return MaterialRefundSplit.of(
                 paymentReceiptRepository.sumMaterialRefunds(objectId),
-                projectReceiptRepository.sumReimbursable(objectId));
+                projectReceiptRepository.sumReimbursable(objectId),
+                workActReceiptRepository.sumSignedActReceipts(objectId));
     }
 }

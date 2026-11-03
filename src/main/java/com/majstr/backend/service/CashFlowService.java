@@ -5,6 +5,8 @@ import com.majstr.backend.dto.CashEntryKind;
 import com.majstr.backend.dto.CashEntryRequest;
 import com.majstr.backend.dto.CashFlowResponse;
 import com.majstr.backend.dto.CashSummaryResponse;
+import com.majstr.backend.dto.ObjectMoneyResponse;
+import com.majstr.backend.dto.ReceiptRecognizeResponse;
 import com.majstr.backend.dto.ExpenseRequest;
 import com.majstr.backend.dto.PaymentReceiptEditRequest;
 import com.majstr.backend.dto.ProjectReceiptRequest;
@@ -26,10 +28,19 @@ import com.majstr.backend.repository.PaymentReceiptRepository;
 import com.majstr.backend.repository.ProjectReceiptRepository;
 import com.majstr.backend.repository.ProjectRepository;
 import com.majstr.backend.repository.WorkActReceiptRepository;
+import com.majstr.backend.service.ImageContentTypeDetector.ImageKind;
+import com.majstr.backend.service.fiscal.FiscalQrReceiptReader;
+import com.majstr.backend.storage.StorageService;
+import com.majstr.backend.storage.StoredObject;
+import com.majstr.backend.storage.UnsupportedMediaTypeException;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.multipart.MultipartFile;
 
+import java.io.ByteArrayInputStream;
+import java.io.IOException;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.Instant;
@@ -39,8 +50,10 @@ import java.util.Collection;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 
@@ -65,21 +78,22 @@ import java.util.UUID;
  *       deleting an object's row from this screen goes through that object's OWN service — a second
  *       door to one record, never a second copy — so its rules still hold, including the refusal to
  *       touch an expense a V129 till receipt owns.</li>
- *   <li><b>«Заробив» = «Прийшло» − «Витрати», one subtraction.</b> Which means every hryvnia
- *       that left his pocket has to be ON the expense side, including the material he bought at
- *       the till and has not been paid back for yet (review B-33): V129's «a reimbursable receipt
- *       is a receivable, not a cost» governs the OBJECT's economy, and is still true there — but
- *       on THIS screen the money is gone until the client hands it back, and the reverse reading
- *       charged him for the same material twice, once as the refund subtracted from earnings and
- *       once, silently, by never crediting the purchase at all. The two
- *       {@code findOutOfPocketByOwnerAndPeriod} queries are written to be disjoint from
- *       {@code object_expenses}, so nothing is counted twice.</li>
- *   <li><b>«Повернення за матеріал» is an INFO line</b>, subtracted from nothing. It says which
- *       part of «Прийшло» was not payment for work; the netting is done by the purchase.</li>
+ *   <li><b>«Заробив» = «Прийшло» − «Витрати», one subtraction, over the MASTER's money only</b>
+ *       (object-money iteration). The client's material money — a till receipt «клієнт поверне»
+ *       and a payment «на матеріал» — is a feed row marked {@code clientMaterial} and counted in
+ *       neither total; what is still owed is {@link CashFlowResponse#materials()}. B-33 had put the
+ *       receipt on the expense side and the reimbursement on the income side so the two netted;
+ *       they did, but «Прийшло» and «Витрачено» carried money that was never his, and a purchase
+ *       and its repayment in different months swung «Заробив» by the full amount. Leaving BOTH
+ *       halves out nets them just as exactly. The two {@code findOutOfPocketByOwnerAndPeriod}
+ *       queries stay disjoint from {@code object_expenses}, so nothing is counted twice.</li>
+ *   <li><b>Material billed through an act is the master's expense</b> — the client repays it inside
+ *       the act, as payment for work, so it nets against income like any other cost.</li>
  *   <li><b>Period boundaries are {@code Europe/Kyiv}</b>, never the server's UTC idea of today —
  *       on the 1st at 01:00 that would open «цей місяць» on the previous one.</li>
  * </ul>
  */
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class CashFlowService {
@@ -99,6 +113,12 @@ public class CashFlowService {
      *  Thirteen leaves room for «1 Jan – 31 Dec» however the client rounds the bounds. */
     private static final int MAX_PERIOD_MONTHS = 13;
 
+    /** The whole life of an object, for «Гроші обʼєкта» — bounds no row can fall outside. */
+    private static final LocalDate EVER_FROM = LocalDate.of(2000, 1, 1);
+    private static final LocalDate EVER_TO = LocalDate.of(2999, 12, 31);
+
+    private static final String PHOTO_PREFIX = "cash-receipts";
+
     private final CashEntryRepository cashRepository;
     private final PaymentReceiptRepository receiptRepository;
     private final ObjectExpenseRepository expenseRepository;
@@ -108,6 +128,10 @@ public class CashFlowService {
     private final PaymentService paymentService;
     private final ObjectExpenseService expenseService;
     private final ProjectReceiptService projectReceiptService;
+    private final ProjectService projectService;
+    private final StorageService storage;
+    private final StorageCleanup cleanup;
+    private final FiscalQrReceiptReader qrReader;
 
     // ---- reads ------------------------------------------------------------
 
@@ -120,6 +144,19 @@ public class CashFlowService {
      */
     @Transactional(readOnly = true)
     public CashFlowResponse flow(UUID ownerId, LocalDate from, LocalDate to, boolean monthly) {
+        return flow(ownerId, from, to, monthly, CashScope.ALL);
+    }
+
+    /**
+     * The same, narrowed to one object or to the rows that belong to none.
+     *
+     * <p>A filter on the READ, never a step in front of adding (the master's round-3 ruling stands:
+     * nothing here asks which object money belongs to). An object that is not his is a 404 — the
+     * same answer as an id that does not exist.</p>
+     */
+    @Transactional(readOnly = true)
+    public CashFlowResponse flow(UUID ownerId, LocalDate from, LocalDate to, boolean monthly,
+                                 CashScope scope) {
         // ONE clock read for both defaults (review B-52): two reads could straddle midnight and
         // answer «1 November – 31 October».
         LocalDate today = today();
@@ -136,23 +173,216 @@ public class CashFlowService {
         if (start.plusMonths(MAX_PERIOD_MONTHS).isBefore(end)) {
             throw new PaymentValidationException("error.cash.period-too-long");
         }
-        List<CashFlowResponse.Entry> all = collect(ownerId, start, end);
+        requireScopeOwned(ownerId, scope);
+        List<CashFlowResponse.Entry> all = collect(ownerId, start, end).stream()
+                .filter(scope::includes)
+                .toList();
 
-        BigDecimal income = sum(all, e -> e.direction() == CashDirection.INCOME);
-        BigDecimal expense = sum(all, e -> e.direction() == CashDirection.EXPENSE);
-        BigDecimal refunds = sum(all, CashFlowResponse.Entry::materialRefund);
-        // NOT `income − refunds − expense` (B-33). The refund repays material that is itself an
-        // expense row now, so subtracting it as well charged the master for the same purchase
-        // twice — and in the far commoner month where he had bought but not been paid back, the
-        // 8 000 he was out of pocket read as pure profit.
+        BigDecimal income = sum(all, CashFlowService::isOwnIncome);
+        BigDecimal expense = sum(all, CashFlowService::isOwnExpense);
+        BigDecimal refunds = sum(all, e -> e.clientMaterial() && e.direction() == CashDirection.INCOME);
         BigDecimal earned = income.subtract(expense);
 
         List<CashFlowResponse.Entry> entries = monthly
                 ? List.of()
                 : all.stream().limit(MAX_ENTRIES).toList();
         List<CashFlowResponse.MonthTotal> months = monthly ? monthTotals(all) : List.of();
+        List<CashFlowResponse.ScopeTotal> objects = new ArrayList<>();
+        CashFlowResponse.ScopeTotal personal = null;
+        for (List<CashFlowResponse.Entry> slice : slicesByObject(all)) {
+            CashFlowResponse.Entry first = slice.get(0);
+            BigDecimal in = sum(slice, CashFlowService::isOwnIncome);
+            BigDecimal out = sum(slice, CashFlowService::isOwnExpense);
+            var total = new CashFlowResponse.ScopeTotal(first.projectId(), first.projectName(), in, out,
+                    scale(in.subtract(out)));
+            if (first.projectId() == null) {
+                personal = total;
+            } else {
+                objects.add(total);
+            }
+        }
         return new CashFlowResponse(start, end, income, expense, earned, refunds, entries, months,
-                !monthly && all.size() > MAX_ENTRIES);
+                !monthly && all.size() > MAX_ENTRIES, materialBalances(ownerId, scope), objects, personal);
+    }
+
+    /** The period's rows split by object (null = none), most recently active first. */
+    private static Collection<List<CashFlowResponse.Entry>> slicesByObject(List<CashFlowResponse.Entry> all) {
+        Map<Optional<UUID>, List<CashFlowResponse.Entry>> slices = new LinkedHashMap<>();
+        for (CashFlowResponse.Entry e : all) {
+            slices.computeIfAbsent(Optional.ofNullable(e.projectId()), k -> new ArrayList<>()).add(e);
+        }
+        return slices.values();
+    }
+
+    /**
+     * «Гроші обʼєкта»: the cash feed of ONE object over its whole life.
+     *
+     * <p>Read through the very same {@link #collect} as «Мої гроші» and filtered afterwards, so there
+     * is no second definition of what the object earned to drift from the first. The owner-wide read
+     * is bounded by the master's own rows, which is small; if it ever is not, the filter moves into
+     * the queries, not into a new formula.</p>
+     */
+    @Transactional(readOnly = true)
+    public ObjectMoneyResponse objectMoney(UUID ownerId, UUID projectId) {
+        Project project = projectService.loadOwned(projectId, ownerId);
+        CashScope scope = CashScope.object(projectId);
+        List<CashFlowResponse.Entry> all = collect(ownerId, EVER_FROM, EVER_TO).stream()
+                .filter(scope::includes)
+                .toList();
+        BigDecimal income = sum(all, CashFlowService::isOwnIncome);
+        BigDecimal expense = sum(all, CashFlowService::isOwnExpense);
+        boolean crew = all.stream().anyMatch(e -> e.category() == CashCategory.CREW);
+        MaterialRefundSplit split = MaterialRefundSplit.of(
+                receiptRepository.sumMaterialRefunds(projectId),
+                projectReceiptRepository.sumReimbursable(projectId),
+                actReceiptRepository.sumSignedActReceipts(projectId));
+        CashFlowResponse.MaterialBalance materials = new CashFlowResponse.MaterialBalance(
+                projectId, project.getName(), scale(split.reimbursable()), scale(split.refunds()),
+                scale(split.toActs()), scale(split.materialsOutstanding()));
+        return new ObjectMoneyResponse(income, expense, scale(income.subtract(expense)), materials,
+                crew, all.stream().limit(MAX_ENTRIES).toList(), all.size() > MAX_ENTRIES);
+    }
+
+    /** The master's own income — what «Прийшло» sums. */
+    private static boolean isOwnIncome(CashFlowResponse.Entry e) {
+        return e.direction() == CashDirection.INCOME && !e.clientMaterial();
+    }
+
+    /** The master's own spending — what «Витрачено» sums. */
+    private static boolean isOwnExpense(CashFlowResponse.Entry e) {
+        return e.direction() == CashDirection.EXPENSE && !e.clientMaterial();
+    }
+
+    /**
+     * What each client owes for material, or still has unspent with the master — all time, one
+     * line per object whose balance is not zero, largest debt first.
+     *
+     * <p>Built from the SAME two sums the object's own card reads ({@link MaterialRefundSplit}), so
+     * «Мої гроші» and the object never name two different debts.</p>
+     */
+    private List<CashFlowResponse.MaterialBalance> materialBalances(UUID ownerId, CashScope scope) {
+        if (scope.offObject()) {
+            return List.of();
+        }
+        OwnerMaterial material = ownerMaterial(ownerId);
+        Map<UUID, BigDecimal> bought = material.bought();
+        Map<UUID, BigDecimal> given = material.given();
+        Set<UUID> ids = new HashSet<>(bought.keySet());
+        ids.addAll(given.keySet());
+        if (scope.projectId() != null) {
+            ids.retainAll(Set.of(scope.projectId()));
+        }
+        Map<UUID, String> names = projectNames(ids);
+        List<CashFlowResponse.MaterialBalance> out = new ArrayList<>();
+        for (UUID id : ids) {
+            MaterialRefundSplit split = material.split(id);
+            if (split.materialsOutstanding().signum() == 0) {
+                continue;
+            }
+            out.add(new CashFlowResponse.MaterialBalance(id, names.get(id), scale(split.reimbursable()),
+                    scale(split.refunds()), scale(split.toActs()), scale(split.materialsOutstanding())));
+        }
+        out.sort(Comparator.comparing(CashFlowResponse.MaterialBalance::outstanding).reversed()
+                .thenComparing(b -> b.projectId().toString()));
+        return out;
+    }
+
+    /**
+     * Every object's material money for one master, all time, in three owner-wide queries: what
+     * clients gave «на матеріал», the till receipts they owe for, and the receipts each SIGNED act
+     * bills (oldest signature first). One snapshot both the balances and the derived feed rows read,
+     * so they can never disagree about a single object.
+     */
+    private record OwnerMaterial(Map<UUID, BigDecimal> given, Map<UUID, BigDecimal> bought,
+                                 List<Object[]> actRows) {
+
+        MaterialRefundSplit split(UUID projectId) {
+            BigDecimal acts = BigDecimal.ZERO;
+            for (Object[] row : actRows) {
+                if (projectId.equals(row[0])) {
+                    acts = acts.add((BigDecimal) row[4]);
+                }
+            }
+            return MaterialRefundSplit.of(given.get(projectId), bought.get(projectId), acts);
+        }
+    }
+
+    private OwnerMaterial ownerMaterial(UUID ownerId) {
+        Map<UUID, BigDecimal> bought = new HashMap<>();
+        for (Object[] row : projectReceiptRepository.sumReimbursableByOwner(ownerId)) {
+            bought.put((UUID) row[0], (BigDecimal) row[1]);
+        }
+        Map<UUID, BigDecimal> given = new HashMap<>();
+        for (Object[] row : receiptRepository.sumMaterialRefundsByOwner(ownerId)) {
+            given.put((UUID) row[0], (BigDecimal) row[1]);
+        }
+        List<Object[]> acts = given.isEmpty()
+                ? List.of()
+                : actReceiptRepository.sumSignedActReceiptsByActForOwner(ownerId);
+        return new OwnerMaterial(given, bought, acts);
+    }
+
+    /**
+     * Which feed rows the client's material money paid, and how much of each: the share every
+     * SIGNED act takes ({@link MaterialRefundSplit#toActs}, oldest signature first) spread over that
+     * act's rows oldest first — the expenses it posted (V184), or its receipts when it posts none.
+     * Owner's ruling (2026-11-03): this is NOT income — the money arrived as the client's «на
+     * матеріал» payment — it is the part of the purchase that did not leave his own pocket.
+     * Computed over every row of the act, not the window, so a row's share never depends on which
+     * week is on screen.
+     */
+    private Map<UUID, BigDecimal> clientShares(UUID ownerId) {
+        OwnerMaterial material = ownerMaterial(ownerId);
+        Map<UUID, BigDecimal> actShare = new java.util.LinkedHashMap<>();
+        Map<UUID, BigDecimal> left = new HashMap<>();
+        for (Object[] row : material.actRows()) {
+            UUID projectId = (UUID) row[0];
+            BigDecimal remaining = left.computeIfAbsent(projectId, id -> material.split(id).toActs());
+            BigDecimal take = remaining.min((BigDecimal) row[4]);
+            if (take.signum() > 0) {
+                left.put(projectId, remaining.subtract(take));
+                actShare.put((UUID) row[1], take);
+            }
+        }
+        if (actShare.isEmpty()) {
+            return Map.of();
+        }
+        Map<UUID, List<Map.Entry<UUID, BigDecimal>>> rowsByAct = new HashMap<>();
+        for (ObjectExpense e : expenseRepository.findByWorkActIds(actShare.keySet())) {
+            rowsByAct.computeIfAbsent(e.getWorkActId(), k -> new ArrayList<>()).add(Map.entry(e.getId(), e.getAmount()));
+        }
+        Set<UUID> unposted = new HashSet<>(actShare.keySet());
+        unposted.removeAll(rowsByAct.keySet());
+        if (!unposted.isEmpty()) {
+            for (WorkActReceipt r : actReceiptRepository.findBilledByWorkActIds(unposted)) {
+                rowsByAct.computeIfAbsent(r.getWorkAct().getId(), k -> new ArrayList<>())
+                        .add(Map.entry(r.getId(), r.billedAmount()));
+            }
+        }
+        Map<UUID, BigDecimal> out = new HashMap<>();
+        actShare.forEach((actId, share) -> {
+            BigDecimal remaining = share;
+            for (Map.Entry<UUID, BigDecimal> rowAmount : rowsByAct.getOrDefault(actId, List.of())) {
+                if (remaining.signum() <= 0) {
+                    break;
+                }
+                BigDecimal take = remaining.min(rowAmount.getValue().max(BigDecimal.ZERO));
+                if (take.signum() > 0) {
+                    out.put(rowAmount.getKey(), scale(take));
+                    remaining = remaining.subtract(take);
+                }
+            }
+        });
+        return out;
+    }
+
+    private void requireScopeOwned(UUID ownerId, CashScope scope) {
+        if (scope.projectId() != null) {
+            projectRepository.findById(scope.projectId())
+                    .filter(p -> p.getOwner().getId().equals(ownerId))
+                    .orElseThrow(() -> new ResourceNotFoundException(
+                            "Object not found: " + scope.projectId()));
+        }
     }
 
     /**
@@ -254,8 +484,10 @@ public class CashFlowService {
                         : expense.getCategory();
                 expenseService.update(expense.getObjectId(), id, ownerId, new ExpenseRequest(
                         amount, category, trimToNull(req.note()),
-                        req.happenedOn() != null ? req.happenedOn() : expense.getSpentAt(), null));
-                yield fromExpense(ownedExpense(ownerId, id), projectName(expense.getObjectId()));
+                        req.happenedOn() != null ? req.happenedOn() : expense.getSpentAt()));
+                // Answered as the feed shows it: a share the client's material money paid stays off it.
+                yield paidByClient(fromExpense(ownedExpense(ownerId, id), projectName(expense.getObjectId())),
+                        clientShares(ownerId));
             }
             case OBJECT_RECEIPT -> {
                 ProjectReceipt receipt = ownedTillReceipt(ownerId, id);
@@ -316,8 +548,81 @@ public class CashFlowService {
                 projectReceiptService.delete(r.getProjectId(), id, ownerId);
             });
             case ACT_RECEIPT -> throw new WorkActSignedException();
-            case PERSONAL -> cashRepository.findByIdAndOwnerId(id, ownerId)
-                    .ifPresent(cashRepository::delete);
+            case PERSONAL -> cashRepository.findByIdAndOwnerId(id, ownerId).ifPresent(entry -> {
+                cashRepository.delete(entry);
+                // The paper goes AFTER the row, never before it (B-25).
+                cleanup.afterCommit(entry.getStorageKey());
+            });
+        }
+    }
+
+    // ---- a photo of the paper on his OWN row --------------------------------
+
+    /**
+     * Attach (or replace) the photo of a receipt on one of his own rows — робочий одяг, a drill.
+     *
+     * <p>Object money already has its own papers (object and act receipts); this is only for what no
+     * object knows about, so only a PERSONAL row takes one. Not {@code @Transactional}: the blob is
+     * stored first and the row saved after it in its own short transaction, so a failed save can
+     * drop the blob it would otherwise orphan (B-48), and the replaced photo is deleted only once
+     * the new key is committed.</p>
+     */
+    public CashFlowResponse.Entry attachPhoto(UUID ownerId, UUID id, MultipartFile file) throws IOException {
+        CashEntry entry = load(ownerId, id);
+        if (file == null || file.isEmpty()) {
+            throw new UnsupportedMediaTypeException("error.upload.empty");
+        }
+        byte[] content = file.getBytes();
+        ImageKind kind = ProjectReceiptService.requireImage(content);
+        StoredObject stored = storage.store(new ByteArrayInputStream(content), content.length,
+                PHOTO_PREFIX, kind.extension, kind.contentType);
+        String previous = entry.getStorageKey();
+        entry.setStorageKey(stored.key());
+        try {
+            entry = cashRepository.save(entry);
+        } catch (RuntimeException e) {
+            tryDelete(stored.key());
+            throw e;
+        }
+        if (previous != null) {
+            tryDelete(previous);
+        }
+        return toEntry(entry);
+    }
+
+    /** Drop the photo from his own row; the row itself stays. */
+    @Transactional
+    public CashFlowResponse.Entry removePhoto(UUID ownerId, UUID id) {
+        CashEntry entry = load(ownerId, id);
+        String key = entry.getStorageKey();
+        entry.setStorageKey(null);
+        cleanup.afterCommit(key);
+        return toEntry(entry);
+    }
+
+    /** Owner download of his own row's photo — authenticated, never through {@code /api/files}. */
+    @Transactional(readOnly = true)
+    public ProjectPhotoService.PhotoFile readPhoto(UUID ownerId, UUID id) throws IOException {
+        CashEntry entry = load(ownerId, id);
+        if (entry.getStorageKey() == null) {
+            throw new ResourceNotFoundException("Cash entry has no photo");
+        }
+        return ProjectPhotoService.open(storage, entry.getStorageKey(), "Cash entry photo not found");
+    }
+
+    /**
+     * Read a receipt's printed fiscal QR to pre-fill his own row — the same free, local read the
+     * object and act receipts use, through the same reader. Persists nothing.
+     */
+    public ReceiptRecognizeResponse readQr(String payload) {
+        return qrReader.read(payload);
+    }
+
+    private void tryDelete(String key) {
+        try {
+            storage.delete(key);
+        } catch (IOException e) {
+            log.warn("Could not delete stored cash receipt photo {}: {}", key, e.getMessage());
         }
     }
 
@@ -350,8 +655,9 @@ public class CashFlowService {
         for (PaymentReceipt r : receipts) {
             all.add(fromReceipt(r));
         }
+        Map<UUID, BigDecimal> shares = clientShares(ownerId);
         for (ObjectExpense e : expenses) {
-            all.add(fromExpense(e, names.get(e.getObjectId())));
+            all.add(paidByClient(fromExpense(e, names.get(e.getObjectId())), shares));
         }
         for (CashEntry c : own) {
             all.add(toEntry(c));
@@ -360,7 +666,7 @@ public class CashFlowService {
             all.add(fromTillReceipt(r, names.get(r.getProjectId())));
         }
         for (WorkActReceipt r : actReceipts) {
-            all.add(fromActReceipt(r));
+            all.add(paidByClient(fromActReceipt(r), shares));
         }
         // The day first, then the time INSIDE it — and object rows carry no time at all, so they
         // fall to the end of their own day rather than to midnight of it. `createdAt` is not
@@ -371,6 +677,11 @@ public class CashFlowService {
                         Comparator.nullsLast(Comparator.reverseOrder()))
                 .thenComparing(e -> e.id().toString()));
         return all;
+    }
+
+    private static CashFlowResponse.Entry paidByClient(CashFlowResponse.Entry e, Map<UUID, BigDecimal> shares) {
+        BigDecimal share = shares.get(e.id());
+        return share == null ? e : e.paidByClient(share);
     }
 
     private Map<UUID, String> projectNames(Collection<UUID> ids) {
@@ -400,23 +711,24 @@ public class CashFlowService {
                 null, // an object payment has no category of its own — never invent one
                 planned ? r.getPlanPayment().getPurpose() : r.getLabel(),
                 r.getReceivedAt(), null,
-                project.getId(), project.getName(), r.isMaterialRefund(), planned, false);
+                project.getId(), project.getName(), r.isMaterialRefund(), r.isMaterialRefund(),
+                planned, false, false, null);
     }
 
     private static CashFlowResponse.Entry fromExpense(ObjectExpense e, String projectName) {
         return new CashFlowResponse.Entry(
                 e.getId(), CashEntryKind.OBJECT_EXPENSE, CashDirection.EXPENSE, e.getAmount(),
                 fromExpenseCategory(e), e.getNote(), e.getSpentAt(), null,
-                e.getObjectId(), projectName, false, false, false);
+                e.getObjectId(), projectName, false, false, false, false, false, null);
     }
 
     /**
-     * Material bought at the till that the client has not paid back yet (review B-33).
+     * Material bought at the till «клієнт поверне» (review B-33, object-money iteration).
      *
-     * <p>It reads as MATERIALS spending, because that is what it was. The row stays editable — one
-     * door to one record, as everywhere here — except once an act has billed it: from that moment
-     * the paper is inside a document the client holds, and what may still be corrected about it
-     * belongs on the object's receipts screen, not in a month's feed.</p>
+     * <p>Not yet billed on an act, it is the CLIENT's material: shown, marked {@code clientMaterial},
+     * counted in no total — what is still owed is the material balance. Once an act has billed it,
+     * the client repays it inside that act as payment for work, so it becomes the master's expense
+     * like any other cost, and read-only: the paper is inside a document the client holds.</p>
      */
     private static CashFlowResponse.Entry fromTillReceipt(ProjectReceipt r, String projectName) {
         boolean billed = r.getBilledOnActId() != null;
@@ -424,7 +736,8 @@ public class CashFlowService {
                 r.getId(), CashEntryKind.OBJECT_RECEIPT, CashDirection.EXPENSE, r.getAmount(),
                 CashCategory.MATERIALS, r.getLabel(),
                 r.getIssuedAt() != null ? r.getIssuedAt() : dayOf(r.getCreatedAt()), null,
-                r.getProjectId(), projectName, false, billed, billed);
+                r.getProjectId(), projectName, false, !billed, billed, billed,
+                r.getStorageKey() != null, null);
     }
 
     /**
@@ -444,7 +757,8 @@ public class CashFlowService {
                 // The day it was ADDED, as the expense the act posts with the flag ON — see
                 // ActAddendumCreator.addedOn. The paper's date stays on the document.
                 ActAddendumCreator.addedOn(r), null,
-                project.getId(), project.getName(), false, true, true);
+                project.getId(), project.getName(), false, false, true, true,
+                r.getStorageKey() != null, null);
     }
 
     private static LocalDate dayOf(Instant moment) {
@@ -463,6 +777,9 @@ public class CashFlowService {
     private List<CashFlowResponse.MonthTotal> monthTotals(List<CashFlowResponse.Entry> all) {
         Map<LocalDate, BigDecimal[]> byMonth = new HashMap<>();
         for (CashFlowResponse.Entry e : all) {
+            if (e.clientMaterial()) {
+                continue; // the client's money: in no month's total, as in no period's
+            }
             LocalDate key = e.happenedOn().withDayOfMonth(1);
             BigDecimal[] acc = byMonth.computeIfAbsent(key,
                     k -> new BigDecimal[]{BigDecimal.ZERO, BigDecimal.ZERO});
@@ -550,7 +867,7 @@ public class CashFlowService {
         return new CashFlowResponse.Entry(
                 c.getId(), CashEntryKind.PERSONAL, c.getDirection(), c.getAmount(), c.getCategory(),
                 c.getNote(), c.getHappenedOn(), c.getHappenedAt(), null, null, c.isMaterialRefund(),
-                false, false);
+                false, false, false, c.getStorageKey() != null, null);
     }
 
     private static BigDecimal sum(List<CashFlowResponse.Entry> all,

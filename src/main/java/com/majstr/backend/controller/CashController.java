@@ -4,15 +4,29 @@ import com.majstr.backend.dto.CashEntryKind;
 import com.majstr.backend.dto.CashEntryRequest;
 import com.majstr.backend.dto.CashFlowResponse;
 import com.majstr.backend.dto.CashSummaryResponse;
+import com.majstr.backend.dto.FiscalQrRequest;
+import com.majstr.backend.dto.ReceiptRecognizeResponse;
+import com.majstr.backend.exception.PaymentValidationException;
+import com.majstr.backend.exception.TooManyRequestsException;
 import com.majstr.backend.security.UserPrincipal;
 import com.majstr.backend.service.CashFlowService;
+import com.majstr.backend.service.CashScope;
+import com.majstr.backend.service.ProjectPhotoService;
+import com.majstr.backend.service.QrScanRateLimiter;
+import com.majstr.backend.service.ReceiptScanRateLimiter;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.format.annotation.DateTimeFormat;
+import org.springframework.core.io.InputStreamResource;
+import org.springframework.core.io.Resource;
+import org.springframework.http.CacheControl;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -25,6 +39,10 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.multipart.MultipartFile;
+
+import java.io.IOException;
+import java.time.Duration;
 
 import java.time.LocalDate;
 import java.util.UUID;
@@ -44,6 +62,7 @@ import java.util.UUID;
 public class CashController {
 
     private final CashFlowService cashService;
+    private final QrScanRateLimiter qrScanRateLimiter;
 
     /**
      * One period's movement. Both bounds are inclusive and optional — absent means the current
@@ -51,6 +70,8 @@ public class CashController {
      * what «сьогодні» is.
      *
      * @param monthly the YEAR view: per-month totals instead of a flat list
+     * @param object  absent = every row; {@code none} = only the rows that belong to no object; an
+     *                object id = that object's rows (404 when it is not his)
      */
     @GetMapping
     @Operation(summary = "Income and spending for a period, across all objects and beside them")
@@ -58,8 +79,29 @@ public class CashController {
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to,
             @RequestParam(defaultValue = "false") boolean monthly,
+            @RequestParam(required = false) String object,
             @AuthenticationPrincipal UserPrincipal principal) {
-        return cashService.flow(principal.id(), from, to, monthly);
+        return cashService.flow(principal.id(), from, to, monthly, scopeOf(object));
+    }
+
+    /** {@code none}, a canonical object id, or nothing. {@code UUID.fromString} is LENIENT below
+     *  36 characters, so the length is checked first — a mangled id is a 400, never another row. */
+    static CashScope scopeOf(String object) {
+        if (object == null || object.isBlank()) {
+            return CashScope.ALL;
+        }
+        String value = object.trim();
+        if ("none".equalsIgnoreCase(value)) {
+            return CashScope.OFF_OBJECT;
+        }
+        if (value.length() != 36) {
+            throw new PaymentValidationException("error.cash.object-invalid");
+        }
+        try {
+            return CashScope.object(UUID.fromString(value));
+        } catch (IllegalArgumentException e) {
+            throw new PaymentValidationException("error.cash.object-invalid");
+        }
     }
 
     /** The home strip: this MONTH in three numbers — the window the tap then opens the screen on. */
@@ -118,5 +160,50 @@ public class CashController {
                        @RequestParam(required = false) CashEntryKind kind,
                        @AuthenticationPrincipal UserPrincipal principal) {
         cashService.delete(principal.id(), id, kind);
+    }
+
+    /**
+     * Read a receipt's fiscal QR to pre-fill one of his own rows. Free and local; on the same
+     * per-account counter as the object and act receipts' QR reads.
+     */
+    @PostMapping("/receipt/qr")
+    @Operation(summary = "Read a receipt's fiscal QR for a personal row — persists nothing")
+    public ReceiptRecognizeResponse readQr(@Valid @RequestBody FiscalQrRequest req,
+                                           @AuthenticationPrincipal UserPrincipal principal) {
+        ReceiptScanRateLimiter.ConsumeResult probe = qrScanRateLimiter.tryConsume(principal.id());
+        if (!probe.allowed()) {
+            throw new TooManyRequestsException("error.rate.qr-scan", probe.retryAfterSeconds());
+        }
+        return cashService.readQr(req.payload());
+    }
+
+    /** Attach or replace the photo of the paper on one of his OWN rows. */
+    @PostMapping(value = "/{id}/photo", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    @Operation(summary = "Attach a receipt photo to a personal cash entry")
+    public CashFlowResponse.Entry attachPhoto(@PathVariable UUID id,
+                                              @RequestParam("file") MultipartFile file,
+                                              @AuthenticationPrincipal UserPrincipal principal)
+            throws IOException {
+        return cashService.attachPhoto(principal.id(), id, file);
+    }
+
+    @DeleteMapping("/{id}/photo")
+    @Operation(summary = "Remove the receipt photo from a personal cash entry")
+    public CashFlowResponse.Entry removePhoto(@PathVariable UUID id,
+                                              @AuthenticationPrincipal UserPrincipal principal) {
+        return cashService.removePhoto(principal.id(), id);
+    }
+
+    @GetMapping("/{id}/photo")
+    @Operation(summary = "Stream a personal cash entry's receipt photo (authenticated owner)")
+    public ResponseEntity<Resource> photo(@PathVariable UUID id,
+                                          @AuthenticationPrincipal UserPrincipal principal)
+            throws IOException {
+        ProjectPhotoService.PhotoFile f = cashService.readPhoto(principal.id(), id);
+        return ResponseEntity.ok()
+                .contentType(MediaType.parseMediaType(f.contentType()))
+                .cacheControl(CacheControl.maxAge(Duration.ofMinutes(10)).cachePrivate())
+                .header(HttpHeaders.CONTENT_DISPOSITION, "inline")
+                .body(new InputStreamResource(f.content()));
     }
 }

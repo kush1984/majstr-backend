@@ -14,23 +14,24 @@ import java.util.UUID;
  *
  * @param from     inclusive first day of the period, resolved in {@code Europe/Kyiv}
  * @param to       inclusive last day
- * @param income   everything that came in, refunds included — it really did arrive
- * @param expense  everything that went out
- * @param earned   {@code income − expense}. The figure that answers «скільки я заробив», and since
- *                 review B-33 it is one subtraction, not two: the material the client pays back is
- *                 netted by its own COST being in {@code expense} — the till receipt he is owed for
- *                 is now a feed row. Subtracting the refund on top of that (the V135 formula)
- *                 charged the master for the same material twice, and in a month where he had
- *                 bought but not yet been paid back it read the 8 000 ₴ he was out of pocket as
- *                 pure profit
- * @param refunds  Σ of the income marked «повернення за матеріал» — an INFO line now, subtracted
- *                 from nothing: it explains which part of «Прийшло» was not payment for work
+ * @param income   the master's own money in: payment for work, his personal income. The client's
+ *                 MATERIAL money is not here (object-money iteration) — see {@code materials}
+ * @param expense  the master's own money out: object expenses, his personal spending, and material
+ *                 billed to the client through an act. A till receipt «клієнт поверне» is not here
+ * @param earned   {@code income − expense} — one subtraction. Both halves of the client's material
+ *                 money (what the master laid out, what the client handed over) stay out of it, so
+ *                 a purchase and its reimbursement falling in different months no longer swing it
+ * @param refunds  Σ of the client's material money that ARRIVED in the period — an info line,
+ *                 subtracted from nothing and added to nothing
  * @param entries  newest day first; empty for a YEAR period, which returns {@code months} instead —
  *                 two thousand rows on a phone is not a screen anyone reads
  * @param months    per-month totals, filled only for a YEAR period (newest first)
  * @param truncated the list was cut at the server's cap. The TOTALS above are computed over
  *                  everything regardless — a screen quietly showing part of a month is worse than
  *                  one that says so
+ * @param materials what each client still owes for material, or still has unspent with the master —
+ *                  ALL TIME, not the period: a debt does not end with the month. Only objects whose
+ *                  balance is not zero, largest debt first, narrowed by the same object filter
  */
 public record CashFlowResponse(
         LocalDate from,
@@ -41,8 +42,25 @@ public record CashFlowResponse(
         BigDecimal refunds,
         List<Entry> entries,
         List<MonthTotal> months,
-        boolean truncated
+        boolean truncated,
+        List<MaterialBalance> materials,
+        List<ScopeTotal> objects,
+        ScopeTotal personal
 ) {
+
+    /**
+     * One slice of the period's totals: an object, or (projectId null) the rows that belong to none.
+     * The same «master's own money» rule as the top-level figures, so the slices add up to them:
+     * Σ objects + personal = income / expense / earned. An object whose only rows this period are
+     * the client's material money is listed with zeros — it moved, and its balance is worth seeing.
+     */
+    public record ScopeTotal(
+            UUID projectId,
+            String projectName,
+            BigDecimal income,
+            BigDecimal expense,
+            BigDecimal earned
+    ) {}
 
     /**
      * One line of the feed, whichever table it came from.
@@ -54,15 +72,18 @@ public record CashFlowResponse(
      * @param happenedAt     time within the day, or null for object rows, which carry a bare date.
      *                       Ordering already accounts for that; this is here so a client can show it
      * @param projectId      the object this money belongs to, or null for an off-object row
-     * @param materialRefund income the client paid back for material. Since B-33 it labels the row
-     *                       and nothing more: the material it repays is itself a feed row now, so
-     *                       «Заробив» nets out on its own
+     * @param materialRefund income the client handed over for material — before or after the
+     *                       purchase
+     * @param clientMaterial the row is the client's material money, not the master's: a payment
+     *                       «на матеріал» or a till receipt «клієнт поверне». Shown, but counted in
+     *                       none of {@code income}/{@code expense}/{@code earned}
      * @param noteLocked     the text belongs to something else and an edit would be a silent no-op:
      *                       a PLANNED receipt's name is its stage's purpose, and {@code editReceipt}
      *                       deliberately leaves it alone
      * @param readOnly       the row may be shown but not changed from here — an {@code ACT_RECEIPT}
      *                       is frozen inside a signed act's {@code doc_hash}. The client hides the
      *                       edit affordance rather than offering a tap that can only 409
+     * @param hasPhoto       a photo of the paper is stored with the row
      */
     public record Entry(
             UUID id,
@@ -76,9 +97,25 @@ public record CashFlowResponse(
             UUID projectId,
             String projectName,
             boolean materialRefund,
+            boolean clientMaterial,
             boolean noteLocked,
-            boolean readOnly
-    ) {}
+            boolean readOnly,
+            boolean hasPhoto,
+            /**
+             * Of a receipt bought for a SIGNED act, the part the client's «на матеріал» money paid
+             * ({@code MaterialRefundSplit.toActs}) — null otherwise. {@code amount} is then what left
+             * the master's own pocket; the paper's figure is {@code amount + clientShare}.
+             */
+            BigDecimal clientShare
+    ) {
+
+        /** This row with {@code share} of it paid by the client's material money. */
+        public Entry paidByClient(BigDecimal share) {
+            return new Entry(id, kind, direction, amount.subtract(share), category, note, happenedOn,
+                    happenedAt, projectId, projectName, materialRefund, clientMaterial, noteLocked,
+                    readOnly, hasPhoto, share);
+        }
+    }
 
     /** One month of a YEAR view. {@code month} is its first day, so the client can re-query it. */
     public record MonthTotal(
@@ -86,5 +123,23 @@ public record CashFlowResponse(
             BigDecimal income,
             BigDecimal expense,
             BigDecimal earned
+    ) {}
+
+    /**
+     * One object's material balance with its client.
+     *
+     * @param bought      Σ of the till receipts «клієнт поверне» not billed on an act
+     * @param given       Σ of the client's payments «на матеріал»
+     * @param outstanding {@code bought − given}: positive = the client owes, negative = his money the
+     *                    master has not spent on material yet
+     */
+    public record MaterialBalance(
+            UUID projectId,
+            String projectName,
+            BigDecimal bought,
+            BigDecimal given,
+            /** Of {@code given}, what paid for the material on signed acts — no longer the client's. */
+            BigDecimal toActs,
+            BigDecimal outstanding
     ) {}
 }

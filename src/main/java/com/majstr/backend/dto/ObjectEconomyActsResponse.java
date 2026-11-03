@@ -12,7 +12,8 @@ import java.math.BigDecimal;
  *   <li>{@code contracted} — Σ counted SIGNED estimates incl. ADDENDUM («За договором»), the same
  *       aggregate {@code PaymentsSummaryResponse.contractedTotal} uses, so the two never disagree.</li>
  *   <li>{@code acceptedByActs} — Σ line totals over the object's SIGNED acts («Прийнято актами»).</li>
- *   <li>{@code received} — Σ payment receipts for the object («Отримано грошей»).</li>
+ *   <li>{@code received} — Σ payment receipts for the WORK («Отримано грошей»): the client's money
+ *       «на матеріал» is left out (object-money iteration), see {@code MaterialRefundSplit}.</li>
  * </ul>
  *
  * The PWA derives the balance line: {@code acceptedByActs − received} < 0 → «Невідпрацьований аванс»

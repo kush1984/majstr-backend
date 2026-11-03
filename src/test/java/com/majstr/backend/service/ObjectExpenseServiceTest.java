@@ -69,6 +69,9 @@ class ObjectExpenseServiceTest {
     private void actsAxisZero(UUID object) {
         given(workActItemRepository.sumSignedActLineTotals(object)).willReturn(BigDecimal.ZERO);
         given(workActReceiptRepository.sumSignedActReceipts(object)).willReturn(BigDecimal.ZERO);
+        // «Отримано» on this axis is work money only (object-money iteration), so it now subtracts
+        // the material split from the received sum — which, COALESCE'd in SQL, is never null.
+        given(paymentReceiptRepository.sumByProjectId(object)).willReturn(BigDecimal.ZERO);
     }
 
     /** The materials axis (V129) is FREE-visible and computed unconditionally, so every economy
@@ -120,6 +123,22 @@ class ObjectExpenseServiceTest {
         assertThat(materials.reimbursable()).isEqualByComparingTo("2000.00");
         assertThat(materials.refundApplied()).isEqualByComparingTo("800.00");
         assertThat(materials.outstanding()).isEqualByComparingTo("1200.00");
+    }
+
+    /** The works axis «Отримано» is payment for the WORK: money «на матеріал» is the client's. */
+    @Test
+    void theWorksAxisLeavesTheClientsMaterialMoneyOut() {
+        UUID owner = UUID.randomUUID();
+        UUID object = UUID.randomUUID();
+        user(owner, Plan.PRO);
+        given(projectService.loadOwned(object, owner)).willReturn(object(ProjectStatus.IN_PROGRESS));
+        actsAxisZero(object);
+        given(paymentReceiptRepository.sumByProjectId(object)).willReturn(new BigDecimal("5000.00"));
+        given(refundCalculator.forObject(object)).willReturn(
+                MaterialRefundSplit.of(new BigDecimal("800.00"), BigDecimal.ZERO));
+        given(paymentService.summaryUnchecked(object)).willReturn(payments(BigDecimal.ZERO));
+
+        assertThat(service().economy(object, owner).acts().received()).isEqualByComparingTo("4200.00");
     }
 
     // ---- FREE/PRO split on economy() ---------------------------------------
@@ -185,7 +204,7 @@ class ObjectExpenseServiceTest {
         given(expenseRepository.save(any(ObjectExpense.class))).willAnswer(i -> i.getArgument(0));
 
         ExpenseResponse res = service().add(object, owner,
-                new ExpenseRequest(new BigDecimal("450.00"), ExpenseCategory.MATERIALS, "  клей  ", null, null));
+                new ExpenseRequest(new BigDecimal("450.00"), ExpenseCategory.MATERIALS, "  клей  ", null));
 
         assertThat(res.amount()).isEqualByComparingTo("450.00");
         assertThat(res.category()).isEqualTo(ExpenseCategory.MATERIALS);
@@ -240,7 +259,7 @@ class ObjectExpenseServiceTest {
                 .category(ExpenseCategory.MATERIALS).source(ExpenseSource.MANUAL).build()));
 
         var resp = service().add(objectId, ownerId,
-                new ExpenseRequest(new BigDecimal("450.00"), ExpenseCategory.MATERIALS, null, null, null),
+                new ExpenseRequest(new BigDecimal("450.00"), ExpenseCategory.MATERIALS, null, null),
                 clientId);
 
         assertThat(resp.id()).isEqualTo(clientId);
@@ -284,7 +303,7 @@ class ObjectExpenseServiceTest {
         assertThatThrownBy(() -> service().delete(objectId, expenseId, ownerId))
                 .isInstanceOf(ExpenseLinkedToReceiptException.class);
         assertThatThrownBy(() -> service().update(objectId, expenseId, ownerId,
-                new ExpenseRequest(new BigDecimal("99.00"), ExpenseCategory.MATERIALS, null, null, null)))
+                new ExpenseRequest(new BigDecimal("99.00"), ExpenseCategory.MATERIALS, null, null)))
                 .isInstanceOf(ExpenseLinkedToReceiptException.class);
 
         verify(expenseRepository, never()).delete(any(ObjectExpense.class));
