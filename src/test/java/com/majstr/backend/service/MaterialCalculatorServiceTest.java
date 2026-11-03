@@ -349,6 +349,36 @@ class MaterialCalculatorServiceTest {
         assertThat(line.quantity()).isEqualByComparingTo("115");
     }
 
+    /**
+     * Norms audit §1.1: a piece per piece of work, sold one by one, is not wasted — 12 breakers
+     * × 1,10 rounded up to whole pieces bought 14, and one bought two.
+     */
+    @Test
+    void aWholeNumberOfPiecesPerPieceOfWorkTakesNoAllowance() {
+        Material breaker = material("BREAKER", "Автоматичний вимикач", Unit.PIECE, null, null);
+        given(item("Встановлення автомата", Unit.PIECE, "12", Trade.ELECTRICAL),
+                norm(Trade.ELECTRICAL, "встановлення автомата", Unit.PIECE, breaker, "1"));
+
+        CalculatedMaterialLine line = only(calculate(new BigDecimal("10"), null));
+
+        assertThat(line.quantity()).isEqualByComparingTo("12");
+        assertThat(line.wastePercent()).isEqualByComparingTo("0");
+    }
+
+    /** Pieces counted per m², or sold in a pack, are still bought with the allowance. */
+    @Test
+    void piecesPerSquareMetreOrInAPackKeepTheAllowance() {
+        Material dowel = material("DOWEL", "Дюбель тарілчастий", Unit.PIECE, null, null);
+        given(item("Утеплення фасаду", Unit.M2, "20", Trade.BUILDER),
+                norm(Trade.BUILDER, "утеплення фасаду", Unit.M2, dowel, "5"));
+        assertThat(only(calculate(new BigDecimal("10"), null)).quantity()).isEqualByComparingTo("110");
+
+        Material screws = material("SCREW", "Саморізи", Unit.PIECE, "100", "пачка");
+        given(item("Монтаж розетки", Unit.PIECE, "10", Trade.ELECTRICAL),
+                norm(Trade.ELECTRICAL, "монтаж розетки", Unit.PIECE, screws, "4"));
+        assertThat(only(calculate(new BigDecimal("10"), null)).wastePercent()).isEqualByComparingTo("10");
+    }
+
     @Test
     void theMastersOwnAllowanceIsUsedWhenTheRequestNamesNone() {
         Material wool = material("WOOL", "Мінеральна вата", Unit.M2, null, null);

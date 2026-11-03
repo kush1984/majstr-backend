@@ -105,6 +105,25 @@ class FlooringNormsOnLiveDataIntegrationTest extends IntegrationTestBase {
                 """, Integer.class)).isEqualTo(4);
     }
 
+    /**
+     * V186 (norms audit §1.2–§1.3): a levelling layer named «10–50 мм» suggests 20 mm, not 5; an
+     * epoxy floor is a self-levelling layer bought per mm — resin plus quartz sand, 2 mm suggested.
+     */
+    @Test
+    void theFloorLayersAreBoughtForTheThicknessTheyAre() {
+        assertThat(jdbc.queryForObject("""
+                SELECT default_param FROM material_norm
+                 WHERE owner_id IS NULL AND name_key = 'наливна підлога — вирівнювальний шар 10–50 мм'""",
+                java.math.BigDecimal.class)).isEqualByComparingTo("20");
+        assertThat(jdbc.queryForList("""
+                SELECT m.code || ' ' || n.basis || ' ' || n.qty_per_unit::numeric(6,2) || ' ' || n.default_param::numeric(6,0)
+                  FROM material_norm n JOIN material m ON m.id = n.material_id
+                 WHERE n.owner_id IS NULL AND n.name_key = 'нанесення епоксидного покриття'
+                 ORDER BY n.sort_order""", String.class))
+                .containsExactly("EPOXY_COATING THICKNESS 1.00 2", "QUARTZ_SAND THICKNESS 0.60 2");
+        assertThat(qty("ґрунтування основи під епоксидну підлогу", "EPOXY_PRIMER")).isEqualByComparingTo("0.4");
+    }
+
     /** V147 inserts no catalog position, deliberately: one would force V118's ranking to be re-run
      *  verbatim, which is a batch of its own. V148 was that batch: its bundles needed 14 more, and
      *  each of them is answered too (the test above). */

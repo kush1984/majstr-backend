@@ -4,7 +4,7 @@
 **Migration:** V182 (`cash_entry.storage_key`) · **PWA:** 1.68.5 → 1.69.0 (bump not done yet)
 **Branch:** `master` in both repos, nothing committed yet (see «State of the work tree» below).
 The bot work sits committed on branch `majster-bot` (backend `6284ddb`, PWA `c8d5146`) — NOT merged;
-its migration must be renumbered V181 → **V185** when merged (V181, V182 and V184 are taken on master; V183 is skipped).
+its migration takes the **next free number** when merged (V187 as of V186 — V183 and V185 stay skipped).
 
 ## Why
 
@@ -160,7 +160,7 @@ migration). 141/150 objects record no money at all → the plan feature is effec
   / cash queries.
 * **Migration numbering:** V183 stays reserved for the bot branch, which is ALREADY applied in the
   local DB as `V183__majster_bot.sql`; this round took **V184**. Prod will apply V184 with V183
-  missing — fine — so when the bot merges its migration must become **V185**, not V183.
+  missing — fine — so when the bot merges its migration takes the next free number (V187 since V186 landed); the local history row now sits at V1000.
 
 ## Remaining
 1. **NOT committed** — everything sits as uncommitted changes on `master` in both repos. A local commit
@@ -172,7 +172,7 @@ migration). 141/150 objects record no money at all → the plan feature is effec
 ## Phase 2 (after the webinar)
 * Delete dead plan code: split preview/commit, transfer surplus, overflow resolution, `PaymentsBlock`.
 * One door for receipts (act / estimate / object) — the «same paper three ways» problem.
-* Merge the bot (renumber its migration to V185, PWA version above 1.69.0; its expense/payment
+* Merge the bot (renumber its migration to the next free number — V187 as of V186, PWA version above 1.69.0; its expense/payment
   writes land in «Гроші обʼєкта» automatically).
 * If masters ask for a payment schedule: one plan per object, payments close stages in order.
 

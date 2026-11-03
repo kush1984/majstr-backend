@@ -4068,13 +4068,30 @@ one-line summary — keep the item in the file as a record.
   tile consumes more. Not touched in the calculators iteration (no new norms).
 
 ### «Наливна підлога — вирівнювальний шар 10–50 мм» suggests 5 mm
-- **Status:** OPEN
+- **Status:** RESOLVED (2026-11-03, V186) — suggests 20 mm (flat practice 15–30 mm, checked against
+  Ceresit/Knauf/Kreisel sheets); library row only, masters' forks left alone by the owner's ruling.
+  [docs/iteration-norms-audit.md](iteration-norms-audit.md).
 - **Since:** 2026-10-23, same reconnaissance
 - **Context:** V161 renamed «Наливна підлога самовирівнююча» to the «10–50 мм» name, and the norm
   kept its `default_param` of 5 — below the range the position's own name states. The master is
   pre-filled a thickness his position rules out.
 - **Notes / options:** a suggestion of 10 (or the range's typical value) in a correction migration,
   re-filing the forks with it. The public screed calculator does not use this position.
+
+### Norms audit: priorities 2–5 not done yet
+- **Status:** OPEN
+- **Since:** 2026-11-03 (audit of 2026-11-02, `C:\Work\prompts\norms-audit-summary.md` — outside the repos)
+- **Context:** priority 1 shipped (V186 + the counted-piece rule, [iteration-norms-audit](iteration-norms-audit.md)).
+  Left: §2 right figure, wrong product (clinker grout in 2 kg packs, 2K waterproofing as 1K, glass
+  fibre wallpaper roll, wood lacquer / radiator enamel / acoustic hanger, fibre semi-dry screed, XPS
+  below ground, pool plaster); §3 missing packages and double allowances (profiles, tapes, XPS, corrugated
+  tube; polycarbonate/profnastil/herringbone 1,10–1,12 on top of the master's 10 %; threshold bar);
+  §4 inconsistent numbers (tile adhesive vs format, notch→kg scale, slab grout, corrugated tube
+  fill, warm-floor pipe, LN on ceiling crabs, ETICS adhesive, airless overspray); §5 missing companion
+  materials (tile for box/stair/stone positions, granite grout, fixings for OSB, etc.).
+- **Notes / options:** each as its own batch with a before → after preview for the owner (the
+  catalog-batch routine). The audit also asks to put `NORMS-SUMMARY.md` and the trade-review reports
+  somewhere the migrations' citations can be checked.
 
 ### Public putty calculator (`/kalkulyator-shpaklivky`) — after the meetup
 - **Status:** OPEN

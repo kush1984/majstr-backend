@@ -1010,6 +1010,23 @@ public class MaterialCalculatorService {
         }
 
         /**
+         * A whole number of pieces per piece of work, sold one by one — a breaker per breaker, a
+         * valve per valve, two collars per WC. Nothing of it is cut, broken or lost, so the master's
+         * allowance does not apply: with it, 1 × 1,10 rounded up to whole pieces bought TWO breakers
+         * for one (norms audit 2026-11-02, §1.1 — 80 library norms). Fasteners counted per m² or per
+         * metre, and anything sold in a pack, keep the allowance.
+         */
+        private static boolean countedPiece(MaterialNorm norm, Material material) {
+            BigDecimal qty = norm.getQtyPerUnit();
+            return norm.getUnit() == Unit.PIECE
+                    && material.getUnit() == Unit.PIECE
+                    && material.getPackageSize() == null
+                    && norm.getBasis() == NormBasis.QUANTITY
+                    && qty != null && qty.signum() > 0
+                    && qty.stripTrailingZeros().scale() <= 0;
+        }
+
+        /**
          * @param fallbackWaste the master's own global allowance, used by a norm that carries none
          *                      of its own. A norm WITH one overrides him: that means THIS material
          *                      is wasted differently here, not that he is careless.
@@ -1020,7 +1037,7 @@ public class MaterialCalculatorService {
             total = total.add(amount);
             BigDecimal percent = norm.getWastePercent().signum() > 0
                     ? norm.getWastePercent()
-                    : fallbackWaste;
+                    : countedPiece(norm, material) ? BigDecimal.ZERO : fallbackWaste;
             withWaste = withWaste.add(amount.multiply(HUNDRED.add(percent))
                     .divide(HUNDRED, 6, RoundingMode.HALF_UP));
             if (onePercent == null) {
