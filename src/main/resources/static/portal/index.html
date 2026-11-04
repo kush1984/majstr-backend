@@ -266,9 +266,8 @@
             font-variant-numeric: tabular-nums;
         }
         .summary-figures .summary-total { color: var(--ink); font-weight: 700; }
-        /* Object-level payments card — compact list: one line per payment. Received (fully paid)
-           stages + unplanned receipts collapse into a single tappable history row; upcoming
-           (partial/planned/overdue) stay one line each, dot + name+date on the left, sum right. */
+        /* Object-level payments card — the money that arrived collapses into a single tappable
+           history row; each payment is one line, dot + name+date on the left, sum right. */
         .payments-list { display: grid; margin-top: 4px; }
         .payment-row {
             display: flex;
@@ -284,7 +283,7 @@
            label/amount would have shifted right too, which isn't wanted here — only the dot should
            move). `transform` shifts the rendered dot without touching layout, so the text stays
            exactly where it already was. Applied once on the shared `.payment-dot` class so every
-           row type (collapsed group, expanded items, upcoming) keeps its dot aligned with the rest. */
+           row type (collapsed group, expanded items) keeps its dot aligned with the rest. */
         .payment-dot {
             flex-shrink: 0;
             width: 10px;
@@ -295,8 +294,6 @@
             transform: translateX(4px);
         }
         .payment-dot.received { background: var(--success); border-color: var(--success); }
-        .payment-dot.partial { background: var(--amber); border-color: var(--amber); }
-        .payment-dot.overdue { background: var(--danger); border-color: var(--danger); }
         .payment-label {
             flex: 1;
             min-width: 0;
@@ -339,40 +336,6 @@
         }
         .payment-collapsed:last-child { border-bottom: none; }
         .payment-collapsed .chev { margin-left: auto; flex-shrink: 0; color: var(--muted); font-weight: 400; }
-        /* >5 payments: one highlighted "next" card instead of the full list. */
-        .payment-next {
-            display: flex;
-            align-items: center;
-            gap: 10px;
-            margin-top: 8px;
-            padding: 10px 12px;
-            border: 1px solid var(--line);
-            border-radius: 10px;
-        }
-        .payment-next .payment-label { font-size: 0.92rem; }
-        .payment-next-label {
-            margin: 10px 0 4px;
-            font-size: 0.7rem;
-            font-weight: 700;
-            text-transform: uppercase;
-            letter-spacing: .04em;
-            color: var(--muted);
-        }
-        .payment-expand-toggle {
-            display: block;
-            width: 100%;
-            min-height: 44px;
-            margin-top: 6px;
-            padding: 8px 0;
-            border: none;
-            background: none;
-            font: inherit;
-            font-size: 0.85rem;
-            font-weight: 600;
-            color: var(--amber-deep);
-            text-align: center;
-            cursor: pointer;
-        }
         .payment-all-done {
             padding: 10px 0 2px;
             text-align: center;
@@ -1074,34 +1037,10 @@
         `;
     }
 
-    const PAYMENT_DOT_CLASS = { RECEIVED: 'received', PARTIAL: 'partial', OVERDUE: 'overdue', PLANNED: '' };
-
-    // Session-only: the "✓ Отримано · N платежів" row starts collapsed on every load — it's the
-    // rarely-interesting half of the list (money already in). The >5-payment "show everything"
-    // toggle below is the one worth remembering across visits, via localStorage.
+    // Session-only: the "✓ Отримано · N платежів" row starts collapsed on every load — it's history,
+    // not something a client needs to scan on every visit.
     let receivedExpanded = false;
     let lastPaymentsCard = null;
-
-    // Per-link, not per-device-global — a master's other objects must not inherit one client's
-    // "I expanded the full list" choice, and a private/incognito localStorage throw must not break
-    // the page (falls back to always-collapsed).
-    const expandStorageKey = 'majstr-portal-payments-expanded:' + (economyToken || portalToken || actToken || legacyToken || '');
-    function isAllExpanded() {
-        try { return localStorage.getItem(expandStorageKey) === '1'; } catch (e) { return false; }
-    }
-    function setAllExpanded(v) {
-        try { localStorage.setItem(expandStorageKey, v ? '1' : '0'); } catch (e) { /* ignore */ }
-    }
-
-    // Not a debt reminder — the condition for the NEXT stage of work, never "ви винні". Only used
-    // for upcoming (not-yet-fully-received) rows — a received row's own date carries no condition.
-    function upcomingCondition(row) {
-        if (!row.dueDate && !row.nextStage) return '';
-        const date = row.dueDate ? shortDateFormat.format(new Date(row.dueDate)) : null;
-        if (date && row.nextStage) return `до ${date} — почати ${escapeHtml(row.nextStage)}`;
-        if (date) return `до ${date}`;
-        return `щоб почати «${escapeHtml(row.nextStage)}»`;
-    }
 
     function paymentsWord(n) {
         const mod10 = n % 10, mod100 = n % 100;
@@ -1110,30 +1049,13 @@
         return 'платежів';
     }
 
-    // Splits the raw card into what the compact view actually needs: fully-RECEIVED stages plus
-    // every unplanned receipt (both just "money that already landed", so they merge into one
-    // group) vs. still-open stages (PARTIAL/PLANNED/OVERDUE), sorted by their due-date condition.
-    function groupPayments(card) {
-        const received = [];
-        const upcoming = [];
-        (card.payments || []).forEach((p) => {
-            if (p.status === 'RECEIVED') {
-                received.push({ label: p.purpose, amount: p.amount, date: p.lastReceivedAt });
-            } else {
-                upcoming.push(p);
-            }
-        });
-        (card.unplannedReceipts || []).forEach((r) => {
-            received.push({ label: r.label, amount: r.amount, date: r.receivedAt });
-        });
-        received.sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0));
-        upcoming.sort((a, b) => {
-            if (!a.dueDate && !b.dueDate) return 0;
-            if (!a.dueDate) return 1;
-            if (!b.dueDate) return -1;
-            return a.dueDate < b.dueDate ? -1 : 1;
-        });
-        return { received, upcoming };
+    // Only money that LANDED is listed (review 2026-11-04): the app no longer has a payment plan, so
+    // a stage left from before would have read «наступний платіж» / «прострочено» with no way for
+    // the master to remove it. The server already names a receipt against an old stage after it.
+    function receivedRows(card) {
+        return (card.receipts || [])
+            .map((r) => ({ label: r.label, amount: r.amount, date: r.receivedAt }))
+            .sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0));
     }
 
     function renderReceivedItemRow(item) {
@@ -1160,43 +1082,9 @@
         return expanded ? header + received.map(renderReceivedItemRow).join('') : header;
     }
 
-    function upcomingAmountText(row) {
-        return row.received != null && Number(row.received) > 0
-            ? `${amount(row.received)}/${amount(row.amount)}`
-            : money(row.amount);
-    }
-
-    function renderUpcomingRow(row) {
-        const dotClass = PAYMENT_DOT_CLASS[row.status] || '';
-        const cond = upcomingCondition(row);
-        return `
-            <div class="payment-row">
-                <span class="payment-dot ${dotClass}"></span>
-                <div class="payment-label">${escapeHtml(row.purpose)}${cond ? ` <span class="payment-date">· ${cond}</span>` : ''}</div>
-                <div class="payment-amount">${upcomingAmountText(row)}</div>
-            </div>
-        `;
-    }
-
-    // >5 payments: instead of the full list, one highlighted card for the nearest unpaid stage
-    // plus an "Усі платежі (N)" toggle that reveals the same 2+1 list the ≤5 case shows inline.
-    function renderNextCard(row) {
-        const dotClass = PAYMENT_DOT_CLASS[row.status] || '';
-        const cond = upcomingCondition(row);
-        return `
-            <p class="payment-next-label">Наступний платіж</p>
-            <div class="payment-next">
-                <span class="payment-dot ${dotClass}"></span>
-                <div class="payment-label">${escapeHtml(row.purpose)}${cond ? ` <span class="payment-date">· ${cond}</span>` : ''}</div>
-                <div class="payment-amount">${upcomingAmountText(row)}</div>
-            </div>
-        `;
-    }
-
     // Compact mobile card: a thin progress bar + one-line header ("Отримано X з Y ₴ · Z%") with
-    // its own (i) explainer, then either a short "2+1" list (≤5 payments: one collapsed received
-    // row + one line per upcoming stage), an "Усе сплачено ✓" terminal state, or — past 5 — a
-    // single "next payment" card plus an expand toggle for the full list. No charting library.
+    // its own (i) explainer, an "Усе сплачено ✓" headline when the work is paid, and one collapsed
+    // row of the payments that arrived. No charting library.
     function renderPaymentsBody(card) {
         const total = Number(card.contractedTotal || 0);
         const received = Number(card.received || 0);
@@ -1212,39 +1100,17 @@
         // Uncapped for the LABEL: an overpayment is real money and must not read as «100 %».
         const pct = total > 0 ? Math.round((workPaid / total) * 100) : 0;
         const barWidth = Math.max(0, Math.min(100, pct));
-        const groups = groupPayments(card);
-        const count = groups.received.length + groups.upcoming.length;
-        // «Усе сплачено» is a claim about MONEY, so it is made against money — having no stage left
-        // scheduled is not the same as owing nothing (the same correction the master's own card got).
+        const rows = receivedRows(card);
+        // «Усе сплачено» is a claim about MONEY, so it is made against money.
         const allPaid = total > 0 && workPaid >= total;
 
-        let body;
-        if (count === 0) {
-            body = '';
-        } else if (groups.upcoming.length === 0 && allPaid) {
-            // "Усе сплачено" is a headline, never a replacement for the breakdown — a receipt
-            // survives its plan stage being deleted (kept as unplanned, by design) and one logged
-            // before an estimate had a contracted total to compare against is real money too. Hiding
-            // the list here read as "де ці гроші взялись?" the moment contractedTotal was 0 or
-            // otherwise didn't obviously explain the received figure (reported 2026-08-14).
-            body = `<p class="payment-all-done">Усе сплачено ✓</p>
-                <div class="payments-list">${renderReceivedSection(groups.received, receivedExpanded)}</div>`;
-        } else if (groups.upcoming.length === 0 || count <= 5) {
-            body = `<div class="payments-list">
-                ${renderReceivedSection(groups.received, receivedExpanded)}
-                ${groups.upcoming.map(renderUpcomingRow).join('')}
-            </div>`;
-        } else if (!isAllExpanded()) {
-            body = `
-                ${renderNextCard(groups.upcoming[0])}
-                <button type="button" class="payment-expand-toggle" data-expand-payments="1">Усі платежі (${count}) ⌄</button>
-            `;
-        } else {
-            body = `<div class="payments-list">
-                ${renderReceivedSection(groups.received, receivedExpanded)}
-                ${groups.upcoming.map(renderUpcomingRow).join('')}
-            </div>
-            <button type="button" class="payment-expand-toggle" data-expand-payments="0">Згорнути ︿</button>`;
+        let body = '';
+        if (rows.length || allPaid) {
+            // "Усе сплачено" is a headline, never a replacement for the breakdown — a receipt logged
+            // before an estimate had a contracted total is real money too, and hiding the list read
+            // as "де ці гроші взялись?" (reported 2026-08-14).
+            body = `${allPaid ? '<p class="payment-all-done">Усе сплачено ✓</p>' : ''}
+                <div class="payments-list">${renderReceivedSection(rows, receivedExpanded)}</div>`;
         }
 
         return `
@@ -1267,9 +1133,7 @@
     }
 
     // The one curated (i)-explainer this page has: what the aggregate header LINE means — how much
-    // of the total contracted sum has actually been received. Deliberately does NOT talk about "the
-    // next payment / due date" — that's already spelled out per-row in the list below it, in plain
-    // text, so repeating it here would just be noise next to the wrong metric.
+    // of the total contracted sum has actually been received.
     const INFO_TEXTS = {
         payments: 'Скільки клієнт уже реально сплатив із суми за договором.',
     };
@@ -1328,11 +1192,6 @@
             receivedExpanded = !receivedExpanded;
             refreshPaymentsBody();
             return;
-        }
-        const expandToggle = e.target.closest('[data-expand-payments]');
-        if (expandToggle) {
-            setAllExpanded(expandToggle.getAttribute('data-expand-payments') === '1');
-            refreshPaymentsBody();
         }
         // Category collapse toggle (V125 iteration). Delegated because the render can rebuild the
         // page at any point (sign, refresh) and per-row handlers would need re-binding each time.

@@ -169,8 +169,25 @@ migration). 141/150 objects record no money at all → the plan feature is effec
    V182), then PWA.
 3. Phase 2 list above.
 
+## Review follow-up (2026-11-04, PWA 1.69.2)
+* **Portal shows no plan stages.** The PWA lost its payment plan, yet the portal still listed an old
+  stage as «наступний платіж» and could mark it overdue, with no way for the master to remove it.
+  `PaymentsCard.payments`/`PaymentRow`/`unplannedReceipts` became one `receipts` list of the money
+  that ARRIVED (label: the receipt's own, else its old stage's purpose, else «Оплата»); the portal's
+  «наступний платіж», overdue dots and >5 expand toggle are gone. Totals are unchanged — they were
+  always contract-based. No data rewrite: the 8 prod stage rows stay.
+* **«Показувати платежі клієнту» hint** no longer promises «графік виплат».
+* **Offline material balance** (`applyMoneyDelta`) now keeps the server's `toActs`: outstanding =
+  bought − given + toActs, with the cached share capped at what is left after the till receipts
+  (exact when the leftover shrinks; when it grows the next refetch brings the larger share).
+* **«Гроші обʼєкта» reads only the object.** `collect(owner, from, to, projectId)` passes the object
+  into the five feed queries and the three material sums (`AND (:projectId IS NULL OR … = :projectId)`)
+  and skips `cash_entry` (it belongs to no object). Still ONE formula — «Мої гроші» passes null; a
+  «Мої гроші» filtered by object now also reads only that object.
+* `PaymentsBlock.tsx` (and its two test files) deleted.
+
 ## Phase 2 (after the webinar)
-* Delete dead plan code: split preview/commit, transfer surplus, overflow resolution, `PaymentsBlock`.
+* Delete dead plan code: split preview/commit, transfer surplus, overflow resolution (`PaymentsBlock` done 2026-11-04).
 * One door for receipts (act / estimate / object) — the «same paper three ways» problem.
 * Merge the bot (renumber its migration to the next free number — V187 as of V186, PWA version above 1.69.0; its expense/payment
   writes land in «Гроші обʼєкта» automatically).

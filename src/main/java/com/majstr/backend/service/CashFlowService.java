@@ -174,7 +174,7 @@ public class CashFlowService {
             throw new PaymentValidationException("error.cash.period-too-long");
         }
         requireScopeOwned(ownerId, scope);
-        List<CashFlowResponse.Entry> all = collect(ownerId, start, end).stream()
+        List<CashFlowResponse.Entry> all = collect(ownerId, start, end, scope.projectId()).stream()
                 .filter(scope::includes)
                 .toList();
 
@@ -217,16 +217,15 @@ public class CashFlowService {
     /**
      * «Гроші обʼєкта»: the cash feed of ONE object over its whole life.
      *
-     * <p>Read through the very same {@link #collect} as «Мої гроші» and filtered afterwards, so there
-     * is no second definition of what the object earned to drift from the first. The owner-wide read
-     * is bounded by the master's own rows, which is small; if it ever is not, the filter moves into
-     * the queries, not into a new formula.</p>
+     * <p>Read through the very same {@link #collect} as «Мої гроші», so there is no second definition
+     * of what the object earned to drift from the first — narrowed to the object INSIDE the queries,
+     * so opening one object reads that object's rows, not every row the master has ever had.</p>
      */
     @Transactional(readOnly = true)
     public ObjectMoneyResponse objectMoney(UUID ownerId, UUID projectId) {
         Project project = projectService.loadOwned(projectId, ownerId);
         CashScope scope = CashScope.object(projectId);
-        List<CashFlowResponse.Entry> all = collect(ownerId, EVER_FROM, EVER_TO).stream()
+        List<CashFlowResponse.Entry> all = collect(ownerId, EVER_FROM, EVER_TO, projectId).stream()
                 .filter(scope::includes)
                 .toList();
         BigDecimal income = sum(all, CashFlowService::isOwnIncome);
@@ -264,7 +263,7 @@ public class CashFlowService {
         if (scope.offObject()) {
             return List.of();
         }
-        OwnerMaterial material = ownerMaterial(ownerId);
+        OwnerMaterial material = ownerMaterial(ownerId, scope.projectId());
         Map<UUID, BigDecimal> bought = material.bought();
         Map<UUID, BigDecimal> given = material.given();
         Set<UUID> ids = new HashSet<>(bought.keySet());
@@ -288,7 +287,7 @@ public class CashFlowService {
     }
 
     /**
-     * Every object's material money for one master, all time, in three owner-wide queries: what
+     * Every object's material money for one master (or one object of his), all time, in three queries: what
      * clients gave «на матеріал», the till receipts they owe for, and the receipts each SIGNED act
      * bills (oldest signature first). One snapshot both the balances and the derived feed rows read,
      * so they can never disagree about a single object.
@@ -307,18 +306,19 @@ public class CashFlowService {
         }
     }
 
-    private OwnerMaterial ownerMaterial(UUID ownerId) {
+    /** {@code projectId} null = every object he owns. */
+    private OwnerMaterial ownerMaterial(UUID ownerId, UUID projectId) {
         Map<UUID, BigDecimal> bought = new HashMap<>();
-        for (Object[] row : projectReceiptRepository.sumReimbursableByOwner(ownerId)) {
+        for (Object[] row : projectReceiptRepository.sumReimbursableByOwner(ownerId, projectId)) {
             bought.put((UUID) row[0], (BigDecimal) row[1]);
         }
         Map<UUID, BigDecimal> given = new HashMap<>();
-        for (Object[] row : receiptRepository.sumMaterialRefundsByOwner(ownerId)) {
+        for (Object[] row : receiptRepository.sumMaterialRefundsByOwner(ownerId, projectId)) {
             given.put((UUID) row[0], (BigDecimal) row[1]);
         }
         List<Object[]> acts = given.isEmpty()
                 ? List.of()
-                : actReceiptRepository.sumSignedActReceiptsByActForOwner(ownerId);
+                : actReceiptRepository.sumSignedActReceiptsByActForOwner(ownerId, projectId);
         return new OwnerMaterial(given, bought, acts);
     }
 
@@ -331,16 +331,16 @@ public class CashFlowService {
      * Computed over every row of the act, not the window, so a row's share never depends on which
      * week is on screen.
      */
-    private Map<UUID, BigDecimal> clientShares(UUID ownerId) {
-        OwnerMaterial material = ownerMaterial(ownerId);
+    private Map<UUID, BigDecimal> clientShares(UUID ownerId, UUID projectId) {
+        OwnerMaterial material = ownerMaterial(ownerId, projectId);
         Map<UUID, BigDecimal> actShare = new java.util.LinkedHashMap<>();
         Map<UUID, BigDecimal> left = new HashMap<>();
         for (Object[] row : material.actRows()) {
-            UUID projectId = (UUID) row[0];
-            BigDecimal remaining = left.computeIfAbsent(projectId, id -> material.split(id).toActs());
+            UUID object = (UUID) row[0];
+            BigDecimal remaining = left.computeIfAbsent(object, id -> material.split(id).toActs());
             BigDecimal take = remaining.min((BigDecimal) row[4]);
             if (take.signum() > 0) {
-                left.put(projectId, remaining.subtract(take));
+                left.put(object, remaining.subtract(take));
                 actShare.put((UUID) row[1], take);
             }
         }
@@ -487,7 +487,7 @@ public class CashFlowService {
                         req.happenedOn() != null ? req.happenedOn() : expense.getSpentAt()));
                 // Answered as the feed shows it: a share the client's material money paid stays off it.
                 yield paidByClient(fromExpense(ownedExpense(ownerId, id), projectName(expense.getObjectId())),
-                        clientShares(ownerId));
+                        clientShares(ownerId, expense.getObjectId()));
             }
             case OBJECT_RECEIPT -> {
                 ProjectReceipt receipt = ownedTillReceipt(ownerId, id);
@@ -628,19 +628,23 @@ public class CashFlowService {
 
     // ---- the feed ---------------------------------------------------------
 
-    private List<CashFlowResponse.Entry> collect(UUID ownerId, LocalDate from, LocalDate to) {
+    /**
+     * @param projectId null = every row he has; an id = only that object's rows, filtered in the
+     *                  queries themselves (his own cash entries belong to no object, so none come)
+     */
+    private List<CashFlowResponse.Entry> collect(UUID ownerId, LocalDate from, LocalDate to, UUID projectId) {
         // A day is a day in Kyiv, so the instant bounds for the rows dated by `created_at` are
         // resolved there too — a receipt photographed at 00:30 on the 1st belongs to the 1st.
         Instant fromTs = from.atStartOfDay(LocalizationConfig.ZONE).toInstant();
         Instant toTs = to.plusDays(1).atStartOfDay(LocalizationConfig.ZONE).toInstant();
 
-        List<PaymentReceipt> receipts = receiptRepository.findByOwnerAndPeriod(ownerId, from, to);
-        List<ObjectExpense> expenses = expenseRepository.findByOwnerAndPeriod(ownerId, from, to);
-        List<CashEntry> own = cashRepository.findByOwnerAndPeriod(ownerId, from, to);
+        List<PaymentReceipt> receipts = receiptRepository.findByOwnerAndPeriod(ownerId, from, to, projectId);
+        List<ObjectExpense> expenses = expenseRepository.findByOwnerAndPeriod(ownerId, from, to, projectId);
+        List<CashEntry> own = projectId == null ? cashRepository.findByOwnerAndPeriod(ownerId, from, to) : List.of();
         List<ProjectReceipt> tillReceipts = projectReceiptRepository
-                .findOutOfPocketByOwnerAndPeriod(ownerId, from, to, fromTs, toTs);
+                .findOutOfPocketByOwnerAndPeriod(ownerId, from, to, fromTs, toTs, projectId);
         List<WorkActReceipt> actReceipts = actReceiptRepository
-                .findOutOfPocketByOwnerAndPeriod(ownerId, fromTs, toTs);
+                .findOutOfPocketByOwnerAndPeriod(ownerId, fromTs, toTs, projectId);
 
         // `ObjectExpense` and `ProjectReceipt` carry a bare objectId and no association, so the
         // names come in one lookup over exactly the objects this period touched — not over every
@@ -655,7 +659,7 @@ public class CashFlowService {
         for (PaymentReceipt r : receipts) {
             all.add(fromReceipt(r));
         }
-        Map<UUID, BigDecimal> shares = clientShares(ownerId);
+        Map<UUID, BigDecimal> shares = clientShares(ownerId, projectId);
         for (ObjectExpense e : expenses) {
             all.add(paidByClient(fromExpense(e, names.get(e.getObjectId())), shares));
         }

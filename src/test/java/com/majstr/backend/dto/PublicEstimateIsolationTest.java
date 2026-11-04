@@ -94,15 +94,12 @@ class PublicEstimateIsolationTest {
     void publicPortalPaymentsCardCarriesNoPrivateAggregates() {
         List<String> names = new ArrayList<>();
         collect(PublicPortalView.PaymentsCard.class, names, 0);
-        // "received" appears twice (PaymentsCard's own aggregate + each PaymentRow's); "amount"
-        // appears twice too (PaymentRow's + UnplannedReceiptRow's).
         // materialRefundApplied is the client's OWN money coming back for material (B-65) — it is
         // what makes `remaining` add up on his screen, and it tells him nothing he did not pay.
         // materialToActs is the same money again: the part of it that paid his signed acts' receipts.
         assertThat(names).containsExactlyInAnyOrder("contractedTotal", "received", "remaining",
-                "materialRefundApplied", "materialToActs", "payments",
-                "purpose", "amount", "received", "lastReceivedAt", "dueDate", "nextStage", "status",
-                "unplannedReceipts", "label", "amount", "receivedAt");
+                "materialRefundApplied", "materialToActs",
+                "receipts", "label", "amount", "receivedAt");
     }
 
     private static void collectTypes(Class<?> type, List<String> typeNames, int depth) {

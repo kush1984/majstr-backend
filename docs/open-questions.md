@@ -3621,6 +3621,12 @@ one-line summary — keep the item in the file as a record.
 - **Notes / options:** after the webinar either delete the dead code, or — if masters ask for a
   schedule — bring back ONE plan per object whose stages are closed by payments IN ORDER (no
   per-payment stage pick, no overflow resolution). Portal card: check it with no stages.
+- **Progress (2026-11-04, review of the object-money round):** the portal no longer shows plan
+  stages at all — only the payments that arrived (`PaymentsCard.receipts`; a receipt against an old
+  stage is labelled by the stage), so a leftover stage can no longer read «наступний платіж» /
+  «прострочено» to a client while the master has no button to remove it. `PaymentsBlock.tsx` is
+  deleted from the PWA. Still left: the backend plan code (split, overflow TRANSFER/RESERVE,
+  `surplusIdOf`) and the 8 stage rows on prod, untouched.
 
 ## Features in the catalog enum but not implemented
 

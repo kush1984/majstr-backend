@@ -31,7 +31,6 @@ import com.majstr.backend.repository.ProjectMessageRepository;
 import com.majstr.backend.repository.EstimateRepository;
 import com.majstr.backend.repository.EstimateShareLinkRepository;
 import com.majstr.backend.repository.PaymentReceiptRepository;
-import com.majstr.backend.repository.ProjectPaymentRepository;
 import com.majstr.backend.repository.ProjectShareLinkRepository;
 import com.majstr.backend.repository.WorkActItemRepository;
 import org.junit.jupiter.api.BeforeEach;
@@ -62,7 +61,6 @@ class PublicEstimateServiceTest {
 
     @Mock private EstimateShareLinkRepository shareLinkRepository;
     @Mock private ProjectShareLinkRepository projectShareLinkRepository;
-    @Mock private ProjectPaymentRepository projectPaymentRepository;
     @Mock private PaymentReceiptRepository paymentReceiptRepository;
     @Mock private EstimateRepository estimateRepository;
     @Mock private EstimateItemRepository itemRepository;
@@ -89,7 +87,7 @@ class PublicEstimateServiceTest {
         messages.setDefaultEncoding("UTF-8");
         messages.setFallbackToSystemLocale(false);
         publicService = new PublicEstimateService(shareLinkRepository, projectShareLinkRepository,
-                projectPaymentRepository, paymentReceiptRepository, estimateRepository, itemRepository,
+                paymentReceiptRepository, estimateRepository, itemRepository,
                 messageRepository, estimateService, projectPhotoService, featureGuard, pushService,
                 workActItemRepository, refundCalculator, messages, new AfterCommit(), signedDocuments,
                 transactionManager);
@@ -541,7 +539,7 @@ class PublicEstimateServiceTest {
         PublicPortalView view = publicService.viewPortal(token);
 
         assertThat(view.payments()).isNull();
-        verify(projectPaymentRepository, never()).findByProjectIdOrderBySortOrderAscIdAsc(any());
+        verify(paymentReceiptRepository, never()).findByProjectIdOrderByReceivedAtAscCreatedAtAsc(any());
     }
 
     @Test
@@ -606,8 +604,6 @@ class PublicEstimateServiceTest {
                 .willReturn(List.of(workItem(shared)));
         given(itemRepository.findByEstimateIdOrderBySortOrderAscIdAsc(onPaper.getId()))
                 .willReturn(List.of(workItem(onPaper)));
-        given(projectPaymentRepository.findByProjectIdOrderBySortOrderAscIdAsc(shared.getProject().getId()))
-                .willReturn(List.of(stage));
         noRefunds(shared.getProject().getId());
         given(paymentReceiptRepository.findByProjectIdOrderByReceivedAtAscCreatedAtAsc(shared.getProject().getId()))
                 .willReturn(List.of(com.majstr.backend.entity.PaymentReceipt.builder()
@@ -623,13 +619,15 @@ class PublicEstimateServiceTest {
         assertThat(view.payments().contractedTotal()).isEqualByComparingTo("9180.00"); // both, never the superseded one
         assertThat(view.payments().received()).isEqualByComparingTo("1000.00");
         assertThat(view.payments().remaining()).isEqualByComparingTo("8180.00");
-        assertThat(view.payments().unplannedReceipts()).isEmpty();
-        assertThat(view.payments().payments()).hasSize(1);
-        assertThat(view.payments().payments().get(0).received()).isEqualByComparingTo("1000.00");
+        // The stage itself is not shown — only the money that landed, named after the stage.
+        assertThat(view.payments().receipts()).singleElement().satisfies(r -> {
+            assertThat(r.label()).isEqualTo(stage.getPurpose());
+            assertThat(r.amount()).isEqualByComparingTo("1000.00");
+        });
     }
 
     @Test
-    void viewEconomyPortal_anUnplannedReceipt_appearsAsItsOwnLineItem() {
+    void viewEconomyPortal_aReceiptWithoutAStage_appearsAsItsOwnLineItem() {
         // Regression: `received` already includes unplanned receipts (no matching plan stage),
         // but without their own row the client sees a total the itemized rows don't add up to.
         Estimate shared = economyEstimate();
@@ -643,8 +641,6 @@ class PublicEstimateServiceTest {
                 .willReturn(List.of(shared));
         given(itemRepository.findByEstimateIdOrderBySortOrderAscIdAsc(shared.getId()))
                 .willReturn(List.of(workItem(shared)));
-        given(projectPaymentRepository.findByProjectIdOrderBySortOrderAscIdAsc(shared.getProject().getId()))
-                .willReturn(List.of());
         noRefunds(shared.getProject().getId());
         given(paymentReceiptRepository.findByProjectIdOrderByReceivedAtAscCreatedAtAsc(shared.getProject().getId()))
                 .willReturn(List.of(com.majstr.backend.entity.PaymentReceipt.builder()
@@ -654,9 +650,9 @@ class PublicEstimateServiceTest {
 
         PublicPortalView view = publicService.viewEconomyPortal(token);
 
-        assertThat(view.payments().unplannedReceipts()).hasSize(1);
-        assertThat(view.payments().unplannedReceipts().get(0).label()).isEqualTo("Частково за матеріали");
-        assertThat(view.payments().unplannedReceipts().get(0).amount()).isEqualByComparingTo("2700.00");
+        assertThat(view.payments().receipts()).hasSize(1);
+        assertThat(view.payments().receipts().get(0).label()).isEqualTo("Частково за матеріали");
+        assertThat(view.payments().receipts().get(0).amount()).isEqualByComparingTo("2700.00");
     }
 
     @Test
@@ -674,8 +670,6 @@ class PublicEstimateServiceTest {
                 .willReturn(List.of(shared));
         given(itemRepository.findByEstimateIdOrderBySortOrderAscIdAsc(shared.getId()))
                 .willReturn(List.of(workItem(shared)));
-        given(projectPaymentRepository.findByProjectIdOrderBySortOrderAscIdAsc(shared.getProject().getId()))
-                .willReturn(List.of());
         given(paymentReceiptRepository.findByProjectIdOrderByReceivedAtAscCreatedAtAsc(shared.getProject().getId()))
                 .willReturn(List.of(com.majstr.backend.entity.PaymentReceipt.builder()
                         .id(UUID.randomUUID()).project(shared.getProject())

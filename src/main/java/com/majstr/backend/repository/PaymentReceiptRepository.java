@@ -38,11 +38,13 @@ public interface PaymentReceiptRepository extends JpaRepository<PaymentReceipt, 
             JOIN FETCH r.project p
             LEFT JOIN FETCH r.planPayment
             WHERE p.owner.id = :ownerId AND r.receivedAt BETWEEN :from AND :to
+              AND (:projectId IS NULL OR p.id = :projectId)
             ORDER BY r.receivedAt DESC, r.createdAt DESC
             """)
     List<PaymentReceipt> findByOwnerAndPeriod(@Param("ownerId") UUID ownerId,
                                               @Param("from") LocalDate from,
-                                              @Param("to") LocalDate to);
+                                              @Param("to") LocalDate to,
+                                              @Param("projectId") UUID projectId);
 
     /** Σ received against one plan stage — used when resolving an overpayment against it. */
     @Query("SELECT COALESCE(SUM(r.amount), 0) FROM PaymentReceipt r WHERE r.planPayment.id = :planPaymentId")
@@ -67,9 +69,11 @@ public interface PaymentReceiptRepository extends JpaRepository<PaymentReceipt, 
     @Query("""
             SELECT r.project.id, COALESCE(SUM(r.amount), 0) FROM PaymentReceipt r
             WHERE r.project.owner.id = :ownerId AND r.materialRefund = true
+              AND (:projectId IS NULL OR r.project.id = :projectId)
             GROUP BY r.project.id
             """)
-    List<Object[]> sumMaterialRefundsByOwner(@Param("ownerId") UUID ownerId);
+    List<Object[]> sumMaterialRefundsByOwner(@Param("ownerId") UUID ownerId,
+                                             @Param("projectId") UUID projectId);
 
     /** Whether any money was ever received on the object — the delete guard (review B-70). */
     boolean existsByProjectId(UUID projectId);

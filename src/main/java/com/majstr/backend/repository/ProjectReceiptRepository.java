@@ -97,9 +97,11 @@ public interface ProjectReceiptRepository extends JpaRepository<ProjectReceipt, 
             SELECT r.projectId, COALESCE(SUM(r.amount), 0) FROM ProjectReceipt r
             WHERE r.reimbursable = true AND r.billedOnActId IS NULL
               AND r.projectId IN (SELECT p.id FROM Project p WHERE p.owner.id = :ownerId)
+              AND (:projectId IS NULL OR r.projectId = :projectId)
             GROUP BY r.projectId
             """)
-    List<Object[]> sumReimbursableByOwner(@Param("ownerId") UUID ownerId);
+    List<Object[]> sumReimbursableByOwner(@Param("ownerId") UUID ownerId,
+                                          @Param("projectId") UUID projectId);
 
     /** Counts exactly what {@link #sumReimbursable} sums — the two are shown side by side («N чеків
      *  на X ₴»), so they must never filter differently. */
@@ -144,6 +146,7 @@ public interface ProjectReceiptRepository extends JpaRepository<ProjectReceipt, 
             SELECT r FROM ProjectReceipt r
             WHERE r.reimbursable = true AND r.amount > 0
               AND r.projectId IN (SELECT p.id FROM Project p WHERE p.owner.id = :ownerId)
+              AND (:projectId IS NULL OR r.projectId = :projectId)
               AND (r.billedOnActId IS NULL OR r.billedOnActId IN
                    (SELECT a.id FROM WorkAct a WHERE a.receiptsToExpenses = false))
               AND ((r.issuedAt IS NOT NULL AND r.issuedAt BETWEEN :from AND :to)
@@ -154,7 +157,8 @@ public interface ProjectReceiptRepository extends JpaRepository<ProjectReceipt, 
                                                          @Param("from") LocalDate from,
                                                          @Param("to") LocalDate to,
                                                          @Param("fromTs") Instant fromTs,
-                                                         @Param("toTs") Instant toTs);
+                                                         @Param("toTs") Instant toTs,
+                                                         @Param("projectId") UUID projectId);
 
     /** Every stored photo of this object's receipts, for the delete that takes the rows with it
      *  (B-26): the cascade removes the only pointer to the file, so the keys are read BEFORE it. */

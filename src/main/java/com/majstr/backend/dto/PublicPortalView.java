@@ -54,29 +54,14 @@ public record PublicPortalView(
              *  ({@code MaterialRefundSplit.toActs}) — counted as paid, so {@code remaining} does
              *  shrink by it; named so the client sees where his «на матеріал» money went. */
             BigDecimal materialToActs,
-            List<PaymentRow> payments,
-            /** Receipts with no matching plan stage ("Своє") — {@code received} above already
-             *  includes them, so without this list the client sees a total that the itemized
-             *  {@code payments} rows don't add up to. Own line items, same as the master's own
-             *  timeline shows them. */
-            List<UnplannedReceiptRow> unplannedReceipts
+            /** Every payment that arrived, newest last — the payment plan is gone from the app
+             *  (the master can no longer edit or delete a stage), so the client is shown money that
+             *  LANDED, never a stage still «due» or «overdue» (review 2026-11-04). A receipt against
+             *  an old stage is labelled by that stage when it has no label of its own. */
+            List<ReceiptRow> receipts
     ) {}
 
-    public record PaymentRow(
-            String purpose,
-            BigDecimal amount,
-            /** Σ of this stage's payment_receipt rows (V100) — replaces the old single paidAmount. */
-            BigDecimal received,
-            /** Date of the most recent payment_receipt against this stage, null if none yet —
-             *  the compact mobile card reads this for "отримано {date}" (received) or, combined
-             *  with {@code dueDate}, "до {date}" (planned, framed as a condition not a debt). */
-            LocalDate lastReceivedAt,
-            LocalDate dueDate,
-            String nextStage,
-            ProjectPaymentStatus status
-    ) {}
-
-    public record UnplannedReceiptRow(
+    public record ReceiptRow(
             String label,
             BigDecimal amount,
             LocalDate receivedAt

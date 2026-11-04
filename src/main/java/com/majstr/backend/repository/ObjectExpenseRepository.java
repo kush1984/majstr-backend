@@ -42,11 +42,13 @@ public interface ObjectExpenseRepository extends JpaRepository<ObjectExpense, UU
             SELECT e FROM ObjectExpense e
             WHERE e.spentAt BETWEEN :from AND :to
               AND e.objectId IN (SELECT p.id FROM Project p WHERE p.owner.id = :ownerId)
+              AND (:projectId IS NULL OR e.objectId = :projectId)
             ORDER BY e.spentAt DESC, e.createdAt DESC
             """)
     List<ObjectExpense> findByOwnerAndPeriod(@Param("ownerId") UUID ownerId,
                                              @Param("from") LocalDate from,
-                                             @Param("to") LocalDate to);
+                                             @Param("to") LocalDate to,
+                                             @Param("projectId") UUID projectId);
 
     /** Owner-scoped load for edit/delete — the service also checks the object is owned. */
     Optional<ObjectExpense> findByIdAndObjectId(UUID id, UUID objectId);

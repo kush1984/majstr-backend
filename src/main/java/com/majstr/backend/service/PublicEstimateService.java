@@ -31,13 +31,11 @@ import com.majstr.backend.feature.Feature;
 import com.majstr.backend.feature.FeatureGuard;
 import com.majstr.backend.push.PushService;
 import com.majstr.backend.entity.PaymentReceipt;
-import com.majstr.backend.entity.ProjectPayment;
 import com.majstr.backend.repository.EstimateItemRepository;
 import com.majstr.backend.repository.ProjectMessageRepository;
 import com.majstr.backend.repository.EstimateRepository;
 import com.majstr.backend.repository.EstimateShareLinkRepository;
 import com.majstr.backend.repository.PaymentReceiptRepository;
-import com.majstr.backend.repository.ProjectPaymentRepository;
 import com.majstr.backend.repository.ProjectShareLinkRepository;
 import com.majstr.backend.repository.WorkActItemRepository;
 import lombok.RequiredArgsConstructor;
@@ -52,12 +50,9 @@ import java.math.RoundingMode;
 import java.text.DecimalFormat;
 import java.text.DecimalFormatSymbols;
 import java.time.Instant;
-import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.Comparator;
-import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
@@ -79,7 +74,6 @@ public class PublicEstimateService {
 
     private final EstimateShareLinkRepository shareLinkRepository;
     private final ProjectShareLinkRepository projectShareLinkRepository;
-    private final ProjectPaymentRepository projectPaymentRepository;
     private final PaymentReceiptRepository paymentReceiptRepository;
     private final EstimateRepository estimateRepository;
     private final EstimateItemRepository itemRepository;
@@ -349,31 +343,23 @@ public class PublicEstimateService {
      * {@code contractedTotal} sums the sections passed in — every SIGNED ∧ counted estimate plus the
      * ADDENDUM, the same figure as the master's own «За договором» (B-103; the old «shared sections
      * only» rule showed «Залишок 0» to a client still owing for a sheet nobody ticked).
-     * {@code received}/{@code payments} are genuinely object-level: payments
-     * were never tied to one estimate even before this iteration, so the full list is safe.
-     * One receipts query, grouped in memory by plan stage (or left unplanned) — same shape as
-     * {@code PaymentService.buildSummary}, and it also yields each stage's most recent receipt
-     * date "for free" (the list arrives oldest-first, so the last entry per group is the latest).
+     * {@code received}/{@code receipts} are object-level: payments were never tied to one estimate.
+     * Plan stages are NOT shown (review 2026-11-04): the PWA no longer has a payment plan, so a
+     * stage left from before could still read «прострочено» to the client with no way for the
+     * master to remove it. A receipt recorded against a stage keeps the stage's name as its label.
      */
     private PublicPortalView.PaymentsCard buildPaymentsCard(UUID objectId, List<PublicPortalView.Section> sections) {
         BigDecimal contracted = sections.stream()
                 .map(PublicPortalView.Section::total)
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
-        List<ProjectPayment> rows = projectPaymentRepository.findByProjectIdOrderBySortOrderAscIdAsc(objectId);
         List<PaymentReceipt> allReceipts =
                 paymentReceiptRepository.findByProjectIdOrderByReceivedAtAscCreatedAtAsc(objectId);
 
-        Map<UUID, List<PaymentReceipt>> byPlan = new LinkedHashMap<>();
-        List<PublicPortalView.UnplannedReceiptRow> unplannedRows = new ArrayList<>();
+        List<PublicPortalView.ReceiptRow> receiptRows = new ArrayList<>();
         BigDecimal received = BigDecimal.ZERO;
         for (PaymentReceipt r : allReceipts) {
             received = received.add(r.getAmount());
-            if (r.getPlanPayment() != null) {
-                byPlan.computeIfAbsent(r.getPlanPayment().getId(), k -> new ArrayList<>()).add(r);
-            } else {
-                unplannedRows.add(new PublicPortalView.UnplannedReceiptRow(
-                        r.getLabel() != null ? r.getLabel() : "Оплата", r.getAmount(), r.getReceivedAt()));
-            }
+            receiptRows.add(new PublicPortalView.ReceiptRow(receiptLabel(r), r.getAmount(), r.getReceivedAt()));
         }
 
         // The client was shown the same wrong remaining the master was (B-65): a payment ticked
@@ -382,22 +368,14 @@ public class PublicEstimateService {
         // exactly as on the master's side.
         MaterialRefundSplit split = refundCalculator.forObject(objectId);
         BigDecimal remaining = contracted.subtract(split.workPaid(received)).max(BigDecimal.ZERO);
-        LocalDate today = LocalDate.now(LocalizationConfig.ZONE);
-        List<PublicPortalView.PaymentRow> paymentRows = rows.stream()
-                .map(p -> {
-                    List<PaymentReceipt> stageReceipts = byPlan.getOrDefault(p.getId(), List.of());
-                    BigDecimal stageReceived = stageReceipts.stream()
-                            .map(PaymentReceipt::getAmount)
-                            .reduce(BigDecimal.ZERO, BigDecimal::add);
-                    LocalDate lastReceivedAt = stageReceipts.isEmpty()
-                            ? null : stageReceipts.get(stageReceipts.size() - 1).getReceivedAt();
-                    return new PublicPortalView.PaymentRow(
-                            p.getPurpose(), p.getAmount(), stageReceived, lastReceivedAt,
-                            p.getDueDate(), p.getNextStage(), p.status(today, stageReceived));
-                })
-                .toList();
         return new PublicPortalView.PaymentsCard(contracted, received, remaining, split.applied(), split.toActs(),
-                paymentRows, unplannedRows);
+                receiptRows);
+    }
+
+    private static String receiptLabel(PaymentReceipt r) {
+        if (r.getLabel() != null && !r.getLabel().isBlank()) return r.getLabel();
+        if (r.getPlanPayment() != null && r.getPlanPayment().getPurpose() != null) return r.getPlanPayment().getPurpose();
+        return "Оплата";
     }
 
     // ---- shared core ------------------------------------------------------

@@ -143,6 +143,7 @@ public interface WorkActReceiptRepository extends JpaRepository<WorkActReceipt, 
     @Query("""
             SELECT r FROM WorkActReceipt r JOIN FETCH r.workAct wa JOIN FETCH wa.project
             WHERE wa.userId = :ownerId
+              AND (:projectId IS NULL OR wa.project.id = :projectId)
               AND wa.status = com.majstr.backend.entity.WorkActStatus.SIGNED
               AND wa.receiptsToExpenses = false
               AND r.amount - r.returnedAmount > 0
@@ -154,7 +155,8 @@ public interface WorkActReceiptRepository extends JpaRepository<WorkActReceipt, 
             """)
     List<WorkActReceipt> findOutOfPocketByOwnerAndPeriod(@Param("ownerId") UUID ownerId,
                                                          @Param("fromTs") Instant fromTs,
-                                                         @Param("toTs") Instant toTs);
+                                                         @Param("toTs") Instant toTs,
+                                                         @Param("projectId") UUID projectId);
 
     /** Every stored photo of this object's ACT receipts, for the same reason as the object ones
      *  (B-26) — the act rows cascade through the project and take the keys with them. */
@@ -174,13 +176,15 @@ public interface WorkActReceiptRepository extends JpaRepository<WorkActReceipt, 
             SELECT wa.project.id, wa.id, wa.number, wa.signedAt, SUM(r.amount - r.returnedAmount)
             FROM WorkActReceipt r JOIN r.workAct wa
             WHERE wa.userId = :ownerId
+              AND (:projectId IS NULL OR wa.project.id = :projectId)
               AND wa.status = com.majstr.backend.entity.WorkActStatus.SIGNED
               AND r.itemized = false
             GROUP BY wa.project.id, wa.id, wa.number, wa.signedAt
             HAVING SUM(r.amount - r.returnedAmount) > 0
             ORDER BY wa.signedAt ASC, wa.id ASC
             """)
-    List<Object[]> sumSignedActReceiptsByActForOwner(@Param("ownerId") UUID ownerId);
+    List<Object[]> sumSignedActReceiptsByActForOwner(@Param("ownerId") UUID ownerId,
+                                                     @Param("projectId") UUID projectId);
 
     /** The billed receipts of these acts, oldest first — the rows an act that posts no expenses
      *  shows in «Мої гроші», and so what the client's material money is spread over there. */

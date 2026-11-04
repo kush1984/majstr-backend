@@ -305,10 +305,10 @@ class CashFlowServiceTest {
         UUID settled = UUID.randomUUID();
         UUID credit = UUID.randomUUID();
         seedFeed(List.of(), List.of(), List.of());
-        when(projectReceiptRepository.sumReimbursableByOwner(OWNER)).thenReturn(List.of(
+        when(projectReceiptRepository.sumReimbursableByOwner(eq(OWNER), any())).thenReturn(List.of(
                 new Object[]{PROJECT, new BigDecimal("5000.00")},
                 new Object[]{settled, new BigDecimal("700.00")}));
-        when(receiptRepository.sumMaterialRefundsByOwner(OWNER)).thenReturn(List.of(
+        when(receiptRepository.sumMaterialRefundsByOwner(eq(OWNER), any())).thenReturn(List.of(
                 new Object[]{PROJECT, new BigDecimal("1200.00")},
                 new Object[]{settled, new BigDecimal("700.00")},
                 new Object[]{credit, new BigDecimal("3000.00")}));
@@ -378,12 +378,12 @@ class CashFlowServiceTest {
         posted.setWorkActId(act);
         posted.setNote("Чек до акта № 9: Електромаркет");
         seedFeed(List.of(receipt("5000.00", true)), List.of(posted), List.of(), List.of(tillReceipt("763.72")), List.of());
-        when(receiptRepository.sumMaterialRefundsByOwner(OWNER))
+        when(receiptRepository.sumMaterialRefundsByOwner(eq(OWNER), any()))
                 .thenReturn(List.<Object[]>of(new Object[]{PROJECT, new BigDecimal("5000.00")}));
-        when(projectReceiptRepository.sumReimbursableByOwner(OWNER))
+        when(projectReceiptRepository.sumReimbursableByOwner(eq(OWNER), any()))
                 .thenReturn(List.<Object[]>of(new Object[]{PROJECT, new BigDecimal("763.72")}));
         Instant signed = DAY.atTime(15, 0).atZone(LocalizationConfig.ZONE).toInstant();
-        when(actReceiptRepository.sumSignedActReceiptsByActForOwner(OWNER))
+        when(actReceiptRepository.sumSignedActReceiptsByActForOwner(eq(OWNER), any()))
                 .thenReturn(List.<Object[]>of(new Object[]{PROJECT, act, "9", signed, new BigDecimal("16388.00")}));
         when(expenseRepository.findByWorkActIds(any())).thenReturn(List.of(posted));
 
@@ -409,7 +409,7 @@ class CashFlowServiceTest {
         seedFeed(List.of(receipt("10000.00", false), elsewhere), List.of(),
                 List.of(personal(CashDirection.EXPENSE, "300.00")));
         when(projectRepository.findById(PROJECT)).thenReturn(Optional.of(project()));
-        when(projectReceiptRepository.sumReimbursableByOwner(OWNER)).thenReturn(List.of(
+        when(projectReceiptRepository.sumReimbursableByOwner(eq(OWNER), any())).thenReturn(List.of(
                 new Object[]{PROJECT, new BigDecimal("500.00")},
                 new Object[]{other, new BigDecimal("900.00")}));
 
@@ -467,6 +467,14 @@ class CashFlowServiceTest {
         assertThat(money.materials().given()).isEqualByComparingTo("1000.00");
         assertThat(money.materials().outstanding()).isEqualByComparingTo("1500.00");
         assertThat(money.entries()).allSatisfy(e -> assertThat(e.projectId()).isEqualTo(PROJECT));
+        // Narrowed in the QUERIES, not after reading every row the master has (review 2026-11-04);
+        // his own cash entries belong to no object, so they are not read at all.
+        verify(receiptRepository).findByOwnerAndPeriod(eq(OWNER), any(), any(), eq(PROJECT));
+        verify(expenseRepository).findByOwnerAndPeriod(eq(OWNER), any(), any(), eq(PROJECT));
+        verify(projectReceiptRepository).findOutOfPocketByOwnerAndPeriod(eq(OWNER), any(), any(), any(), any(),
+                eq(PROJECT));
+        verify(actReceiptRepository).findOutOfPocketByOwnerAndPeriod(eq(OWNER), any(), any(), eq(PROJECT));
+        verify(cashRepository, never()).findByOwnerAndPeriod(any(), any(), any());
     }
 
     /** Deleting his own row takes its photo with it — after the commit, never before (B-25). */
@@ -727,12 +735,12 @@ class CashFlowServiceTest {
     private void seedFeed(List<PaymentReceipt> receipts, List<ObjectExpense> expenses,
                           List<CashEntry> own, List<ProjectReceipt> till,
                           List<WorkActReceipt> actReceipts) {
-        when(receiptRepository.findByOwnerAndPeriod(eq(OWNER), any(), any())).thenReturn(receipts);
-        when(expenseRepository.findByOwnerAndPeriod(eq(OWNER), any(), any())).thenReturn(expenses);
+        when(receiptRepository.findByOwnerAndPeriod(eq(OWNER), any(), any(), any())).thenReturn(receipts);
+        when(expenseRepository.findByOwnerAndPeriod(eq(OWNER), any(), any(), any())).thenReturn(expenses);
         when(cashRepository.findByOwnerAndPeriod(eq(OWNER), any(), any())).thenReturn(own);
         when(projectReceiptRepository.findOutOfPocketByOwnerAndPeriod(eq(OWNER), any(), any(), any(),
-                any())).thenReturn(till);
-        when(actReceiptRepository.findOutOfPocketByOwnerAndPeriod(eq(OWNER), any(), any()))
+                any(), any())).thenReturn(till);
+        when(actReceiptRepository.findOutOfPocketByOwnerAndPeriod(eq(OWNER), any(), any(), any()))
                 .thenReturn(actReceipts);
         when(projectRepository.findAllById(any())).thenReturn(List.of(project()));
     }
