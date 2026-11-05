@@ -3,6 +3,8 @@ package com.majstr.backend.service;
 import org.junit.jupiter.api.Test;
 
 import java.time.LocalDate;
+import java.util.HashMap;
+import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -45,5 +47,19 @@ class SiteVisitServiceTest {
         assertThat(SiteVisitService.language("PL")).isEqualTo("pl");
         assertThat(SiteVisitService.language("zh-Hant-TW")).isEqualTo("zh");
         assertThat(SiteVisitService.language("not a language")).isNull();
+    }
+
+    @Test
+    void aSourceWithoutUtm_countsEvenWhenTheOtherSideHasNoRows() {
+        Map<String, Long> visitors = new HashMap<>();
+        visitors.put(null, 3L);
+        visitors.put("google", 2L);
+
+        assertThat(SiteVisitService.channels(visitors, null))
+                .extracting(c -> c.source() + ":" + c.visitors() + "/" + c.registered())
+                .containsExactly("null:3/0", "google:2/0");
+        assertThat(SiteVisitService.channels(null, visitors))
+                .extracting(c -> c.source() + ":" + c.visitors() + "/" + c.registered())
+                .containsExactly("null:0/3", "google:0/2");
     }
 }

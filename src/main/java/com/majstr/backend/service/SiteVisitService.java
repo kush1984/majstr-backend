@@ -260,8 +260,9 @@ public class SiteVisitService {
 
     /** Visitors and registrations side by side, the busiest source first. */
     static List<VisitStatsResponse.Channel> channels(Map<String, Long> visitors, Map<String, Long> registered) {
-        Map<String, Long> v = visitors == null ? Map.of() : visitors;
-        Map<String, Long> r = registered == null ? Map.of() : registered;
+        // HashMap, never Map.of(): «без UTM» is a null key, and an immutable map throws on looking one up.
+        Map<String, Long> v = visitors == null ? new HashMap<>() : visitors;
+        Map<String, Long> r = registered == null ? new HashMap<>() : registered;
         Set<String> keys = new HashSet<>(v.keySet());
         keys.addAll(r.keySet());
         return keys.stream()
