@@ -6,7 +6,9 @@ import com.majstr.backend.dto.MetricsGrowthResponse;
 import com.majstr.backend.dto.MetricsOverviewResponse;
 import com.majstr.backend.dto.SourceBreakdownResponse;
 import com.majstr.backend.dto.UpgradeInterestResponse;
+import com.majstr.backend.dto.VisitStatsResponse;
 import com.majstr.backend.service.MetricsService;
+import com.majstr.backend.service.SiteVisitService;
 import com.majstr.backend.service.UpgradeEventService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
@@ -27,6 +29,7 @@ public class AdminMetricsController {
 
     private final MetricsService metricsService;
     private final UpgradeEventService upgradeEventService;
+    private final SiteVisitService siteVisitService;
 
     @Operation(summary = "Aggregate snapshot for the admin dashboard")
     @GetMapping("/overview")
@@ -56,6 +59,13 @@ public class AdminMetricsController {
     @GetMapping("/by-source")
     public SourceBreakdownResponse bySource() {
         return metricsService.bySource();
+    }
+
+    @Operation(summary = "Anonymous visits to the public pages: visitors, sources, devices, and registrations "
+            + "per source over the given period")
+    @GetMapping("/visits")
+    public VisitStatsResponse visits(@RequestParam(name = "period", defaultValue = "30d") String period) {
+        return siteVisitService.stats(parsePeriodDays(period));
     }
 
     @Operation(summary = "Registrations per day over the given period")

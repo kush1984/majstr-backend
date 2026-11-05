@@ -186,6 +186,7 @@
             <button class="navlink" data-view="templates">🧩 Шаблони кошторисів</button>
             <button class="navlink" data-view="insights">💡 Від майстрів</button>
             <button class="navlink" data-view="broadcasts">✉️ Розсилки</button>
+            <button class="navlink" data-view="visits">👀 Відвідування</button>
             <button class="navlink logout" id="logoutBtn">Вийти</button>
         </aside>
 
@@ -270,6 +271,49 @@
                         <span id="pageInfo" style="align-self:center">сторінка 1 / 1</span>
                         <button id="nextPage">→</button>
                     </div>
+                </section>
+            </section>
+
+            <!-- ===== VISITS (anonymous, V187) ===== -->
+            <section id="view-visits" class="view" hidden>
+                <h1>Відвідування сайту</h1>
+                <p class="muted">Анонімно: без IP-адрес і cookie. Відвідувач — це один браузер за один день,
+                    тож людина, що заходила три дні, рахується тричі. Боти, увійдені майстри й браузери з
+                    «не відстежувати» не рахуються.</p>
+                <div class="filters">
+                    <select id="visitsPeriod">
+                        <option value="7d">7 днів</option>
+                        <option value="30d" selected>30 днів</option>
+                        <option value="90d">90 днів</option>
+                        <option value="365d">Рік</option>
+                    </select>
+                </div>
+
+                <h2>Воронка — від відвідування до реєстрації</h2>
+                <section class="card">
+                    <div class="grid" id="visitsFunnel">
+                        <div class="stat"><div class="label">Завантаження…</div></div>
+                    </div>
+                </section>
+
+                <h2>Відвідувачі й реєстрації за день</h2>
+                <section class="card">
+                    <canvas id="visitsChart" height="110"></canvas>
+                </section>
+
+                <h2>Звідки прийшли</h2>
+                <section class="card">
+                    <div id="visitsSources"><p class="muted">Завантаження…</p></div>
+                </section>
+
+                <h2>Сторінки</h2>
+                <section class="card">
+                    <div id="visitsPages"><p class="muted">Завантаження…</p></div>
+                </section>
+
+                <h2>Пристрої, браузери, часові пояси</h2>
+                <section class="card">
+                    <div id="visitsAudience"><p class="muted">Завантаження…</p></div>
                 </section>
             </section>
 
@@ -628,7 +672,8 @@
     document.getElementById('logoutBtn').addEventListener('click', logout);
 
     // ================= view switching =================
-    let catalogLoaded = false, templatesLoaded = false, insightsLoaded = false, broadcastsLoaded = false;
+    let catalogLoaded = false, templatesLoaded = false, insightsLoaded = false, broadcastsLoaded = false,
+        visitsLoaded = false;
 
     function showView(name) {
         currentView = name;
@@ -639,6 +684,7 @@
         if (name === 'templates' && !templatesLoaded) { templatesLoaded = true; loadTemplates(); }
         if (name === 'insights' && !insightsLoaded) { insightsLoaded = true; loadInsights(); }
         if (name === 'broadcasts' && !broadcastsLoaded) { broadcastsLoaded = true; loadBroadcasts(); }
+        if (name === 'visits' && !visitsLoaded) { visitsLoaded = true; loadVisits(); }
     }
     document.querySelectorAll('.navlink[data-view]').forEach(a =>
         a.addEventListener('click', () => showView(a.dataset.view)));
@@ -948,6 +994,94 @@
             }
         });
     }
+
+    // ================= VISITS (V187) =================
+    let visitsChart = null;
+    const DEVICE_NAMES = { mobile: 'Телефон', tablet: 'Планшет', desktop: "Комп'ютер" };
+
+    async function loadVisits() {
+        const period = document.getElementById('visitsPeriod').value;
+        const resp = await api('/admin/metrics/visits?period=' + encodeURIComponent(period));
+        if (!resp.ok) return;
+        const v = await resp.json();
+
+        // Step-to-step, as in the activation funnel: the number that says WHICH step loses people.
+        const step = (label, n, prev) => `<div class="stat"><div class="label">${label}</div>`
+            + `<div class="value">${numberFormat.format(n)}</div>`
+            + (prev === undefined ? '' : `<div class="sub">${ratio(n, prev)} з попереднього кроку</div>`)
+            + '</div>';
+        document.getElementById('visitsFunnel').innerHTML =
+            step('Переглядів сторінок', v.pageviews) +
+            step('Відвідувачі', v.visitors) +
+            step('Відкрили реєстрацію', v.sawRegister, v.visitors) +
+            step('Почали заповнювати', v.startedRegister, v.sawRegister) +
+            step('Зареєструвались', v.registered, v.startedRegister);
+
+        const days = v.days || [];
+        const ctx = document.getElementById('visitsChart').getContext('2d');
+        if (visitsChart) visitsChart.destroy();
+        visitsChart = new Chart(ctx, {
+            type: 'bar',
+            data: {
+                labels: days.map(d => dayFormat.format(new Date(d.day))),
+                datasets: [
+                    { label: 'Відвідувачі', data: days.map(d => d.visitors), backgroundColor: '#8ab4f8' },
+                    { label: 'Реєстрації', data: days.map(d => d.registered), backgroundColor: '#1f6feb' }
+                ]
+            },
+            options: { responsive: true, scales: { y: { beginAtZero: true, ticks: { precision: 0 } } } }
+        });
+
+        document.getElementById('visitsSources').innerHTML =
+            visitChannels('Сайт, що дав посилання', 'Сайт', 'без реферера', v.referrers || [])
+            + visitChannels('UTM-мітка — рекламний канал', 'utm_source', 'без UTM', v.utm || [])
+            + visitChannels('Перша сторінка', 'Сторінка', 'невідомо', v.entryPages || [])
+            + `<p class="muted" style="margin-top:8px">Джерело — перший захід браузера, так само, як його
+               записує реєстрація. Реєстрації рахуються з ${dayFormat.format(new Date(v.registeredFrom))}
+               — від першого дня, за який є відвідування, щоб порівнювати одне з одним. TikTok та Instagram
+               часто не передають сайт-джерело — дивись їхні браузери нижче.</p>`;
+
+        const pages = v.pages || [];
+        document.getElementById('visitsPages').innerHTML = pages.length === 0
+            ? '<p class="muted">Немає даних.</p>'
+            : `<table><thead><tr><th>Сторінка</th><th>Відвідувачі</th><th>Перегляди</th></tr></thead><tbody>`
+                + pages.map(p => `<tr><td><b>${escapeHtml(p.path)}</b></td><td>${p.visitors}</td>`
+                    + `<td>${p.pageviews}</td></tr>`).join('')
+                + '</tbody></table>';
+
+        document.getElementById('visitsAudience').innerHTML =
+            visitShares('Пристрій', v.devices || [], v.visitors, s => DEVICE_NAMES[s] || s)
+            + visitShares('Система', v.systems || [], v.visitors)
+            + visitShares('Браузер або застосунок', v.browsers || [], v.visitors)
+            + visitShares('Часовий пояс — замість міста', v.timeZones || [], v.visitors)
+            + visitShares('Мова браузера', v.languages || [], v.visitors);
+    }
+
+    function visitChannels(title, column, nullLabel, rows) {
+        if (rows.length === 0) return '';
+        return `<h2 style="text-transform:none; letter-spacing:0; margin-top:16px">${title}</h2>
+            <table><thead><tr><th>${column}</th><th>Відвідувачі</th><th>Реєстр.</th><th>Конверсія</th></tr></thead><tbody>`
+            + rows.map(c => `<tr>
+                <td>${c.source == null ? '<span class="muted">' + nullLabel + '</span>' : '<b>' + escapeHtml(c.source) + '</b>'}</td>
+                <td>${c.visitors}</td>
+                <td>${c.registered}</td>
+                <td>${ratio(c.registered, c.visitors)}</td>
+            </tr>`).join('')
+            + '</tbody></table>';
+    }
+
+    function visitShares(title, rows, total, label = s => s) {
+        if (rows.length === 0) return '';
+        return `<h2 style="text-transform:none; letter-spacing:0; margin-top:16px">${title}</h2>
+            <table><thead><tr><th>${title}</th><th>Відвідувачі</th></tr></thead><tbody>`
+            + rows.map(s => `<tr>
+                <td>${s.value == null ? '<span class="muted">невідомо</span>' : '<b>' + escapeHtml(label(s.value)) + '</b>'}</td>
+                <td>${ratio(s.visitors, total)}</td>
+            </tr>`).join('')
+            + '</tbody></table>';
+    }
+
+    document.getElementById('visitsPeriod').addEventListener('change', loadVisits);
 
     async function loadUsers() {
         const search = document.getElementById('search').value.trim();

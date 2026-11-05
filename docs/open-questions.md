@@ -125,6 +125,9 @@ one-line summary — keep the item in the file as a record.
   visitors get different addresses. Run `SELECT signer_ip, count(*) FROM estimates WHERE signer_ip IS NOT NULL
   GROUP BY 1 ORDER BY 2 DESC LIMIT 10;` on prod. One or two addresses for everyone → read the
   address Railway itself appends (the LAST hop it adds) instead of the first.
+- **2026-11-05 (V187):** the visit statistics now depend on it too: `visitor` hashes the address with the
+  browser string, so one shared address would merge every visitor with the same browser. A day whose
+  «Відвідувачі» stay near 1 while page views grow is the sign. See [iteration-visit-stats.md](iteration-visit-stats.md).
 
 ### «Майстер уже отримав сповіщення» is a promise push may not keep
 - **Status:** OPEN

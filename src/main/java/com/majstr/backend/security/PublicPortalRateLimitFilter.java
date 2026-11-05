@@ -27,6 +27,8 @@ public class PublicPortalRateLimitFilter extends OncePerRequestFilter {
     private static final String PATH_PREFIX = "/api/public/";
     /** The public calculators count on their own bucket — see {@code PublicCalcRateLimiter}. */
     private static final String CALC_PREFIX = "/api/public/materials/";
+    /** The visit beacon too — see {@code VisitRateLimiter}. */
+    private static final String VISIT_PATH = "/api/public/visit";
 
     private final PortalRateLimiter rateLimiter;
     private final ObjectMapper objectMapper;
@@ -35,7 +37,7 @@ public class PublicPortalRateLimitFilter extends OncePerRequestFilter {
     @Override
     protected boolean shouldNotFilter(HttpServletRequest request) {
         String uri = request.getRequestURI();
-        return !uri.startsWith(PATH_PREFIX) || uri.startsWith(CALC_PREFIX);
+        return !uri.startsWith(PATH_PREFIX) || uri.startsWith(CALC_PREFIX) || uri.equals(VISIT_PATH);
     }
 
     @Override
