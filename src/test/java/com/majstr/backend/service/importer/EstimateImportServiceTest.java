@@ -8,10 +8,7 @@ import com.majstr.backend.dto.EstimateImportCommitResponse;
 import com.majstr.backend.dto.EstimateImportParseResponse;
 import com.majstr.backend.dto.EstimateResponse;
 import com.majstr.backend.dto.PaymentReceiptRequest;
-import com.majstr.backend.dto.ProjectPaymentRequest;
-import com.majstr.backend.dto.ProjectPaymentResponse;
 import com.majstr.backend.entity.EstimateStatus;
-import com.majstr.backend.entity.ProjectPaymentStatus;
 import com.majstr.backend.entity.ItemType;
 import com.majstr.backend.entity.Plan;
 import com.majstr.backend.entity.Unit;
@@ -97,7 +94,7 @@ class EstimateImportServiceTest {
         assertThat(bad.issues()).containsExactlyInAnyOrder("unit", "quantity", "price");
 
         // The review screen still shows the detected deposit — only WHERE it lands on
-        // commit changed (a project_payment now, not the estimate).
+        // commit changed (a received payment on the object now, not the estimate).
         assertThat(resp.depositAmount()).isEqualByComparingTo("500");
     }
 
@@ -144,10 +141,6 @@ class EstimateImportServiceTest {
                 .willReturn(estimateResponse(new BigDecimal("550.00")));
         given(catalogImportService.commit(eq(ownerId), any(CatalogImportCommitRequest.class)))
                 .willReturn(new CatalogImportCommitResponse(0, 1, 0));
-        UUID planId = UUID.randomUUID();
-        given(paymentService.add(eq(projectId), eq(ownerId), any(ProjectPaymentRequest.class), isNull()))
-                .willReturn(new ProjectPaymentResponse(planId, new BigDecimal("100"), null, null, "Завдаток",
-                        BigDecimal.ZERO, new BigDecimal("100"), ProjectPaymentStatus.PLANNED, 0, List.of()));
 
         var req = new EstimateImportCommitRequest(projectId, "Import", new BigDecimal("100"), List.of(
                 new EstimateImportCommitRequest.CommitItem("Малярка", Unit.M2, new BigDecimal("5"),
@@ -163,17 +156,12 @@ class EstimateImportServiceTest {
         assertThat(data.getValue().items()).hasSize(2);
         assertThat(data.getValue().name()).isEqualTo("Import");
 
-        // The detected deposit becomes an object-level payment: a plan row, then a receipt that
-        // closes it immediately (already received) — money is payment_receipt now (V100).
-        ArgumentCaptor<ProjectPaymentRequest> payment = ArgumentCaptor.forClass(ProjectPaymentRequest.class);
-        verify(paymentService).add(eq(projectId), eq(ownerId), payment.capture(), isNull());
-        assertThat(payment.getValue().amount()).isEqualByComparingTo("100");
-        assertThat(payment.getValue().purpose()).isEqualTo("Завдаток");
-
+        // The detected deposit becomes one received payment named «Завдаток» — no plan stage.
         ArgumentCaptor<PaymentReceiptRequest> receipt = ArgumentCaptor.forClass(PaymentReceiptRequest.class);
         verify(paymentService).addReceipt(eq(projectId), eq(ownerId), receipt.capture(), isNull());
-        assertThat(receipt.getValue().planPaymentId()).isEqualTo(planId);
+        assertThat(receipt.getValue().label()).isEqualTo("Завдаток");
         assertThat(receipt.getValue().amount()).isEqualByComparingTo("100");
+        assertThat(receipt.getValue().materialRefund()).isFalse();
 
         // Catalog gets ONLY the ticked item, with its per-item policy.
         ArgumentCaptor<CatalogImportCommitRequest> cat = ArgumentCaptor.forClass(CatalogImportCommitRequest.class);
@@ -201,7 +189,7 @@ class EstimateImportServiceTest {
         EstimateImportCommitResponse resp = service.commit(ownerId, req);
 
         verify(catalogImportService, never()).commit(any(), any());
-        verify(paymentService, never()).add(any(), any(), any(), any()); // no deposit in this request
+        verify(paymentService, never()).addReceipt(any(), any(), any(), any()); // no deposit in this request
         assertThat(resp.catalogCreated()).isZero();
         assertThat(resp.catalogUpdated()).isZero();
         assertThat(resp.catalogSkipped()).isZero();

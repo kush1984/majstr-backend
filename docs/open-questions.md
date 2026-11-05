@@ -3611,7 +3611,12 @@ one-line summary — keep the item in the file as a record.
   pattern) or ask at the meetup.
 
 ### Payment plan hidden from the object — delete it, or bring it back as a waterfall
-- **Status:** OPEN
+- **Status:** RESOLVED (2026-11-05) — deleted. The stage CRUD, split, overflow resolutions,
+  surplus transfer and their DTOs are gone from the backend, the dead hooks/types from the PWA
+  (1.69.3); an imported deposit is a plain receipt «Завдаток». `project_payment` and its 8 prod rows
+  stay READ-ONLY, only to name the receipts recorded against them; dropping the table would first
+  copy those names into `payment_receipt.label` (a data migration, not planned). A waterfall plan,
+  if masters ask, is a new feature.
 - **Since:** object-money iteration (2026-11-02)
 - **Context:** «Розбити на частки» and «Запланований платіж» are no longer rendered: on prod 7 of 150
   objects had stages, 8 stages in all, every one a «завдаток». The backend (`project_payment`,

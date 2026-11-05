@@ -50,8 +50,7 @@ public class IdempotentWriteFilter extends OncePerRequestFilter {
             "/api/estimates/import/commit",
             "/api/projects/*/measurements/project/commit",
             "/api/projects/*/measurements/sketch/commit",
-            "/api/catalog/import/commit",
-            "/api/projects/*/payments/split/commit");
+            "/api/catalog/import/commit");
 
     private final AntPathMatcher matcher = new AntPathMatcher();
 

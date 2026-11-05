@@ -594,8 +594,7 @@ class PublicEstimateServiceTest {
                 .id(UUID.randomUUID()).project(shared.getProject()).token(token)
                 .createdAt(Instant.now()).revoked(false).paymentsVisible(true).build();
         com.majstr.backend.entity.ProjectPayment stage = com.majstr.backend.entity.ProjectPayment.builder()
-                .id(UUID.randomUUID()).project(shared.getProject()).purpose("Аванс")
-                .amount(new BigDecimal("1000.00")).sortOrder(0).build();
+                .id(UUID.randomUUID()).project(shared.getProject()).purpose("Аванс").build();
         given(projectShareLinkRepository.findByTokenAndKind(token, ShareLinkKind.ECONOMY))
                 .willReturn(Optional.of(link));
         given(estimateRepository.findByProjectIdOrderByCreatedAtDesc(shared.getProject().getId()))

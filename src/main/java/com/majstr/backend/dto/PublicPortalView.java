@@ -1,7 +1,6 @@
 package com.majstr.backend.dto;
 
 import com.majstr.backend.entity.EstimateStatus;
-import com.majstr.backend.entity.ProjectPaymentStatus;
 
 import java.math.BigDecimal;
 import java.time.Instant;

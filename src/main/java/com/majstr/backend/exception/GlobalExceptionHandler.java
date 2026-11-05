@@ -288,11 +288,6 @@ public class GlobalExceptionHandler {
         return build(HttpStatus.BAD_REQUEST, msg(ex.getMessage()), req);
     }
 
-    @ExceptionHandler(PaymentSplitException.class)
-    public ResponseEntity<ErrorResponse> handlePaymentSplit(PaymentSplitException ex, HttpServletRequest req) {
-        return build(HttpStatus.BAD_REQUEST, msg(ex.getMessage()), req);
-    }
-
     @ExceptionHandler(PaymentValidationException.class)
     public ResponseEntity<ErrorResponse> handlePaymentValidation(PaymentValidationException ex, HttpServletRequest req) {
         return build(HttpStatus.BAD_REQUEST, msg(ex.getMessage(), ex.getArgs()), req);

@@ -34,6 +34,10 @@ import static org.assertj.core.api.Assertions.assertThat;
  * {@code PaymentReceiptRequest} interface, as JSON TEXT rather than as a serialized DTO — writing
  * it as an object would re-introduce the exact blind spot, because the compiler would fill in
  * whatever the record happens to declare today.</p>
+ *
+ * <p>Since the payment plan was removed (2026-11-05) the record no longer declares
+ * {@code planPaymentId}/{@code resolution}. The bodies below still carry them, as an app build from
+ * before — and its offline queue — will: they must be ignored, never a 400.</p>
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 class PaymentReceiptHttpIntegrationTest extends IntegrationTestBase {

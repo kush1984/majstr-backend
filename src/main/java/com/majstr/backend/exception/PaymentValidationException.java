@@ -1,11 +1,8 @@
 package com.majstr.backend.exception;
 
 /**
- * A payment-receipt request the app should have prevented client-side (a label colliding with a
- * plan stage's purpose, an overflow with no resolution, a TRANSFER with no next stage) — the PWA
- * computes these cases itself before submitting, so reaching here means stale client state, not
- * the normal flow. Message is a bundle key, resolved by the advice (→ 400), matching
- * {@link PaymentSplitException}'s convention.
+ * A payment-receipt request the app should have prevented client-side (no label, a material refund
+ * on an old plan stage). Message is a bundle key, resolved by the advice (→ 400).
  */
 public class PaymentValidationException extends RuntimeException {
     private final transient Object[] args;

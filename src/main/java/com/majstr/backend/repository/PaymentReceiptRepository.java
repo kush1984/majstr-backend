@@ -17,20 +17,15 @@ public interface PaymentReceiptRepository extends JpaRepository<PaymentReceipt, 
 
     Optional<PaymentReceipt> findByIdAndProjectId(UUID id, UUID projectId);
 
-    /** Every receipt of the object (planned + unplanned), one query — {@link
-     *  com.majstr.backend.service.PaymentService#list}/{@code summary} group this in memory by
-     *  {@code planPayment} id instead of running one query per stage. */
+    /** Every receipt of the object, oldest first — the payments summary. */
     List<PaymentReceipt> findByProjectIdOrderByReceivedAtAscCreatedAtAsc(UUID projectId);
-
-    /** One stage's own history, for a single-row response (add/update a plan row). */
-    List<PaymentReceipt> findByPlanPaymentIdOrderByReceivedAtAscCreatedAtAsc(UUID planPaymentId);
 
     /**
      * Every payment across ALL of one master's objects in a period (V135, «Мої гроші») — money IN,
      * the twin of {@code ObjectExpenseRepository.findByOwnerAndPeriod}.
      *
      * <p>The project is fetched because every row of the cash feed names the object it came from,
-     * and the stage because a planned receipt has no label of its own — its purpose IS the stage's.
+     * and the old plan stage because a receipt recorded against one has no label of its own.
      * Both bounds INCLUSIVE.</p>
      */
     @Query("""
@@ -45,10 +40,6 @@ public interface PaymentReceiptRepository extends JpaRepository<PaymentReceipt, 
                                               @Param("from") LocalDate from,
                                               @Param("to") LocalDate to,
                                               @Param("projectId") UUID projectId);
-
-    /** Σ received against one plan stage — used when resolving an overpayment against it. */
-    @Query("SELECT COALESCE(SUM(r.amount), 0) FROM PaymentReceipt r WHERE r.planPayment.id = :planPaymentId")
-    BigDecimal sumByPlanPaymentId(@Param("planPaymentId") UUID planPaymentId);
 
     /** Σ every receipt of the object («Отримано грошей») — the FREE-visible works axis needs this
      *  without going through the PRO-gated {@code PaymentsSummaryResponse}. */

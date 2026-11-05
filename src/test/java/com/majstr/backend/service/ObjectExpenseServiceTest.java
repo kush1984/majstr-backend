@@ -98,7 +98,7 @@ class ObjectExpenseServiceTest {
 
     private static PaymentsSummaryResponse payments(BigDecimal contractedTotal, BigDecimal received) {
         return new PaymentsSummaryResponse(contractedTotal, received, BigDecimal.ZERO, BigDecimal.ZERO,
-                BigDecimal.ZERO, received, BigDecimal.ZERO, List.of(), List.of());
+                BigDecimal.ZERO, received, BigDecimal.ZERO, List.of());
     }
 
     /**

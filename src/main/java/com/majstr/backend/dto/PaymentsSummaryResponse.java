@@ -29,7 +29,20 @@ public record PaymentsSummaryResponse(
         /** {@code max(0, workPaid − contracted)}. Shown rather than clamped away: the old
          *  {@code remaining} floored at zero and an overpayment simply disappeared. */
         BigDecimal overpaid,
-        List<ProjectPaymentResponse> payments,
-        /** Receipts with no matching plan stage ("Своє") — their own nodes on the timeline. */
+        /** Every payment that arrived, oldest first — they add up to {@code received}. */
+        List<PaymentReceiptResponse> receipts,
+        /** Always empty — the payment plan is gone. Sent for an app build up to 1.68 (still cached
+         *  on phones), whose payments block calls {@code summary.payments.forEach} and would crash
+         *  on a missing list. Remove once no such build can be running. */
+        List<Object> payments,
+        /** {@link #receipts} again, under the name a build up to 1.68 lists — with no stages, every
+         *  payment is its own row there, as it is now. Same lifetime as {@link #payments}. */
         List<PaymentReceiptResponse> unplannedReceipts
-) {}
+) {
+    public PaymentsSummaryResponse(BigDecimal contractedTotal, BigDecimal received, BigDecimal remaining,
+                                   BigDecimal materialRefunds, BigDecimal refundApplied, BigDecimal workPaid,
+                                   BigDecimal overpaid, List<PaymentReceiptResponse> receipts) {
+        this(contractedTotal, received, remaining, materialRefunds, refundApplied, workPaid, overpaid,
+                receipts, List.of(), receipts);
+    }
+}

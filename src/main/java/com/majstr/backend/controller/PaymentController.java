@@ -3,12 +3,7 @@ package com.majstr.backend.controller;
 import com.majstr.backend.dto.PaymentReceiptEditRequest;
 import com.majstr.backend.dto.PaymentReceiptRequest;
 import com.majstr.backend.dto.PaymentReceiptResponse;
-import com.majstr.backend.dto.PaymentSplitPreviewResponse;
-import com.majstr.backend.dto.PaymentSplitRequest;
-import com.majstr.backend.dto.PaymentSurplusTransferRequest;
 import com.majstr.backend.dto.PaymentsSummaryResponse;
-import com.majstr.backend.dto.ProjectPaymentRequest;
-import com.majstr.backend.dto.ProjectPaymentResponse;
 import com.majstr.backend.security.UserPrincipal;
 import com.majstr.backend.service.PaymentService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -34,78 +29,27 @@ import java.util.List;
 import java.util.UUID;
 
 /**
- * Object-level payments (завдаток + графік виплат) — FREE and PRO alike, unlike
- * {@code ObjectExpenseController} (PRO-only internal economy). Owner-scoped only.
+ * Money the client paid on an object — FREE and PRO alike. Owner-scoped only. The payment plan
+ * (stages, «Розбити на частки», moving a surplus between stages) is gone: a payment is recorded,
+ * edited and deleted, nothing else.
  */
 @RestController
 @RequestMapping("/api/projects/{id}/payments")
 @RequiredArgsConstructor
-@Tag(name = "Payments", description = "Object-level payment schedule (завдаток + графік), FREE + PRO")
+@Tag(name = "Payments", description = "Money the client paid on an object, FREE + PRO")
 @SecurityRequirement(name = "bearer-jwt")
 public class PaymentController {
 
     private final PaymentService paymentService;
 
-    @Operation(summary = "List the object's payments (schedule order)")
-    @GetMapping
-    public List<ProjectPaymentResponse> list(@PathVariable UUID id,
-                                             @AuthenticationPrincipal UserPrincipal principal) {
-        return paymentService.list(id, principal.id());
-    }
-
-    @Operation(summary = "Contracted / received / remaining + the payment list — the FREE money summary")
+    @Operation(summary = "Contracted / received / remaining + the received payments")
     @GetMapping("/summary")
     public PaymentsSummaryResponse summary(@PathVariable UUID id,
                                            @AuthenticationPrincipal UserPrincipal principal) {
         return paymentService.summary(id, principal.id());
     }
 
-    @Operation(summary = "Add a payment row (manual, or a завдаток already received)")
-    @PostMapping
-    @ResponseStatus(HttpStatus.CREATED)
-    public ProjectPaymentResponse add(@PathVariable UUID id,
-                                      @Valid @RequestBody ProjectPaymentRequest req,
-                                      @RequestHeader(value = "X-Entity-Uuid", required = false) UUID entityId,
-                                      @AuthenticationPrincipal UserPrincipal principal) {
-        return paymentService.add(id, principal.id(), req, entityId);
-    }
-
-    @Operation(summary = "Edit a payment row (amount, due date, next stage, or mark received)")
-    @PatchMapping("/{paymentId}")
-    public ProjectPaymentResponse update(@PathVariable UUID id,
-                                         @PathVariable UUID paymentId,
-                                         @Valid @RequestBody ProjectPaymentRequest req,
-                                         @AuthenticationPrincipal UserPrincipal principal) {
-        return paymentService.update(id, paymentId, principal.id(), req);
-    }
-
-    @Operation(summary = "Delete a payment row")
-    @DeleteMapping("/{paymentId}")
-    public ResponseEntity<Void> delete(@PathVariable UUID id,
-                                       @PathVariable UUID paymentId,
-                                       @AuthenticationPrincipal UserPrincipal principal) {
-        paymentService.delete(id, paymentId, principal.id());
-        return ResponseEntity.noContent().build();
-    }
-
-    @Operation(summary = "Preview a \"Розбити на частки\" split before saving — nothing is written")
-    @PostMapping("/split/preview")
-    public PaymentSplitPreviewResponse previewSplit(@PathVariable UUID id,
-                                                     @Valid @RequestBody PaymentSplitRequest req,
-                                                     @AuthenticationPrincipal UserPrincipal principal) {
-        return paymentService.previewSplit(id, principal.id(), req);
-    }
-
-    @Operation(summary = "Confirm the split — persists the same rows the preview showed")
-    @PostMapping("/split/commit")
-    @ResponseStatus(HttpStatus.CREATED)
-    public List<ProjectPaymentResponse> commitSplit(@PathVariable UUID id,
-                                                     @Valid @RequestBody PaymentSplitRequest req,
-                                                     @AuthenticationPrincipal UserPrincipal principal) {
-        return paymentService.commitSplit(id, principal.id(), req);
-    }
-
-    @Operation(summary = "Register a received payment ('Отриманий платіж') against a plan stage, or unplanned")
+    @Operation(summary = "Register a received payment ('Отриманий платіж')")
     @PostMapping("/receipts")
     @ResponseStatus(HttpStatus.CREATED)
     public List<PaymentReceiptResponse> addReceipt(@PathVariable UUID id,
@@ -124,7 +68,7 @@ public class PaymentController {
         return paymentService.editReceipt(id, receiptId, principal.id(), req);
     }
 
-    @Operation(summary = "Delete a receipt — its stage recomputes on the next read")
+    @Operation(summary = "Delete a receipt")
     @DeleteMapping("/receipts/{receiptId}")
     public ResponseEntity<Void> deleteReceipt(@PathVariable UUID id,
                                               @PathVariable UUID receiptId,
@@ -133,11 +77,4 @@ public class PaymentController {
         return ResponseEntity.noContent().build();
     }
 
-    @Operation(summary = "Move an over-received stage's surplus onto another stage as a partial receipt")
-    @PostMapping("/receipts/transfer-surplus")
-    public List<ProjectPaymentResponse> transferSurplus(@PathVariable UUID id,
-                                                         @Valid @RequestBody PaymentSurplusTransferRequest req,
-                                                         @AuthenticationPrincipal UserPrincipal principal) {
-        return paymentService.transferSurplus(id, principal.id(), req);
-    }
 }

@@ -187,10 +187,14 @@ migration). 141/150 objects record no money at all → the plan feature is effec
 * `PaymentsBlock.tsx` (and its two test files) deleted.
 
 ## Phase 2 (after the webinar)
-* Delete dead plan code: split preview/commit, transfer surplus, overflow resolution (`PaymentsBlock` done 2026-11-04).
+* ~~Delete dead plan code~~ — DONE 2026-11-05 (PWA 1.69.3): stage CRUD, split preview/commit, overflow
+  resolution, surplus transfer and `surplusIdOf` removed; the import's deposit is a receipt «Завдаток»;
+  `project_payment` kept read-only for the names of receipts recorded against a stage.
 * One door for receipts (act / estimate / object) — the «same paper three ways» problem.
 * Merge the bot (renumber its migration to the next free number — V187 as of V186, PWA version above 1.69.0; its expense/payment
-  writes land in «Гроші обʼєкта» automatically).
+  writes land in «Гроші обʼєкта» automatically). Since the plan is gone, its `InboxService.incomeRequest`
+  must stop matching a stage (`ProjectPaymentRepository` and the 6-argument `PaymentReceiptRequest` no
+  longer exist) and send the text as the label.
 * If masters ask for a payment schedule: one plan per object, payments close stages in order.
 
 ## Gotchas met

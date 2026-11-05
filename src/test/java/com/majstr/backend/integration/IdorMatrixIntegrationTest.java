@@ -118,9 +118,7 @@ class IdorMatrixIntegrationTest extends IntegrationTestBase {
     private static final String B_MEASUREMENT_ITEM =
             "{\"name\":\"Стіна\",\"type\":\"SURFACE\",\"payload\":{\"width\":3,\"height\":2.7}}";
     private static final String B_EXPENSE = "{\"amount\":100,\"category\":\"MATERIALS\"}";
-    private static final String B_PAYMENT = "{\"amount\":1000,\"purpose\":\"Аванс\"}";
     private static final String B_PAYMENT_RECEIPT = "{\"amount\":100,\"receivedAt\":\"2026-01-01\"}";
-    private static final String B_PAYMENT_SPLIT = "{\"preset\":\"FIFTY_FIFTY\"}";
     private static final String B_CUSTOM_TRADE = "{\"name\":\"Свій трейд\"}";
     private static final String B_NOTE = "{\"body\":\"Нотатка\"}";
     private static final String B_PHOTO_FOLDER = "{\"folder\":\"Тека\"}";
@@ -423,21 +421,11 @@ class IdorMatrixIntegrationTest extends IntegrationTestBase {
         c.add(json("PATCH", "/api/projects/{id}/expenses/{expenseId}",
                 B_EXPENSE, a.project, a.expense));
         c.add(del("/api/projects/{id}/expenses/{expenseId}", a.project, a.expense));
-        c.add(get("/api/projects/{id}/payments", a.project));
         c.add(get("/api/projects/{id}/payments/summary", a.project));
-        c.add(json("POST", "/api/projects/{id}/payments", B_PAYMENT, a.project));
-        c.add(json("PATCH", "/api/projects/{id}/payments/{paymentId}",
-                B_PAYMENT, a.project, a.payment));
-        c.add(del("/api/projects/{id}/payments/{paymentId}", a.project, a.payment));
-        c.add(json("POST", "/api/projects/{id}/payments/split/preview", B_PAYMENT_SPLIT, a.project));
-        c.add(json("POST", "/api/projects/{id}/payments/split/commit", B_PAYMENT_SPLIT, a.project));
         c.add(json("POST", "/api/projects/{id}/payments/receipts", B_PAYMENT_RECEIPT, a.project));
         c.add(json("PATCH", "/api/projects/{id}/payments/receipts/{receiptId}",
                 B_PAYMENT_RECEIPT, a.project, a.paymentReceipt));
         c.add(del("/api/projects/{id}/payments/receipts/{receiptId}", a.project, a.paymentReceipt));
-        c.add(json("POST", "/api/projects/{id}/payments/receipts/transfer-surplus",
-                "{\"fromPaymentId\":\"" + a.payment + "\",\"toPaymentId\":\"" + a.payment + "\"}",
-                a.project));
 
         // --- notes --------------------------------------------------------------
         c.add(get("/api/projects/{id}/notes", a.project));
@@ -572,10 +560,6 @@ class IdorMatrixIntegrationTest extends IntegrationTestBase {
                 B_EXPENSE, b.project, a.expense));
         c.add(watching(del("/api/projects/{id}/expenses/{expenseId}", b.project, a.expense),
                 "object_expenses", a.expense));
-        c.add(json("PATCH", "/api/projects/{id}/payments/{paymentId}",
-                B_PAYMENT, b.project, a.payment));
-        c.add(watching(del("/api/projects/{id}/payments/{paymentId}", b.project, a.payment),
-                "project_payment", a.payment));
         c.add(json("PATCH", "/api/projects/{id}/payments/receipts/{receiptId}",
                 B_PAYMENT_RECEIPT, b.project, a.paymentReceipt));
         c.add(watching(del("/api/projects/{id}/payments/receipts/{receiptId}", b.project, a.paymentReceipt),
@@ -667,16 +651,12 @@ class IdorMatrixIntegrationTest extends IntegrationTestBase {
                         "{\"estimateIds\":[\"" + a.estimate + "\"]}", b.project),
                 "A's estimate visibility", ESTIMATE_SQL, a.estimate));
 
-        // Money: a receipt filed against A's plan stage, and a surplus transferred out of it.
+        // Money: an app build from the plan era still names a stage on a receipt. The field is no
+        // longer read, so A's old stage must not gain one.
         c.add(new BodyCase(
                 json("POST", "/api/projects/{id}/payments/receipts",
-                        "{\"amount\":100,\"receivedAt\":\"2026-01-01\",\"planPaymentId\":\""
-                                + a.payment + "\"}", b.project),
-                "receipts filed against A's stage", RECEIPTS_OF_PAYMENT_SQL, a.payment));
-        c.add(new BodyCase(
-                json("POST", "/api/projects/{id}/payments/receipts/transfer-surplus",
-                        "{\"fromPaymentId\":\"" + a.payment + "\",\"toPaymentId\":\""
-                                + b.payment + "\"}", b.project),
+                        "{\"amount\":100,\"receivedAt\":\"2026-01-01\",\"label\":\"Аванс\","
+                                + "\"planPaymentId\":\"" + a.payment + "\"}", b.project),
                 "receipts filed against A's stage", RECEIPTS_OF_PAYMENT_SQL, a.payment));
 
         // A's own trade name must not end up labelling B's bundle.

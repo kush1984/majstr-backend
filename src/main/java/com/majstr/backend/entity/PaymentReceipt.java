@@ -21,11 +21,9 @@ import java.time.LocalDate;
 import java.util.UUID;
 
 /**
- * A real, received payment against an object (V100) — the FACT half of the payments PLAN/FACT
- * split. Each row closes a {@link ProjectPayment} stage partially or fully ({@code planPayment}
- * set), or stands alone with its own {@code label} ("Своє", no matching plan). A single plan stage
- * can be closed by several of these (2 000, then 3 000 = closed) — the thing {@code ProjectPayment}
- * itself could not express while it carried its own single {@code paidAmount}/{@code paidAt}.
+ * A real, received payment against an object (V100), named by its own {@code label}. A row from
+ * before the payment plan was removed (2026-11-05) may instead point at a {@link ProjectPayment}
+ * stage, read-only, and carry the stage's name.
  */
 @Entity
 @Table(name = "payment_receipt")
@@ -45,8 +43,7 @@ public class PaymentReceipt {
     @JoinColumn(name = "project_id", nullable = false, updatable = false)
     private Project project;
 
-    /** Null = unplanned ("Своє") — see {@code label}. Set NULL on delete of the plan row, so a
-     *  real receipt is never destroyed just because its plan stage was removed. */
+    /** Set only on a receipt recorded against an old plan stage; nothing writes it any more. */
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "plan_payment_id")
     private ProjectPayment planPayment;
@@ -57,8 +54,7 @@ public class PaymentReceipt {
     @Column(name = "received_at", nullable = false)
     private LocalDate receivedAt;
 
-    /** Only meaningful when {@code planPayment} is null — the master's own name for an unplanned
-     *  receipt, validated distinct from every plan stage's purpose so it can't be mistaken for one. */
+    /** The master's own name for the payment; null only on a receipt against an old plan stage. */
     @Column(name = "label", length = 255)
     private String label;
 

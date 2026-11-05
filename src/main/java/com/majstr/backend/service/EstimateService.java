@@ -162,7 +162,7 @@ public class EstimateService {
      * Creates an estimate on an object from an LLM-extracted import (Excel/photo).
      * Respects the FREE per-project estimate cap and ownership like a normal create,
      * bumps the lifetime churn counter, and persists the extracted items in order.
-     * A detected deposit is handled by the caller as a {@code project_payment} — see
+     * A detected deposit is handled by the caller as a {@code payment_receipt} — see
      * {@code EstimateImportService.commit}. The caller has already gated the feature.
      */
     @Transactional
@@ -1690,7 +1690,7 @@ public class EstimateService {
      * Server-side input for {@link #createFromImport}: the estimate name + the final
      * (master-confirmed) items. Units/types/amounts are already resolved by
      * {@code EstimateImportService} from the LLM extraction and the review-screen edits. A
-     * detected deposit is handled by the caller as a {@code project_payment}, not here —
+     * detected deposit is handled by the caller as a {@code payment_receipt}, not here —
      * money is object-level, not carried on the estimate.
      */
     public record ImportEstimateData(String name, List<ImportItem> items) {
