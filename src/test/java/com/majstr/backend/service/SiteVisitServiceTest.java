@@ -42,6 +42,16 @@ class SiteVisitServiceTest {
     }
 
     @Test
+    void aClickLabelIsLowerCasedAndKeptOnlyInOurOwnAlphabet() {
+        assertThat(SiteVisitService.target(" Hero:Register ")).isEqualTo("hero:register");
+        assertThat(SiteVisitService.target("link:/kalkulyator-plytky")).isEqualTo("link:/kalkulyator-plytky");
+        assertThat(SiteVisitService.target("anchor:#faq")).isEqualTo("anchor:#faq");
+        assertThat(SiteVisitService.target("Почати безкоштовно")).isNull();
+        assertThat(SiteVisitService.target("x".repeat(61))).isNull();
+        assertThat(SiteVisitService.target(null)).isNull();
+    }
+
+    @Test
     void theLanguageKeepsOnlyItsPrimaryTag() {
         assertThat(SiteVisitService.language("uk-UA")).isEqualTo("uk");
         assertThat(SiteVisitService.language("PL")).isEqualTo("pl");

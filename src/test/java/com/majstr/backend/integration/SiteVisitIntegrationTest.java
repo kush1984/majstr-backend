@@ -178,6 +178,90 @@ class SiteVisitIntegrationTest extends IntegrationTestBase {
                 .isOne();
     }
 
+    @Test
+    void aLeaveKeepsHowFarAndHowLong_aClickKeepsItsLabel_andEmptyOnesAreDropped() throws Exception {
+        String ip = nextIp();
+        String path = "/it-" + tag;
+        post(ip, IPHONE, event("LEAVE", path, "\"scrollDepth\":100,\"engagedSeconds\":50000"));
+        post(ip, IPHONE, event("CLICK", path, "\"target\":\"Hero:Register\""));
+        post(ip, IPHONE, event("CLICK", path, "\"target\":\"нова кнопка\""));
+        post(ip, IPHONE, event("LEAVE", path, ""));
+        post(ip, IPHONE, event("REGISTER_FIELD", path, ""));
+
+        List<Map<String, Object>> rows = jdbc.queryForList(
+                "SELECT kind, target, scroll_depth, engaged_seconds FROM site_visit WHERE path = ? ORDER BY id", path);
+        assertThat(rows).hasSize(2);
+        assertThat(rows.get(0)).containsEntry("kind", "LEAVE").containsEntry("target", null);
+        assertThat(((Number) rows.get(0).get("scroll_depth")).intValue()).isEqualTo(100);
+        assertThat(((Number) rows.get(0).get("engaged_seconds")).intValue()).isEqualTo(3600);
+        assertThat(rows.get(1)).containsEntry("kind", "CLICK").containsEntry("target", "hero:register")
+                .containsEntry("scroll_depth", null).containsEntry("engaged_seconds", null);
+    }
+
+    @Test
+    void aBrowserInUtcIsCountedAsABotAndNowhereElse() throws Exception {
+        String path = "/it-" + tag;
+        long botsBefore = visits.stats(1).likelyBots();
+        post(nextIp(), ANDROID, "{\"kind\":\"PAGEVIEW\",\"path\":\"" + path + "\",\"timeZone\":\"Etc/UTC\"}");
+
+        VisitStatsResponse stats = visits.stats(1);
+
+        assertThat(stats.likelyBots()).isEqualTo(botsBefore + 1);
+        assertThat(stats.pages()).extracting(VisitStatsResponse.Page::path).doesNotContain(path);
+    }
+
+    @Test
+    void readingTakesEachViewsDeepestScrollAndLongestTime_neverTheirSum() throws Exception {
+        String path = "/it-" + tag;
+        String first = nextIp();
+        post(first, IPHONE, event("LEAVE", path, "\"scrollDepth\":40,\"engagedSeconds\":10"));
+        post(first, IPHONE, event("LEAVE", path, "\"scrollDepth\":80,\"engagedSeconds\":30"));
+        post(nextIp(), IPHONE, event("LEAVE", path, "\"scrollDepth\":100,\"engagedSeconds\":50"));
+
+        assertThat(visits.stats(1).reading())
+                .contains(new VisitStatsResponse.PageReading(path, 2, 40, 2, 2, 2, 1));
+    }
+
+    @Test
+    void clicksAndTheRegistrationFormAreCountedInVisitorDays() throws Exception {
+        String path = "/it-" + tag;
+        String field = "f" + tag;
+        String ip = nextIp();
+        post(ip, IPHONE, event("CLICK", path, "\"target\":\"hero:register\""));
+        post(ip, IPHONE, event("CLICK", path, "\"target\":\"hero:register\""));
+        post(nextIp(), IPHONE, event("CLICK", path, "\"target\":\"hero:register\""));
+        post(ip, IPHONE, event("REGISTER_FIELD", path, "\"target\":\"" + field + "\""));
+        post(ip, IPHONE, event("REGISTER_FIELD", path, "\"target\":\"" + field + "\""));
+        post(ip, IPHONE, event("REGISTER_ERROR", path, "\"target\":\"server:" + field + "\""));
+        long submittedBefore = visits.stats(1).formSubmitted();
+        post(ip, IPHONE, event("REGISTER_SUBMIT", path, ""));
+
+        VisitStatsResponse stats = visits.stats(1);
+
+        assertThat(stats.clicks()).contains(new VisitStatsResponse.Click(path, "hero:register", 2, 3));
+        assertThat(stats.formFields()).contains(new VisitStatsResponse.Share(field, 1));
+        assertThat(stats.formErrors()).contains(new VisitStatsResponse.Share("server:" + field, 1));
+        assertThat(stats.formSubmitted()).isEqualTo(submittedBefore + 1);
+    }
+
+    @Test
+    void everyHourAndWeekdayIsThere_andTheyAddUpToTheVisitors() throws Exception {
+        post(nextIp(), IPHONE, page("/it-" + tag));
+
+        VisitStatsResponse stats = visits.stats(1);
+
+        assertThat(stats.byHour()).hasSize(24).extracting(VisitStatsResponse.Slot::slot).startsWith(0).endsWith(23);
+        assertThat(stats.byWeekday()).hasSize(7).extracting(VisitStatsResponse.Slot::slot).startsWith(1).endsWith(7);
+        assertThat(stats.byHour().stream().mapToLong(VisitStatsResponse.Slot::visitors).sum())
+                .isEqualTo(stats.visitors());
+        assertThat(stats.byWeekday().stream().mapToLong(VisitStatsResponse.Slot::visitors).sum())
+                .isEqualTo(stats.visitors());
+    }
+
+    private static String event(String kind, String path, String extra) {
+        return "{\"kind\":\"" + kind + "\",\"path\":\"" + path + "\"" + (extra.isEmpty() ? "" : "," + extra) + "}";
+    }
+
     private void registeredMaster(String referrerHost) {
         UUID id = UUID.randomUUID();
         Timestamp now = Timestamp.from(Instant.now());

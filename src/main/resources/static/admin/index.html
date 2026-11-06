@@ -294,6 +294,7 @@
                     <div class="grid" id="visitsFunnel">
                         <div class="stat"><div class="label">Завантаження…</div></div>
                     </div>
+                    <p class="muted" id="visitsBots" style="margin-top:8px"></p>
                 </section>
 
                 <h2>Відвідувачі й реєстрації за день</h2>
@@ -309,6 +310,27 @@
                 <h2>Сторінки</h2>
                 <section class="card">
                     <div id="visitsPages"><p class="muted">Завантаження…</p></div>
+                </section>
+
+                <h2>Як читають сторінки</h2>
+                <section class="card">
+                    <div id="visitsReading"><p class="muted">Завантаження…</p></div>
+                </section>
+
+                <h2>Що натискають</h2>
+                <section class="card">
+                    <div id="visitsClicks"><p class="muted">Завантаження…</p></div>
+                </section>
+
+                <h2>Форма реєстрації — де зупиняються</h2>
+                <section class="card">
+                    <div id="visitsForm"><p class="muted">Завантаження…</p></div>
+                </section>
+
+                <h2>Коли заходять</h2>
+                <section class="card">
+                    <canvas id="visitsHoursChart" height="110"></canvas>
+                    <div id="visitsWeekdays"></div>
                 </section>
 
                 <h2>Пристрої, браузери, часові пояси</h2>
@@ -1008,14 +1030,18 @@
         // Step-to-step, as in the activation funnel: the number that says WHICH step loses people.
         const step = (label, n, prev) => `<div class="stat"><div class="label">${label}</div>`
             + `<div class="value">${numberFormat.format(n)}</div>`
-            + (prev === undefined ? '' : `<div class="sub">${ratio(n, prev)} з попереднього кроку</div>`)
+            + (prev === undefined ? '' : `<div class="sub">${visitRatio(n, prev)} з попереднього кроку</div>`)
             + '</div>';
         document.getElementById('visitsFunnel').innerHTML =
             step('Переглядів сторінок', v.pageviews) +
             step('Відвідувачі', v.visitors) +
             step('Відкрили реєстрацію', v.sawRegister, v.visitors) +
             step('Почали заповнювати', v.startedRegister, v.sawRegister) +
-            step('Зареєструвались', v.registered, v.startedRegister);
+            step('Надіслали форму', v.formSubmitted, v.startedRegister) +
+            step('Зареєструвались', v.registered, v.formSubmitted);
+        document.getElementById('visitsBots').textContent = v.likelyBots
+            ? `Не враховано ${v.likelyBots} ймовірних ботів: їхній браузер каже «часовий пояс UTC», так працюють сервери, а не люди.`
+            : '';
 
         const days = v.days || [];
         const ctx = document.getElementById('visitsChart').getContext('2d');
@@ -1049,6 +1075,11 @@
                     + `<td>${p.pageviews}</td></tr>`).join('')
                 + '</tbody></table>';
 
+        renderReading(v.reading || []);
+        renderClicks(v.clicks || []);
+        renderForm(v);
+        renderWhen(v.byHour || [], v.byWeekday || [], v.visitors);
+
         document.getElementById('visitsAudience').innerHTML =
             visitShares('Пристрій', v.devices || [], v.visitors, s => DEVICE_NAMES[s] || s)
             + visitShares('Система', v.systems || [], v.visitors)
@@ -1065,9 +1096,15 @@
                 <td>${c.source == null ? '<span class="muted">' + nullLabel + '</span>' : '<b>' + escapeHtml(c.source) + '</b>'}</td>
                 <td>${c.visitors}</td>
                 <td>${c.registered}</td>
-                <td>${ratio(c.registered, c.visitors)}</td>
+                <td>${visitRatio(c.registered, c.visitors)}</td>
             </tr>`).join('')
             + '</tbody></table>';
+    }
+
+    // A registration need not have a counted visit behind it (a browser that asks not to be tracked,
+    // one in UTC, a program), so here a step can outnumber the one before it: no share, not «450%».
+    function visitRatio(n, total) {
+        return n > total ? '<span class="muted">—</span>' : ratio(n, total);
     }
 
     function visitShares(title, rows, total, label = s => s) {
@@ -1079,6 +1116,115 @@
                 <td>${ratio(s.visitors, total)}</td>
             </tr>`).join('')
             + '</tbody></table>';
+    }
+
+    // ---- round 2 (V188): reading, clicks, the registration form, when ----
+    let visitsHoursChart = null;
+    const FORM_FIELDS = [
+        // Lower-case: the server folds every label, so «fullName» arrives as «fullname».
+        ['email', 'Email'], ['password', 'Пароль'], ['fullname', "Ім'я"], ['trades', 'Тип робіт'],
+        ['phone', 'Телефон'], ['companyname', 'Компанія'], ['promocode', 'Промокод'], ['consent', 'Згода з політикою'],
+    ];
+    const CLICK_NAMES = {
+        'nav:register': 'Шапка: «Спробувати безкоштовно»',
+        'nav:menu': 'Шапка: меню',
+        'hero:register': 'Перший екран: «Спробувати безкоштовно»',
+        'final:register': 'Унизу: «Спробувати безкоштовно»',
+        'link:/login': '«Увійти»',
+        'link:/register': '«Зареєструватися»',
+        'link:/': 'На головну',
+        'submit': 'Кнопка форми (порахувати / надіслати)',
+        'link:mailto': 'Написати на пошту',
+    };
+    const ERROR_NAMES = {
+        'server:email_already_registered': 'Пошта вже зареєстрована',
+        'server:email_domain_blocked': 'Пошта не приймається (одноразова чи недійсна)',
+        'server:rate_limited': 'Забагато спроб',
+    };
+    const WEEKDAYS = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Нд'];
+
+    function clickName(target) {
+        if (CLICK_NAMES[target]) return CLICK_NAMES[target];
+        if (target.startsWith('faq:')) return 'Питання FAQ №' + target.slice(4);
+        if (target.startsWith('anchor:')) return 'Меню: ' + target.slice(7);
+        if (target.startsWith('link:')) return 'Посилання ' + target.slice(5);
+        return target;
+    }
+
+    function errorName(target) {
+        if (ERROR_NAMES[target]) return ERROR_NAMES[target];
+        if (target.startsWith('field:')) {
+            const field = FORM_FIELDS.find(([key]) => key === target.slice(6));
+            return 'Не пройшло перевірку форми: ' + (field ? field[1] : target.slice(6));
+        }
+        if (target.startsWith('server:')) return 'Сервер відповів: ' + target.slice(7);
+        return target;
+    }
+
+    function seconds(n) {
+        return n < 60 ? `${n} с` : `${Math.floor(n / 60)} хв ${n % 60} с`;
+    }
+
+    function renderReading(rows) {
+        document.getElementById('visitsReading').innerHTML = rows.length === 0
+            ? '<p class="muted">Ще немає даних: вони з\'являються, коли відвідувач закриває чи ховає сторінку.</p>'
+            : `<table><thead><tr><th>Сторінка</th><th>Відвідувачі</th><th>Медіана часу</th>
+                <th class="hide-mobile">≥ 25%</th><th>≥ 50%</th><th class="hide-mobile">≥ 75%</th><th>До кінця</th></tr></thead><tbody>`
+                + rows.map(r => `<tr><td><b>${escapeHtml(r.path)}</b></td><td>${r.visitors}</td>
+                    <td>${seconds(r.medianSeconds)}</td>
+                    <td class="hide-mobile">${ratio(r.reached25, r.visitors)}</td><td>${ratio(r.reached50, r.visitors)}</td>
+                    <td class="hide-mobile">${ratio(r.reached75, r.visitors)}</td><td>${ratio(r.reached100, r.visitors)}</td></tr>`).join('')
+                + `</tbody></table><p class="muted" style="margin-top:8px">«Медіана часу» — скільки секунд сторінка була
+                   на екрані в типового відвідувача. «≥ 50%» — частка тих, хто догорнув до половини сторінки.</p>`;
+    }
+
+    function renderClicks(rows) {
+        document.getElementById('visitsClicks').innerHTML = rows.length === 0
+            ? '<p class="muted">Немає даних.</p>'
+            : `<table><thead><tr><th>Сторінка</th><th>Що натиснули</th><th>Відвідувачі</th>
+                <th class="hide-mobile">Натискань</th></tr></thead><tbody>`
+                + rows.map(c => `<tr><td>${escapeHtml(c.path)}</td>
+                    <td><b>${escapeHtml(clickName(c.target))}</b> <span class="muted">${escapeHtml(c.target)}</span></td>
+                    <td>${c.visitors}</td><td class="hide-mobile">${c.clicks}</td></tr>`).join('')
+                + '</tbody></table>';
+    }
+
+    function renderForm(v) {
+        const reached = Object.fromEntries((v.formFields || []).map(s => [s.value, s.visitors]));
+        const base = v.sawRegister;
+        const fields = `<table><thead><tr><th>Поле</th><th>Дійшли до нього</th></tr></thead><tbody>`
+            + FORM_FIELDS.map(([key, name]) => `<tr><td>${name}</td><td>${ratio(reached[key] || 0, base)}</td></tr>`).join('')
+            + `<tr><td><b>Надіслали форму</b></td><td>${visitRatio(v.formSubmitted, base)}</td></tr>`
+            + `<tr><td><b>Зареєструвались</b></td><td>${visitRatio(v.registered, base)}</td></tr>`
+            + '</tbody></table>';
+        const errors = (v.formErrors || []).length === 0 ? '' :
+            `<h2 style="text-transform:none; letter-spacing:0; margin-top:16px">Що зупинило</h2>
+             <table><thead><tr><th>Причина</th><th>Відвідувачі</th></tr></thead><tbody>`
+            + v.formErrors.map(e => `<tr><td>${escapeHtml(errorName(e.value))}</td><td>${e.visitors}</td></tr>`).join('')
+            + '</tbody></table>';
+        document.getElementById('visitsForm').innerHTML = (base ? fields : '<p class="muted">Ще ніхто не відкривав реєстрацію.</p>')
+            + errors
+            + `<p class="muted" style="margin-top:8px">Від тих, хто відкрив сторінку реєстрації. Рахується лише, до якого поля
+               людина дійшла, — що вона вводила, не надсилається. «Надіслали форму» — натиснули «Створити акаунт»
+               і форма пройшла перевірку; натискання з помилкою — у «Що зупинило». Реєстрацій буває більше, ніж
+               відвідувачів: хто попросив не відстежувати, реєструється, але не рахується.</p>`;
+    }
+
+    function renderWhen(hours, weekdays, total) {
+        const ctx = document.getElementById('visitsHoursChart').getContext('2d');
+        if (visitsHoursChart) visitsHoursChart.destroy();
+        visitsHoursChart = new Chart(ctx, {
+            type: 'bar',
+            data: {
+                labels: hours.map(h => String(h.slot).padStart(2, '0')),
+                datasets: [{ label: 'Відвідувачі за годиною (Київ)', data: hours.map(h => h.visitors), backgroundColor: '#8ab4f8' }]
+            },
+            options: { responsive: true, scales: { y: { beginAtZero: true, ticks: { precision: 0 } } } }
+        });
+        document.getElementById('visitsWeekdays').innerHTML =
+            `<table style="margin-top:12px"><thead><tr>${weekdays.map(d => `<th>${WEEKDAYS[d.slot - 1]}</th>`).join('')}</tr></thead>`
+            + `<tbody><tr>${weekdays.map(d => `<td>${d.visitors}</td>`).join('')}</tr></tbody></table>`
+            + `<p class="muted" style="margin-top:8px">Час першого заходу за день, за Києвом; усього ${total} відвідувачів.</p>`;
     }
 
     document.getElementById('visitsPeriod').addEventListener('change', loadVisits);

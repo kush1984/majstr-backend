@@ -78,7 +78,60 @@ Section 3 gains a paragraph: what is counted before registration, no IP and no c
   real client address on Railway?»; a day whose visitors are close to 1 while page views are many is the sign.
 - Cloudflare Web Analytics is also injected at the edge today (PWA open question «Cloudflare Web Analytics
   beacon vs the CSP»). With these numbers in the admin, turning it off is the simpler way out of that question.
-- A local e2e run against a local backend leaves rows in that LOCAL database: current Playwright Chromium
-  sends a plain Chrome browser string. Production never sees them; CI runs no backend.
+- ~~A local e2e run leaves rows in the local database~~: since round 2 an automated browser
+  (`navigator.webdriver`, Playwright included) sends nothing at all.
 - The admin page is about 9 px wider than a 375 px phone in every view (the container's padding), and the
   dashboard's tables much more. The visits view adds nothing to that; left as it was.
+
+---
+
+# Round 2: what happens between arriving and registering (V188, PWA 1.71.0)
+
+**Status:** built 2026-11-06. Backend `clean build --no-build-cache` green (2352 tests, none failed or
+skipped); PWA lint, both type checks, vitest (1739) and build green; e2e 5 and offline e2e 8 green on a real
+backend; the landing → register flow and the admin tab checked in a browser at 375 px. **Migration:** V188.
+**PWA:** 1.71.0.
+
+The first day of production data (4 visitors, 2 of them in a UTC time zone) showed two gaps: bots that run
+JavaScript and dress as Chrome were counted as people, and nothing said why the people who came did not
+register. The owner chose all four improvements.
+
+## What shipped
+1. **Bots.** The beacon sends nothing when `navigator.webdriver` is true (a browser driven by a program,
+   Playwright included). A row whose time zone is UTC (or GMT, Universal, Zulu) is kept but every report
+   query carries `HUMAN` and skips it; `likelyBots` counts those visitor-days alone, and the admin says so
+   under the funnel.
+2. **Reading.** `LEAVE` carries `scroll_depth` (per cent of the page that reached the bottom of the screen)
+   and `engaged_seconds` (time the page was visible, capped at an hour). Sent when the page is hidden,
+   closed (`pagehide`) or navigated away from in the SPA; a tab that comes back and leaves again sends the
+   running figures once more, so the report takes each view's MAX. Admin: per page, median seconds and the
+   share that reached 25 / 50 / 75 / 100 %.
+3. **Clicks.** One capture listener on public pages. A `data-track` label wins (the landing's three
+   «Спробувати» buttons, the menu, each FAQ question); otherwise a link is named by where it goes
+   (`link:/kalkulyator-plytky`, `anchor:#faq`, `link:mailto`) and a submit button is `submit`. Never the text.
+4. **The registration form.** `REGISTER_FIELD` the first time each field is focused, `REGISTER_SUBMIT` when
+   a form that passed its own checks is sent, `REGISTER_ERROR` with `field:<name>` (the form's own check) or
+   `server:<code>` (`email_already_registered`, …). Field names only.
+5. **When.** The Kyiv hour and weekday of each visitor-day's first row; every slot present, zeros included.
+
+Server side: one migration adds `target`, `scroll_depth`, `engaged_seconds` and widens the kind CHECK; a
+label must match `[a-z0-9:_#/.-]{1,60}` after lower-casing, a click or step without one is dropped, as is a
+LEAVE that measured nothing. The SEO pages call `trackPage(path)`; the SPA keeps `trackPublicVisits(router)`.
+
+## Worth knowing
+- `navigator.webdriver` also hides real visitors whose browser is automated (rare: remote-desktop tools,
+  some accessibility automation). Accepted.
+- A visitor in a UTC zone who IS a person (a phone set to UTC) is lost to the report. Accepted: at this
+  traffic one real person is cheaper to lose than half the table to servers.
+- The privacy policy names the new data (scroll, time on screen, buttons, form fields reached, the error
+  that stopped a submit); updated 06.11.2026.
+- Three things the browser check caught that every mocked test passed through:
+  - depth measured at arrival read the page before it rendered (100 % «read»), so it starts at 0 and is
+    measured on scroll and when the view ends;
+  - the server lower-cases a label, so the admin's field keys are lower-case (`fullname`, `companyname`);
+  - React Hook Form focuses the first invalid field itself, which counted as the visitor reaching it, so
+    focus is ignored for 500 ms after an invalid submit.
+- A registration need not have a counted visit behind it (DNT/GPC, a UTC browser, a program), so on this
+  tab registrations can outnumber the step before them. `visitRatio` shows «—» there instead of «450 %»;
+  the shared `ratio` the other tabs use is untouched.
+

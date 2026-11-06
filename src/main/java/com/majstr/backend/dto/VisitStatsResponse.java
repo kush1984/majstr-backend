@@ -27,6 +27,9 @@ public record VisitStatsResponse(
         /** Visitor-days that typed into the registration form. */
         long startedRegister,
         long registered,
+        /** Visitor-days whose browser reported a UTC time zone: servers, not people. Left out of every
+         *  other figure here and counted only in this one. */
+        long likelyBots,
         List<Day> days,
         List<Channel> referrers,
         List<Channel> utm,
@@ -36,8 +39,28 @@ public record VisitStatsResponse(
         List<Share> systems,
         List<Share> browsers,
         List<Share> timeZones,
-        List<Share> languages
+        List<Share> languages,
+        /** How far each page was read, from its LEAVE rows. */
+        List<PageReading> reading,
+        List<Click> clicks,
+        /** Registration form fields focused, by field name, in visitor-days. */
+        List<Share> formFields,
+        /** Visitor-days that pressed «Створити акаунт» with a form that passed its own checks. */
+        long formSubmitted,
+        /** What stopped a submit: {@code field:<name>} (the form's own check) or {@code server:<code>}. */
+        List<Share> formErrors,
+        /** Visitor-days by the Kyiv hour (0-23) and ISO weekday (1 = Monday) of their first visit. */
+        List<Slot> byHour,
+        List<Slot> byWeekday
 ) {
+
+    /** Per page: visitor-days that left it, the median seconds on screen, and how many reached each quarter. */
+    public record PageReading(String path, long visitors, long medianSeconds,
+                              long reached25, long reached50, long reached75, long reached100) {}
+
+    public record Click(String path, String target, long visitors, long clicks) {}
+
+    public record Slot(int slot, long visitors) {}
 
     public record Day(LocalDate day, long pageviews, long visitors, long registered) {}
 
