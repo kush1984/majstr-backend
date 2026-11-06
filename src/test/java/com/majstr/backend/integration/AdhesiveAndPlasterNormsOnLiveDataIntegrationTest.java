@@ -10,28 +10,32 @@ import java.util.List;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * V175's two re-read coefficients, read back off the applied schema so a later migration cannot
- * quietly re-seed the old figure (the pattern of {@code NormDataCorrectionsOnLiveDataIntegrationTest}).
+ * V175's plaster coefficients and V189's tile adhesive, read back off the applied schema so a later
+ * migration cannot quietly re-seed the old figure (the pattern of
+ * {@code NormDataCorrectionsOnLiveDataIntegrationTest}).
  */
 class AdhesiveAndPlasterNormsOnLiveDataIntegrationTest extends IntegrationTestBase {
 
     @Autowired JdbcTemplate jdbc;
 
-    /** Ceresit CM 17: ≈5,8 kg/m² at a 12 mm notch + ≈1 kg/m² on the tile — 7,0 up to 1000×1000. */
+    /**
+     * V189: an ordinary C2 at a 12 mm notch (7,6-7,8) plus the layer back-buttered on the tile is
+     * ≈8,5 from 600×600 up. V175's 7,0 came off an aerated, deliberately light C2.
+     */
     @Test
-    void aSquareFormatUpToAMetreLaysOnSevenKilograms() {
+    void everyBackButteredFormatLaysOnEightAndAHalf() {
         for (String position : new String[]{"укладання плитки 600х600", "укладання плитки 800х800",
-                "укладання плитки 1000х1000 мм"}) {
-            assertThat(qty(position, "TILE_ADHESIVE_C2")).as("%s", position).isEqualByComparingTo("7.0");
-        }
-    }
-
-    @Test
-    void theLargerFormatsKeepEightAndAHalf() {
-        for (String position : new String[]{"укладання плитки 600х1200", "укладання плитки 800х1600",
+                "укладання плитки 1000х1000 мм", "укладання плитки 600х1200", "укладання плитки 800х1600",
                 "укладання плитки 1200х2400 мм", "укладання плитки 1200х1200 мм"}) {
             assertThat(qty(position, "TILE_ADHESIVE_C2")).as("%s", position).isEqualByComparingTo("8.5");
         }
+    }
+
+    /** The same 12 mm notch with adhesive on the tile as well can never take less than without it. */
+    @Test
+    void aBackButteredSquareTakesNoLessThanAPlankOnTheSameNotch() {
+        assertThat(qty("укладання плитки 600х600", "TILE_ADHESIVE_C2"))
+                .isGreaterThanOrEqualTo(qty("укладання плитки 300х600", "TILE_ADHESIVE_C1"));
     }
 
     /** Knauf Rotband: ≈8,5 kg/m² at 10 mm — 0,9 per mm in every position that buys it by hand. */

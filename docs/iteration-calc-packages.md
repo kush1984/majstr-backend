@@ -54,7 +54,8 @@ top-up, bought, offer, old cache).
   висота.» when the partition is chosen (`data-for` takes a list of jobs). `seo-calc-cases` needed
   no edit: «Перегородка 12 м²» was the right label all along, the figures behind it were not.
 - **V175, library rows only:**
-  - TILE_ADHESIVE_C2 8,5 → 7,0 for 600×600, 800×800, 1000×1000 (both keys); 600×1200 and up keep 8,5;
+  - TILE_ADHESIVE_C2 8,5 → 7,0 for 600×600, 800×800, 1000×1000 (both keys); 600×1200 and up keep 8,5.
+    **Reversed by V189 (2026-11-06)**, see the last section;
   - PLASTER_GYPSUM 1,0 → 0,9 in every position;
   - recorded as checked, not changed: PLASTER_GYPSUM_MACHINE 0,95 and cement-lime 1,4 / 1,6 (the
     open question is resolved).
@@ -157,3 +158,29 @@ example printed from `calc-snapshot.json` (taken from `https://api.majstr.pro`, 
 - **Analytics:** the pages send no events (as before) — nothing to extend.
 - Deferred: the putty calculator (stage 4) — open question.
 
+
+## V189 — the 600×600 adhesive back to 8,5 (2026-11-06)
+
+**Status:** built 2026-11-06. Backend `clean build --no-build-cache` green (2356 tests, none failed or
+skipped); PWA lint, both type checks, vitest (1739) and build green; the snapshot taken from a local
+backend at V189 moved exactly one row. **Migration:** V189. **PWA:** 1.71.1 (snapshot only).
+
+Found while writing a video script off the live tile calculator: 300×600 took 7,8 kg/m² (C1) and the
+larger 600×600 7,0 (C2), while the page explains that from 600×600 up the consumption is HIGHER
+(adhesive on the base and on the tile).
+
+- **Why V175 was wrong here.** It read 7,0 off Ceresit CM 17 **Aero**: 5,8 at a 12 mm notch + ≈1 on
+  the tile. CM 17 Aero is aerated and deliberately light, the lightest C2 in `NORMS-SUMMARY` §2.2. The
+  ordinary C2 products in the same table give 7,6-7,8 at 12 mm (CM 14, CM 117, Kreisel 104-108); with
+  the back-buttered layer that is ≈8,5, V137's figure.
+- **V189, library rows only:** C2 7,0 → 8,5 for 600×600, 800×800 and 1000×1000 (both keys), and only
+  where the row is still at 7,0. A row that moved since is a `WARNING` and left as it is (the V176
+  lesson). 300×600 and the other C1 formats keep their figures.
+- **Masters' own norms are not touched**, like V175: `saveOwn` writes only the coefficient, so a fork is
+  always a figure the master typed, at 7,0 or not.
+- **Tests:** `AdhesiveAndPlasterNormsOnLiveDataIntegrationTest` pins 8,5 on every back-buttered format
+  and the invariant that would have caught V175: a 600×600 (C2) never takes less than a 300×600 (C1)
+  on the same notch. `TileAdhesiveBackButteredOnLiveDataIntegrationTest` migrates a throwaway database
+  from V188: rows at 7,0 move (both 1000×1000 keys), a moved row stays, his forks at 7,0 and 9,0 stay.
+- **Snapshot row that moves** (`seo:snapshot` after the deploy): 20 м² керамограніту 600×600, клей C2
+  175 кг (7 мішків) → 200 кг (8 мішків). Nothing else on the page changes.
