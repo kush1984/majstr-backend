@@ -507,7 +507,8 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(EmailDomainNotAllowedException.class)
     public ResponseEntity<ErrorResponse> handleEmailDomainBlocked(EmailDomainNotAllowedException ex, HttpServletRequest req) {
         ErrorResponse body = ErrorResponse.coded(HttpStatus.BAD_REQUEST.value(),
-                HttpStatus.BAD_REQUEST.getReasonPhrase(), msg(ex.getMessage()), req.getRequestURI(), "EMAIL_DOMAIN_BLOCKED");
+                HttpStatus.BAD_REQUEST.getReasonPhrase(), msg(ex.reason().messageKey()), req.getRequestURI(),
+                ex.reason().code());
         return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(body);
     }
 

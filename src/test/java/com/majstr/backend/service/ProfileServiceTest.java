@@ -142,7 +142,8 @@ class ProfileServiceTest {
         User u = user(false, "old@example.com");
         given(userRepository.findById(userId)).willReturn(Optional.of(u));
         org.mockito.BDDMockito.willThrow(
-                        new com.majstr.backend.exception.EmailDomainNotAllowedException("error.email.domain-not-allowed"))
+                        new com.majstr.backend.exception.EmailDomainNotAllowedException(
+                                com.majstr.backend.exception.EmailDomainNotAllowedException.Reason.DISPOSABLE))
                 .given(emailPolicyService).assertAcceptable("throwaway@mailinator.com");
 
         assertThatThrownBy(() -> profileService.updateProfile(userId, req("throwaway@mailinator.com")))

@@ -247,6 +247,10 @@ app:
       region: ${R2_REGION:auto}
   portal:
     public-base-url: ${PORTAL_BASE_URL:http://localhost:8080}
+  # Registration refuses a domain no mail reaches (no MX/A, or NXDOMAIN — a typo). Off where the
+  # addresses are made up: test and dev, whose e2e registers @majstr.test.
+  email-policy:
+    dns-check: true
   email:
     # Resend API key — env only, blank in local dev (then email is logged & skipped).
     resend-api-key: ${RESEND_API_KEY:}

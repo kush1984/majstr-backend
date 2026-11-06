@@ -44,12 +44,18 @@ public class RegisterRateLimitFilter extends OncePerRequestFilter {
     protected void doFilterInternal(HttpServletRequest request,
                                     HttpServletResponse response,
                                     FilterChain chain) throws ServletException, IOException {
-        RegisterRateLimiter.ConsumeResult result = rateLimiter.tryConsume(ClientIp.of(request));
+        String ip = ClientIp.of(request);
+        RegisterRateLimiter.ConsumeResult result = rateLimiter.tryConsume(ip);
         if (!result.allowed()) {
             writeRateLimited(request, response, result.retryAfterSeconds());
             return;
         }
         chain.doFilter(request, response);
+        // A refused form created nothing, so it is not an attempt. A 409 (address taken) still
+        // counts: refunding it would let anyone test which addresses have an account.
+        if (response.getStatus() == HttpStatus.BAD_REQUEST.value()) {
+            rateLimiter.refund(ip);
+        }
     }
 
     private void writeRateLimited(HttpServletRequest request, HttpServletResponse response,

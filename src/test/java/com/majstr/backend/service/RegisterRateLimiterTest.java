@@ -46,6 +46,35 @@ class RegisterRateLimiterTest {
         assertThat(blocked.retryAfterSeconds()).isPositive();
     }
 
+    /** A person whose address was refused corrects it and tries again, without spending his tries. */
+    @Test
+    void aRefusedAttemptGivesItsTryBack() {
+        String ip = "203.0.113.50";
+        for (int i = 0; i < 10; i++) {
+            assertThat(limiter.tryConsume(ip).allowed()).as("refused attempt %d", i + 1).isTrue();
+            limiter.refund(ip);
+        }
+        for (int i = 0; i < 3; i++) {
+            assertThat(limiter.tryConsume(ip).allowed()).as("real attempt %d", i + 1).isTrue();
+        }
+        assertThat(limiter.tryConsume(ip).allowed()).isFalse();
+    }
+
+    /** …but a script cycling bad addresses runs out: the refunds have their own cap. */
+    @Test
+    void refundsRunOut() {
+        String ip = "203.0.113.51";
+        int allowed = 0;
+        for (int i = 0; i < 100; i++) {
+            if (!limiter.tryConsume(ip).allowed()) {
+                break;
+            }
+            allowed++;
+            limiter.refund(ip);
+        }
+        assertThat(allowed).isEqualTo(3 + RegisterRateLimiter.REFUNDS_PER_WINDOW);
+    }
+
     @Test
     void limitIsPerIp() {
         String first = "203.0.113.1";

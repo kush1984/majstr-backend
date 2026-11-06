@@ -39,6 +39,9 @@ app:
       per-ip-per-minute: 100000
   billing:
     allow-dev-simulation: ${BILLING_ALLOW_DEV_SIM:true}
+  # The PWA's e2e registers @majstr.test, which no DNS knows.
+  email-policy:
+    dns-check: false
 
 logging:
   level:

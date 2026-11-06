@@ -134,6 +134,31 @@ class AuthControllerTest {
                 .andExpect(jsonPath("$.code", is("EMAIL_ALREADY_REGISTERED")));
     }
 
+    /** A typo and a throwaway are fixed differently, so they come back as two codes and two texts. */
+    @Test
+    void register_aRefusedEmailSaysWhichKind() throws Exception {
+        given(authService.register(any(RegisterRequest.class)))
+                .willThrow(new com.majstr.backend.exception.EmailDomainNotAllowedException(
+                        com.majstr.backend.exception.EmailDomainNotAllowedException.Reason.NO_MAIL));
+        mockMvc.perform(post("/api/auth/register")
+                        .header("Accept-Language", "uk")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(validRegisterRequest("ivan@gmal.com"))))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code", is("EMAIL_NO_MAIL")))
+                .andExpect(jsonPath("$.message", is(
+                        "Схоже, в адресі помилка: на цей домен пошта не приходить. Перевірте, що написано після @.")));
+
+        given(authService.register(any(RegisterRequest.class)))
+                .willThrow(new com.majstr.backend.exception.EmailDomainNotAllowedException(
+                        com.majstr.backend.exception.EmailDomainNotAllowedException.Reason.DISPOSABLE));
+        mockMvc.perform(post("/api/auth/register")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(validRegisterRequest("x@yopmail.com"))))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code", is("EMAIL_DISPOSABLE")));
+    }
+
     @Test
     void register_emailConstraintRace_isMappedTo409NotServerError() throws Exception {
         RegisterRequest req = validRegisterRequest("race@example.com");

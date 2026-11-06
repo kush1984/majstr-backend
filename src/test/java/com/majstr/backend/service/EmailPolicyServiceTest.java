@@ -1,21 +1,23 @@
 package com.majstr.backend.service;
 
 import com.majstr.backend.exception.EmailDomainNotAllowedException;
+import com.majstr.backend.exception.EmailDomainNotAllowedException.Reason;
+import com.majstr.backend.service.EmailPolicyService.MailAnswer;
 import org.junit.jupiter.api.Test;
 
+import java.util.concurrent.atomic.AtomicInteger;
+
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.Assertions.assertThatCode;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
- * Pure unit tests for the anti-abuse email policy. Canonicalization is fully
- * deterministic; the disposable-domain check short-circuits before any DNS, so no
- * network is touched here. The MX fail-open path is intentionally not unit-tested
- * (it performs real DNS and always allows on failure).
+ * Pure unit tests for the anti-abuse email policy. DNS is a lookup handed in, so every answer it can
+ * give is exercised without touching the network.
  */
 class EmailPolicyServiceTest {
 
-    private final EmailPolicyService service = new EmailPolicyService();
+    private final EmailPolicyService service = new EmailPolicyService(domain -> MailAnswer.ACCEPTS);
 
     @Test
     void canonicalize_gmail_dropsDotsAndPlusTag() {
@@ -39,8 +41,67 @@ class EmailPolicyServiceTest {
     }
 
     @Test
-    void assertAcceptable_disposableDomain_throws() {
-        assertThatThrownBy(() -> service.assertAcceptable("throwaway@mailinator.com"))
+    void aDisposableDomainIsRefusedAsDisposable_beforeAnyDns() {
+        AtomicInteger lookups = new AtomicInteger();
+        EmailPolicyService policy = new EmailPolicyService(domain -> {
+            lookups.incrementAndGet();
+            return MailAnswer.ACCEPTS;
+        });
+
+        assertThatThrownBy(() -> policy.assertAcceptable("throwaway@mailinator.com"))
+                .isInstanceOfSatisfying(EmailDomainNotAllowedException.class,
+                        e -> assertThat(e.reason()).isEqualTo(Reason.DISPOSABLE));
+        assertThat(lookups).hasValue(0);
+    }
+
+    /** gmal.com exists and takes no mail: a typo of gmail.com, not a throwaway. */
+    @Test
+    void aDomainWithoutMailIsRefusedAsATypo() {
+        EmailPolicyService policy = new EmailPolicyService(domain -> MailAnswer.NO_MAIL);
+
+        assertThatThrownBy(() -> policy.assertAcceptable("ivan@gmal.com"))
+                .isInstanceOfSatisfying(EmailDomainNotAllowedException.class,
+                        e -> assertThat(e.reason()).isEqualTo(Reason.NO_MAIL));
+    }
+
+    /** gmail.con does not exist: the account would never see its verification letter. */
+    @Test
+    void aDomainThatDoesNotExistIsRefusedAsATypo() {
+        EmailPolicyService policy = new EmailPolicyService(domain -> MailAnswer.NO_DOMAIN);
+
+        assertThatThrownBy(() -> policy.assertAcceptable("ivan@gmail.con"))
+                .isInstanceOfSatisfying(EmailDomainNotAllowedException.class,
+                        e -> assertThat(e.reason()).isEqualTo(Reason.NO_MAIL));
+    }
+
+    /** A timeout or a resolver that is not there must never block a real person. */
+    @Test
+    void anUnansweredLookupLetsTheAddressThrough() {
+        EmailPolicyService policy = new EmailPolicyService(domain -> MailAnswer.UNKNOWN);
+
+        assertThatCode(() -> policy.assertAcceptable("ivan@ukr.net")).doesNotThrowAnyException();
+    }
+
+    @Test
+    void aDomainIsLookedUpOnceAndCached() {
+        AtomicInteger lookups = new AtomicInteger();
+        EmailPolicyService policy = new EmailPolicyService(domain -> {
+            lookups.incrementAndGet();
+            return MailAnswer.ACCEPTS;
+        });
+
+        policy.assertAcceptable("a@ukr.net");
+        policy.assertAcceptable("b@UKR.NET");
+
+        assertThat(lookups).hasValue(1);
+    }
+
+    @Test
+    void withDnsOff_aMadeUpDomainPasses_butAThrowawayStillDoesNot() {
+        EmailPolicyService policy = new EmailPolicyService(false);
+
+        assertThatCode(() -> policy.assertAcceptable("e2e@majstr.test")).doesNotThrowAnyException();
+        assertThatThrownBy(() -> policy.assertAcceptable("x@yopmail.com"))
                 .isInstanceOf(EmailDomainNotAllowedException.class);
     }
 

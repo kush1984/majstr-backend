@@ -1,10 +1,14 @@
 package com.majstr.backend.service;
 
 import com.majstr.backend.exception.EmailDomainNotAllowedException;
+import com.majstr.backend.exception.EmailDomainNotAllowedException.Reason;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.io.ClassPathResource;
 import org.springframework.stereotype.Service;
 
+import javax.naming.NameNotFoundException;
 import javax.naming.directory.Attribute;
 import javax.naming.directory.Attributes;
 import javax.naming.directory.DirContext;
@@ -30,8 +34,11 @@ import java.util.Locale;
  *   <li><b>Disposable-domain blocklist</b> — reject known throwaway providers
  *       (loaded from {@code anti-abuse/disposable-email-domains.txt}).</li>
  *   <li><b>Mail-exchanger (MX/A) check</b> — reject a domain that can't receive
- *       mail (a made-up domain). <b>Fail-open:</b> a DNS hiccup/timeout must never
- *       block a legitimate registration, so lookup errors are treated as "ok".</li>
+ *       mail: one with neither record, or one that does not exist (NXDOMAIN). In practice
+ *       both are typos (gmal.com, gmail.con), and an account on one never sees its
+ *       verification letter. <b>Fail-open:</b> a DNS hiccup/timeout must never block a
+ *       legitimate registration, so any other lookup error lets the address through.
+ *       {@code app.email-policy.dns-check: false} skips DNS (tests: their addresses are made up).</li>
  *   <li><b>Canonicalization</b> — collapse address aliases (gmail dots + plus tags,
  *       plus tags on other plus-aware providers) to one canonical form used for
  *       duplicate-account detection, so {@code j.o.hn+2@gmail.com} can't sidestep
@@ -58,12 +65,27 @@ public class EmailPolicyService {
     private static final Duration MX_CACHE_TTL = Duration.ofHours(1);
     private static final int MX_CACHE_LIMIT = 10_000;
 
-    private record MxAnswer(boolean accepts, Instant expiresAt) { }
+    /** What DNS says about a domain's mail. UNKNOWN (timeout, SERVFAIL, no resolver) lets the address through. */
+    enum MailAnswer { ACCEPTS, NO_MAIL, NO_DOMAIN, UNKNOWN }
+
+    @FunctionalInterface
+    interface MailExchangerLookup {
+        MailAnswer lookUp(String domain);
+    }
+
+    private record CachedAnswer(MailAnswer answer, Instant expiresAt) { }
 
     private final Set<String> disposableDomains;
-    private final Map<String, MxAnswer> mxAnswers = new ConcurrentHashMap<>();
+    private final MailExchangerLookup lookup;
+    private final Map<String, CachedAnswer> mxAnswers = new ConcurrentHashMap<>();
 
-    public EmailPolicyService() {
+    @Autowired
+    public EmailPolicyService(@Value("${app.email-policy.dns-check:true}") boolean dnsCheck) {
+        this(dnsCheck ? EmailPolicyService::lookUpMailExchanger : domain -> MailAnswer.UNKNOWN);
+    }
+
+    EmailPolicyService(MailExchangerLookup lookup) {
+        this.lookup = lookup;
         this.disposableDomains = loadBlocklist();
         log.info("Loaded {} disposable email domains for the registration blocklist", disposableDomains.size());
     }
@@ -111,33 +133,35 @@ public class EmailPolicyService {
         String domain = email.substring(at + 1);
 
         if (disposableDomains.contains(domain)) {
-            throw new EmailDomainNotAllowedException("error.email.domain-not-allowed");
+            refuse(domain, Reason.DISPOSABLE);
         }
-        if (!hasMailExchanger(domain)) {
-            throw new EmailDomainNotAllowedException("error.email.domain-not-allowed");
+        MailAnswer answer = mailAnswer(domain);
+        if (answer == MailAnswer.NO_MAIL || answer == MailAnswer.NO_DOMAIN) {
+            refuse(domain, Reason.NO_MAIL);
         }
     }
 
-    /**
-     * True if {@code domain} has an MX (or fallback A) record — i.e. it can receive
-     * mail. Fail-open: any lookup failure (SERVFAIL, timeout, no DNS) returns true so
-     * a transient DNS problem never blocks a real user.
-     */
-    private boolean hasMailExchanger(String domain) {
+    /** The DOMAIN only, never the address: enough to tell a typo from a throwaway in the logs. */
+    private static void refuse(String domain, Reason reason) {
+        log.info("Email refused ({}): domain {}", reason, domain);
+        throw new EmailDomainNotAllowedException(reason);
+    }
+
+    private MailAnswer mailAnswer(String domain) {
         Instant now = Instant.now();
-        MxAnswer cached = mxAnswers.get(domain);
+        CachedAnswer cached = mxAnswers.get(domain);
         if (cached != null && cached.expiresAt().isAfter(now)) {
-            return cached.accepts();
+            return cached.answer();
         }
-        boolean accepts = lookUpMailExchanger(domain);
+        MailAnswer answer = lookup.lookUp(domain);
         if (mxAnswers.size() >= MX_CACHE_LIMIT) {
             mxAnswers.clear();
         }
-        mxAnswers.put(domain, new MxAnswer(accepts, now.plus(MX_CACHE_TTL)));
-        return accepts;
+        mxAnswers.put(domain, new CachedAnswer(answer, now.plus(MX_CACHE_TTL)));
+        return answer;
     }
 
-    private boolean lookUpMailExchanger(String domain) {
+    private static MailAnswer lookUpMailExchanger(String domain) {
         try {
             Hashtable<String, String> env = new Hashtable<>();
             env.put("java.naming.factory.initial", "com.sun.jndi.dns.DnsContextFactory");
@@ -148,13 +172,16 @@ public class EmailPolicyService {
                 Attributes attrs = ctx.getAttributes(domain, new String[]{"MX", "A"});
                 Attribute mx = attrs.get("MX");
                 Attribute a = attrs.get("A");
-                return (mx != null && mx.size() > 0) || (a != null && a.size() > 0);
+                return (mx != null && mx.size() > 0) || (a != null && a.size() > 0)
+                        ? MailAnswer.ACCEPTS : MailAnswer.NO_MAIL;
             } finally {
                 ctx.close();
             }
+        } catch (NameNotFoundException e) {
+            return MailAnswer.NO_DOMAIN;
         } catch (Exception e) {
             log.debug("MX lookup failed for {} — allowing (fail-open): {}", domain, e.toString());
-            return true;
+            return MailAnswer.UNKNOWN;
         }
     }
 

@@ -24,6 +24,9 @@ app:
       max-per-hour: 100000
   broadcast:
     send-interval-ms: 0
+  # The addresses here are made up (@majstr.test, @t.ua): a test must not depend on what DNS says.
+  email-policy:
+    dns-check: false
   email:
     # Literal blank: a RESEND_API_KEY in somebody's shell must never turn a test into real mail.
     resend-api-key: ""
