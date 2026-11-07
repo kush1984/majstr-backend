@@ -222,6 +222,11 @@
                     <div id="bySource"><p class="muted">Завантаження…</p></div>
                 </section>
 
+                <h2>Просять допомогти з налаштуванням</h2>
+                <section class="card">
+                    <div id="helpRequests"><p class="muted">Завантаження…</p></div>
+                </section>
+
                 <h2>Інтерес до PRO (painted door)</h2>
                 <section class="card">
                     <div class="grid" id="upgradeStats">
@@ -902,6 +907,19 @@
               + `</tbody></table>`;
     }
 
+    // «Залиште телефон — передзвонимо» (V191): who asked, with the number they left.
+    async function loadHelpRequests() {
+        const resp = await api('/admin/metrics/help-requests');
+        if (!resp.ok) return;
+        const rows = await resp.json();
+        const fmt = iso => iso ? dateFormat.format(new Date(iso)) : '—';
+        document.getElementById('helpRequests').innerHTML = rows.length === 0
+            ? '<p class="muted">Ще ніхто не просив.</p>'
+            : `<table><thead><tr><th>Телефон</th><th>Email</th><th class="hide-mobile">Ім'я</th><th>Коли</th></tr></thead><tbody>`
+              + rows.map(r => `<tr><td><a href="tel:${escapeHtml(r.phone)}">${escapeHtml(r.phone)}</a></td><td>${escapeHtml(r.email)}</td><td class="hide-mobile">${r.fullName ? escapeHtml(r.fullName) : '<span class="muted">—</span>'}</td><td class="muted">${fmt(r.requestedAt)}</td></tr>`).join('')
+              + `</tbody></table>`;
+    }
+
     async function loadUserDetail(id) {
         document.getElementById('detailOverlay').style.display = 'block';
         document.getElementById('detailBody').innerHTML = '<p>Завантаження…</p>';
@@ -1129,6 +1147,7 @@
         'nav:register': 'Шапка: «Спробувати безкоштовно»',
         'nav:menu': 'Шапка: меню',
         'hero:register': 'Перший екран: «Спробувати безкоштовно»',
+        'hero:sample': 'Перший екран: «Подивитися приклад кошторису»',
         'final:register': 'Унизу: «Спробувати безкоштовно»',
         'link:/login': '«Увійти»',
         'link:/register': '«Зареєструватися»',
@@ -2091,6 +2110,7 @@
             await loadOverview();
             await loadFunnel();
             await loadBySource();
+            await loadHelpRequests();
             await loadUpgradeInterest();
             await loadGrowth();
             await loadUsers();

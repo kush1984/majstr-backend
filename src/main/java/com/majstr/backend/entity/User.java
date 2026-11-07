@@ -52,11 +52,12 @@ public class User {
     @Column(name = "password_hash", nullable = false, length = 255)
     private String passwordHash;
 
-    @Column(name = "full_name", nullable = false, length = 255)
+    /** Optional since V190: asked when the first document leaves for a client (SendReadiness). */
+    @Column(name = "full_name", length = 255)
     private String fullName;
 
     /**
-     * Trades the contractor works in — at least one. Modeled as an
+     * Trades the contractor works in — none until he picks them after registration. Modeled as an
      * {@link ElementCollection} (a value set owned by the user) rather than
      * a separate entity: trades have no identity or attributes of their own
      * and nothing references them. LAZY + {@link BatchSize} keeps it cheap;
@@ -71,10 +72,12 @@ public class User {
     @Builder.Default
     private Set<Trade> trades = new LinkedHashSet<>();
 
-    @Column(name = "phone", nullable = false, length = 50)
+    /** Optional since V190 — an empty phone prints no phone line. */
+    @Column(name = "phone", length = 50)
     private String phone;
 
-    @Column(name = "company_name", nullable = false, length = 255)
+    /** Optional since V190 — an empty company prints the name ({@code ContractorName}). */
+    @Column(name = "company_name", length = 255)
     private String companyName;
 
     @Column(name = "logo_url", length = 512)
@@ -197,6 +200,10 @@ public class User {
      *  trial can be claimed at most once and admin can see who tried PRO. */
     @Column(name = "trial_started_at")
     private Instant trialStartedAt;
+
+    /** When he asked us to call and help him set up (V191). NULL = never asked. */
+    @Column(name = "help_requested_at")
+    private Instant helpRequestedAt;
 
     /** First-touch referral source for partner rev-share (DIRECT by default; a
      *  partner code like LIGA when the master arrived via a ?ref= link or promo).

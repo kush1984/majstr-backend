@@ -175,6 +175,7 @@ class EstimateServiceTest {
     void renderPdf_embedsOnlyPhotosOfThisEstimatesProject() throws Exception {
         Estimate estimate = ownedEstimate(ownerId);
         estimate.getProject().getOwner().setEmailVerified(true);
+        estimate.getProject().getOwner().setFullName("Іван"); // SendReadiness (V190)
         given(estimateRepository.findById(estimateId)).willReturn(Optional.of(estimate));
         given(itemRepository.findByEstimateIdOrderBySortOrderAscIdAsc(estimateId)).willReturn(List.of());
 
@@ -207,6 +208,7 @@ class EstimateServiceTest {
     void renderPdf_stopsAddingChosenPhotosAtTheAppendixBudget() throws Exception {
         Estimate estimate = ownedEstimate(ownerId);
         estimate.getProject().getOwner().setEmailVerified(true);
+        estimate.getProject().getOwner().setFullName("Іван"); // SendReadiness (V190)
         given(estimateRepository.findById(estimateId)).willReturn(Optional.of(estimate));
         given(itemRepository.findByEstimateIdOrderBySortOrderAscIdAsc(estimateId)).willReturn(List.of());
         UUID first = UUID.randomUUID();

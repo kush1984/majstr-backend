@@ -102,8 +102,12 @@ public class EstimatePdfService {
 
         PdfPCell info = new PdfPCell();
         info.setBorder(0);
-        info.addElement(new Paragraph(model.contractor().getCompanyName(), fonts.bold(16)));
-        info.addElement(new Paragraph("Тел.: " + model.contractor().getPhone(), fonts.regular(10)));
+        info.addElement(new Paragraph(ContractorName.display(model.contractor()), fonts.bold(16)));
+        // Optional since V190: no phone, no line — never «Тел.: null».
+        String phone = ContractorName.phone(model.contractor());
+        if (phone != null) {
+            info.addElement(new Paragraph("Тел.: " + phone, fonts.regular(10)));
+        }
         header.addCell(info);
 
         PdfPCell logoCell = new PdfPCell();
@@ -135,7 +139,9 @@ public class EstimatePdfService {
         info.setSpacingAfter(8);
 
         addInfoRow(info, "Об'єкт:", project.getName());
-        addInfoRow(info, "Адреса:", project.getAddress());
+        if (project.getAddress() != null && !project.getAddress().isBlank()) {
+            addInfoRow(info, "Адреса:", project.getAddress().trim());
+        }
         if (client != null) {
             addInfoRow(info, "Клієнт:", client.getFullName() + ", " + client.getPhone());
         }
@@ -286,7 +292,7 @@ public class EstimatePdfService {
         PdfPTable signatures = new PdfPTable(2);
         signatures.setWidthPercentage(100);
         signatures.setSpacingBefore(30);
-        signatures.addCell(signatureCell("Підрядник:", model.contractor().getFullName()));
+        signatures.addCell(signatureCell("Підрядник:", ContractorName.signer(model.contractor())));
         signatures.addCell(signatureCell("Клієнт:", model.client() == null ? "" : model.client().getFullName()));
         doc.add(signatures);
     }

@@ -72,10 +72,12 @@ public class AuthService {
                 .email(email)
                 .emailCanonical(canonical)
                 .passwordHash(passwordHash)
-                .fullName(req.fullName().trim())
-                .trades(new LinkedHashSet<>(req.trades()))
-                .phone(req.phone().trim())
-                .companyName(req.companyName().trim())
+                // All three optional since V190 — blank is NULL, so a document's fallback rule
+                // (ContractorName) and SendReadiness see «not given», never a whitespace name.
+                .fullName(trimToNull(req.fullName()))
+                .trades(new LinkedHashSet<>(req.tradesOrEmpty()))
+                .phone(trimToNull(req.phone()))
+                .companyName(trimToNull(req.companyName()))
                 // Consent is required (@AssertTrue on the request) — stamp it.
                 .consentedToPrivacyAt(Instant.now())
                 .referralSource(attribution.source())
@@ -95,8 +97,8 @@ public class AuthService {
                 .build();
         user = userRepository.save(user);
         createCustomTrades(user, req.customTrades());
-        // Copy starter catalog templates for every chosen trade (merged,
-        // de-duplicated) so they never see an empty library on first login.
+        // Copy starter catalog templates for every chosen trade (merged, de-duplicated). A new
+        // build sends none — the trades screen after login fills the catalog when he picks.
         catalogTemplateService.seedForUser(user);
         // Issue a verification token and email it (async, fail-soft — a mail
         // problem must not break registration; the user can resend later).

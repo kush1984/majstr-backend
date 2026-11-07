@@ -350,6 +350,13 @@ public class GlobalExceptionHandler {
         return ResponseEntity.status(HttpStatus.FORBIDDEN).body(body);
     }
 
+    @ExceptionHandler(SenderNameMissingException.class)
+    public ResponseEntity<ErrorResponse> handleSenderNameMissing(SenderNameMissingException ex, HttpServletRequest req) {
+        ErrorResponse body = ErrorResponse.coded(HttpStatus.FORBIDDEN.value(),
+                HttpStatus.FORBIDDEN.getReasonPhrase(), msg(ex.getMessage()), req.getRequestURI(), "SENDER_NAME_REQUIRED");
+        return ResponseEntity.status(HttpStatus.FORBIDDEN).body(body);
+    }
+
     @ExceptionHandler(InvalidVerificationTokenException.class)
     public ResponseEntity<ErrorResponse> handleInvalidVerificationToken(InvalidVerificationTokenException ex, HttpServletRequest req) {
         return build(HttpStatus.BAD_REQUEST, msg(ex.getMessage()), req);

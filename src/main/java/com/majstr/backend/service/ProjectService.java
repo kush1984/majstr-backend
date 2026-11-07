@@ -93,7 +93,7 @@ public class ProjectService {
                 .owner(owner)
                 .client(client)
                 .name(req.name().trim())
-                .address(req.address().trim())
+                .address(normalize(req.address()))
                 .description(normalize(req.description()))
                 .status(ProjectStatus.DRAFT)
                 .build();
@@ -134,7 +134,8 @@ public class ProjectService {
     public ProjectResponse update(UUID id, ProjectRequest req, UUID ownerId) {
         Project project = loadOwned(id, ownerId);
         project.setName(req.name().trim());
-        project.setAddress(req.address().trim());
+        // Blank clears it (V192): an address typed by mistake can be taken back on edit.
+        project.setAddress(normalize(req.address()));
         project.setDescription(normalize(req.description()));
         project.setClient(req.clientId() == null ? null : clientService.loadOwned(req.clientId(), ownerId));
         // Editing a project never touches status, so completedAt is preserved.

@@ -1,7 +1,11 @@
 package com.majstr.backend.service;
 
+import com.majstr.backend.dto.HelpRequest;
+import com.majstr.backend.dto.ProfileTradesRequest;
 import com.majstr.backend.dto.ProfileUpdateRequest;
+import com.majstr.backend.dto.SenderProfileRequest;
 import com.majstr.backend.dto.UserResponse;
+import com.majstr.backend.entity.Trade;
 import com.majstr.backend.entity.User;
 import com.majstr.backend.entity.UserTrade;
 import com.majstr.backend.exception.CustomTradeDuplicateException;
@@ -25,6 +29,7 @@ import java.io.IOException;
 import java.time.Instant;
 import java.util.Arrays;
 import java.util.LinkedHashSet;
+import java.util.Set;
 import java.util.UUID;
 import java.util.Locale;
 
@@ -46,6 +51,7 @@ public class ProfileService {
     private final EmailPolicyService emailPolicyService;
     private final PlatformTransactionManager transactionManager;
     private final AbuseLimits abuseLimits;
+    private final CatalogTemplateService catalogTemplateService;
 
     /** Stamp privacy-policy consent (one-time login modal for users who predate the
      *  registration checkbox). Idempotent — a prior stamp is kept. */
@@ -109,16 +115,63 @@ public class ProfileService {
     private UserResponse saveProfile(UUID userId, ProfileUpdateRequest req) {
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new ResourceNotFoundException("User not found: " + userId));
-        user.setFullName(req.fullName().trim());
-        user.setPhone(req.phone().trim());
-        user.setCompanyName(req.companyName().trim());
-        // Replacing the trade set never touches the user's catalog items — those
-        // are independent once seeded at registration, and removing a system trade
-        // (down to none, relying on custom trades instead) is a supported end state.
-        user.setTrades(new LinkedHashSet<>(req.trades()));
+        // Optional since V190 — blank is NULL, see ContractorName.
+        user.setFullName(trimToNull(req.fullName()));
+        user.setPhone(trimToNull(req.phone()));
+        user.setCompanyName(trimToNull(req.companyName()));
+        replaceTrades(user, req.trades());
         applyEmailChange(user, req.email());
         applyRequisites(user, req);
         return response(user);
+    }
+
+    /** The «Чим займаєтесь?» screen (V190): the system trades alone, an empty set included. */
+    @Transactional
+    public UserResponse updateTrades(UUID userId, ProfileTradesRequest req) {
+        User user = loadUser(userId);
+        replaceTrades(user, req.trades());
+        return response(user);
+    }
+
+    /** «Як вас підписати в документі?» (V190): the three fields a document prints, nothing else. */
+    @Transactional
+    public UserResponse updateSender(UUID userId, SenderProfileRequest req) {
+        User user = loadUser(userId);
+        user.setFullName(req.fullName().trim());
+        user.setPhone(trimToNull(req.phone()));
+        user.setCompanyName(trimToNull(req.companyName()));
+        return response(user);
+    }
+
+    /**
+     * «Залиште телефон — передзвонимо» (V191): the phone goes to the profile, where documents read it
+     * too, and the first time he asks is kept — asking again only updates the number.
+     */
+    @Transactional
+    public UserResponse requestHelp(UUID userId, HelpRequest req) {
+        User user = loadUser(userId);
+        user.setPhone(req.phone().trim());
+        if (user.getHelpRequestedAt() == null) {
+            user.setHelpRequestedAt(Instant.now());
+        }
+        return response(user);
+    }
+
+    /**
+     * A trade the master did not have before brings its starter catalog with it, on every door that
+     * sets trades. The profile used to ASK («додати набір?»), and «Не зараз» left a trade whose
+     * templates showed up and then priced every line at 0 ₴. The merge never overwrites or duplicates
+     * (name + type + unit), so filling unasked is safe. Removing a trade never touches the catalog —
+     * those items are his once copied, and a set down to none (custom trades only) is a supported
+     * end state.
+     */
+    private void replaceTrades(User user, Set<Trade> requested) {
+        Set<Trade> added = new LinkedHashSet<>(requested);
+        added.removeAll(user.getTrades());
+        user.setTrades(new LinkedHashSet<>(requested));
+        if (!added.isEmpty()) {
+            catalogTemplateService.addTemplatesForTrades(user, added);
+        }
     }
 
     /**

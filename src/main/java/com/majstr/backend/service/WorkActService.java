@@ -121,6 +121,8 @@ public class WorkActService {
             if (frozen.isPresent()) {
                 return new WorkActPdfService.PdfJob(frozen.get().pdfModel(), frozen.get().pdfKey());
             }
+            // A live act prints today's «Виконавець» — which needs a name since V190.
+            SendReadiness.requireName(act.getProject().getOwner());
             List<WorkActItem> items = itemRepository.findByWorkActIdOrderBySortOrderAscIdAsc(id);
             Map<UUID, String> names = new HashMap<>();
             items.stream().map(WorkActItem::getEstimateId).filter(Objects::nonNull).distinct().forEach(estId ->

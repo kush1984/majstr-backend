@@ -57,7 +57,9 @@ public record UserResponse(
         Short taxGroup,
         BigDecimal taxRate,
         String docCity,
-        ActNumberFormat actNumberFormat
+        ActNumberFormat actNumberFormat,
+        // When he asked for a setup call (V191) — the PWA stops offering it once set.
+        Instant helpRequestedAt
 ) {
     /** {@code customTrades} is a separate explicit query, deliberately NOT a lazy collection on
      *  {@link User} — this factory is called from many places (auth, profile, billing), and riding
@@ -95,7 +97,8 @@ public record UserResponse(
                 user.getTaxGroup(),
                 user.getTaxRate(),
                 user.getDocCity(),
-                user.getActNumberFormat()
+                user.getActNumberFormat(),
+                user.getHelpRequestedAt()
         );
     }
 

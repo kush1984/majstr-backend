@@ -2,11 +2,13 @@ package com.majstr.backend.controller;
 
 import com.majstr.backend.dto.ActivationFunnelResponse;
 import com.majstr.backend.dto.CrewUsageResponse;
+import com.majstr.backend.dto.HelpRequestLead;
 import com.majstr.backend.dto.MetricsGrowthResponse;
 import com.majstr.backend.dto.MetricsOverviewResponse;
 import com.majstr.backend.dto.SourceBreakdownResponse;
 import com.majstr.backend.dto.UpgradeInterestResponse;
 import com.majstr.backend.dto.VisitStatsResponse;
+import com.majstr.backend.repository.UserRepository;
 import com.majstr.backend.service.MetricsService;
 import com.majstr.backend.service.SiteVisitService;
 import com.majstr.backend.service.UpgradeEventService;
@@ -18,6 +20,8 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+
+import java.util.List;
 import java.util.Locale;
 
 @RestController
@@ -30,6 +34,7 @@ public class AdminMetricsController {
     private final MetricsService metricsService;
     private final UpgradeEventService upgradeEventService;
     private final SiteVisitService siteVisitService;
+    private final UserRepository userRepository;
 
     @Operation(summary = "Aggregate snapshot for the admin dashboard")
     @GetMapping("/overview")
@@ -41,6 +46,15 @@ public class AdminMetricsController {
     @GetMapping("/upgrade-interest")
     public UpgradeInterestResponse upgradeInterest() {
         return upgradeEventService.interestStats();
+    }
+
+    @Operation(summary = "Masters who asked for a setup call, newest first, with the phone they left (V191)")
+    @GetMapping("/help-requests")
+    public List<HelpRequestLead> helpRequests() {
+        return userRepository.findTop200ByHelpRequestedAtIsNotNullOrderByHelpRequestedAtDesc().stream()
+                .map(u -> new HelpRequestLead(u.getId(), u.getEmail(), u.getFullName(), u.getPhone(),
+                        u.getHelpRequestedAt()))
+                .toList();
     }
 
     @Operation(summary = "Activation funnel across masters (registered → verified → project → estimate → shared → signed)")

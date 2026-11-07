@@ -12,6 +12,7 @@ import com.majstr.backend.entity.Project;
 import com.majstr.backend.entity.User;
 import com.majstr.backend.exception.ClientEmailMissingException;
 import com.majstr.backend.exception.EmailNotVerifiedException;
+import com.majstr.backend.exception.SenderNameMissingException;
 import com.majstr.backend.feature.FeatureGuard;
 import com.majstr.backend.repository.EstimateShareLinkRepository;
 import org.junit.jupiter.api.Test;
@@ -48,7 +49,8 @@ class ShareLinkServiceTest {
     private final UUID ownerId = UUID.randomUUID();
 
     private Estimate estimateWithStatus(EstimateStatus status, boolean emailVerified) {
-        User owner = User.builder().id(ownerId).plan(Plan.FREE).emailVerified(emailVerified).build();
+        User owner = User.builder().id(ownerId).plan(Plan.FREE).emailVerified(emailVerified)
+                .fullName("Іван").build();
         Project project = Project.builder().id(UUID.randomUUID()).owner(owner).build();
         return Estimate.builder().id(estimateId).project(project).status(status).build();
     }
@@ -146,6 +148,19 @@ class ShareLinkServiceTest {
 
         assertThat(response.url()).doesNotContain("expired-token");
         verify(repository).save(any(EstimateShareLink.class));
+    }
+
+    /** V190: registration no longer asks for a name, so the first link waits for one. */
+    @Test
+    void create_blockedWhenTheMasterHasNoName_andMintsNothing() {
+        Estimate estimate = estimateWithStatus(EstimateStatus.DRAFT, true);
+        estimate.getProject().getOwner().setFullName(null);
+        estimate.getProject().getOwner().setCompanyName("ФОП Іван");
+        given(estimateService.loadOwned(estimateId, ownerId)).willReturn(estimate);
+
+        assertThatThrownBy(() -> shareLinkService.create(estimateId, ownerId))
+                .isInstanceOf(SenderNameMissingException.class);
+        verify(repository, never()).save(any(EstimateShareLink.class));
     }
 
     @Test

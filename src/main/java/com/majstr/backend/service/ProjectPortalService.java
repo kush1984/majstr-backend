@@ -14,7 +14,6 @@ import com.majstr.backend.entity.User;
 import com.majstr.backend.entity.WorkAct;
 import com.majstr.backend.entity.WorkActStatus;
 import com.majstr.backend.exception.ClientEmailMissingException;
-import com.majstr.backend.exception.EmailNotVerifiedException;
 import com.majstr.backend.exception.InvalidEstimateStatusException;
 import com.majstr.backend.exception.ResourceNotFoundException;
 import com.majstr.backend.exception.WorkActValidationException;
@@ -360,19 +359,15 @@ public class ProjectPortalService {
             throw new ClientEmailMissingException("error.client-email-missing");
         }
         User owner = project.getOwner();
-        String contractorName = (owner.getCompanyName() != null && !owner.getCompanyName().isBlank())
-                ? owner.getCompanyName()
-                : owner.getFullName();
+        String contractorName = ContractorName.display(owner);
         emailService.sendEstimateShareEmail(
                 client.getEmail(), client.getFullName(), contractorName, project.getName(), url);
     }
 
-    /** Same plan + verified-email gate as the legacy per-estimate share, for both link kinds. */
+    /** Same plan + {@link SendReadiness} gate as the legacy per-estimate share, for every link kind. */
     private void requireSharable(User owner) {
         featureGuard.requireFeature(owner, Feature.CLIENT_PORTAL);
-        if (!owner.isEmailVerified()) {
-            throw new EmailNotVerifiedException("error.email-not-verified");
-        }
+        SendReadiness.require(owner);
     }
 
     private String generateToken() {

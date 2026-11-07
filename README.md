@@ -81,12 +81,13 @@ curl -X POST http://localhost:8080/api/auth/register \
   -d '{
     "email":"john@example.com",
     "password":"S3cret-pass!",
-    "fullName":"John Smith",
-    "trades":["ELECTRICAL"],
-    "phone":"+15551234567",
-    "companyName":"Smith Electrical LLC"
+    "consent":true
   }'
 ```
+
+Only these three are required (V190). `fullName`, `phone`, `companyName`, `trades` and `customTrades`
+are still accepted from an older client; a new one sets the trades with `PUT /api/profile/trades`
+after login and the name with `PATCH /api/profile/sender` before the first document is sent.
 
 Response: `accessToken` (15 min) + `refreshToken` (rotating, 30 days by
 default — `REFRESH_TOKEN_TTL_DAYS`) + `user`.

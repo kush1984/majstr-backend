@@ -1,6 +1,9 @@
 package com.majstr.backend.service;
 
+import com.majstr.backend.dto.HelpRequest;
+import com.majstr.backend.dto.ProfileTradesRequest;
 import com.majstr.backend.dto.ProfileUpdateRequest;
+import com.majstr.backend.dto.SenderProfileRequest;
 import com.majstr.backend.dto.UserResponse;
 import com.majstr.backend.entity.Trade;
 import com.majstr.backend.entity.User;
@@ -41,6 +44,7 @@ class ProfileServiceTest {
     @Mock EmailPolicyService emailPolicyService;
     @Mock com.majstr.backend.service.AbuseLimits abuseLimits;
     @Mock org.springframework.transaction.PlatformTransactionManager transactionManager;
+    @Mock CatalogTemplateService catalogTemplateService;
     @InjectMocks ProfileService profileService;
 
     private final UUID userId = UUID.randomUUID();
@@ -77,6 +81,110 @@ class ProfileServiceTest {
         assertThat(resp.fullName()).isEqualTo("Іван Новий");
         // Email unchanged (same value) → no re-verification.
         verify(emailVerificationService, never()).replaceForNewEmail(any());
+    }
+
+    /** V190: a trade he did not have brings its starter catalog — only the NEW ones, never asked. */
+    @Test
+    void update_addedTradesFillTheirCatalog_keptOnesAreNotRefilled() {
+        User u = user(true, "ivan@example.com");
+        given(userRepository.findById(userId)).willReturn(Optional.of(u));
+
+        profileService.updateProfile(userId, new ProfileUpdateRequest("Іван", null, null,
+                Set.of(Trade.ELECTRICAL, Trade.TILING), "ivan@example.com",
+                null, null, null, null, null, null, null, null, null, null, null));
+
+        verify(catalogTemplateService).addTemplatesForTrades(u, Set.of(Trade.TILING));
+    }
+
+    @Test
+    void update_removingATradeFillsNothing() {
+        User u = user(true, "ivan@example.com");
+        given(userRepository.findById(userId)).willReturn(Optional.of(u));
+
+        profileService.updateProfile(userId, new ProfileUpdateRequest("Іван", null, null,
+                Set.of(), "ivan@example.com",
+                null, null, null, null, null, null, null, null, null, null, null));
+
+        assertThat(u.getTrades()).isEmpty();
+        verify(catalogTemplateService, never()).addTemplatesForTrades(any(), any());
+    }
+
+    /** V190: name, phone and company are optional in the profile too — blank lands as NULL. */
+    @Test
+    void update_blankNamePhoneAndCompany_areStoredAsNull() {
+        User u = user(true, "ivan@example.com");
+        given(userRepository.findById(userId)).willReturn(Optional.of(u));
+
+        profileService.updateProfile(userId, new ProfileUpdateRequest(" ", null, "",
+                Set.of(Trade.ELECTRICAL), "ivan@example.com",
+                null, null, null, null, null, null, null, null, null, null, null));
+
+        assertThat(u.getFullName()).isNull();
+        assertThat(u.getPhone()).isNull();
+        assertThat(u.getCompanyName()).isNull();
+    }
+
+    @Test
+    void updateTrades_replacesTheSet_andFillsTheCatalogOfTheNewOnes() {
+        User u = user(true, "ivan@example.com");
+        given(userRepository.findById(userId)).willReturn(Optional.of(u));
+
+        UserResponse resp = profileService.updateTrades(userId,
+                new ProfileTradesRequest(Set.of(Trade.PAINTER, Trade.FLOORING)));
+
+        assertThat(u.getTrades()).containsExactlyInAnyOrder(Trade.PAINTER, Trade.FLOORING);
+        assertThat(resp.trades()).containsExactlyInAnyOrder(Trade.PAINTER, Trade.FLOORING);
+        verify(catalogTemplateService).addTemplatesForTrades(u, Set.of(Trade.PAINTER, Trade.FLOORING));
+    }
+
+    @Test
+    void updateTrades_anEmptySet_isASkip_andFillsNothing() {
+        User u = user(true, "ivan@example.com");
+        u.setTrades(new LinkedHashSet<>());
+        given(userRepository.findById(userId)).willReturn(Optional.of(u));
+
+        profileService.updateTrades(userId, new ProfileTradesRequest(Set.of()));
+
+        assertThat(u.getTrades()).isEmpty();
+        verify(catalogTemplateService, never()).addTemplatesForTrades(any(), any());
+    }
+
+    /** The sheet writes the three fields a document prints, and leaves everything else alone. */
+    @Test
+    void updateSender_writesNamePhoneCompany_andTouchesNothingElse() {
+        User u = user(true, "ivan@example.com");
+        u.setLegalName("ФОП Старий");
+        u.setIban("UA00");
+        given(userRepository.findById(userId)).willReturn(Optional.of(u));
+
+        UserResponse resp = profileService.updateSender(userId,
+                new SenderProfileRequest("  Іван Петренко ", " ", null));
+
+        assertThat(u.getFullName()).isEqualTo("Іван Петренко");
+        assertThat(u.getPhone()).isNull();
+        assertThat(u.getCompanyName()).isNull();
+        assertThat(u.getLegalName()).isEqualTo("ФОП Старий");
+        assertThat(u.getIban()).isEqualTo("UA00");
+        assertThat(u.getTrades()).containsExactly(Trade.ELECTRICAL);
+        assertThat(resp.fullName()).isEqualTo("Іван Петренко");
+        verify(catalogTemplateService, never()).addTemplatesForTrades(any(), any());
+    }
+
+    /** V191: asking for a call saves the phone and keeps the FIRST moment he asked. */
+    @Test
+    void requestHelp_savesThePhone_andStampsOnlyTheFirstAsk() {
+        User u = user(true, "ivan@example.com");
+        u.setPhone(null);
+        given(userRepository.findById(userId)).willReturn(Optional.of(u));
+
+        UserResponse first = profileService.requestHelp(userId, new HelpRequest(" +380501112233 "));
+        Instant stamped = u.getHelpRequestedAt();
+        profileService.requestHelp(userId, new HelpRequest("+380670000000"));
+
+        assertThat(first.phone()).isEqualTo("+380501112233");
+        assertThat(first.helpRequestedAt()).isNotNull();
+        assertThat(u.getHelpRequestedAt()).isEqualTo(stamped);
+        assertThat(u.getPhone()).isEqualTo("+380670000000");
     }
 
     @Test

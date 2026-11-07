@@ -92,9 +92,7 @@ public class MessageLinkService {
         Project project = resolve(token).getProject();
         return new MessageLinkInfo(
                 project.getName(),
-                project.getOwner().getCompanyName() != null && !project.getOwner().getCompanyName().isBlank()
-                        ? project.getOwner().getCompanyName()
-                        : project.getOwner().getFullName());
+                ContractorName.display(project.getOwner()));
     }
 
     /**

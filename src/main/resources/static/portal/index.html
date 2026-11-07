@@ -1311,7 +1311,7 @@
             <section class="card">
                 <h2>Об'єкт</h2>
                 <p style="margin:4px 0;"><strong>${escapeHtml(data.project.name)}</strong></p>
-                <p style="margin:4px 0;color:var(--muted);">${escapeHtml(data.project.address)}</p>
+                ${data.project.address ? `<p style="margin:4px 0;color:var(--muted);">${escapeHtml(data.project.address)}</p>` : ''}
                 ${data.project.clientName ? `<p style="margin:4px 0;">Клієнт: ${escapeHtml(data.project.clientName)}</p>` : ''}
             </section>
 

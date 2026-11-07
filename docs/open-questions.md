@@ -51,7 +51,9 @@ one-line summary — keep the item in the file as a record.
   outside the cap; or lean on the PRO trial. The owner's decision.
 
 ### Address, company name and phone optional — після мітапу
-- **Status:** OPEN
+- **Status:** RESOLVED 2026-11-07 — V190 (the master's name, phone, company optional; `ContractorName`
+  is the one fallback rule; the name is asked before the first send, `SendReadiness`) and V192 (an
+  object's address optional, editable in its header). See iteration-registration-friction.md.
 - **Since:** 2026-10-18, P1 before the meetup (review-golden-path P1-3, P1-6)
 - **Context:** the owner kept them REQUIRED for the meetup and took the front-only half (object
   first, client folded; company copies the full name until edited). Making them optional means NULL in
@@ -380,7 +382,7 @@ one-line summary — keep the item in the file as a record.
 - **Status:** OPEN
 - **Since:** Fix A (2026-05-30)
 - **Context:** `User.trade` (single) became `User.trades` (a value set in `user_trades`). Any future admin metric that buckets users by trade now double-counts — a GENERAL+ELECTRICAL contractor lands in two buckets, so a "distribution by trade" would sum to more than 100% of users. Nothing is broken today: `MetricsService` has no per-trade breakdown, and `AdminUserSummary` just lists each user's trades.
-- **Notes / options:** When a per-trade chart is added, decide the semantics up front — count distinct users (a user with N trades adds 1 to each bucket; bucket sum exceeds the user count by design) vs. report "trade mentions" explicitly. Document the choice on the endpoint.
+- **Notes / options:** When a per-trade chart is added, decide the semantics up front — count distinct users (a user with N trades adds 1 to each bucket; bucket sum exceeds the user count by design) vs. report "trade mentions" explicitly. Document the choice on the endpoint. Since V190 a master may also have NO trade (he skipped «Чим займаєтесь?») — such a chart needs a «без напряму» bucket.
 
 ### Custom trades: emoji picker instead of one fixed icon
 - **Status:** OPEN

@@ -10,7 +10,6 @@ import com.majstr.backend.entity.EstimateShareLink;
 import com.majstr.backend.entity.EstimateStatus;
 import com.majstr.backend.entity.User;
 import com.majstr.backend.exception.ClientEmailMissingException;
-import com.majstr.backend.exception.EmailNotVerifiedException;
 import com.majstr.backend.exception.WorkActConflictException;
 import com.majstr.backend.exception.ResourceNotFoundException;
 import com.majstr.backend.feature.Feature;
@@ -99,9 +98,7 @@ public class ShareLinkService {
         String url = buildUrl(link.getToken());
 
         User owner = estimate.getProject().getOwner();
-        String contractorName = (owner.getCompanyName() != null && !owner.getCompanyName().isBlank())
-                ? owner.getCompanyName()
-                : owner.getFullName();
+        String contractorName = ContractorName.display(owner);
         emailService.sendEstimateShareEmail(
                 client.getEmail(), client.getFullName(), contractorName,
                 estimate.getProject().getName(), url);
@@ -129,7 +126,7 @@ public class ShareLinkService {
                 .filter(l -> l.isUsable(Instant.now()));
     }
 
-    /** Plan feature + verified-email preconditions for any client-facing share (checked before mutating). */
+    /** Plan feature + {@link SendReadiness} (verified email, a name) for any client-facing share (checked before mutating). */
     private void requireSharable(Estimate estimate) {
         // Never the ADDENDUM (B-58): «Додаткові роботи до акта № 3» is a rollup the server writes
         // when an act is signed, not an offer — the client has already accepted that work ON the
@@ -139,9 +136,7 @@ public class ShareLinkService {
         }
         User owner = estimate.getProject().getOwner();
         featureGuard.requireFeature(owner, Feature.CLIENT_PORTAL);
-        if (!owner.isEmailVerified()) {
-            throw new EmailNotVerifiedException("error.email-not-verified");
-        }
+        SendReadiness.require(owner);
     }
 
     /** Sharing means the estimate is no longer a draft (feeds the "pending" metric / "Надіслано" badge). */

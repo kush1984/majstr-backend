@@ -117,6 +117,34 @@ class ProjectServiceTest {
         assertThat(p.getStatus()).isEqualTo(ProjectStatus.COMPLETED);
     }
 
+    /** V192: the address is optional, and an edit can add it, change it or take it back. */
+    @Test
+    void update_addsChangesAndClearsTheAddress() {
+        Project p = owned(ProjectStatus.IN_PROGRESS, null);
+        given(projectRepository.findById(projectId)).willReturn(Optional.of(p));
+        given(estimateRepository.findLatestEstimateSummaries(anyCollection())).willReturn(List.of());
+
+        projectService.update(projectId, new ProjectRequest("Хата", "  вул. Нова 3 ", null, null), ownerId);
+        assertThat(p.getAddress()).isEqualTo("вул. Нова 3");
+
+        projectService.update(projectId, new ProjectRequest("Хата", "   ", null, null), ownerId);
+        assertThat(p.getAddress()).isNull();
+        assertThat(p.getName()).isEqualTo("Хата");
+    }
+
+    @Test
+    void create_withoutAnAddress_storesNone() {
+        UUID requestedId = UUID.randomUUID();
+        given(projectRepository.findById(requestedId)).willReturn(Optional.empty());
+        given(userRepository.getReferenceById(ownerId)).willReturn(User.builder().id(ownerId).build());
+        given(projectRepository.save(any(Project.class))).willAnswer(inv -> inv.getArgument(0));
+
+        ProjectResponse r = projectService.create(new ProjectRequest("Хата", null, null, null), ownerId, requestedId);
+
+        assertThat(r.address()).isNull();
+        assertThat(r.name()).isEqualTo("Хата");
+    }
+
     @Test
     void get_populatesLatestEstimateSummary() {
         Project p = owned(ProjectStatus.IN_PROGRESS, null);

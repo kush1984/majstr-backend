@@ -121,6 +121,49 @@ class EstimatePdfServiceTest {
         assertThat(digits).as("the crew's price must not appear anywhere").doesNotContain("13777");
     }
 
+    /** V190: phone and company are optional — the header prints the name, and no «Тел.: null». */
+    @Test
+    void render_withNoPhoneOrCompany_printsTheNameAndNoPhoneLine() throws Exception {
+        given(featureGuard.isEnabled(org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.eq(Feature.BRANDED_PDF))).willReturn(false);
+        EstimatePdfService.PdfModel base = sampleModel();
+        base.contractor().setCompanyName(null);
+        base.contractor().setPhone("  ");
+
+        String text = textOf(pdfService.render(base));
+
+        assertThat(text).contains("Іван Майстренко");
+        assertThat(text).doesNotContain("null");
+        assertThat(text).doesNotContain("Тел.");
+    }
+
+    /** V192: an object with no address prints no «Адреса» line. */
+    @Test
+    void render_anObjectWithNoAddress_printsNoAddressLine() throws Exception {
+        given(featureGuard.isEnabled(org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.eq(Feature.BRANDED_PDF))).willReturn(false);
+        EstimatePdfService.PdfModel base = sampleModel();
+        base.project().setAddress(null);
+
+        String text = textOf(pdfService.render(base));
+
+        assertThat(text).contains("Квартира на Хрещатику");
+        assertThat(text).doesNotContain("Адреса");
+        assertThat(text).doesNotContain("null");
+    }
+
+    @Test
+    void render_withACompany_headsWithTheCompany_andSignsWithThePerson() throws Exception {
+        given(featureGuard.isEnabled(org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.eq(Feature.BRANDED_PDF))).willReturn(false);
+
+        String text = textOf(pdfService.render(sampleModel()));
+
+        assertThat(text).contains("Іван-Електрик ФОП");
+        assertThat(text).contains("Тел.: +380501112233");
+        assertThat(text).contains("Іван Майстренко");
+    }
+
     private EstimatePdfService.PdfModel sampleModel() {
         return sampleModel(Instant.now());
     }

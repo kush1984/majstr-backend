@@ -46,7 +46,8 @@ public class Project {
     @Column(name = "name", nullable = false, length = 255)
     private String name;
 
-    @Column(name = "address", nullable = false, length = 512)
+    /** Optional since V192; documents print no «Адреса» line while it is empty. */
+    @Column(name = "address", length = 512)
     private String address;
 
     @Column(name = "description", columnDefinition = "TEXT")

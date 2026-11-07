@@ -79,8 +79,7 @@ class AuthServiceTest {
 
     @Test
     void register_withOnlyACustomTradeAndNoSystemTrade_stillSucceeds() {
-        // A master can rely entirely on a self-invented trade — RegisterRequest.isTradeChosen()
-        // accepts system OR custom, not specifically system.
+        // A master can rely entirely on a self-invented trade typed at the door (an older app build).
         RegisterRequest req = new RegisterRequest("New@User.com", "Sup3rPass!", "Іван",
                 Set.of(), List.of("Натяжні стелі"), "+380501112233", "FOP", true, null, null, null, null, null, null, null);
         stubHappyPathRegistration();
@@ -89,6 +88,41 @@ class AuthServiceTest {
 
         assertThat(resp.accessToken()).isEqualTo("access");
         verify(profileService).createCustomTrade(any(User.class), eq("Натяжні стелі"));
+    }
+
+    /** V190: email + password + consent — no name, phone, company or trade, and none invented. */
+    @Test
+    void register_withTheBareMinimum_storesNoNamePhoneCompanyOrTrade() {
+        RegisterRequest req = new RegisterRequest("New@User.com", "Sup3rPass!", null,
+                null, null, null, null, true, null, null, null, null, null, null, null);
+        stubHappyPathRegistration();
+
+        authService.register(req);
+
+        ArgumentCaptor<User> saved = ArgumentCaptor.forClass(User.class);
+        verify(userRepository).save(saved.capture());
+        assertThat(saved.getValue().getFullName()).isNull();
+        assertThat(saved.getValue().getPhone()).isNull();
+        assertThat(saved.getValue().getCompanyName()).isNull();
+        assertThat(saved.getValue().getTrades()).isEmpty();
+        verify(profileService, never()).createCustomTrade(any(User.class), any());
+    }
+
+    /** A blank field from an older build is «not given», never a whitespace name. */
+    @Test
+    void register_blankNamePhoneAndCompany_landAsNull() {
+        RegisterRequest req = new RegisterRequest("New@User.com", "Sup3rPass!", "   ",
+                Set.of(Trade.TILING), null, " ", "", true, null, null, null, null, null, null, null);
+        stubHappyPathRegistration();
+
+        authService.register(req);
+
+        ArgumentCaptor<User> saved = ArgumentCaptor.forClass(User.class);
+        verify(userRepository).save(saved.capture());
+        assertThat(saved.getValue().getFullName()).isNull();
+        assertThat(saved.getValue().getPhone()).isNull();
+        assertThat(saved.getValue().getCompanyName()).isNull();
+        assertThat(saved.getValue().getTrades()).containsExactly(Trade.TILING);
     }
 
     @Test

@@ -1,7 +1,10 @@
 package com.majstr.backend.controller;
 
 import com.majstr.backend.dto.CustomTradeRequest;
+import com.majstr.backend.dto.HelpRequest;
+import com.majstr.backend.dto.ProfileTradesRequest;
 import com.majstr.backend.dto.ProfileUpdateRequest;
+import com.majstr.backend.dto.SenderProfileRequest;
 import com.majstr.backend.dto.UserResponse;
 import com.majstr.backend.repository.UserRepository;
 import com.majstr.backend.repository.UserTradeRepository;
@@ -44,6 +47,28 @@ public class ProfileController {
     public UserResponse update(@Valid @RequestBody ProfileUpdateRequest req,
                                @AuthenticationPrincipal UserPrincipal principal) {
         return profileService.updateProfile(principal.id(), req);
+    }
+
+    @Operation(summary = "Set the master's system trades (the screen after registration); "
+            + "a newly added trade brings its starter catalog")
+    @PutMapping("/trades")
+    public UserResponse updateTrades(@Valid @RequestBody ProfileTradesRequest req,
+                                     @AuthenticationPrincipal UserPrincipal principal) {
+        return profileService.updateTrades(principal.id(), req);
+    }
+
+    @Operation(summary = "Ask for a setup call: saves the phone and stamps the request for the admin")
+    @PostMapping("/help-request")
+    public UserResponse requestHelp(@Valid @RequestBody HelpRequest req,
+                                    @AuthenticationPrincipal UserPrincipal principal) {
+        return profileService.requestHelp(principal.id(), req);
+    }
+
+    @Operation(summary = "Set the name, phone and company a document prints (asked before the first send)")
+    @PatchMapping("/sender")
+    public UserResponse updateSender(@Valid @RequestBody SenderProfileRequest req,
+                                     @AuthenticationPrincipal UserPrincipal principal) {
+        return profileService.updateSender(principal.id(), req);
     }
 
     @Operation(summary = "Upload contractor logo (PNG or JPEG, max 2MB)")

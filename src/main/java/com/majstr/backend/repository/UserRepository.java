@@ -26,6 +26,9 @@ public interface UserRepository extends JpaRepository<User, UUID> {
 
     Optional<User> findByEmailIgnoreCase(String email);
 
+    /** The admin's setup-call list (V191), newest first. */
+    List<User> findTop200ByHelpRequestedAtIsNotNullOrderByHelpRequestedAtDesc();
+
     /**
      * Loads the user row under a row-level write lock ({@code SELECT … FOR UPDATE}).
      *

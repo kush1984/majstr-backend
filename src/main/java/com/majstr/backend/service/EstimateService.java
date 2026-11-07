@@ -24,7 +24,6 @@ import com.majstr.backend.entity.Project;
 import com.majstr.backend.entity.Trade;
 import com.majstr.backend.entity.Unit;
 import com.majstr.backend.service.measurement.MeasurementService;
-import com.majstr.backend.exception.EmailNotVerifiedException;
 import com.majstr.backend.exception.EstimateSignedException;
 import com.majstr.backend.exception.InvalidEstimateStatusException;
 import com.majstr.backend.exception.ResourceNotFoundException;
@@ -725,10 +724,9 @@ public class EstimateService {
         return render(Transactions.read(transactionManager, () -> {
             Estimate estimate = loadOwned(estimateId, ownerId);
             // The PDF is a client-facing deliverable — gate it behind a verified email
-            // (even on FREE) so a throwaway account can't churn out finished estimates.
-            if (!estimate.getProject().getOwner().isEmailVerified()) {
-                throw new EmailNotVerifiedException("error.email-not-verified");
-            }
+            // (even on FREE) so a throwaway account can't churn out finished estimates, and a
+            // name for its header and «Підрядник» line (SendReadiness, V190).
+            SendReadiness.require(estimate.getProject().getOwner());
             return pdfJob(estimate, pdfImageKeys(estimate, receiptPhotoIds));
         }));
     }

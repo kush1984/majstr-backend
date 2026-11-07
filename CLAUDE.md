@@ -65,7 +65,7 @@ controllers return DTOs. `passwordHash` never appears in any response (`UserResp
 
 `hibernate.ddl-auto: validate` — never express schema changes in entity annotations. Add a new
 `V<N>__<desc>.sql` under `src/main/resources/db/migration/`; **check the highest number first**
-(latest is **V189**; V183 and V185 are skipped — the unmerged bot takes the next free number at its merge). **Never edit an applied migration** — Flyway checksums it and a changed file
+(latest is **V192**; V183 and V185 are skipped — the unmerged bot takes the next free number at its merge). **Never edit an applied migration** — Flyway checksums it and a changed file
 fails startup (a correction to a shipped migration's COMMENT goes in the next migration's header —
 review B-53 did that for V136). **A self-check may `RAISE EXCEPTION` only about the migration's OWN
 work** (review B-50): «I just re-filed these rows, assert none is left» is a bug if it fails, while
@@ -146,7 +146,7 @@ there first**, then the doc it names.
 - **Auth flow** — register/login/refresh/logout/me; `LoginRateLimitFilter` precedes `JwtAuthenticationFilter`.
 - **FREE object cap counts LIFETIME creations (V107)** — `users.lifetime_project_count` is the basis; `LimitService.reserveProjectSlot` locks + increments in one tx, a delete never decrements, idempotency check first. `PlanLimitsResponse.projectsUsed` = lifetime, NOT the live list length.
 - **Refresh tokens** — hashed at rest (SHA-256), rotated, swept daily; **the PWA must single-flight `/refresh`** or a burst of 401s self-logs-out.
-- **Email verification is soft** — `@Async` fail-soft; only `POST /estimates/{id}/share` is gated (403 `EMAIL_NOT_VERIFIED`); email editable only while unverified.
+- **Email verification is soft** — `@Async` fail-soft; share/portal/PDF need it AND a name (`SendReadiness`; V190: register = email + password + consent); email editable only while unverified.
 - **Web push** — VAPID, `@Async`, env-gated fail-soft; `deliver()` MUST pass `Encoding.AES128GCM` (legacy `aesgcm` → FCM 403).
 - **Client portal is project-level** — `project_share_links` token + `estimates.portal_visible` (SIGNATURE picker); `payments_visible` (V93, default false) gates the payments card, which lists only money that ARRIVED (`receipts`), never a plan stage. **The ECONOMY portal has NO picker** (B-103, V149 dropped `economy_visible`): it is every SIGNED ∧ counted estimate + the ADDENDUM (`PublicEstimateService.isTheDeal`), so its «За договором» equals `sumIncomeCounted`; the master closes it by revoking the link. **The per-estimate `?t=` link is NOT legacy** — it is the single-estimate share path and never touches the object portal. `ShareLinkService.create` is idempotent; an **expired** link is replaced (the repo query filters only `revoked`).
 - **Portal rate limit = three greedy buckets (P0, iteration-p0-meetup)** — per IP+link READS (120/min), per IP+link WRITES (10/min), a per-IP CEILING (`max-attempts`, 300; Railway's `APP_RATELIMIT_PORTAL_MAXATTEMPTS` still binds to it); the token is read off `/api/public/<kind>/<token>`. `/api/public/**` answers are always Ukrainian (`LocalizationConfig.isPublic`). An offline bundle line replays through `POST …/items/template-line` (quantity 0 is legal ONLY there; the manual door is unchanged). [docs/iteration-p0-meetup.md](docs/iteration-p0-meetup.md).

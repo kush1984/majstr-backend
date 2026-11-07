@@ -66,8 +66,12 @@ re-checks uniqueness (409 if taken), keeps the account unverified, and
 `EmailVerificationService.replaceForNewEmail` drops the user's old tokens
 (`deleteByUserId`) and sends a fresh verification to the new address. A
 **verified** email is locked — a different value is silently ignored and the
-rest of the profile still saves. Replacing `trades` never touches the
-contractor's catalog (it's independent once seeded at register).
+rest of the profile still saves. Since V190 `fullName`, `phone` and `companyName` are optional here
+and at registration. A trade ADDED here (or through `PUT /api/profile/trades`, the screen after
+registration) fills its starter catalog unasked — a merge that never overwrites or duplicates;
+removing a trade never touches the catalog. `PATCH /api/profile/sender` writes only the three fields
+a document prints (asked before the first send, `SendReadiness` → 403 `SENDER_NAME_REQUIRED`), and
+`POST /api/profile/help-request` saves a phone for a setup call (V191).
 
 ### Web push is fail-soft and env-gated
 

@@ -94,14 +94,13 @@ public class ShoppingListPdfService {
         }
 
         User owner = model.owner();
-        String master = notBlank(owner.getCompanyName())
-                ? owner.getCompanyName().trim()
-                : owner.getFullName();
+        String master = ContractorName.display(owner);
         if (notBlank(master)) {
-            doc.add(new Paragraph("Майстер: " + master.trim(), fonts.regular(10)));
+            doc.add(new Paragraph("Майстер: " + master, fonts.regular(10)));
         }
-        if (notBlank(owner.getPhone())) {
-            doc.add(new Paragraph("Телефон: " + owner.getPhone().trim(), fonts.regular(10)));
+        String phone = ContractorName.phone(owner);
+        if (phone != null) {
+            doc.add(new Paragraph("Телефон: " + phone, fonts.regular(10)));
         }
         doc.add(new Paragraph("Дата: " + LocalDate.now(LocalizationConfig.ZONE).format(DATE), fonts.regular(10)));
     }

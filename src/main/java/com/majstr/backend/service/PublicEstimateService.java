@@ -733,10 +733,12 @@ public class PublicEstimateService {
     }
 
     private PublicEstimateView.Contractor contractorOf(User contractor) {
+        // `companyName` is what the portal's header prints, so it carries the display rule: the company,
+        // else the name (V190 made the company optional).
         return new PublicEstimateView.Contractor(
-                contractor.getCompanyName(),
+                ContractorName.display(contractor),
                 contractor.getFullName(),
-                contractor.getPhone(),
+                ContractorName.phone(contractor),
                 contractor.getLogoUrl() == null ? null : "/api/files/" + contractor.getLogoUrl()
         );
     }

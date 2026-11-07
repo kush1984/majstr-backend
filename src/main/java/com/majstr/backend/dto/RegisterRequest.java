@@ -13,16 +13,18 @@ import java.util.Set;
 public record RegisterRequest(
         @NotBlank @Email @Size(max = 255) String email,
         @NotBlank @Size(min = 8, max = 100) String password,
-        @NotBlank @Size(max = 255) String fullName,
-        // May be empty — a master can rely entirely on custom trades below. isTradeChosen()
-        // enforces that at least ONE of the two (system or custom) is present.
-        @NotNull Set<@NotNull Trade> trades,
+        // Registration asks for email + password + consent only (V190, registration friction round 2).
+        // The name is asked when the first document leaves for a client (SendReadiness); trades on the
+        // first screen after login (PUT /api/profile/trades), where they may be skipped. An older app
+        // build still sends all of these, and they are taken as before.
+        @Size(max = 255) String fullName,
+        Set<@NotNull Trade> trades,
         // Master-invented trades to create alongside the account (e.g. "Натяжні стелі") — the
         // same free-text flow ProfileService.createCustomTrade offers post-registration, just
         // reachable from the register form too. Optional; null/empty is a normal registration.
         @Size(max = 50) List<@NotBlank @Size(max = 100) String> customTrades,
-        @NotBlank @Size(max = 50) String phone,
-        @NotBlank @Size(max = 255) String companyName,
+        @Size(max = 50) String phone,
+        @Size(max = 255) String companyName,
         // Explicit privacy-policy consent. The PWA blocks submit without the
         // checkbox; this enforces it at the API too (defense in depth).
         @AssertTrue(message = "consent to the privacy policy is required") boolean consent,
@@ -43,8 +45,9 @@ public record RegisterRequest(
         @Size(max = 100) String referrerHost,
         @Size(max = 100) String entryPath
 ) {
-    @AssertTrue(message = "at least one trade (system or custom) is required")
-    public boolean isTradeChosen() {
-        return !trades.isEmpty() || (customTrades != null && !customTrades.isEmpty());
+
+    /** The system trades sent, never null — an absent set is a registration with none. */
+    public Set<Trade> tradesOrEmpty() {
+        return trades == null ? Set.of() : trades;
     }
 }

@@ -16,6 +16,11 @@ spring:
       enabled: true
     restart:
       enabled: true
+  # A local DB can carry a migration from an unmerged branch numbered past master's (the bot's V1000):
+  # without this every newer master migration fails validation and the app will not start. Dev only —
+  # prod applies migrations in their final order and keeps Flyway's strict default.
+  flyway:
+    out-of-order: true
 
 # `./gradlew bootRun` runs under this profile unless told otherwise (build.gradle.kts), so it covers
 # local dev AND the Playwright e2e backend. A packaged jar never gets here by accident. The

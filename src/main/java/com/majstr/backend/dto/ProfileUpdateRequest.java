@@ -3,7 +3,6 @@ package com.majstr.backend.dto;
 import com.majstr.backend.entity.ActNumberFormat;
 import com.majstr.backend.entity.Trade;
 import jakarta.validation.constraints.Email;
-import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
 
@@ -23,9 +22,11 @@ import java.util.Set;
  * one.</p>
  */
 public record ProfileUpdateRequest(
-        @NotBlank @Size(max = 255) String fullName,
-        @NotBlank @Size(max = 50) String phone,
-        @NotBlank @Size(max = 255) String companyName,
+        // Optional since V190: a master who skipped them at registration can still save his trades.
+        // Blank clears; the next document asks for the name again (SendReadiness).
+        @Size(max = 255) String fullName,
+        @Size(max = 50) String phone,
+        @Size(max = 255) String companyName,
         @NotNull Set<@NotNull Trade> trades,
         @Email @Size(max = 255) String email,
         // Document requisites (acts iteration) — all OPTIONAL. The number formats (РНОКПП length,

@@ -211,24 +211,39 @@ class AuthControllerTest {
                 .andExpect(jsonPath("$.status", is(400)));
     }
 
-    /** Review P1-22: a field error reaches the master in his language, never «fullName: must not be blank». */
+    /** Review P1-22: a field error reaches the master in his language, never «password: size must be…». */
     @Test
-    void register_aBlankNameIsSaidInWords_notAsAJavaFieldName() throws Exception {
-        RegisterRequest blankName = new RegisterRequest(
-                "john@example.com", "Sup3r-Secret!", "   ", Set.of(Trade.GENERAL), null,
-                "+15551234567", "Company", true, null, null, null, null, null, null, null);
+    void register_aShortPasswordIsSaidInWords_notAsAJavaFieldName() throws Exception {
+        RegisterRequest shortPassword = new RegisterRequest(
+                "john@example.com", "short", null, null, null,
+                null, null, true, null, null, null, null, null, null, null);
 
         mockMvc.perform(post("/api/auth/register")
                         .header("Accept-Language", "uk")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(blankName)))
+                        .content(objectMapper.writeValueAsString(shortPassword)))
                 .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.message", is("Перевірте поле «Ім'я».")));
+                .andExpect(jsonPath("$.message", is("Перевірте поле «Пароль».")));
     }
 
+    /** V190: the door asks for email + password + consent and nothing else. */
     @Test
-    void register_rejectsZeroTradesSystemAndCustomBothEmpty() throws Exception {
-        // isTradeChosen() requires at least ONE of system trades / custom trade names.
+    void register_acceptsEmailPasswordAndConsentAlone() throws Exception {
+        RegisterRequest bare = new RegisterRequest(
+                "john@example.com", "Sup3r-Secret!", null, null, null,
+                null, null, true, null, null, null, null, null, null, null);
+        given(authService.register(any(RegisterRequest.class)))
+                .willReturn(sampleAuthResponse("john@example.com"));
+
+        mockMvc.perform(post("/api/auth/register")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(bare)))
+                .andExpect(status().isCreated());
+    }
+
+    /** An empty trade set used to be refused (isTradeChosen); it is now a registration with none. */
+    @Test
+    void register_acceptsZeroTrades() throws Exception {
         RegisterRequest noTrades = new RegisterRequest(
                 "john@example.com",
                 "Sup3r-Secret!",
@@ -240,12 +255,26 @@ class AuthControllerTest {
                 true,
                 null,
                 null, null, null, null, null, null);
+        given(authService.register(any(RegisterRequest.class)))
+                .willReturn(sampleAuthResponse("john@example.com"));
 
         mockMvc.perform(post("/api/auth/register")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(noTrades)))
-                .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.status", is(400)));
+                .andExpect(status().isCreated());
+    }
+
+    /** Consent stays the one box the door insists on. */
+    @Test
+    void register_rejectsMissingConsent() throws Exception {
+        RegisterRequest noConsent = new RegisterRequest(
+                "john@example.com", "Sup3r-Secret!", null, null, null,
+                null, null, false, null, null, null, null, null, null, null);
+
+        mockMvc.perform(post("/api/auth/register")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(noConsent)))
+                .andExpect(status().isBadRequest());
     }
 
     @Test
@@ -353,8 +382,8 @@ class AuthControllerTest {
                 null,
                 null,
                 "refcode1",
-                // Document requisites (acts iteration) — none set in this sample.
-                null, null, null, null, null, false, null, null, null, null, null);
+                // Document requisites (acts iteration) — none set in this sample; no help asked.
+                null, null, null, null, null, false, null, null, null, null, null, null);
         return AuthResponse.of("access-jwt", "refresh-token", 900L, user);
     }
 }
