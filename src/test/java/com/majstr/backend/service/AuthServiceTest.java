@@ -105,6 +105,7 @@ class AuthServiceTest {
         assertThat(saved.getValue().getPhone()).isNull();
         assertThat(saved.getValue().getCompanyName()).isNull();
         assertThat(saved.getValue().getTrades()).isEmpty();
+        assertThat(saved.getValue().getTradesOnboardedAt()).as("«Чим займаєтесь?» still to come").isNull();
         verify(profileService, never()).createCustomTrade(any(User.class), any());
     }
 
@@ -123,6 +124,7 @@ class AuthServiceTest {
         assertThat(saved.getValue().getPhone()).isNull();
         assertThat(saved.getValue().getCompanyName()).isNull();
         assertThat(saved.getValue().getTrades()).containsExactly(Trade.TILING);
+        assertThat(saved.getValue().getTradesOnboardedAt()).as("trades given at the door are the answer").isNotNull();
     }
 
     @Test

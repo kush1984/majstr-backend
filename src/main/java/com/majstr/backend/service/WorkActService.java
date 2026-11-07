@@ -344,6 +344,9 @@ public class WorkActService {
         // read and the commit would be billed by «Прийнято актами» while sitting outside the
         // document the client signed. Every writer takes the same lock, so one of the two waits.
         WorkAct act = requireNotSigned(loadOwnedForUpdate(id, ownerId));
+        // The paper is signed and frozen here, its copy mailed to the client: «Виконавець» must have a
+        // name, or the act keeps an empty one forever (V190 review — the live PDF's check never sees it).
+        SendReadiness.requireName(act.getProject().getOwner());
         requireItems(id); // a signed act is immutable and undeletable — never let an empty one in
         receiptCompleteness.requireAllPriced(id); // …nor one whose receipts are not priced yet
         // The master's own document is issued here, so its money is re-derived here (B-87): the

@@ -192,14 +192,15 @@ class RegistrationOnboardingIntegrationTest extends IntegrationTestBase {
 
         Answer first = call("POST", "/api/profile/help-request", token, "{\"phone\":\"+380501112233\"}");
         assertThat(first.status()).isEqualTo(200);
-        assertThat(first.body().get("phone").asString()).isEqualTo("+380501112233");
+        assertThat(first.body().get("phone")).as("a call number is never a document's phone (V193)").isNull();
         var stamped = users.findByEmailIgnoreCase(email).orElseThrow().getHelpRequestedAt();
         assertThat(stamped).isNotNull();
 
         call("POST", "/api/profile/help-request", token, "{\"phone\":\"+380670000000\"}");
         User after = users.findByEmailIgnoreCase(email).orElseThrow();
         assertThat(after.getHelpRequestedAt()).isEqualTo(stamped);
-        assertThat(after.getPhone()).isEqualTo("+380670000000");
+        assertThat(after.getHelpPhone()).isEqualTo("+380670000000");
+        assertThat(after.getPhone()).isNull();
 
         assertThat(call("POST", "/api/profile/help-request", token, "{\"phone\":\" \"}").status()).isEqualTo(400);
     }
@@ -222,6 +223,34 @@ class RegistrationOnboardingIntegrationTest extends IntegrationTestBase {
 
         Answer cleared = call("PUT", "/api/projects/" + id, token, "{\"name\":\"Ванна\",\"address\":\"\"}");
         assertThat(cleared.body().get("address")).isNull();
+    }
+
+    /** V193: the answer to «Чим займаєтесь?» is the server's — a skip too — and unticking later keeps it. */
+    @Test
+    void answeringTheTradesScreen_isStampedOnTheServer_aSkipIncluded() throws Exception {
+        String email = fresh();
+        String token = registerBare(email);
+        assertThat(call("GET", "/api/auth/me", token, null).body().get("tradesOnboardedAt")).isNull();
+
+        call("PUT", "/api/profile/trades", token, "{\"trades\":[]}");
+
+        assertThat(call("GET", "/api/auth/me", token, null).body().get("tradesOnboardedAt")).isNotNull();
+        assertThat(users.findByEmailIgnoreCase(email).orElseThrow().getTradesOnboardedAt()).isNotNull();
+    }
+
+    /** Review: a name once given can be changed, not erased — documents may already carry it. */
+    @Test
+    void aGivenNameCannotBeErasedInTheProfile() throws Exception {
+        String email = fresh();
+        String token = registerBare(email);
+        call("PATCH", "/api/profile/sender", token, "{\"fullName\":\"Іван\"}");
+
+        Answer erased = call("PUT", "/api/profile", token,
+                "{\"fullName\":\"\",\"trades\":[],\"email\":\"%s\"}".formatted(email));
+
+        assertThat(erased.status()).isEqualTo(400);
+        assertThat(erased.code()).isEqualTo("PROFILE_NAME_REQUIRED");
+        assertThat(users.findByEmailIgnoreCase(email).orElseThrow().getFullName()).isEqualTo("Іван");
     }
 
     @Test

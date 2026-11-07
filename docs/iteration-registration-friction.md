@@ -196,3 +196,31 @@ What it found and what was fixed:
 - Test fixes, not app bugs: the offline e2e `/me` mock now answers what was saved; the real-backend
   register spec used a gmail «+tag», which the canonical-email check folds onto the previous run's
   account (409) — it uses a «-» now.
+
+## Round 2, part 4 — review fixes (2026-11-07, after release) — V193
+A second review of the shipped round found four bugs and several flow issues; all are fixed:
+
+- **An act signed on paper by a master with no name kept an empty «Виконавець» forever** (and its copy
+  was mailed): `signOffline` now runs `SendReadiness.requireName` first; the PWA asks the name before
+  the signature sheet (`emailFirst:false` — paper needs no verified email) and answers a refusal by
+  opening the name sheet.
+- **A given name could be erased in the profile** after documents left with it — a portal signature
+  afterwards would freeze no contractor. Optional until first given, then 400
+  `PROFILE_NAME_REQUIRED` (`ProfileNameRequiredException`); the PWA field turns required.
+- **The phone reminder came right after the name sheet, and a first PDF cost three taps.** The name
+  sheet now counts as this session's reminder; a PDF never reminds (`remind:false`) — only a link to a
+  client does. The reminder is about the PHONE only; the company is no longer chased.
+- **A master who unticked every trade was sent back to «Чим займаєтесь?», per device.** V193
+  `users.trades_onboarded_at` is the answer, stamped on every door that sets trades (the skip is
+  `PUT /api/profile/trades` with the trades he has); backfilled from `created_at` for everyone with a
+  trade. The PWA asks only when there is no stamp AND no trade (an old cached `me` has no stamp). It also
+  separates «skipped» from «never got there» for the stats.
+- **Email before name everywhere**: `useSenderGate` leaves an unverified master to the action's email
+  gate (as the backend orders them) unless the action needs no email (act paper signature, act PDF).
+- **The call number no longer lands on documents**: V193 `users.help_phone` (the V191 value copied
+  over); the policy names it apart. The card shows once he is stuck (a day in, no object), checks the
+  number (`lib/phone.ts`: Ukrainian in any usual spelling, or `+` international) and stores it
+  normalised. The admin list gets «Оброблено» (`help_handled_at`,
+  `POST /api/admin/metrics/help-requests/{userId}/handled?handled=`), open calls first; a new ask
+  reopens a handled one.
+- `ContractorName.actDisplay` (company → legal name → name) replaces the acts' two hand copies.

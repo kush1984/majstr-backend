@@ -109,10 +109,12 @@ class ProfileServiceTest {
         verify(catalogTemplateService, never()).addTemplatesForTrades(any(), any());
     }
 
-    /** V190: name, phone and company are optional in the profile too — blank lands as NULL. */
+    /** V190: name, phone and company are optional in the profile too — blank lands as NULL — while
+     *  no name was ever given. */
     @Test
     void update_blankNamePhoneAndCompany_areStoredAsNull() {
         User u = user(true, "ivan@example.com");
+        u.setFullName(null);
         given(userRepository.findById(userId)).willReturn(Optional.of(u));
 
         profileService.updateProfile(userId, new ProfileUpdateRequest(" ", null, "",
@@ -122,6 +124,33 @@ class ProfileServiceTest {
         assertThat(u.getFullName()).isNull();
         assertThat(u.getPhone()).isNull();
         assertThat(u.getCompanyName()).isNull();
+    }
+
+    /** Review: once given, the name may change but not be erased — documents may already carry it. */
+    @Test
+    void update_erasingAGivenName_isRefused_andNothingIsSaved() {
+        User u = user(true, "ivan@example.com");
+        given(userRepository.findById(userId)).willReturn(Optional.of(u));
+
+        assertThatThrownBy(() -> profileService.updateProfile(userId, new ProfileUpdateRequest("  ", null, null,
+                Set.of(Trade.ELECTRICAL), "ivan@example.com",
+                null, null, null, null, null, null, null, null, null, null, null)))
+                .isInstanceOf(com.majstr.backend.exception.ProfileNameRequiredException.class);
+        assertThat(u.getFullName()).isEqualTo("Старе Ім'я");
+    }
+
+    /** V193: setting trades on any door answers «Чим займаєтесь?» — the first answer is kept. */
+    @Test
+    void settingTrades_stampsTheAnswerOnce() {
+        User u = user(true, "ivan@example.com");
+        given(userRepository.findById(userId)).willReturn(Optional.of(u));
+
+        profileService.updateTrades(userId, new ProfileTradesRequest(Set.of()));
+        Instant first = u.getTradesOnboardedAt();
+        profileService.updateTrades(userId, new ProfileTradesRequest(Set.of(Trade.TILING)));
+
+        assertThat(first).isNotNull();
+        assertThat(u.getTradesOnboardedAt()).isEqualTo(first);
     }
 
     @Test
@@ -170,21 +199,24 @@ class ProfileServiceTest {
         verify(catalogTemplateService, never()).addTemplatesForTrades(any(), any());
     }
 
-    /** V191: asking for a call saves the phone and keeps the FIRST moment he asked. */
+    /** V191/V193: the call number is kept APART from the documents' phone; the first ask is kept, and
+     *  asking again reopens a call the admin had marked done. */
     @Test
-    void requestHelp_savesThePhone_andStampsOnlyTheFirstAsk() {
+    void requestHelp_keepsTheNumberApart_andStampsOnlyTheFirstAsk() {
         User u = user(true, "ivan@example.com");
         u.setPhone(null);
         given(userRepository.findById(userId)).willReturn(Optional.of(u));
 
         UserResponse first = profileService.requestHelp(userId, new HelpRequest(" +380501112233 "));
         Instant stamped = u.getHelpRequestedAt();
+        u.setHelpHandledAt(Instant.now());
         profileService.requestHelp(userId, new HelpRequest("+380670000000"));
 
-        assertThat(first.phone()).isEqualTo("+380501112233");
+        assertThat(first.phone()).as("never printed on a document").isNull();
         assertThat(first.helpRequestedAt()).isNotNull();
         assertThat(u.getHelpRequestedAt()).isEqualTo(stamped);
-        assertThat(u.getPhone()).isEqualTo("+380670000000");
+        assertThat(u.getHelpPhone()).isEqualTo("+380670000000");
+        assertThat(u.getHelpHandledAt()).isNull();
     }
 
     @Test

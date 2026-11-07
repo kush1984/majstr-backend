@@ -17,6 +17,13 @@ import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.GetMapping;
+import java.util.UUID;
+import java.time.Instant;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.transaction.annotation.Transactional;
+import com.majstr.backend.exception.ResourceNotFoundException;
+import com.majstr.backend.entity.User;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -52,9 +59,21 @@ public class AdminMetricsController {
     @GetMapping("/help-requests")
     public List<HelpRequestLead> helpRequests() {
         return userRepository.findTop200ByHelpRequestedAtIsNotNullOrderByHelpRequestedAtDesc().stream()
-                .map(u -> new HelpRequestLead(u.getId(), u.getEmail(), u.getFullName(), u.getPhone(),
-                        u.getHelpRequestedAt()))
+                .map(u -> new HelpRequestLead(u.getId(), u.getEmail(), u.getFullName(),
+                        u.getHelpPhone() != null ? u.getHelpPhone() : u.getPhone(),
+                        u.getHelpRequestedAt(), u.getHelpHandledAt()))
                 .toList();
+    }
+
+    @Operation(summary = "Mark a setup call done (or undo it): the list stays a to-do list (V193)")
+    @PostMapping("/help-requests/{userId}/handled")
+    @Transactional
+    public HelpRequestLead markHelpHandled(@PathVariable UUID userId, @RequestParam(defaultValue = "true") boolean handled) {
+        User u = userRepository.findById(userId)
+                .orElseThrow(() -> new ResourceNotFoundException("User not found: " + userId));
+        u.setHelpHandledAt(handled ? Instant.now() : null);
+        return new HelpRequestLead(u.getId(), u.getEmail(), u.getFullName(),
+                u.getHelpPhone() != null ? u.getHelpPhone() : u.getPhone(), u.getHelpRequestedAt(), u.getHelpHandledAt());
     }
 
     @Operation(summary = "Activation funnel across masters (registered → verified → project → estimate → shared → signed)")

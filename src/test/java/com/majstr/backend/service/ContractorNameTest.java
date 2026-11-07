@@ -34,6 +34,16 @@ class ContractorNameTest {
     }
 
     @Test
+    void actDisplay_isTheCompany_elseTheLegalName_elseTheName() {
+        User u = master("Іван", null, null, true);
+        assertThat(ContractorName.actDisplay(u)).isEqualTo("Іван");
+        u.setLegalName(" ФОП Іваненко І. ");
+        assertThat(ContractorName.actDisplay(u)).isEqualTo("ФОП Іваненко І.");
+        u.setCompanyName("Ремонти Івана");
+        assertThat(ContractorName.actDisplay(u)).isEqualTo("Ремонти Івана");
+    }
+
+    @Test
     void phone_blankIsNull() {
         assertThat(ContractorName.phone(master("Іван", null, " +380 50 ", true))).isEqualTo("+380 50");
         assertThat(ContractorName.phone(master("Іван", null, "  ", true))).isNull();

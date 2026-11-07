@@ -102,8 +102,6 @@ class ActSignedCopyService {
     }
 
     private static String contractorName(User owner) {
-        if (owner.getCompanyName() != null && !owner.getCompanyName().isBlank()) return owner.getCompanyName().trim();
-        if (owner.getLegalName() != null && !owner.getLegalName().isBlank()) return owner.getLegalName().trim();
-        return owner.getFullName();
+        return ContractorName.actDisplay(owner);
     }
 }

@@ -335,9 +335,7 @@ public class PublicActPortalService {
     // ---- helpers ----------------------------------------------------------
 
     private static String contractorName(User owner) {
-        if (notBlank(owner.getCompanyName())) return owner.getCompanyName().trim();
-        if (notBlank(owner.getLegalName())) return owner.getLegalName().trim();
-        return owner.getFullName();
+        return ContractorName.actDisplay(owner);
     }
 
     private static String clientName(Client client) {

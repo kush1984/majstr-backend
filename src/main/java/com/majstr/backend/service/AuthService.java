@@ -76,6 +76,9 @@ public class AuthService {
                 // (ContractorName) and SendReadiness see «not given», never a whitespace name.
                 .fullName(trimToNull(req.fullName()))
                 .trades(new LinkedHashSet<>(req.tradesOrEmpty()))
+                // An older build asked the trades at the door — that IS the answer (V193).
+                .tradesOnboardedAt(req.tradesOrEmpty().isEmpty()
+                        && (req.customTrades() == null || req.customTrades().isEmpty()) ? null : Instant.now())
                 .phone(trimToNull(req.phone()))
                 .companyName(trimToNull(req.companyName()))
                 // Consent is required (@AssertTrue on the request) — stamp it.

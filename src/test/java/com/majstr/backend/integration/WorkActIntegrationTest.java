@@ -109,6 +109,25 @@ class WorkActIntegrationTest extends IntegrationTestBase {
                 .isInstanceOf(DataIntegrityViolationException.class);
     }
 
+    /** Review of V190: a paper signature freezes the act and mails its copy — never with an empty
+     *  «Виконавець». The master with no name is asked first, and the act stays a draft. */
+    @Test
+    void signOffline_refusesAMasterWithNoName_andTheActStaysUnsigned() throws Exception {
+        User owner = newOwner();
+        owner.setFullName(null);
+        owner.setCompanyName(null);
+        userRepository.save(owner);
+        Project p = newProject(owner);
+        Estimate est = signedEstimateWithLine(p, "Шпаклювання", "100.000", "145.00");
+        UUID lineId = estimateItemRepository.findByEstimateIdOrderBySortOrderAscIdAsc(est.getId()).get(0).getId();
+        WorkActResponse act = createInterim(p.getId(), owner.getId());
+        setSingleLine(act.id(), owner.getId(), est.getId(), lineId, "40.000", "145.00");
+
+        assertThatThrownBy(() -> workActService.signOffline(act.id(), new WorkActSignOfflineRequest("Клієнт"), owner.getId()))
+                .isInstanceOf(com.majstr.backend.exception.SenderNameMissingException.class);
+        assertThat(workActRepository.findById(act.id()).orElseThrow().getStatus()).isNotEqualTo(WorkActStatus.SIGNED);
+    }
+
     @Test
     void cumulativeProgressAccumulatesAcrossSignedActs_frozenPerAct() throws Exception {
         User owner = newOwner();

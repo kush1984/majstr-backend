@@ -907,17 +907,27 @@
               + `</tbody></table>`;
     }
 
-    // «Залиште телефон — передзвонимо» (V191): who asked, with the number they left.
+    // «Залиште телефон — передзвонимо» (V191): who asked, with the number they left; a call marked
+    // done (V193) drops below the open ones, so the top of the list is always who to call next.
     async function loadHelpRequests() {
         const resp = await api('/admin/metrics/help-requests');
         if (!resp.ok) return;
         const rows = await resp.json();
+        rows.sort((a, b) => (a.handledAt ? 1 : 0) - (b.handledAt ? 1 : 0));
         const fmt = iso => iso ? dateFormat.format(new Date(iso)) : '—';
-        document.getElementById('helpRequests').innerHTML = rows.length === 0
+        const open = rows.filter(r => !r.handledAt).length;
+        const box = document.getElementById('helpRequests');
+        box.innerHTML = rows.length === 0
             ? '<p class="muted">Ще ніхто не просив.</p>'
-            : `<table><thead><tr><th>Телефон</th><th>Email</th><th class="hide-mobile">Ім'я</th><th>Коли</th></tr></thead><tbody>`
-              + rows.map(r => `<tr><td><a href="tel:${escapeHtml(r.phone)}">${escapeHtml(r.phone)}</a></td><td>${escapeHtml(r.email)}</td><td class="hide-mobile">${r.fullName ? escapeHtml(r.fullName) : '<span class="muted">—</span>'}</td><td class="muted">${fmt(r.requestedAt)}</td></tr>`).join('')
+            : `<p class="muted" style="margin:0 0 8px">Чекають дзвінка: <b>${open}</b> з ${rows.length}</p>
+               <table><thead><tr><th>Телефон</th><th>Email</th><th class="hide-mobile">Ім'я</th><th>Коли</th><th></th></tr></thead><tbody>`
+              + rows.map(r => `<tr${r.handledAt ? ' class="muted"' : ''}><td><a href="tel:${escapeHtml(r.phone)}">${escapeHtml(r.phone)}</a></td><td>${escapeHtml(r.email)}</td><td class="hide-mobile">${r.fullName ? escapeHtml(r.fullName) : '<span class="muted">—</span>'}</td><td class="muted">${fmt(r.requestedAt)}</td><td><button type="button" class="help-handled" data-user="${r.userId}" data-handled="${r.handledAt ? 'false' : 'true'}">${r.handledAt ? '✓ оброблено · скасувати' : 'Оброблено'}</button></td></tr>`).join('')
               + `</tbody></table>`;
+        box.querySelectorAll('.help-handled').forEach(btn => btn.addEventListener('click', async () => {
+            btn.disabled = true;
+            await api(`/admin/metrics/help-requests/${btn.dataset.user}/handled?handled=${btn.dataset.handled}`, { method: 'POST' });
+            await loadHelpRequests();
+        }));
     }
 
     async function loadUserDetail(id) {

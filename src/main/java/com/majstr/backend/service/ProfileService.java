@@ -10,6 +10,7 @@ import com.majstr.backend.entity.User;
 import com.majstr.backend.entity.UserTrade;
 import com.majstr.backend.exception.CustomTradeDuplicateException;
 import com.majstr.backend.exception.EmailAlreadyExistsException;
+import com.majstr.backend.exception.ProfileNameRequiredException;
 import com.majstr.backend.exception.ResourceNotFoundException;
 import com.majstr.backend.repository.UserRepository;
 import com.majstr.backend.repository.UserTradeRepository;
@@ -115,8 +116,13 @@ public class ProfileService {
     private UserResponse saveProfile(UUID userId, ProfileUpdateRequest req) {
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new ResourceNotFoundException("User not found: " + userId));
-        // Optional since V190 — blank is NULL, see ContractorName.
-        user.setFullName(trimToNull(req.fullName()));
+        // Optional since V190 — blank is NULL, see ContractorName — but only until it is first given:
+        // documents may already carry it, and one signed after an erase would freeze no contractor.
+        String fullName = trimToNull(req.fullName());
+        if (fullName == null && ContractorName.hasName(user)) {
+            throw new ProfileNameRequiredException();
+        }
+        user.setFullName(fullName);
         user.setPhone(trimToNull(req.phone()));
         user.setCompanyName(trimToNull(req.companyName()));
         replaceTrades(user, req.trades());
@@ -144,16 +150,18 @@ public class ProfileService {
     }
 
     /**
-     * «Залиште телефон — передзвонимо» (V191): the phone goes to the profile, where documents read it
-     * too, and the first time he asks is kept — asking again only updates the number.
+     * «Залиште телефон — передзвонимо» (V191): the number is kept apart from the profile's phone (V193),
+     * and the first time he asks is kept — asking again only updates the number and reopens the call.
      */
     @Transactional
     public UserResponse requestHelp(UUID userId, HelpRequest req) {
         User user = loadUser(userId);
-        user.setPhone(req.phone().trim());
+        // Its own column (V193): a number left for one call is not the one documents print.
+        user.setHelpPhone(req.phone().trim());
         if (user.getHelpRequestedAt() == null) {
             user.setHelpRequestedAt(Instant.now());
         }
+        user.setHelpHandledAt(null);
         return response(user);
     }
 
@@ -166,6 +174,11 @@ public class ProfileService {
      * end state.
      */
     private void replaceTrades(User user, Set<Trade> requested) {
+        // Any door that sets trades is an answer to «Чим займаєтесь?» (V193): unticking every trade in
+        // the profile later must not send him back to that screen.
+        if (user.getTradesOnboardedAt() == null) {
+            user.setTradesOnboardedAt(Instant.now());
+        }
         Set<Trade> added = new LinkedHashSet<>(requested);
         added.removeAll(user.getTrades());
         user.setTrades(new LinkedHashSet<>(requested));

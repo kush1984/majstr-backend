@@ -9,6 +9,7 @@ import com.majstr.backend.entity.User;
  * <ul>
  *   <li>{@link #display}: the header a client reads — the company, else the name.</li>
  *   <li>{@link #signer}: the person on a signature line — the name, else the company.</li>
+ *   <li>{@link #actDisplay}: an act's header — the company, else the legal name (ФОП), else the name.</li>
  *   <li>{@link #phone}: the phone, or {@code null} when there is none — callers print no line then.</li>
  * </ul>
  *
@@ -26,6 +27,16 @@ public final class ContractorName {
     public static String display(String companyName, String fullName) {
         String company = clean(companyName);
         return company != null ? company : orEmpty(clean(fullName));
+    }
+
+    /** An act names its executor more formally: a company, else the legal name, else the person. */
+    public static String actDisplay(User user) {
+        String company = clean(user.getCompanyName());
+        if (company != null) {
+            return company;
+        }
+        String legal = clean(user.getLegalName());
+        return legal != null ? legal : orEmpty(clean(user.getFullName()));
     }
 
     public static String signer(User user) {

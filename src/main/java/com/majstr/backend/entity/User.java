@@ -205,6 +205,18 @@ public class User {
     @Column(name = "help_requested_at")
     private Instant helpRequestedAt;
 
+    /** The number he left for that call (V193) — never printed on a document, unlike {@link #phone}. */
+    @Column(name = "help_phone", length = 50)
+    private String helpPhone;
+
+    /** When the admin marked the call done (V193). */
+    @Column(name = "help_handled_at")
+    private Instant helpHandledAt;
+
+    /** When he answered «Чим займаєтесь?» — picked trades or skipped (V193). NULL = not yet asked. */
+    @Column(name = "trades_onboarded_at")
+    private Instant tradesOnboardedAt;
+
     /** First-touch referral source for partner rev-share (DIRECT by default; a
      *  partner code like LIGA when the master arrived via a ?ref= link or promo).
      *  Set ONCE at registration, never auto-overwritten — only an admin can edit

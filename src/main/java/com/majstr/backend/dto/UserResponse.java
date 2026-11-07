@@ -59,7 +59,9 @@ public record UserResponse(
         String docCity,
         ActNumberFormat actNumberFormat,
         // When he asked for a setup call (V191) — the PWA stops offering it once set.
-        Instant helpRequestedAt
+        Instant helpRequestedAt,
+        // When he answered «Чим займаєтесь?» (V193) — null means the PWA still asks it.
+        Instant tradesOnboardedAt
 ) {
     /** {@code customTrades} is a separate explicit query, deliberately NOT a lazy collection on
      *  {@link User} — this factory is called from many places (auth, profile, billing), and riding
@@ -98,7 +100,8 @@ public record UserResponse(
                 user.getTaxRate(),
                 user.getDocCity(),
                 user.getActNumberFormat(),
-                user.getHelpRequestedAt()
+                user.getHelpRequestedAt(),
+                user.getTradesOnboardedAt()
         );
     }
 
