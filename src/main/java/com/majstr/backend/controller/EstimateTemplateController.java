@@ -84,8 +84,8 @@ public class EstimateTemplateController {
         return templateService.updateMeta(id, req.name(), req.description(), principal.id());
     }
 
-    @Operation(summary = "File a template under a trade — my own filing; on a system default "
-            + "it is stored per-master and stays invisible to everyone else")
+    @Operation(summary = "File my own template under a trade; a system default is refused "
+            + "(400 TEMPLATE_DEFAULT_TRADE_LOCKED) — it stays under the trade it ships for")
     @PatchMapping("/api/estimate-templates/{id}/trade")
     public EstimateTemplateSummary setTrade(@PathVariable UUID id,
                                             @Valid @RequestBody TemplateTradeRequest req,

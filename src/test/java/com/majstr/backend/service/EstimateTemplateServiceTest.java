@@ -7,6 +7,7 @@ import com.majstr.backend.dto.EstimateTemplateDetail;
 import com.majstr.backend.dto.EstimateTemplateSummary;
 import com.majstr.backend.dto.TemplateItemRequest;
 import com.majstr.backend.dto.TemplateItemsOrderRequest;
+import com.majstr.backend.exception.DefaultTemplateTradeLockedException;
 import com.majstr.backend.entity.CatalogItem;
 import com.majstr.backend.entity.Estimate;
 import com.majstr.backend.entity.EstimateItem;
@@ -15,7 +16,6 @@ import com.majstr.backend.entity.EstimateTemplateItem;
 import com.majstr.backend.entity.ItemType;
 import com.majstr.backend.entity.Project;
 import com.majstr.backend.entity.TemplateDefaultOverride;
-import com.majstr.backend.entity.TemplateTradeOverride;
 import com.majstr.backend.entity.Trade;
 import com.majstr.backend.entity.Unit;
 import com.majstr.backend.entity.User;
@@ -28,7 +28,6 @@ import com.majstr.backend.repository.EstimateTemplateItemRepository.TemplateItem
 import com.majstr.backend.repository.EstimateTemplateRepository;
 import com.majstr.backend.repository.ProjectRepository;
 import com.majstr.backend.repository.TemplateDefaultOverrideRepository;
-import com.majstr.backend.repository.TemplateTradeOverrideRepository;
 import com.majstr.backend.repository.UserRepository;
 import com.majstr.backend.repository.UserTradeRepository;
 import com.majstr.backend.feature.LimitService;
@@ -71,7 +70,6 @@ class EstimateTemplateServiceTest {
     @Mock ProjectRepository projectRepository;
     @Mock LimitService limitService;
     @Mock EstimateService estimateService;
-    @Mock TemplateTradeOverrideRepository tradeOverrideRepository;
     @Mock TemplateDefaultOverrideRepository defaultOverrideRepository;
     @Mock UserTradeRepository userTradeRepository;
     @Mock UserRepository userRepository;
@@ -526,8 +524,7 @@ class EstimateTemplateServiceTest {
                 .id(UUID.randomUUID()).name("Санвузол повний").trade(Trade.TILING).isDefault(true).build();
         EstimateTemplate mine = EstimateTemplate.builder()
                 .id(UUID.randomUUID()).name("Моя ванна").isDefault(false).owner(user).build();
-        given(tradeOverrideRepository.findByUserId(ownerId)).willReturn(List.of());
-        given(templateRepository.findDefaultsForTradesOrIds(any(), any())).willReturn(List.of(def));
+        given(templateRepository.findDefaultsForTrades(any())).willReturn(List.of(def));
         given(templateRepository.findByOwnerIdOrderByCreatedAtDesc(ownerId)).willReturn(List.of(mine));
         given(templateItemRepository.countByTemplateIds(anyList())).willReturn(List.of(
                 count(def.getId(), 8), count(mine.getId(), 3)));
@@ -551,14 +548,12 @@ class EstimateTemplateServiceTest {
         EstimateTemplate mine = EstimateTemplate.builder()
                 .id(id).name("Моя ванна").isDefault(false).owner(owner).trade(null).build();
         given(templateRepository.findById(id)).willReturn(Optional.of(mine));
-        given(tradeOverrideRepository.findByUserIdAndTemplateId(ownerId, id)).willReturn(Optional.empty());
         given(templateItemRepository.findByTemplateIdOrderBySortOrderAscIdAsc(id)).willReturn(List.of());
 
         EstimateTemplateSummary out = service.setTrade(id, Trade.TILING, null, ownerId);
 
         assertThat(mine.getTrade()).isEqualTo(Trade.TILING);      // stored on the template itself
         assertThat(out.trade()).isEqualTo(Trade.TILING);
-        verify(tradeOverrideRepository, never()).save(any());
     }
 
     @Test
@@ -570,7 +565,6 @@ class EstimateTemplateServiceTest {
         EstimateTemplate mine = EstimateTemplate.builder()
                 .id(id).name("Моя стеля").isDefault(false).owner(owner).trade(null).build();
         given(templateRepository.findById(id)).willReturn(Optional.of(mine));
-        given(tradeOverrideRepository.findByUserIdAndTemplateId(ownerId, id)).willReturn(Optional.empty());
         given(templateItemRepository.findByTemplateIdOrderBySortOrderAscIdAsc(id)).willReturn(List.of());
         given(userTradeRepository.findByIdAndUserId(custom.getId(), ownerId)).willReturn(Optional.of(custom));
 
@@ -586,40 +580,15 @@ class EstimateTemplateServiceTest {
     }
 
     @Test
-    void setTrade_onSystemDefault_storesAPerMasterOverride_leavingTheSharedRowUntouched() {
+    void setTrade_onSystemDefault_isRefused_andTheSharedRowStaysWhereItShipped() {
         UUID id = UUID.randomUUID();
         EstimateTemplate def = EstimateTemplate.builder()
                 .id(id).name("ГІПСОКАРТОН").isDefault(true).trade(Trade.DRYWALL).build();
         given(templateRepository.findById(id)).willReturn(Optional.of(def));
-        given(tradeOverrideRepository.findByUserIdAndTemplateId(ownerId, id)).willReturn(Optional.empty());
-        given(templateItemRepository.findByTemplateIdOrderBySortOrderAscIdAsc(id)).willReturn(List.of());
 
-        EstimateTemplateSummary out = service.setTrade(id, Trade.PAINTER, null, ownerId);
-
-        assertThat(def.getTrade()).isEqualTo(Trade.DRYWALL);      // the shared default is NOT mutated
-        assertThat(out.trade()).isEqualTo(Trade.PAINTER);
-        ArgumentCaptor<TemplateTradeOverride> saved = ArgumentCaptor.forClass(TemplateTradeOverride.class);
-        verify(tradeOverrideRepository).save(saved.capture());
-        assertThat(saved.getValue().getUserId()).isEqualTo(ownerId);
-        assertThat(saved.getValue().getTrade()).isEqualTo(Trade.PAINTER);
-    }
-
-    @Test
-    void listForUser_appliesTheMastersOwnOverrideOverTheShippedTrade() {
-        User user = User.builder().id(ownerId).trades(new LinkedHashSet<>(Set.of(Trade.PAINTER))).build();
-        EstimateTemplate def = EstimateTemplate.builder()
-                .id(UUID.randomUUID()).name("ГІПСОКАРТОН").trade(Trade.DRYWALL).isDefault(true).build();
-        given(tradeOverrideRepository.findByUserId(ownerId)).willReturn(List.of(
-                TemplateTradeOverride.builder().userId(ownerId).templateId(def.getId()).trade(Trade.PAINTER).build()));
-        given(templateRepository.findDefaultsForTradesOrIds(any(), any())).willReturn(List.of(def));
-        given(templateRepository.findByOwnerIdOrderByCreatedAtDesc(ownerId)).willReturn(List.of());
-        given(templateItemRepository.countByTemplateIds(anyList())).willReturn(List.of(count(def.getId(), 5)));
-
-        List<EstimateTemplateSummary> list = service.listForUser(user);
-
-        // The master moved it to PAINTER — the list must show PAINTER, not the shipped DRYWALL.
-        assertThat(list).hasSize(1);
-        assertThat(list.get(0).trade()).isEqualTo(Trade.PAINTER);
+        assertThatThrownBy(() -> service.setTrade(id, Trade.PAINTER, null, ownerId))
+                .isInstanceOf(DefaultTemplateTradeLockedException.class);
+        assertThat(def.getTrade()).isEqualTo(Trade.DRYWALL);
     }
 
     // ---- access on read / preview -----------------------------------------
@@ -662,7 +631,7 @@ class EstimateTemplateServiceTest {
         UUID hidden = UUID.randomUUID();
         UUID kept = UUID.randomUUID();
         User user = User.builder().id(ownerId).trades(new LinkedHashSet<>(Set.of(Trade.PAINTER))).build();
-        given(templateRepository.findDefaultsForTradesOrIds(any(), any())).willReturn(List.of(
+        given(templateRepository.findDefaultsForTrades(any())).willReturn(List.of(
                 EstimateTemplate.builder().id(hidden).name("Фасадні роботи").isDefault(true).build(),
                 EstimateTemplate.builder().id(kept).name("Малярні роботи").isDefault(true).build()));
         given(templateRepository.findByOwnerIdOrderByCreatedAtDesc(ownerId)).willReturn(List.of());
@@ -716,7 +685,6 @@ class EstimateTemplateServiceTest {
                 .id(defId).name("Малярні роботи").trade(Trade.PAINTER).isDefault(true).build();
         given(templateRepository.findById(defId)).willReturn(Optional.of(def));
         given(defaultOverrideRepository.findByUserIdAndTemplateId(ownerId, defId)).willReturn(Optional.empty());
-        given(tradeOverrideRepository.findByUserIdAndTemplateId(ownerId, defId)).willReturn(Optional.empty());
         given(userRepository.findById(ownerId)).willReturn(Optional.of(User.builder().id(ownerId).build()));
         given(templateItemRepository.findByTemplateIdOrderBySortOrderAscIdAsc(defId))
                 .willReturn(List.of(templateItem(def, "Грунтування", Unit.M2, 0)));

@@ -224,3 +224,22 @@ A second review of the shipped round found four bugs and several flow issues; al
   `POST /api/admin/metrics/help-requests/{userId}/handled?handled=`), open calls first; a new ask
   reopens a handled one.
 - `ContractorName.actDisplay` (company → legal name → name) replaces the acts' two hand copies.
+
+## Round 2, part 5 — the template picker and a ready-made template's trade (2026-11-08) — V194
+Two findings from testing the shipped round on a phone:
+
+- **An empty template picker was a dead end** — with no trade chosen, «Оберіть шаблон» offered only
+  «Вибрати напрям». It now always offers «Без шаблону — порожній кошторис» while nothing is ticked
+  (`TemplatePickerSheet.onSkip`, PWA only).
+- **A ready-made template could be moved under any trade with one tap in its preview.** The preview
+  carried a select of every trade the system has, saved on change with no confirmation, and the
+  per-master filing (V64 `template_trade_override`) then listed the bundle under a trade the master
+  never picked. A default now always lives under the trade it ships for: `setTrade` on a default is
+  400 `TEMPLATE_DEFAULT_TRADE_LOCKED`, the list and a fork read the shipped trade, and **V194 deletes
+  every per-master filing** (the table stays, unused, so the instance still serving during the deploy
+  keeps working — dropping it is an open question). The PWA preview only NAMES the trade; the
+  master's OWN template is re-filed in its editor, among his profile trades + «Загальний» + his
+  custom trades (the current filing stays listed), written by «Зберегти» like the name. «Трейд» →
+  «Напрям» on the template screens.
+- Also on the object screen: estimate rows take the `brand-soft` tint and «Новий кошторис» keeps its
+  own width, set 16 px below the list.

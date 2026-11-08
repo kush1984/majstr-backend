@@ -19,7 +19,7 @@ import java.util.UUID;
 
 /**
  * One master taking a SYSTEM DEFAULT template out of their own list — per master,
- * invisible to everyone else (same shape as {@link TemplateTradeOverride}).
+ * invisible to everyone else.
  *
  * <p>A row exists for two reasons, told apart by {@code forkedTemplateId}: the master
  * <b>deleted</b> a default they never use ({@code null}), or the master <b>edited</b> one and the

@@ -24,6 +24,14 @@ one-line summary — keep the item in the file as a record.
 
 ## Architecture & operations
 
+### Drop the unused `template_trade_override` table
+- **Status:** OPEN
+- **Since:** 2026-11-08 (V194)
+- **Context:** V194 retired the per-master filing of a ready-made template and emptied the table, but
+  left it in place: the instance still serving during the deploy reads it on every template list.
+- **Notes / options:** a later migration (`DROP TABLE template_trade_override;`) once V194 is live —
+  no code reads or writes it any more.
+
 ### Re-engagement emails to masters stuck in the funnel
 - **Status:** RESOLVED — shipped 2026-10-30 (V180, admin «✉️ Розсилки»), see
   [iteration-broadcasts.md](iteration-broadcasts.md). The privacy-policy line about these letters moved to

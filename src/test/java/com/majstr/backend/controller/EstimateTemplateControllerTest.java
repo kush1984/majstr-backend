@@ -13,6 +13,7 @@ import com.majstr.backend.entity.Unit;
 import com.majstr.backend.entity.Role;
 import com.majstr.backend.entity.Trade;
 import com.majstr.backend.entity.User;
+import com.majstr.backend.exception.DefaultTemplateTradeLockedException;
 import com.majstr.backend.exception.GlobalExceptionHandler;
 import com.majstr.backend.repository.UserRepository;
 import com.majstr.backend.security.UserPrincipal;
@@ -221,6 +222,21 @@ class EstimateTemplateControllerTest {
                         .content("{\"templates\":[],\"estimate\":{}}"))
                 .andExpect(status().isBadRequest());
         verify(templateService, never()).applyToProject(any(), any(ApplyTemplatesRequest.class), any());
+    }
+
+    @Test
+    void setTrade_onASystemDefault_is400_withACodeTheAppCanRead() throws Exception {
+        given(templateService.setTrade(any(), any(), any(), any()))
+                .willThrow(new DefaultTemplateTradeLockedException());
+
+        mockMvc.perform(patch("/api/estimate-templates/{id}/trade", UUID.randomUUID())
+                        .header("Accept-Language", "uk")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"trade\":\"PAINTER\"}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("TEMPLATE_DEFAULT_TRADE_LOCKED"))
+                .andExpect(jsonPath("$.message").value(
+                        "Готовий шаблон лежить у своєму напрямі — перенести можна лише власний шаблон"));
     }
 
     @Test

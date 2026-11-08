@@ -16,11 +16,11 @@ import com.majstr.backend.entity.ItemType;
 import com.majstr.backend.entity.PercentBaseKind;
 import com.majstr.backend.entity.Project;
 import com.majstr.backend.entity.TemplateDefaultOverride;
-import com.majstr.backend.entity.TemplateTradeOverride;
 import com.majstr.backend.entity.Trade;
 import com.majstr.backend.entity.Unit;
 import com.majstr.backend.entity.User;
 import com.majstr.backend.entity.UserTrade;
+import com.majstr.backend.exception.DefaultTemplateTradeLockedException;
 import com.majstr.backend.exception.ResourceNotFoundException;
 import com.majstr.backend.feature.LimitService;
 import com.majstr.backend.repository.CatalogItemRepository;
@@ -30,7 +30,6 @@ import com.majstr.backend.repository.EstimateTemplateItemRepository;
 import com.majstr.backend.repository.EstimateTemplateRepository;
 import com.majstr.backend.repository.ProjectRepository;
 import com.majstr.backend.repository.TemplateDefaultOverrideRepository;
-import com.majstr.backend.repository.TemplateTradeOverrideRepository;
 import com.majstr.backend.repository.UserRepository;
 import com.majstr.backend.repository.UserTradeRepository;
 import lombok.RequiredArgsConstructor;
@@ -75,7 +74,6 @@ public class EstimateTemplateService {
     private final ProjectRepository projectRepository;
     private final LimitService limitService;
     private final EstimateService estimateService;
-    private final TemplateTradeOverrideRepository tradeOverrideRepository;
     private final TemplateDefaultOverrideRepository defaultOverrideRepository;
     private final UserTradeRepository userTradeRepository;
     private final UserRepository userRepository;
@@ -102,12 +100,9 @@ public class EstimateTemplateService {
     @Transactional(readOnly = true)
     public List<EstimateTemplateSummary> listForUser(User user) {
         Set<Trade> trades = user.getTrades();
-        // A master may have re-filed a default into one of THEIR trades — fetch those
-        // templates too, or a re-filed one would vanish from the list it was moved into.
-        Map<UUID, Optional<Trade>> overrides = overridesOf(user.getId());
-        List<EstimateTemplate> defaults = trades.isEmpty() && overrides.isEmpty()
+        List<EstimateTemplate> defaults = trades.isEmpty()
                 ? List.of()
-                : templateRepository.findDefaultsForTradesOrIds(trades, overrides.keySet());
+                : templateRepository.findDefaultsForTrades(trades);
         // Defaults this master deleted, or edited into their own copy — either way out of the list.
         Set<UUID> retired = retiredDefaults(user.getId());
         List<EstimateTemplate> own = templateRepository.findByOwnerIdOrderByCreatedAtDesc(user.getId());
@@ -121,22 +116,13 @@ public class EstimateTemplateService {
                 .map(t -> {
                     UserTrade customTrade = t.getCustomTrade();
                     return new EstimateTemplateSummary(
-                            t.getId(), t.getName(), t.getDescription(), effectiveTrade(t, overrides),
+                            t.getId(), t.getName(), t.getDescription(), t.getTrade(),
                             customTrade != null ? customTrade.getId() : null,
                             customTrade != null ? customTrade.getName() : null,
                             t.isDefault(),
                             counts.getOrDefault(t.getId(), 0L).intValue());
                 })
                 .toList();
-    }
-
-    /** The master's own filings, {@code templateId → trade (possibly null = general)}. */
-    private Map<UUID, Optional<Trade>> overridesOf(UUID userId) {
-        Map<UUID, Optional<Trade>> map = new java.util.LinkedHashMap<>();
-        for (TemplateTradeOverride o : tradeOverrideRepository.findByUserId(userId)) {
-            map.put(o.getTemplateId(), Optional.ofNullable(o.getTrade()));
-        }
-        return map;
     }
 
     /** System defaults this master has hidden or forked — ids only. */
@@ -146,45 +132,27 @@ public class EstimateTemplateService {
                 .collect(Collectors.toCollection(LinkedHashSet::new));
     }
 
-    /** The master's own filing wins over the template's shipped trade. */
-    private static Trade effectiveTrade(EstimateTemplate t, Map<UUID, Optional<Trade>> overrides) {
-        Optional<Trade> override = overrides.get(t.getId());
-        return override != null ? override.orElse(null) : t.getTrade();
-    }
-
     /**
-     * Re-file a template into a trade. An OWN template carries the trade on its own row (and may
-     * be filed under a master-invented trade — {@code customTradeId}); a system default is shared,
-     * so the change is stored as this master's own override and stays invisible to everyone else.
-     * {@code customTradeId} only makes sense for an own template — {@link TemplateTradeOverride}
-     * has no column for it by design, so it is silently ignored when re-filing a default.
+     * File the master's OWN template under a trade (or one of his own custom trades). A system default
+     * always lives under the trade it ships for — re-filing it per master (V64) dropped bundles under
+     * trades the master never picked, so V194 retired it and this refuses it.
      */
     @Transactional
     public EstimateTemplateSummary setTrade(UUID templateId, Trade trade, UUID customTradeId, UUID ownerId) {
         EstimateTemplate template = loadAccessible(templateId, ownerId);
-        UserTrade customTrade = null;
-        Trade effectiveTrade = trade;
-        if (!template.isDefault()) {
-            customTrade = resolveCustomTrade(customTradeId, ownerId);
-            effectiveTrade = customTrade != null ? Trade.OTHER : trade;
-            template.setTrade(effectiveTrade);
-            template.setCustomTrade(customTrade);
-            tradeOverrideRepository.findByUserIdAndTemplateId(ownerId, templateId)
-                    .ifPresent(tradeOverrideRepository::delete);
-        } else {
-            TemplateTradeOverride row = tradeOverrideRepository
-                    .findByUserIdAndTemplateId(ownerId, templateId)
-                    .orElseGet(() -> TemplateTradeOverride.builder()
-                            .userId(ownerId).templateId(templateId).build());
-            row.setTrade(trade);
-            tradeOverrideRepository.save(row);
+        if (template.isDefault()) {
+            throw new DefaultTemplateTradeLockedException();
         }
+        UserTrade customTrade = resolveCustomTrade(customTradeId, ownerId);
+        Trade effectiveTrade = customTrade != null ? Trade.OTHER : trade;
+        template.setTrade(effectiveTrade);
+        template.setCustomTrade(customTrade);
         int count = templateItemRepository.findByTemplateIdOrderBySortOrderAscIdAsc(templateId).size();
         return new EstimateTemplateSummary(
                 template.getId(), template.getName(), template.getDescription(), effectiveTrade,
                 customTrade != null ? customTrade.getId() : null,
                 customTrade != null ? customTrade.getName() : null,
-                template.isDefault(), count);
+                false, count);
     }
 
     @Transactional(readOnly = true)
@@ -721,11 +689,6 @@ public class EstimateTemplateService {
     private Writable forkDefault(EstimateTemplate original, UUID ownerId) {
         User owner = userRepository.findById(ownerId)
                 .orElseThrow(() -> new ResourceNotFoundException("User not found: " + ownerId));
-        // The master may have re-filed the default into one of their trades; the copy inherits that
-        // filing, or the bundle would jump back to the trade it shipped under the moment it is edited.
-        Trade trade = tradeOverrideRepository.findByUserIdAndTemplateId(ownerId, original.getId())
-                .map(TemplateTradeOverride::getTrade)
-                .orElseGet(original::getTrade);
         EstimateTemplate copy = templateRepository.save(EstimateTemplate.builder()
                 .owner(owner)
                 .name(original.getName())
@@ -733,7 +696,7 @@ public class EstimateTemplateService {
                 // it: a master who edits one position of «Q4» must not lose the wording that says
                 // what Q4 is — and `applyToProject` snapshots it into `estimates.quality_note`.
                 .description(original.getDescription())
-                .trade(trade)
+                .trade(original.getTrade())
                 .isDefault(false)
                 .build());
         Map<UUID, UUID> itemIds = new LinkedHashMap<>();
@@ -752,9 +715,6 @@ public class EstimateTemplateService {
             // The id the request in flight is still naming → the row it must actually land on.
             itemIds.put(i.getId(), copied.getId());
         }
-        // The filing now lives on the copy's own row; the override would point at a hidden default.
-        tradeOverrideRepository.findByUserIdAndTemplateId(ownerId, original.getId())
-                .ifPresent(tradeOverrideRepository::delete);
         hideDefault(original.getId(), ownerId, copy.getId());
         return new Writable(copy, itemIds);
     }
