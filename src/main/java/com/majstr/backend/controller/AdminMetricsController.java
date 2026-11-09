@@ -8,7 +8,7 @@ import com.majstr.backend.dto.MetricsOverviewResponse;
 import com.majstr.backend.dto.SourceBreakdownResponse;
 import com.majstr.backend.dto.UpgradeInterestResponse;
 import com.majstr.backend.dto.VisitStatsResponse;
-import com.majstr.backend.repository.UserRepository;
+import com.majstr.backend.service.HelpRequestService;
 import com.majstr.backend.service.MetricsService;
 import com.majstr.backend.service.SiteVisitService;
 import com.majstr.backend.service.UpgradeEventService;
@@ -17,19 +17,15 @@ import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.GetMapping;
-import java.util.UUID;
-import java.time.Instant;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PathVariable;
-import org.springframework.transaction.annotation.Transactional;
-import com.majstr.backend.exception.ResourceNotFoundException;
-import com.majstr.backend.entity.User;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
 import java.util.Locale;
+import java.util.UUID;
 
 @RestController
 @RequestMapping("/api/admin/metrics")
@@ -41,7 +37,7 @@ public class AdminMetricsController {
     private final MetricsService metricsService;
     private final UpgradeEventService upgradeEventService;
     private final SiteVisitService siteVisitService;
-    private final UserRepository userRepository;
+    private final HelpRequestService helpRequestService;
 
     @Operation(summary = "Aggregate snapshot for the admin dashboard")
     @GetMapping("/overview")
@@ -55,25 +51,16 @@ public class AdminMetricsController {
         return upgradeEventService.interestStats();
     }
 
-    @Operation(summary = "Masters who asked for a setup call, newest first, with the phone they left (V191)")
+    @Operation(summary = "Masters who asked for a setup call, open calls first, with the phone they left (V191)")
     @GetMapping("/help-requests")
     public List<HelpRequestLead> helpRequests() {
-        return userRepository.findTop200ByHelpRequestedAtIsNotNullOrderByHelpRequestedAtDesc().stream()
-                .map(u -> new HelpRequestLead(u.getId(), u.getEmail(), u.getFullName(),
-                        u.getHelpPhone() != null ? u.getHelpPhone() : u.getPhone(),
-                        u.getHelpRequestedAt(), u.getHelpHandledAt()))
-                .toList();
+        return helpRequestService.list();
     }
 
     @Operation(summary = "Mark a setup call done (or undo it): the list stays a to-do list (V193)")
     @PostMapping("/help-requests/{userId}/handled")
-    @Transactional
     public HelpRequestLead markHelpHandled(@PathVariable UUID userId, @RequestParam(defaultValue = "true") boolean handled) {
-        User u = userRepository.findById(userId)
-                .orElseThrow(() -> new ResourceNotFoundException("User not found: " + userId));
-        u.setHelpHandledAt(handled ? Instant.now() : null);
-        return new HelpRequestLead(u.getId(), u.getEmail(), u.getFullName(),
-                u.getHelpPhone() != null ? u.getHelpPhone() : u.getPhone(), u.getHelpRequestedAt(), u.getHelpHandledAt());
+        return helpRequestService.markHandled(userId, handled);
     }
 
     @Operation(summary = "Activation funnel across masters (registered → verified → project → estimate → shared → signed)")

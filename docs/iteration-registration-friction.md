@@ -243,3 +243,23 @@ Two findings from testing the shipped round on a phone:
   «Напрям» on the template screens.
 - Also on the object screen: estimate rows take the `brand-soft` tint and «Новий кошторис» keeps its
   own width, set 16 px below the list.
+
+## Round 2, part 6 — second review: offline, the card's number, the call list (2026-11-08) — V195
+- **«Чим займаєтесь?» could hold a master offline out of his app.** The gate sends a master with no
+  answer to `/welcome`, and both «Далі» and «Пропустити» are PUTs that failed offline (the trades
+  mutation even PAUSED there — TanStack's default `networkMode: 'online'`). Now both mutations are
+  `networkMode: 'always'`; a NETWORK failure keeps the answer on the device and lets him in, and
+  `useTradesAnswerSync` (mounted in `ProtectedRoute`) sends it once online. The key is 1.72.0's own
+  `majstr.tradesSkipped.<id>`, so a skip from that build — which reached no server — is sent too. An
+  answer the server already has (another phone) wins; a 4xx drops the kept answer, a 5xx keeps it.
+- **V195: the number left on «Залиште телефон» leaves the documents.** Between V191 and V193 the card
+  wrote it into `users.phone`; V193 copied it to `help_phone` but left the printed one. V195 clears
+  `users.phone` where it equals `help_phone` and the ask predates V193 (`flyway_schema_history`'s
+  `installed_on` for 193) — the card was offered only to a master with no phone then. An ask after
+  V193 never touched `users.phone`, so a master who typed the same number himself keeps it.
+- **The admin call list sorts open calls first IN THE QUERY** (`findHelpRequestsOpenFirst`, 200 rows):
+  past 200 an old open call used to fall off before the browser lifted the open ones.
+  `markHelpHandled` moved out of the controller into `HelpRequestService` (thin controllers).
+- **V194 kept no copy of what it deleted** — a fair note; it is applied and stays. Only untouched
+  re-filed DEFAULTS went back to their shipped trade: own templates carry their trade on their own
+  row, and a default edited after re-filing had already been forked with that trade.

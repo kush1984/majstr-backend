@@ -26,8 +26,12 @@ public interface UserRepository extends JpaRepository<User, UUID> {
 
     Optional<User> findByEmailIgnoreCase(String email);
 
-    /** The admin's setup-call list (V191), newest first. */
-    List<User> findTop200ByHelpRequestedAtIsNotNullOrderByHelpRequestedAtDesc();
+    /** The admin's setup-call list (V191): open calls first, then newest first. */
+    @Query("""
+            SELECT u FROM User u WHERE u.helpRequestedAt IS NOT NULL
+            ORDER BY CASE WHEN u.helpHandledAt IS NULL THEN 0 ELSE 1 END, u.helpRequestedAt DESC, u.id
+            """)
+    List<User> findHelpRequestsOpenFirst(Pageable page);
 
     /**
      * Loads the user row under a row-level write lock ({@code SELECT … FOR UPDATE}).
