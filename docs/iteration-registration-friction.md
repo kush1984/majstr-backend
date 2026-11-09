@@ -1,5 +1,8 @@
 # Iteration — registration friction (2026-11-06)
 
+> **2026-11-09:** sharing and the estimate PDF no longer need a verified email — only the name this
+> iteration asks for. See [iteration-share-without-verification.md](iteration-share-without-verification.md).
+
 **Status:** built 2026-11-06/07. Backend `clean build --no-build-cache` green (2373 tests, none failed or
 skipped); PWA lint, both type checks, vitest (1762) and build green; e2e 7/7 and offline e2e 12/12 on a
 real backend, and the CI subset `test:e2e:offline:shell` 10/10 with the backend down; checked in a

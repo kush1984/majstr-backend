@@ -14,6 +14,11 @@ import java.util.UUID;
  * estimate who has also been away a month is {@link BroadcastSegment#EMPTY_ESTIMATE}, never also
  * {@link BroadcastSegment#INACTIVE}: one letter about the thing he is actually stuck on.</p>
  *
+ * <p><b>{@link BroadcastSegment#UNVERIFIED} stays FIRST</b>, although since 2026-11-09 an unverified
+ * master can share and print without it: an unverified address may be somebody else's, or mistyped,
+ * and product letters sent there risk spam complaints against our sending domain. The one letter
+ * that belongs at such an address is «підтвердіть пошту».</p>
+ *
  * <p>Who may be in ANY segment (a USER, on FREE, not unsubscribed) is the query's job
  * ({@code UserRepository#findBroadcastAudience}); this only reads the funnel facts.</p>
  */

@@ -163,14 +163,19 @@ class ShareLinkServiceTest {
         verify(repository, never()).save(any(EstimateShareLink.class));
     }
 
+    /** Share without verification (2026-11-09): the master sends his own link — a name is enough. */
     @Test
-    void create_blockedWhenEmailNotVerified() {
+    void create_andMarkSent_needNoVerifiedEmail() {
         Estimate estimate = estimateWithStatus(EstimateStatus.DRAFT, false);
         given(estimateService.loadOwned(estimateId, ownerId)).willReturn(estimate);
+        given(repository.save(any(EstimateShareLink.class))).willAnswer(inv -> inv.getArgument(0));
+        given(portalProperties.publicBaseUrl()).willReturn("https://app.test");
 
-        assertThatThrownBy(() -> shareLinkService.create(estimateId, ownerId))
-                .isInstanceOf(EmailNotVerifiedException.class);
-        assertThat(estimate.getStatus()).isEqualTo(EstimateStatus.DRAFT);
+        shareLinkService.create(estimateId, ownerId);
+        shareLinkService.markSent(estimateId, ownerId);
+
+        verify(repository).save(any(EstimateShareLink.class));
+        assertThat(estimate.getStatus()).isEqualTo(EstimateStatus.SENT);
     }
 
     // ---- sendByEmail ------------------------------------------------------
@@ -189,6 +194,20 @@ class ShareLinkServiceTest {
         assertThat(estimate.getStatus()).isEqualTo(EstimateStatus.SENT);
         verify(emailService).sendEstimateShareEmail(
                 eq("olena@example.com"), eq("Олена"), eq("ФОП Іван"), eq("Квартира"), anyString());
+    }
+
+    /** The letter goes from OUR domain, so it still needs a verified email (Resend reputation). */
+    @Test
+    void sendByEmail_unverifiedMaster_throwsAndSendsNothing() {
+        Estimate estimate = estimateWithClient("olena@example.com");
+        estimate.getProject().getOwner().setEmailVerified(false);
+        given(estimateService.loadOwned(estimateId, ownerId)).willReturn(estimate);
+
+        assertThatThrownBy(() -> shareLinkService.sendByEmail(estimateId, ownerId))
+                .isInstanceOf(EmailNotVerifiedException.class);
+        assertThat(estimate.getStatus()).isEqualTo(EstimateStatus.DRAFT);
+        verifyNoInteractions(emailService);
+        verify(repository, never()).save(any(EstimateShareLink.class));
     }
 
     @Test

@@ -11,7 +11,8 @@ import com.majstr.backend.feature.PlanConfig;
  * cap means unlimited. {@code projectsUsed} is the LIFETIME object count (objects ever created,
  * never decremented on delete) — the basis of the FREE object cap, so the UI gate and the
  * over-limit hint match the server. The server-side checks in {@code LimitService} remain the
- * source of truth — this is a UX hint only.
+ * source of truth — this is a UX hint only. {@code trialDays} is the configured length of the one-time
+ * PRO trial ({@code app.billing.trial-days}), so an offer can name it without the PWA typing a number.
  */
 public record PlanLimitsResponse(
         Plan plan,
@@ -19,9 +20,10 @@ public record PlanLimitsResponse(
         int projectsUsed,
         Integer maxEstimatesPerProject,
         Integer maxPhotosPerObject,
-        Integer maxReceiptPhotosPerObject
+        Integer maxReceiptPhotosPerObject,
+        int trialDays
 ) {
-    public static PlanLimitsResponse of(User user) {
+    public static PlanLimitsResponse of(User user, int trialDays) {
         Plan plan = user.getPlan();
         return new PlanLimitsResponse(
                 plan,
@@ -29,7 +31,8 @@ public record PlanLimitsResponse(
                 user.getLifetimeProjectCount(),
                 nullIfUnlimited(PlanConfig.limit(plan, Limit.MAX_ESTIMATES_PER_PROJECT)),
                 nullIfUnlimited(PlanConfig.limit(plan, Limit.MAX_PHOTOS_PER_OBJECT)),
-                nullIfUnlimited(PlanConfig.limit(plan, Limit.MAX_RECEIPT_PHOTOS_PER_OBJECT))
+                nullIfUnlimited(PlanConfig.limit(plan, Limit.MAX_RECEIPT_PHOTOS_PER_OBJECT)),
+                trialDays
         );
     }
 

@@ -28,6 +28,12 @@ import java.util.UUID;
  *   <li>{@link #emailClientCopy} — that same stamped PDF mailed to the client, fail-soft: the
  *       signature already landed, the emailed copy is a bonus evidence trail.</li>
  * </ul>
+ *
+ * <p>The copy is OUR letter, so the master's own door ({@code signOffline}) mails it only from a
+ * verified account. <b>The one exception is the portal signature</b>
+ * ({@code PublicActPortalService.sign}, the no-{@code mayMail} overload): it mails the copy without
+ * asking about the master's email — deliberately, because the CLIENT started that letter by signing,
+ * and withholding their own copy of what they just signed would punish them for the master's account.</p>
  */
 @Component
 @RequiredArgsConstructor
@@ -45,12 +51,35 @@ class ActSignedCopyService {
      * copy for after the commit.
      */
     void freezeAndSend(WorkAct act, List<WorkActItem> items, List<WorkActReceipt> receipts) {
+        freezeAndSend(act, items, receipts, true);
+    }
+
+    /**
+     * As above, with the copy only when {@code mayMail}: the copy is OUR letter, so the master's own
+     * door ({@code signOffline}) sends it only from a verified account ({@link SendReadiness}). The
+     * signature is never refused for it — the paper is already signed.
+     *
+     * @return true when the client has an email but the copy was held back
+     */
+    boolean freezeAndSend(WorkAct act, List<WorkActItem> items, List<WorkActReceipt> receipts, boolean mayMail) {
         List<WorkActPdfService.ReceiptRow> rows = receipts.stream().map(WorkActPdfService.ReceiptRow::from).toList();
         // «ДОВІДКОВО» as of this signature (B-94) is part of what is frozen: it used to be left out
         // of the hash only because the hash was taken over a live render.
         SignedDocumentService.Frozen frozen = signedDocuments.freezeAct(act, items, receipts,
                 estimateNames(items), cumulativeCalculator.forDownload(act, items, receiptsTotal(rows)));
+        if (!hasClientEmail(act)) {
+            return false;
+        }
+        if (!mayMail) {
+            return true;
+        }
         emailClientCopy(act, frozen.stampedPdf());
+        return false;
+    }
+
+    private static boolean hasClientEmail(WorkAct act) {
+        Client client = act.getProject().getClient();
+        return client != null && client.getEmail() != null && !client.getEmail().isBlank();
     }
 
     /**
@@ -61,9 +90,6 @@ class ActSignedCopyService {
      */
     private void emailClientCopy(WorkAct act, byte[] stamped) {
         Client client = act.getProject().getClient();
-        if (client == null || client.getEmail() == null || client.getEmail().isBlank()) {
-            return;
-        }
         String email = client.getEmail();
         String clientName = client.getFullName();
         String contractor = contractorName(act.getProject().getOwner());

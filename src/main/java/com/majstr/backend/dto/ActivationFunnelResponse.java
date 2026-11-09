@@ -10,6 +10,12 @@ package com.majstr.backend.dto;
  * link, MESSAGE excluded, revoked links still counted. See
  * {@code MetricsService.sharedWithClientCount()} — figures recorded before the
  * analytics-shared-fix iteration counted only the per-estimate half and are NOT comparable.</p>
+ *
+ * <p>{@code verifiedEmail} is NOT a step of the chain any more (share-without-verification,
+ * 2026-11-09): sharing no longer needs it, so the page reads registered → object → estimate → shared
+ * → signed and shows the verified count beside it. {@code sharedUnverified} = the masters in
+ * {@code shared} whose email is still unverified today — the effect of dropping the gate (a master
+ * who shared and verified later is no longer in it).</p>
  */
 public record ActivationFunnelResponse(
         long registered,
@@ -17,5 +23,6 @@ public record ActivationFunnelResponse(
         long withProject,
         long withEstimate,
         long shared,
-        long withSigned
+        long withSigned,
+        long sharedUnverified
 ) {}

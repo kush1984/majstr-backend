@@ -51,20 +51,20 @@ class ContractorNameTest {
     }
 
     @Test
-    void sendReadiness_asksForTheEmailFirst_thenTheName() {
-        assertThatThrownBy(() -> SendReadiness.require(master(null, null, null, false)))
+    void weSendTheLetter_asksForTheEmailFirst_thenTheName() {
+        assertThatThrownBy(() -> SendReadiness.weSendTheLetter(master(null, null, null, false)))
                 .isInstanceOf(EmailNotVerifiedException.class);
-        assertThatThrownBy(() -> SendReadiness.require(master("  ", "ФОП", "+380", true)))
+        assertThatThrownBy(() -> SendReadiness.weSendTheLetter(master("  ", "ФОП", "+380", true)))
                 .as("a company is not a name to sign with").isInstanceOf(SenderNameMissingException.class);
-        assertThatCode(() -> SendReadiness.require(master("Іван", null, null, true)))
+        assertThatCode(() -> SendReadiness.weSendTheLetter(master("Іван", null, null, true)))
                 .as("phone and company stay optional").doesNotThrowAnyException();
     }
 
     @Test
-    void requireName_ignoresTheEmail() {
-        assertThatCode(() -> SendReadiness.requireName(master("Іван", null, null, false)))
+    void masterSendsItself_ignoresTheEmail() {
+        assertThatCode(() -> SendReadiness.masterSendsItself(master("Іван", null, null, false)))
                 .doesNotThrowAnyException();
-        assertThatThrownBy(() -> SendReadiness.requireName(master(null, null, null, true)))
+        assertThatThrownBy(() -> SendReadiness.masterSendsItself(master(null, null, null, true)))
                 .isInstanceOf(SenderNameMissingException.class);
     }
 }

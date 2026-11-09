@@ -12,14 +12,11 @@ import com.majstr.backend.entity.EstimateStatus;
 import com.majstr.backend.entity.Payment;
 import com.majstr.backend.entity.Plan;
 import com.majstr.backend.entity.Role;
-import com.majstr.backend.entity.ShareLinkKind;
 import com.majstr.backend.entity.UpgradeEventType;
 import com.majstr.backend.entity.User;
 import com.majstr.backend.repository.EstimateRepository;
-import com.majstr.backend.repository.EstimateShareLinkRepository;
 import com.majstr.backend.repository.PaymentRepository;
 import com.majstr.backend.repository.ProjectRepository;
-import com.majstr.backend.repository.ProjectShareLinkRepository;
 import com.majstr.backend.repository.ReferralRewardRepository;
 import com.majstr.backend.repository.UpgradeEventRepository;
 import com.majstr.backend.repository.UserRepository;
@@ -73,8 +70,6 @@ public class MetricsService {
     private final PaymentRepository paymentRepository;
     private final ProjectRepository projectRepository;
     private final EstimateRepository estimateRepository;
-    private final EstimateShareLinkRepository shareLinkRepository;
-    private final ProjectShareLinkRepository projectShareLinkRepository;
     private final UpgradeEventRepository upgradeEventRepository;
     private final ReferralRewardRepository referralRewardRepository;
 
@@ -201,9 +196,10 @@ public class MetricsService {
     }
 
     /**
-     * Activation funnel across masters (ROLE_USER): registered → verified email →
-     * created a project → created an estimate → shared with a client → got a
-     * signature. Each step is one aggregate query (no per-user loop).
+     * Activation funnel across masters (ROLE_USER): registered → created a project → created an
+     * estimate → shared with a client → got a signature, plus two counts beside the chain: verified
+     * email (no longer a step — sharing does not need it) and shared-while-unverified. Each is one
+     * aggregate query (no per-user loop).
      *
      * <p>Every step filters {@code role = USER} explicitly. It used to rely on "admins have no
      * projects", which is true only until somebody makes one demo object on the admin account — at
@@ -215,13 +211,15 @@ public class MetricsService {
      */
     @Transactional(readOnly = true)
     public ActivationFunnelResponse activationFunnel() {
+        Set<UUID> shared = sharedOwnerSources().keySet();
         return new ActivationFunnelResponse(
                 userRepository.countByRole(Role.USER),
                 userRepository.countByRoleAndEmailVerifiedTrue(Role.USER),
                 projectRepository.countDistinctOwners(),
                 estimateRepository.countDistinctProjectOwners(),
-                sharedOwnerSources().size(),
-                estimateRepository.countDistinctProjectOwnersByStatus(EstimateStatus.SIGNED)
+                shared.size(),
+                estimateRepository.countDistinctProjectOwnersByStatus(EstimateStatus.SIGNED),
+                shared.isEmpty() ? 0 : userRepository.countByIdInAndEmailVerifiedFalse(shared)
         );
     }
 
@@ -245,33 +243,25 @@ public class MetricsService {
     }
 
     /**
-     * Masters who ever put a document in front of a client, over BOTH link tables.
+     * Masters who ever put a document in front of a client: an estimate of theirs reached SENT or
+     * SIGNED ({@link EstimateRepository#findOwnersWithEstimateIn}).
      *
-     * <p><b>Why both.</b> This step used to read {@code EstimateShareLink} alone — the per-estimate
-     * {@code ?t=} link. Sharing from the object goes through {@code ProjectShareLink} instead
-     * ({@code ?p=} PORTAL, {@code ?e=} ECONOMY, {@code ?a=} ACT), and that is the main flow since the
-     * portal iteration, so the step drew a cliff that did not exist.</p>
+     * <p><b>Changed 2026-11-09 (share-without-verification).</b> It used to be «owns a link row» over
+     * both link tables — but the PWA mints a link when the share sheet OPENS, so a master who only
+     * looked counted as having shared, and with the email gate gone that would have inflated the
+     * very step this iteration is measured on. SENT is set only once the link really left
+     * ({@code ShareLinkService.markSent} / {@code sendByEmail}, {@code ProjectPortalService.markSent});
+     * an act exists only on a signed estimate, so it adds nobody. Figures before 2026-10-18 are
+     * slightly high (SENT was then set as the sheet opened); a sent estimate the master later deleted
+     * drops out.</p>
      *
-     * <p><b>Union of id sets, not a sum of two counts.</b> A master commonly has both kinds of link;
-     * adding the counts would count them twice and could even push the step above the previous one.
-     * Two id selects are cheap here — the result is bounded by the number of masters, not links.</p>
-     *
-     * <p><b>MESSAGE is excluded</b> ({@link ShareLinkKind#SHARED_WITH_CLIENT}) — it opens a contact
-     * form, often minted for a supplier. <b>{@code revoked}/{@code expires_at} are not filtered</b> —
-     * the step means "ever shared", and a filtered step would shrink over time.</p>
-     *
-     * <p><b>The two halves are not equally honest.</b> The object half is: a row appears only on a
-     * deliberate publish. The estimate half is inflated — the PWA mints the per-estimate link in an
-     * effect when the share sheet OPENS, before anything is copied or sent. So this step reads
-     * "published on the object portal OR opened the estimate share sheet". Fixing that is a PWA
-     * change (mint lazily) and is deliberately out of scope here.</p>
+     * <p>The ONE computation behind the aggregate {@code shared}, {@code sharedUnverified} and the
+     * by-source {@code shared} — which is what keeps the two reports summing to each other.</p>
      */
     private Map<UUID, String> sharedOwnerSources() {
         Map<UUID, String> owners = new HashMap<>();
-        for (OwnerSource row : shareLinkRepository.findSharedOwners()) {
-            owners.put(row.getOwnerId(), row.getSource());
-        }
-        for (OwnerSource row : projectShareLinkRepository.findSharedOwners(ShareLinkKind.SHARED_WITH_CLIENT)) {
+        for (OwnerSource row : estimateRepository.findOwnersWithEstimateIn(
+                List.of(EstimateStatus.SENT, EstimateStatus.SIGNED))) {
             owners.put(row.getOwnerId(), row.getSource());
         }
         return owners;
@@ -285,11 +275,9 @@ public class MetricsService {
      * question a channel is judged by: <b>which source brings masters who reach a SIGNED
      * estimate</b>. Sign-ups are cheap; the signature is the product working.</p>
      *
-     * <p>Grouped queries folded through {@link #toSourceMap}, never a loop over users. The one step
-     * that cannot be a {@code GROUP BY} is {@code shared}: it is a union over two link tables, so
-     * the ids are de-duplicated in Java first — by {@link #sharedOwnerSources()}, the same
-     * computation the aggregate funnel uses, which is what keeps the two reports summing to each
-     * other.</p>
+     * <p>Grouped queries folded through {@link #toSourceMap}, never a loop over users. {@code shared}
+     * is folded from {@link #sharedOwnerSources()} instead — the same computation the aggregate
+     * funnel uses, which is what keeps the two reports summing to each other.</p>
      *
      * <p><b>This service owns the row order</b> (the page renders what it gets, in order). Default:
      * "% to signed" descending — but ONLY among sources with at least

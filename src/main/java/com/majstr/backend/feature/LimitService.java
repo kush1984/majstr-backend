@@ -1,5 +1,6 @@
 package com.majstr.backend.feature;
 
+import com.majstr.backend.config.BillingProperties;
 import com.majstr.backend.dto.PlanLimitsResponse;
 import com.majstr.backend.entity.PhotoSource;
 import com.majstr.backend.entity.User;
@@ -42,6 +43,7 @@ public class LimitService {
     private final UserRepository userRepository;
     private final EstimateRepository estimateRepository;
     private final ProjectPhotoRepository projectPhotoRepository;
+    private final BillingProperties billingProperties;
 
     /**
      * Reserve one object slot for a create. The FREE cap counts objects EVER created
@@ -110,6 +112,6 @@ public class LimitService {
     public PlanLimitsResponse limitsFor(UUID userId) {
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new ResourceNotFoundException("User not found: " + userId));
-        return PlanLimitsResponse.of(user);
+        return PlanLimitsResponse.of(user, billingProperties.trialDays());
     }
 }

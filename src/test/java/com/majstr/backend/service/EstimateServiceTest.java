@@ -162,20 +162,21 @@ class EstimateServiceTest {
     }
 
     @Test
-    void renderPdf_unverifiedOwner_throwsEmailNotVerified() {
-        // Anti-abuse: the client-facing PDF requires a verified email even on FREE.
-        Estimate estimate = ownedEstimate(ownerId); // owner emailVerified defaults false
+    void renderPdf_namelessOwner_throwsSenderNameMissing() {
+        // The master hands the PDF over himself: the name its header prints is the only bar.
+        Estimate estimate = ownedEstimate(ownerId);
+        estimate.getProject().getOwner().setEmailVerified(true);
         given(estimateRepository.findById(estimateId)).willReturn(Optional.of(estimate));
 
         assertThatThrownBy(() -> estimateService.renderPdf(estimateId, ownerId))
-                .isInstanceOf(com.majstr.backend.exception.EmailNotVerifiedException.class);
+                .isInstanceOf(com.majstr.backend.exception.SenderNameMissingException.class);
     }
 
     @Test
     void renderPdf_embedsOnlyPhotosOfThisEstimatesProject() throws Exception {
         Estimate estimate = ownedEstimate(ownerId);
-        estimate.getProject().getOwner().setEmailVerified(true);
-        estimate.getProject().getOwner().setFullName("Іван"); // SendReadiness (V190)
+        // Unverified on purpose: the PDF needs only a name (share-without-verification).
+        estimate.getProject().getOwner().setFullName("Іван");
         given(estimateRepository.findById(estimateId)).willReturn(Optional.of(estimate));
         given(itemRepository.findByEstimateIdOrderBySortOrderAscIdAsc(estimateId)).willReturn(List.of());
 
@@ -386,6 +387,35 @@ class EstimateServiceTest {
                 estimateId, new EstimateUpdateRequest(EstimateStatus.REJECTED, null, null, null), ownerId);
 
         assertThat(resp.status()).isEqualTo(EstimateStatus.REJECTED);
+    }
+
+    @Test
+    void update_neverDowngradesSentToDraft_butAppliesTheRest() {
+        // An editor opened before the share still holds DRAFT; its next save must not unmark it.
+        Estimate sent = ownedEstimate(ownerId);
+        sent.setStatus(EstimateStatus.SENT);
+        given(estimateRepository.findById(estimateId)).willReturn(Optional.of(sent));
+        given(itemRepository.findByEstimateIdOrderBySortOrderAscIdAsc(estimateId)).willReturn(List.of());
+
+        EstimateResponse resp = estimateService.update(
+                estimateId, new EstimateUpdateRequest(EstimateStatus.DRAFT, null, null, "Ванна, 2-й варіант"), ownerId);
+
+        assertThat(resp.status()).isEqualTo(EstimateStatus.SENT);
+        assertThat(sent.getName()).isEqualTo("Ванна, 2-й варіант");
+    }
+
+    @Test
+    void update_neverMarksADraftSent() {
+        // SENT is set only by mark-sent or our letter — never by the editor's PUT.
+        Estimate draft = ownedEstimate(ownerId);
+        given(estimateRepository.findById(estimateId)).willReturn(Optional.of(draft));
+        given(itemRepository.findByEstimateIdOrderBySortOrderAscIdAsc(estimateId)).willReturn(List.of());
+
+        EstimateResponse resp = estimateService.update(
+                estimateId, new EstimateUpdateRequest(EstimateStatus.SENT, null, null, "Кухня"), ownerId);
+
+        assertThat(resp.status()).isEqualTo(EstimateStatus.DRAFT);
+        assertThat(draft.getName()).isEqualTo("Кухня");
     }
 
     @Test

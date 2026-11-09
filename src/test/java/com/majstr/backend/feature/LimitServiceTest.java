@@ -1,5 +1,6 @@
 package com.majstr.backend.feature;
 
+import com.majstr.backend.config.BillingProperties;
 import com.majstr.backend.dto.PlanLimitsResponse;
 import com.majstr.backend.entity.PhotoSource;
 import com.majstr.backend.entity.Plan;
@@ -28,6 +29,7 @@ class LimitServiceTest {
     @Mock UserRepository userRepository;
     @Mock EstimateRepository estimateRepository;
     @Mock ProjectPhotoRepository projectPhotoRepository;
+    @Mock BillingProperties billingProperties;
     @InjectMocks LimitService limitService;
 
     private final UUID userId = UUID.randomUUID();
@@ -135,6 +137,7 @@ class LimitServiceTest {
     @Test
     void limitsFor_freeReturnsAllCaps() {
         givenUserOnPlanUnlocked(Plan.FREE);
+        given(billingProperties.trialDays()).willReturn(21);
 
         PlanLimitsResponse limits = limitService.limitsFor(userId);
 
@@ -145,6 +148,8 @@ class LimitServiceTest {
         // Same budget as progress photos: photographing a receipt calls no LLM, so there is no
         // cost reason to keep FREE at 0 — and 0 made the flows fail silently (master decision).
         assertThat(limits.maxReceiptPhotosPerObject()).isEqualTo(5);
+        // The trial offer names the configured length, never a number typed in the PWA.
+        assertThat(limits.trialDays()).isEqualTo(21);
     }
 
     @Test

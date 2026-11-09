@@ -215,6 +215,9 @@
                     <div class="grid" id="funnel">
                         <div class="stat"><div class="label">Завантаження…</div></div>
                     </div>
+                    <p class="muted">«Поділились» — є кошторис зі статусом «Надіслано» або «Підписано»
+                        (посилання справді пішло). До 18.10.2026 «Надіслано» ставилось уже при відкритті
+                        шторки, тож старі дані трохи завищені; видалений надісланий кошторис випадає.</p>
                 </section>
 
                 <h2>За джерелом (партнерська атрибуція)</h2>
@@ -797,13 +800,19 @@
                 + (drop === null ? '' : `<div class="sub">${drop}% з попереднього кроку</div>`)
                 + '</div>';
         };
+        // A verified email is no longer a step: sharing does not need it (2026-11-09), so the chain
+        // runs registered → object → estimate → shared → signed, and the email sits beside it.
+        const side = (label, n, sub) => `<div class="stat"><div class="label">${label}</div>`
+            + `<div class="value">${n}</div><div class="sub">${sub}</div></div>`;
         document.getElementById('funnel').innerHTML =
             step('Зареєструвались', reg) +
-            step('Підтвердили email', f.verifiedEmail, reg) +
-            step("Створили об'єкт", f.withProject, f.verifiedEmail) +
+            step("Створили об'єкт", f.withProject, reg) +
             step('Створили кошторис', f.withEstimate, f.withProject) +
             step('Поділились з клієнтом', f.shared, f.withEstimate) +
-            step('Мають підписаний', f.withSigned, f.shared);
+            step('Мають підписаний', f.withSigned, f.shared) +
+            side('Підтвердили email', f.verifiedEmail, `${pct(f.verifiedEmail)}% від реєстрацій · не крок воронки`) +
+            side('Поділились без підтвердженої пошти', f.sharedUnverified ?? 0,
+                f.shared ? `${Math.round((f.sharedUnverified ?? 0) / f.shared * 100)}% з тих, хто поділився` : '—');
     }
 
     // A percentage NEVER travels without its denominator here: «12% (3/25)». A bare 12% at this
@@ -1309,7 +1318,7 @@
             const dot = activeNow ? '🟢 ' : activeToday ? '🟠 ' : '';
             return `
             <tr class="${rowClass}"${rowTitle}>
-                <td>${dot}<a href="#" class="user-link" data-user="${u.id}">${escapeHtml(u.email)}</a>${bypass ? ' <span title="Активний, але email не підтверджено — можливий обхід через PDF (не торкається порталу клієнта)">⚠️</span>' : ''}</td>
+                <td>${dot}<a href="#" class="user-link" data-user="${u.id}">${escapeHtml(u.email)}</a>${bypass ? ' <span title="Активний, але email не підтверджено (ділитися й завантажувати PDF можна й так; лист клієнту від нас — ні)">⚠️</span>' : ''}</td>
                 <td>${u.emailVerified ? '✅' : '❌'}</td>
                 <td class="hide-mobile">${escapeHtml(u.fullName)}</td>
                 <td>${u.projectsCount}</td>

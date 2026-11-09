@@ -181,6 +181,6 @@ class WorkActReceiptRecognitionTest {
                 null, null, null, false, null,
                 List.of(), List.of(),
                 BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO,
-                null, null);
+                null, null, null);
     }
 }

@@ -8,11 +8,9 @@ import com.majstr.backend.dto.SourceCount;
 import com.majstr.backend.entity.EstimateStatus;
 import com.majstr.backend.entity.Plan;
 import com.majstr.backend.entity.Role;
-import com.majstr.backend.entity.ShareLinkKind;
 import com.majstr.backend.entity.UpgradeEventType;
 import com.majstr.backend.entity.User;
 import com.majstr.backend.repository.EstimateRepository;
-import com.majstr.backend.repository.EstimateShareLinkRepository;
 import com.majstr.backend.repository.PaymentRepository;
 import com.majstr.backend.repository.ProjectRepository;
 import com.majstr.backend.repository.UpgradeEventRepository;
@@ -40,8 +38,6 @@ class MetricsServiceTest {
     @Mock UserRepository userRepository;
     @Mock ProjectRepository projectRepository;
     @Mock EstimateRepository estimateRepository;
-    @Mock EstimateShareLinkRepository shareLinkRepository;
-    @Mock com.majstr.backend.repository.ProjectShareLinkRepository projectShareLinkRepository;
     @Mock com.majstr.backend.repository.ReferralRewardRepository referralRewardRepository;
     @Mock UpgradeEventRepository upgradeEventRepository;
     @Mock PaymentRepository paymentRepository;
@@ -192,15 +188,17 @@ class MetricsServiceTest {
 
     @Test
     void activationFunnel_countsEachStepAcrossMasters() {
-        UUID sharedBothWays = UUID.randomUUID();
+        UUID sentAndSigned = UUID.randomUUID();
         given(userRepository.countByRole(Role.USER)).willReturn(5L);
         given(userRepository.countByRoleAndEmailVerifiedTrue(Role.USER)).willReturn(4L);
         given(projectRepository.countDistinctOwners()).willReturn(3L);
         given(estimateRepository.countDistinctProjectOwners()).willReturn(3L);
-        given(shareLinkRepository.findSharedOwners()).willReturn(List.of(ownerSource(sharedBothWays, "DIRECT")));
-        given(projectShareLinkRepository.findSharedOwners(ShareLinkKind.SHARED_WITH_CLIENT))
-                .willReturn(List.of(ownerSource(sharedBothWays, "DIRECT"), owner("LIGA")));
+given(estimateRepository.findOwnersWithEstimateIn(SENT_OR_SIGNED))
+                .willReturn(List.of(ownerSource(sentAndSigned, "DIRECT"), owner("LIGA")));
         given(estimateRepository.countDistinctProjectOwnersByStatus(EstimateStatus.SIGNED)).willReturn(1L);
+        given(userRepository.countByIdInAndEmailVerifiedFalse(org.mockito.ArgumentMatchers.argThat(
+                (java.util.Collection<UUID> ids) -> ids.size() == 2 && ids.contains(sentAndSigned))))
+                .willReturn(1L);
 
         ActivationFunnelResponse f = metricsService.activationFunnel();
 
@@ -208,28 +206,12 @@ class MetricsServiceTest {
         assertThat(f.verifiedEmail()).isEqualTo(4L);
         assertThat(f.withProject()).isEqualTo(3L);
         assertThat(f.withEstimate()).isEqualTo(3L);
-        // Two masters, not three: the one holding both kinds of link is ONE master. A sum of the two
-        // counts would report 3 here and push the step above `withEstimate`, which is impossible.
+        // Owners with a SENT or SIGNED estimate (2026-11-09), not owners of a link row.
         assertThat(f.shared()).isEqualTo(2L);
         assertThat(f.withSigned()).isEqualTo(1L);
+        // Asked over the SAME de-duplicated set the `shared` step counts, never a second definition.
+        assertThat(f.sharedUnverified()).isEqualTo(1L);
     }
-
-    @Test
-    void activationFunnel_countsAMasterWhoOnlyEverSharedFromTheObject() {
-        given(userRepository.countByRole(Role.USER)).willReturn(1L);
-        given(userRepository.countByRoleAndEmailVerifiedTrue(Role.USER)).willReturn(1L);
-        given(projectRepository.countDistinctOwners()).willReturn(1L);
-        given(estimateRepository.countDistinctProjectOwners()).willReturn(1L);
-        // The bug this iteration fixes: no per-estimate link at all, and the object portal is the
-        // main sharing flow — the step used to read 0 and draw a cliff that was not there.
-        given(shareLinkRepository.findSharedOwners()).willReturn(List.of());
-        given(projectShareLinkRepository.findSharedOwners(ShareLinkKind.SHARED_WITH_CLIENT))
-                .willReturn(List.of(owner("DIRECT")));
-        given(estimateRepository.countDistinctProjectOwnersByStatus(EstimateStatus.SIGNED)).willReturn(0L);
-
-        assertThat(metricsService.activationFunnel().shared()).isEqualTo(1L);
-    }
-
 
     @Test
     void bySource_reportsTheWholeFunnelPerSource_notJustRegistrations() {
@@ -241,9 +223,8 @@ class MetricsServiceTest {
         given(estimateRepository.countEstimateOwnersBySource()).willReturn(List.of(count("LIGA", 12L), count("DIRECT", 5L)));
         given(estimateRepository.countOwnersByStatusAndSource(EstimateStatus.SIGNED))
                 .willReturn(List.of(count("LIGA", 3L), count("DIRECT", 4L)));
-        given(shareLinkRepository.findSharedOwners()).willReturn(List.of(owner("LIGA"), owner("DIRECT")));
-        given(projectShareLinkRepository.findSharedOwners(ShareLinkKind.SHARED_WITH_CLIENT))
-                .willReturn(List.of(owner("LIGA"), owner("LIGA")));
+given(estimateRepository.findOwnersWithEstimateIn(SENT_OR_SIGNED))
+                .willReturn(List.of(owner("LIGA"), owner("DIRECT"), owner("LIGA")));
         given(upgradeEventRepository.countDistinctUsersBySourceAndType(UpgradeEventType.CLICK))
                 .willReturn(List.of(count("LIGA", 7L)));
         given(upgradeEventRepository.countDistinctUsersBySourceAndType(UpgradeEventType.INTEREST))
@@ -269,19 +250,17 @@ class MetricsServiceTest {
     }
 
     @Test
-    void bySource_sharedIsTheSAMEUnionTheFunnelUses_notASumOfTwoCounts() {
-        // Three rows, two masters: the LIGA master holds both kinds of link. Summing the two
-        // queries would report 2 for LIGA and push its `shared` above its `withEstimate`.
+    void bySource_sharedIsTheSameOwnerSetTheFunnelUses_oneMasterOnce() {
+        // The aggregate and the by-source row fold the SAME owner map: a master the query names
+        // twice is still one master in his source's row.
         UUID both = UUID.randomUUID();
         given(userRepository.countUsersBySource()).willReturn(List.of(count("LIGA", 1L), count("DIRECT", 1L)));
         given(userRepository.countVerifiedUsersBySource()).willReturn(List.of());
         given(projectRepository.countActivatedOwnersBySource()).willReturn(List.of());
         given(estimateRepository.countEstimateOwnersBySource()).willReturn(List.of());
         given(estimateRepository.countOwnersByStatusAndSource(EstimateStatus.SIGNED)).willReturn(List.of());
-        given(shareLinkRepository.findSharedOwners())
-                .willReturn(List.of(ownerSource(both, "LIGA"), owner("DIRECT")));
-        given(projectShareLinkRepository.findSharedOwners(ShareLinkKind.SHARED_WITH_CLIENT))
-                .willReturn(List.of(ownerSource(both, "LIGA")));
+given(estimateRepository.findOwnersWithEstimateIn(SENT_OR_SIGNED))
+                .willReturn(List.of(ownerSource(both, "LIGA"), owner("DIRECT"), ownerSource(both, "LIGA")));
         given(upgradeEventRepository.countDistinctUsersBySourceAndType(any(UpgradeEventType.class)))
                 .willReturn(List.of());
         noUtm();
@@ -302,8 +281,7 @@ class MetricsServiceTest {
         given(estimateRepository.countEstimateOwnersBySource()).willReturn(List.of());
         given(estimateRepository.countOwnersByStatusAndSource(EstimateStatus.SIGNED))
                 .willReturn(List.of(count("TIKTOK", 1L), count("LIGA", 3L)));
-        given(shareLinkRepository.findSharedOwners()).willReturn(List.of());
-        given(projectShareLinkRepository.findSharedOwners(ShareLinkKind.SHARED_WITH_CLIENT)).willReturn(List.of());
+given(estimateRepository.findOwnersWithEstimateIn(SENT_OR_SIGNED)).willReturn(List.of());
         given(upgradeEventRepository.countDistinctUsersBySourceAndType(any(UpgradeEventType.class)))
                 .willReturn(List.of());
         noUtm();
@@ -324,8 +302,7 @@ class MetricsServiceTest {
         given(projectRepository.countActivatedOwnersBySource()).willReturn(List.of());
         given(estimateRepository.countEstimateOwnersBySource()).willReturn(List.of());
         given(estimateRepository.countOwnersByStatusAndSource(EstimateStatus.SIGNED)).willReturn(List.of());
-        given(shareLinkRepository.findSharedOwners()).willReturn(List.of());
-        given(projectShareLinkRepository.findSharedOwners(ShareLinkKind.SHARED_WITH_CLIENT)).willReturn(List.of());
+given(estimateRepository.findOwnersWithEstimateIn(SENT_OR_SIGNED)).willReturn(List.of());
         given(upgradeEventRepository.countDistinctUsersBySourceAndType(any(UpgradeEventType.class)))
                 .willReturn(List.of());
         given(userRepository.countUsersByUtmSource())
@@ -353,6 +330,8 @@ class MetricsServiceTest {
             @Override public long getCnt() { return cnt; }
         };
     }
+
+    private static final List<EstimateStatus> SENT_OR_SIGNED = List.of(EstimateStatus.SENT, EstimateStatus.SIGNED);
 
     private static OwnerSource owner(String source) {
         return ownerSource(UUID.randomUUID(), source);

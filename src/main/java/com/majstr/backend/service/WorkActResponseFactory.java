@@ -41,7 +41,12 @@ class WorkActResponseFactory {
 
     /** One act on its own — the editor, a create, a sign. Loads its own twins. */
     WorkActResponse build(WorkAct act) {
-        return build(act, identityIndex.forProject(act.getProject().getId(), List.of()));
+        return build(act, false);
+    }
+
+    /** An offline signature, saying whether the client's copy was held back (unverified email). */
+    WorkActResponse build(WorkAct act, boolean clientCopyWithheld) {
+        return build(act, identityIndex.forProject(act.getProject().getId(), List.of()), clientCopyWithheld);
     }
 
     /**
@@ -52,6 +57,10 @@ class WorkActResponseFactory {
      * and every act on the page belongs to that one object.</p>
      */
     WorkActResponse build(WorkAct act, ReceiptIdentityIndex.Twins twins) {
+        return build(act, twins, false);
+    }
+
+    private WorkActResponse build(WorkAct act, ReceiptIdentityIndex.Twins twins, boolean clientCopyWithheld) {
         List<WorkActItem> items = itemRepository.findByWorkActIdOrderBySortOrderAscIdAsc(act.getId());
         // Current quantities of the estimate lines these close, for the live exceedsEstimate flag.
         Map<UUID, BigDecimal> estimateQty = new HashMap<>();
@@ -120,7 +129,8 @@ class WorkActResponseFactory {
                 receiptsTotal,
                 payable,
                 act.getCreatedAt(),
-                act.getUpdatedAt()
+                act.getUpdatedAt(),
+                clientCopyWithheld ? Boolean.TRUE : null
         );
     }
 }

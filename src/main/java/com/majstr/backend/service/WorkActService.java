@@ -122,7 +122,7 @@ public class WorkActService {
                 return new WorkActPdfService.PdfJob(frozen.get().pdfModel(), frozen.get().pdfKey());
             }
             // A live act prints today's «Виконавець» — which needs a name since V190.
-            SendReadiness.requireName(act.getProject().getOwner());
+            SendReadiness.masterSendsItself(act.getProject().getOwner());
             List<WorkActItem> items = itemRepository.findByWorkActIdOrderBySortOrderAscIdAsc(id);
             Map<UUID, String> names = new HashMap<>();
             items.stream().map(WorkActItem::getEstimateId).filter(Objects::nonNull).distinct().forEach(estId ->
@@ -346,7 +346,7 @@ public class WorkActService {
         WorkAct act = requireNotSigned(loadOwnedForUpdate(id, ownerId));
         // The paper is signed and frozen here, its copy mailed to the client: «Виконавець» must have a
         // name, or the act keeps an empty one forever (V190 review — the live PDF's check never sees it).
-        SendReadiness.requireName(act.getProject().getOwner());
+        SendReadiness.masterSendsItself(act.getProject().getOwner());
         requireItems(id); // a signed act is immutable and undeletable — never let an empty one in
         receiptCompleteness.requireAllPriced(id); // …nor one whose receipts are not priced yet
         // The master's own document is issued here, so its money is re-derived here (B-87): the
@@ -370,8 +370,9 @@ public class WorkActService {
         act.setSignedOffline(true);
         act.setSignedAt(Instant.now());
         List<WorkActItem> items = itemRepository.findByWorkActIdOrderBySortOrderAscIdAsc(id);
-        signedCopy.freezeAndSend(act, items, receiptRepository.findByWorkActIdNewestFirst(id));
-        return responseFactory.build(act);
+        boolean withheld = signedCopy.freezeAndSend(act, items, receiptRepository.findByWorkActIdNewestFirst(id),
+                act.getProject().getOwner().isEmailVerified());
+        return responseFactory.build(act, withheld);
     }
 
     /**

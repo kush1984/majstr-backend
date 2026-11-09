@@ -4,19 +4,16 @@ import com.majstr.backend.dto.AdminUserDetail;
 import com.majstr.backend.dto.AdminUserSummary;
 import com.majstr.backend.entity.EstimateStatus;
 import com.majstr.backend.entity.Plan;
-import com.majstr.backend.entity.ShareLinkKind;
 import com.majstr.backend.entity.User;
 import com.majstr.backend.exception.ResourceNotFoundException;
 import com.majstr.backend.repository.CatalogItemRepository;
 import com.majstr.backend.repository.ClientRepository;
 import com.majstr.backend.repository.EstimateRepository;
-import com.majstr.backend.repository.EstimateShareLinkRepository;
 import com.majstr.backend.entity.Payment;
 import com.majstr.backend.entity.PaymentKind;
 import com.majstr.backend.repository.OwnerCount;
 import com.majstr.backend.repository.PaymentRepository;
 import com.majstr.backend.repository.ProjectRepository;
-import com.majstr.backend.repository.ProjectShareLinkRepository;
 import com.majstr.backend.repository.ReferralRewardRepository;
 import com.majstr.backend.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
@@ -59,8 +56,6 @@ public class AdminUserService {
     private final ClientRepository clientRepository;
     private final ProjectRepository projectRepository;
     private final EstimateRepository estimateRepository;
-    private final EstimateShareLinkRepository shareLinkRepository;
-    private final ProjectShareLinkRepository projectShareLinkRepository;
     private final CatalogItemRepository catalogRepository;
     private final PaymentRepository paymentRepository;
     private final ReferralRewardRepository referralRewardRepository;
@@ -155,7 +150,9 @@ public class AdminUserService {
                 clientRepository.countByOwnerId(userId),
                 projectRepository.countByOwnerId(userId),
                 breakdown,
-                hasSharedWithClient(userId),
+                // The per-master twin of the funnel's `shared` (2026-11-09): an estimate that reached
+                // SENT or SIGNED — the same rule, or the two numbers on one admin page disagree.
+                sent + signed > 0,
                 signed > 0,
                 catalogRepository.countByOwnerId(userId),
                 hasLogo,
@@ -174,18 +171,6 @@ public class AdminUserService {
         );
     }
 
-    /**
-     * "Shared at least once" for one master — the per-master twin of the funnel's {@code shared}
-     * step, and it has to follow exactly the same rules or the two numbers on the same admin page
-     * start contradicting each other. Both link tables, kinds
-     * {@link ShareLinkKind#SHARED_WITH_CLIENT} (MESSAGE never counts), no {@code revoked} filter —
-     * see {@code MetricsService.sharedWithClientCount()} for why each of those is what it is.
-     */
-    private boolean hasSharedWithClient(UUID userId) {
-        return shareLinkRepository.countByOwner(userId) > 0
-                || projectShareLinkRepository.existsByProjectOwnerIdAndKindIn(
-                        userId, ShareLinkKind.SHARED_WITH_CLIENT);
-    }
 
     /**
      * Manual admin override of a master's referral source (conflicts, or survey

@@ -13,6 +13,8 @@ import java.util.UUID;
  * A work act with its frozen lines, receipts and computed money. {@code total} sums the included
  * lines, {@code receiptsTotal} the attached receipts;
  * {@code payable} adds the receipts and nets off {@code advanceOffset} (→ «До сплати»). Owner-only.
+ * {@code clientCopyWithheld} is set only by an offline signature whose client copy was not mailed
+ * because the master's email is unverified (absent otherwise).
  */
 public record WorkActResponse(
         UUID id,
@@ -44,5 +46,6 @@ public record WorkActResponse(
         BigDecimal receiptsTotal,
         BigDecimal payable,
         Instant createdAt,
-        Instant updatedAt
+        Instant updatedAt,
+        Boolean clientCopyWithheld
 ) {}

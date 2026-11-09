@@ -17,6 +17,7 @@ import com.majstr.backend.entity.WorkActKind;
 import com.majstr.backend.entity.WorkActStatus;
 import com.majstr.backend.exception.ClientEmailMissingException;
 import com.majstr.backend.exception.EmailNotVerifiedException;
+import com.majstr.backend.exception.SenderNameMissingException;
 import com.majstr.backend.exception.InvalidEstimateStatusException;
 import com.majstr.backend.exception.ResourceNotFoundException;
 import com.majstr.backend.feature.FeatureGuard;
@@ -45,6 +46,7 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 
 @ExtendWith(MockitoExtension.class)
 class ProjectPortalServiceTest {
@@ -102,7 +104,8 @@ class ProjectPortalServiceTest {
 
     @Test
     void update_setsExactVisibleSet_leavesStatusesAlone_andMintsOneLink() {
-        Project p = project(true, null);
+        // Unverified on purpose: publishing is the master's own send, a name is enough.
+        Project p = project(false, null);
         Estimate wanted = estimate(p, EstimateStatus.DRAFT, false);
         Estimate other = estimate(p, EstimateStatus.SENT, true);
         given(projectService.loadOwned(projectId, ownerId)).willReturn(p);
@@ -194,19 +197,38 @@ class ProjectPortalServiceTest {
     }
 
     @Test
-    void update_requiresVerifiedEmail() {
+    void update_requiresAName_notAVerifiedEmail() {
         Project p = project(false, null);
+        p.getOwner().setFullName(null);
         given(projectService.loadOwned(projectId, ownerId)).willReturn(p);
 
         assertThatThrownBy(() -> portalService.update(projectId, List.of(), ownerId))
+                .isInstanceOf(SenderNameMissingException.class);
+        verify(linkRepository, never()).save(any());
+    }
+
+    /** Every letter WE send from our domain still needs a verified email (Resend reputation). */
+    @Test
+    void everySendEmail_refusesAnUnverifiedMaster_andSendsNothing() {
+        Project p = project(false, "olena@x.ua");
+        given(projectService.loadOwned(projectId, ownerId)).willReturn(p);
+        WorkAct a = act(p, WorkActStatus.SENT);
+        given(workActRepository.findByIdAndUserId(a.getId(), ownerId)).willReturn(Optional.of(a));
+
+        assertThatThrownBy(() -> portalService.sendEmail(projectId, ownerId))
                 .isInstanceOf(EmailNotVerifiedException.class);
+        assertThatThrownBy(() -> portalService.sendEconomyEmail(projectId, ownerId))
+                .isInstanceOf(EmailNotVerifiedException.class);
+        assertThatThrownBy(() -> portalService.sendActEmail(a.getId(), ownerId))
+                .isInstanceOf(EmailNotVerifiedException.class);
+        verifyNoInteractions(emailService);
     }
 
     @Test
     void updateEconomy_setsPaymentsVisible_mintsOneLink_andShowsEverySignedCountedEstimate() {
         // B-103: no picker. What the client sees is the deal — SIGNED ∧ counted — and the master's
         // publish only decides the payments card.
-        Project p = project(true, null);
+        Project p = project(false, null);
         Estimate signed = economyEstimate(p, EstimateStatus.SIGNED);
         Estimate draft = economyEstimate(p, EstimateStatus.DRAFT);
         Estimate superseded = economyEstimate(p, EstimateStatus.SIGNED);
@@ -303,7 +325,7 @@ class ProjectPortalServiceTest {
 
     @Test
     void markSent_flipsTheVisibleDraftsOnly_andIsIdempotent() {
-        Project p = project(true, null);
+        Project p = project(false, null);
         Estimate visibleDraft = estimate(p, EstimateStatus.DRAFT, true);
         Estimate hiddenDraft = estimate(p, EstimateStatus.DRAFT, false);
         Estimate signed = estimate(p, EstimateStatus.SIGNED, false);
@@ -366,7 +388,7 @@ class ProjectPortalServiceTest {
 
     @Test
     void updateAct_flipsDraftToSent_andMintsTheActLink() {
-        Project p = project(true, null);
+        Project p = project(false, null); // the act link is the master's own send too
         WorkAct a = act(p, WorkActStatus.DRAFT);
         // Publishing takes the act FOR UPDATE (B-60) — a different query than the read paths use.
         given(workActRepository.findByIdForUpdate(a.getId())).willReturn(Optional.of(a));

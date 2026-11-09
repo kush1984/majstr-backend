@@ -57,6 +57,7 @@ class WorkActIntegrationTest extends IntegrationTestBase {
     @Autowired com.majstr.backend.service.EstimateService estimateService;
     @Autowired UserRepository userRepository;
     @Autowired ProjectRepository projectRepository;
+    @Autowired com.majstr.backend.repository.ClientRepository clientRepository;
     @Autowired EstimateRepository estimateRepository;
     @Autowired EstimateItemRepository estimateItemRepository;
     @Autowired WorkActRepository workActRepository;
@@ -1701,6 +1702,44 @@ class WorkActIntegrationTest extends IntegrationTestBase {
         ObjectEconomyResponse economy = objectExpenseService.economy(p.getId(), owner.getId());
         assertThat(economy.acts().contracted()).isEqualByComparingTo("15950.00");
         assertThat(economy.acts().acceptedByActs()).isEqualByComparingTo("15950.00");
+    }
+
+    @Test
+    void anUnverifiedMastersOfflineSignature_landsButSaysTheClientCopyWasNotSent() throws Exception {
+        // The copy is OUR letter (share-without-verification); the paper is signed, so only it waits.
+        User owner = newOwner();
+        Project p = newProject(owner);
+        p.setClient(clientRepository.save(com.majstr.backend.entity.Client.builder()
+                .owner(owner).fullName("Олена").phone("+380671112233").email("olena@example.com").build()));
+        projectRepository.save(p);
+        Estimate est = signedEstimateWithLine(p, "Шпаклювання", "10.000", "145.00");
+        UUID lineId = estimateItemRepository.findByEstimateIdOrderBySortOrderAscIdAsc(est.getId()).get(0).getId();
+        WorkActResponse act = createInterim(p.getId(), owner.getId());
+        setSingleLine(act.id(), owner.getId(), est.getId(), lineId, "10.000", "145.00");
+
+        WorkActResponse signed = workActService.signOffline(act.id(), new WorkActSignOfflineRequest("Олена"), owner.getId());
+
+        assertThat(signed.status()).isEqualTo(WorkActStatus.SIGNED);
+        assertThat(signed.clientCopyWithheld()).isTrue();
+    }
+
+    @Test
+    void aVerifiedMastersOfflineSignature_carriesNoWithheldFlag() throws Exception {
+        User owner = newOwner();
+        owner.setEmailVerified(true);
+        userRepository.save(owner);
+        Project p = newProject(owner);
+        p.setClient(clientRepository.save(com.majstr.backend.entity.Client.builder()
+                .owner(owner).fullName("Олена").phone("+380671112233").email("olena@example.com").build()));
+        projectRepository.save(p);
+        Estimate est = signedEstimateWithLine(p, "Шпаклювання", "10.000", "145.00");
+        UUID lineId = estimateItemRepository.findByEstimateIdOrderBySortOrderAscIdAsc(est.getId()).get(0).getId();
+        WorkActResponse act = createInterim(p.getId(), owner.getId());
+        setSingleLine(act.id(), owner.getId(), est.getId(), lineId, "10.000", "145.00");
+
+        WorkActResponse signed = workActService.signOffline(act.id(), new WorkActSignOfflineRequest("Олена"), owner.getId());
+
+        assertThat(signed.clientCopyWithheld()).isNull();
     }
 
     // ---- fixtures ---------------------------------------------------------------

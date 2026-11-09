@@ -570,7 +570,13 @@ public class EstimateService {
             // Message is a bundle key, resolved by GlobalExceptionHandler.
             throw new InvalidEstimateStatusException("error.estimate.manual-sign");
         }
-        estimate.setStatus(req.status());
+        // SENT is a fact the server records (mark-sent or our letter), never a field the editor
+        // writes: an editor opened before the share carries a stale DRAFT, and taking it unmarked
+        // «Надіслано», «Очікує» and the funnel's shared step. The rest of the request still lands.
+        if (!(req.status() == EstimateStatus.SENT
+                || (estimate.getStatus() == EstimateStatus.SENT && req.status() == EstimateStatus.DRAFT))) {
+            estimate.setStatus(req.status());
+        }
         // Marking it REJECTED means the client turned the deal down, so it stops being
         // income — clear the flag with the status. The income queries already exclude
         // REJECTED, and leaving the flag set would show a ticked "count in economy" box
@@ -723,10 +729,9 @@ public class EstimateService {
             throws IOException, DocumentException {
         return render(Transactions.read(transactionManager, () -> {
             Estimate estimate = loadOwned(estimateId, ownerId);
-            // The PDF is a client-facing deliverable — gate it behind a verified email
-            // (even on FREE) so a throwaway account can't churn out finished estimates, and a
-            // name for its header and «Підрядник» line (SendReadiness, V190).
-            SendReadiness.require(estimate.getProject().getOwner());
+            // The master hands the PDF over himself: it needs the name its header and «Підрядник»
+            // line print, not a verified email (SendReadiness, share-without-verification).
+            SendReadiness.masterSendsItself(estimate.getProject().getOwner());
             return pdfJob(estimate, pdfImageKeys(estimate, receiptPhotoIds));
         }));
     }

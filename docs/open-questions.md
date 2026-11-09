@@ -84,7 +84,9 @@ one-line summary — keep the item in the file as a record.
   publishing would have to make the act servable without calling it SENT.
 
 ### The admin funnel's «shared» step still counts minted links — після мітапу
-- **Status:** OPEN
+- **Status:** RESOLVED 2026-11-09 — `shared` = owners with a SENT or SIGNED estimate, one set for the
+  aggregate, the by-source row and `sharedUnverified`; the admin card follows it. See
+  [iteration-share-without-verification.md](iteration-share-without-verification.md).
 - **Since:** 2026-10-18, P1 before the meetup
 - **Context:** PostHog's `estimate_shared` now fires only when a link left the app, but the backend
   funnel's `shared` (`findSharedOwnerIds`) still counts the existence of a link row, minted when the
@@ -460,17 +462,14 @@ one-line summary — keep the item in the file as a record.
   silently dropped. One send to a third-party address settles it, and this item closes.
 
 ### PDF-download counter for the bypass metric
-- **Status:** OPEN
+- **Status:** OPEN — rewritten 2026-11-09 (share-without-verification): the next iteration.
 - **Since:** Admin-activity iteration (2026-06-13)
-- **Context:** The admin flags potential "PDF bypass" (a master uses the product
-  but skips the portal) as **active + email-unverified** — exact today, because
-  an unverified master can't share. But there's no direct counter for "generated
-  / downloaded a PDF", so a *verified* master who only ever downloads PDFs (never
-  shares) isn't caught.
-- **Notes / options:** Add a lightweight counter — increment on
-  `GET /api/estimates/{id}/pdf` (a column on `users` or estimate, or an events
-  row). Then "has estimates + downloaded PDF + never shared" becomes a precise
-  bypass signal. Low priority; the current proxy covers the common case.
+- **Context:** The admin used to flag a possible «PDF bypass» as **active + email-unverified** — exact
+  only while an unverified master could not share. Since 2026-11-09 he can share and print without
+  verifying, so that proxy means nothing any more (the ⚠️ on the user list now just marks «active,
+  unverified — a candidate for a call»). There is no direct count of PDFs made.
+- **Notes / options:** a direct counter of estimate PDFs formed (`GET /api/estimates/{id}/pdf` — a
+  column or an events row), and a funnel step «віддали клієнту» = shared ∪ made a PDF.
 
 ### I/O inside @Transactional
 - **Status:** OPEN

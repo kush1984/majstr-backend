@@ -47,4 +47,13 @@ class ResendEmailHtmlTest {
         assertThat(ResendEmailService.verificationHtml(null, LINK)).contains("Вітаємо в Majstr!");
         assertThat(ResendEmailService.verificationHtml(" ", LINK)).contains("Вітаємо в Majstr!");
     }
+
+    @Test
+    void theLetterPromisesWhatVerificationStillGates() {
+        // Sharing and the PDF no longer need a verified email (share-without-verification): the
+        // letter names the account, the PRO trial and the letter to the client — not «щоб надсилати».
+        String html = ResendEmailService.verificationHtml("Олена", LINK).replaceAll("\\s+", " ");
+        assertThat(html).contains("пробний PRO").contains("кошторис клієнту листом")
+                .doesNotContain("щоб надсилати кошториси клієнтам");
+    }
 }

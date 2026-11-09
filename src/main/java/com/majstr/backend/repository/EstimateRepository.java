@@ -1,5 +1,6 @@
 package com.majstr.backend.repository;
 
+import com.majstr.backend.dto.OwnerSource;
 import com.majstr.backend.entity.Estimate;
 import com.majstr.backend.entity.EstimateStatus;
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -90,6 +91,21 @@ public interface EstimateRepository extends JpaRepository<Estimate, UUID> {
             WHERE e.status = :status AND e.project.owner.role = com.majstr.backend.entity.Role.USER
             """)
     long countDistinctProjectOwnersByStatus(@Param("status") EstimateStatus status);
+
+    /**
+     * The funnel's {@code shared} step (share-without-verification, 2026-11-09): masters with an
+     * estimate that reached SENT or SIGNED — the link really LEFT the app ({@code markSent}, the
+     * letter, or a signature), not a link row minted when the share sheet opened. The set only grows:
+     * the one way back to DRAFT is reopen, behind {@code REOPEN_ENABLED = false}. A sent estimate the
+     * master later deleted drops out. One row per master, with his source, so the aggregate and the
+     * by-source report count the SAME ids.
+     */
+    @Query("""
+            SELECT DISTINCT e.project.owner.id AS ownerId, e.project.owner.referralSource AS source
+            FROM Estimate e
+            WHERE e.status IN :statuses AND e.project.owner.role = com.majstr.backend.entity.Role.USER
+            """)
+    List<OwnerSource> findOwnersWithEstimateIn(@Param("statuses") Collection<EstimateStatus> statuses);
 
     /** The two estimate funnel steps, grouped by referral source — same rules as the aggregates
      *  above (masters only, distinct owners), so the by-source rows sum to the funnel. */

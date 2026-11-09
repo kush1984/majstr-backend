@@ -289,8 +289,11 @@ public class ResendEmailService implements EmailService {
         return """
                 <div style="font-family:Arial,sans-serif;max-width:480px;margin:0 auto;color:#1a1a1a">
                   <h2 style="color:#F26B1F">Вітаємо в Majstr%s!</h2>
-                  <p>Дякуємо за реєстрацію. Підтвердіть свою електронну пошту, щоб
-                     надсилати кошториси клієнтам.</p>
+                  <p>Дякуємо за реєстрацію. Підтвердіть свою електронну пошту — так ви
+                     не втратите доступ до акаунта, зможете взяти пробний PRO і надсилати
+                     кошторис клієнту листом.</p>
+                  <p>Поділитися кошторисом у Viber чи Telegram і завантажити PDF можна й
+                     без підтвердження.</p>
                   <p style="margin:28px 0">
                     <a href="%s" style="background:#F26B1F;color:#fff;text-decoration:none;
                        padding:12px 24px;border-radius:8px;display:inline-block;font-weight:bold">

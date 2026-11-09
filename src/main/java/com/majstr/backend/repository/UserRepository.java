@@ -115,6 +115,9 @@ public interface UserRepository extends JpaRepository<User, UUID> {
     /** Masters who verified their email (funnel step). */
     long countByRoleAndEmailVerifiedTrue(Role role);
 
+    /** Of these masters, how many have still not verified (funnel: shared without a verified email). */
+    long countByIdInAndEmailVerifiedFalse(Collection<UUID> ids);
+
     // ---- admin metrics ----------------------------------------------------
 
     long countByCreatedAtAfter(Instant since);

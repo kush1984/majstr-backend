@@ -26,7 +26,8 @@ import static org.assertj.core.api.Assertions.assertThat;
  * Registration friction round 2 (V190) through the real server: the door takes email + password +
  * consent, the trades come after and bring their catalog, and the name is asked for only when a
  * document is about to leave — {@code SENDER_NAME_REQUIRED} on the share link and the PDF until the
- * «як вас підписати» sheet has saved one.
+ * «як вас підписати» sheet has saved one. Since share-without-verification (2026-11-09) that name is
+ * the ONLY bar for what the master sends himself; a letter we send still needs a verified email.
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
         properties = "server.forward-headers-strategy=framework")
@@ -257,5 +258,54 @@ class RegistrationOnboardingIntegrationTest extends IntegrationTestBase {
     void theSenderSheetRefusesABlankName() throws Exception {
         String token = registerBare(fresh());
         assertThat(call("PATCH", "/api/profile/sender", token, "{\"fullName\":\"  \"}").status()).isEqualTo(400);
+    }
+
+    /**
+     * Share without verification (2026-11-09): an unverified master with a name mints the link, marks
+     * it sent, publishes the object portal and downloads the PDF; every letter WE send, the PRO trial
+     * and checkout still answer 403 {@code EMAIL_NOT_VERIFIED}.
+     */
+    @Test
+    void anUnverifiedMasterSendsHimself_butNotThroughOurLetters() throws Exception {
+        String email = fresh();
+        String token = registerBare(email);
+        assertThat(users.findByEmailIgnoreCase(email).orElseThrow().isEmailVerified()).isFalse();
+        assertThat(call("PATCH", "/api/profile/sender", token, "{\"fullName\":\"Іван Петренко\"}").status())
+                .isEqualTo(200);
+
+        String clientId = call("POST", "/api/clients", token,
+                "{\"fullName\":\"Олена\",\"phone\":\"+380501234567\",\"email\":\"olena-%s@ukr.net\"}".formatted(UUID.randomUUID()))
+                .body().get("id").asString();
+        String projectId = call("POST", "/api/projects", token,
+                "{\"name\":\"Обʼєкт\",\"clientId\":\"%s\"}".formatted(clientId)).body().get("id").asString();
+        String estimateId = call("POST", "/api/projects/" + projectId + "/estimates", token,
+                "{\"name\":\"Кошторис\"}").body().get("id").asString();
+
+        assertThat(call("POST", "/api/estimates/" + estimateId + "/share", token, null).status())
+                .as("mint the link").isBetween(200, 201);
+        assertThat(call("POST", "/api/estimates/" + estimateId + "/share/mark-sent", token, null).status())
+                .as("the link left").isBetween(200, 204);
+        assertThat(call("PUT", "/api/projects/" + projectId + "/portal", token,
+                "{\"estimateIds\":[\"%s\"]}".formatted(estimateId)).status()).as("object portal").isEqualTo(200);
+        assertThat(call("POST", "/api/projects/" + projectId + "/portal/mark-sent", token, null).status())
+                .isBetween(200, 204);
+        assertThat(call("GET", "/api/estimates/" + estimateId + "/pdf", token, null).status())
+                .as("the PDF").isEqualTo(200);
+
+        for (String path : new String[] {
+                "/api/estimates/" + estimateId + "/share/send-email",
+                "/api/projects/" + projectId + "/portal/send-email",
+                "/api/billing/trial"}) {
+            Answer refused = call("POST", path, token, null);
+            assertThat(refused.status()).as(path).isEqualTo(403);
+            assertThat(refused.code()).as(path).isEqualTo("EMAIL_NOT_VERIFIED");
+        }
+        Answer checkout = call("POST", "/api/billing/checkout", token, "{\"period\":\"MONTH\",\"autoRenew\":false}");
+        assertThat(checkout.code()).as("checkout").isEqualTo("EMAIL_NOT_VERIFIED");
+
+        Answer limits = call("GET", "/api/plan/limits", token, null);
+        assertThat(limits.body().get("trialDays").asInt())
+                .as("the trial offer names the configured length")
+                .isEqualTo(env.getProperty("app.billing.trial-days", Integer.class));
     }
 }

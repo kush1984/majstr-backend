@@ -59,7 +59,7 @@ public class ShareLinkService {
     @Transactional
     public ShareLinkResponse create(UUID estimateId, UUID ownerId) {
         Estimate estimate = estimateService.loadOwned(estimateId, ownerId);
-        requireSharable(estimate);
+        requireSharable(estimate, false);
         // No status change here (review P1-13): the share sheet asks for the link the moment it
         // OPENS, so this flipped DRAFT to «Надіслано» for a master who only looked and closed it.
         // The flip is now {@link #markSent}, called once the link really left — shared or copied.
@@ -74,19 +74,20 @@ public class ShareLinkService {
     @Transactional
     public void markSent(UUID estimateId, UUID ownerId) {
         Estimate estimate = estimateService.loadOwned(estimateId, ownerId);
-        requireSharable(estimate);
+        requireSharable(estimate, false);
         flipToSentIfDraft(estimate);
     }
 
     /**
-     * Email the estimate's portal link to its client. Same gate as {@code create}; the mail IS the
+     * Email the estimate's portal link to its client. {@code create}'s gate plus a verified email —
+     * WE send this letter ({@link SendReadiness#weSendTheLetter}); the mail IS the
      * link leaving, so this marks DRAFT->SENT itself. Reuses an existing active link if there is
      * one. Requires the client to have an email on file.
      */
     @Transactional
     public ShareLinkResponse sendByEmail(UUID estimateId, UUID ownerId) {
         Estimate estimate = estimateService.loadOwned(estimateId, ownerId);
-        requireSharable(estimate);
+        requireSharable(estimate, true);
 
         Client client = estimate.getProject().getClient();
         if (client == null || client.getEmail() == null || client.getEmail().isBlank()) {
@@ -126,8 +127,9 @@ public class ShareLinkService {
                 .filter(l -> l.isUsable(Instant.now()));
     }
 
-    /** Plan feature + {@link SendReadiness} (verified email, a name) for any client-facing share (checked before mutating). */
-    private void requireSharable(Estimate estimate) {
+    /** Plan feature + {@link SendReadiness} for any client-facing share (checked before mutating):
+     *  a name when the master sends it himself, a verified email too when {@code ourLetter}. */
+    private void requireSharable(Estimate estimate, boolean ourLetter) {
         // Never the ADDENDUM (B-58): «Додаткові роботи до акта № 3» is a rollup the server writes
         // when an act is signed, not an offer — the client has already accepted that work ON the
         // act, and sending it to him as an estimate asks him to agree to it a second time.
@@ -136,7 +138,11 @@ public class ShareLinkService {
         }
         User owner = estimate.getProject().getOwner();
         featureGuard.requireFeature(owner, Feature.CLIENT_PORTAL);
-        SendReadiness.require(owner);
+        if (ourLetter) {
+            SendReadiness.weSendTheLetter(owner);
+        } else {
+            SendReadiness.masterSendsItself(owner);
+        }
     }
 
     /** Sharing means the estimate is no longer a draft (feeds the "pending" metric / "Надіслано" badge). */

@@ -6,13 +6,11 @@ import com.majstr.backend.dto.UpgradeUserActivity;
 import com.majstr.backend.entity.EstimateStatus;
 import com.majstr.backend.entity.Plan;
 import com.majstr.backend.entity.Role;
-import com.majstr.backend.entity.ShareLinkKind;
 import com.majstr.backend.entity.Trade;
 import com.majstr.backend.entity.User;
 import com.majstr.backend.repository.CatalogItemRepository;
 import com.majstr.backend.repository.ClientRepository;
 import com.majstr.backend.repository.EstimateRepository;
-import com.majstr.backend.repository.EstimateShareLinkRepository;
 import com.majstr.backend.repository.OwnerCount;
 import com.majstr.backend.repository.ProjectRepository;
 import com.majstr.backend.repository.UserRepository;
@@ -47,8 +45,6 @@ class AdminUserServiceTest {
     @Mock ClientRepository clientRepository;
     @Mock ProjectRepository projectRepository;
     @Mock EstimateRepository estimateRepository;
-    @Mock EstimateShareLinkRepository shareLinkRepository;
-    @Mock com.majstr.backend.repository.ProjectShareLinkRepository projectShareLinkRepository;
     @Mock CatalogItemRepository catalogRepository;
     @Mock com.majstr.backend.repository.PaymentRepository paymentRepository;
     @Mock com.majstr.backend.repository.ReferralRewardRepository referralRewardRepository;
@@ -122,7 +118,6 @@ class AdminUserServiceTest {
         ));
         given(clientRepository.countByOwnerId(id)).willReturn(4L);
         given(projectRepository.countByOwnerId(id)).willReturn(3L);
-        given(shareLinkRepository.countByOwner(id)).willReturn(1L);
         given(catalogRepository.countByOwnerId(id)).willReturn(42L);
         given(estimateRepository.findLastEstimateCreatedAt(id)).willReturn(Instant.now());
         given(upgradeEventService.userActivity(id))
@@ -150,20 +145,19 @@ class AdminUserServiceTest {
         assertThat(d.lastEstimateCreatedAt()).isNotNull();
     }
 
-    // The card used to read only EstimateShareLink, exactly like the funnel step did. A master who
-    // shares from the object (the main flow since the portal iteration) showed «Поділився хоч раз:
-    // ні» while the fixed funnel counted him — two numbers on one admin page contradicting each other.
+    /** The card's «поділився» is the funnel's rule (2026-11-09): a SENT or SIGNED estimate, never
+     *  a link row minted when the share sheet opened. */
     @Test
-    void detail_countsAMasterWhoOnlyEverSharedFromTheObject() {
+    void detail_hasShared_onlyOnceAnEstimateReachedSent() {
         UUID id = UUID.randomUUID();
-        given(userRepository.findWithTradesById(id)).willReturn(Optional.of(user(id, "a@x", Plan.FREE, true)));
-        given(estimateRepository.countByStatusForOwner(id)).willReturn(List.of());
-        given(shareLinkRepository.countByOwner(id)).willReturn(0L);
-        given(projectShareLinkRepository.existsByProjectOwnerIdAndKindIn(id, ShareLinkKind.SHARED_WITH_CLIENT))
-                .willReturn(true);
+        given(userRepository.findWithTradesById(id)).willReturn(Optional.of(user(id, "a@x", Plan.FREE, false)));
+        given(estimateRepository.countByStatusForOwner(id))
+                .willReturn(List.<Object[]>of(new Object[]{EstimateStatus.DRAFT, 3L}))
+                .willReturn(List.<Object[]>of(new Object[]{EstimateStatus.SENT, 1L}));
         given(upgradeEventService.userActivity(id))
                 .willReturn(new UpgradeUserActivity(0, null, false, null, null));
 
+        assertThat(adminUserService.detail(id).hasShareLink()).isFalse();
         assertThat(adminUserService.detail(id).hasShareLink()).isTrue();
     }
 

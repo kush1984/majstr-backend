@@ -28,8 +28,8 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * The by-source report as real SQL: seven grouped queries plus one cross-table union, against real
- * Postgres.
+ * The by-source report as real SQL against real Postgres: grouped queries, plus {@code shared}, which
+ * both reports take from ONE owner-id select (owners with a SENT or SIGNED estimate, 2026-11-09).
  *
  * <p><b>The invariant this file exists for:</b> for every funnel step, the sum over all sources must
  * equal the matching field of {@link ActivationFunnelResponse}. Two reports computing the same six
@@ -55,11 +55,12 @@ class SourceBreakdownIntegrationTest extends IntegrationTestBase {
         master("SUM-A").verified().build();
         master("SUM-B").verified().withObject().build();
         master("SUM-C").verified().withObject().withEstimate().build();
-        master("SUM-D").verified().withObject().withEstimate().sharedFromObject().build();
-        master("SUM-E").verified().withObject().withEstimate().sharedFromEstimate().signed().build();
-        // The one that makes a sum-of-two-COUNTs implementation fail here: both kinds of link.
-        master("SUM-F").verified().withObject().withEstimate()
-                .sharedFromObject().sharedFromEstimate().signed().build();
+        master("SUM-D").verified().withObject().withEstimate().sent().build();
+        master("SUM-E").withObject().withEstimate().signed().build();
+        // A sent AND a signed estimate: one master, counted once in `shared`.
+        master("SUM-F").verified().withObject().withEstimate().sent().signed().build();
+        // A link minted on a DRAFT (the sheet opened, nothing left) is not sharing (2026-11-09).
+        master("SUM-G").withObject().withEstimate().mintedOnly().build();
 
         ActivationFunnelResponse funnel = metricsService.activationFunnel();
         List<SourceBreakdownResponse.SourceStat> rows = metricsService.bySource().sources();
@@ -73,14 +74,13 @@ class SourceBreakdownIntegrationTest extends IntegrationTestBase {
     }
 
     @Test
-    void oneSourceCarriesTheWholeFunnel_andASharerWithBothLinksIsCountedOnce() {
+    void oneSourceCarriesTheWholeFunnel_andASharerIsCountedOnce() {
         String source = "ROW-" + UUID.randomUUID().toString().substring(0, 8);
         master(source).build();                                   // registered only
         master(source).verified().build();
         master(source).verified().withObject().build();
-        master(source).verified().withObject().withEstimate().sharedFromObject().build();
-        master(source).verified().withObject().withEstimate()
-                .sharedFromObject().sharedFromEstimate().signed().build();
+        master(source).verified().withObject().withEstimate().sent().build();
+        master(source).verified().withObject().withEstimate().sent().signed().build();
 
         SourceBreakdownResponse.SourceStat row = rowFor(source);
 
@@ -88,8 +88,7 @@ class SourceBreakdownIntegrationTest extends IntegrationTestBase {
         assertThat(row.verifiedEmail()).isEqualTo(4L);
         assertThat(row.activated()).isEqualTo(3L);
         assertThat(row.withEstimate()).isEqualTo(2L);
-        // 2, not 3: the last master holds an object link AND an estimate link. This is the step
-        // that cannot be a GROUP BY — the ids are unioned in Java before anything is counted.
+        // 2, not 3: the last master has a SENT and a SIGNED estimate — one master.
         assertThat(row.shared()).isEqualTo(2L);
         assertThat(row.withSigned()).isEqualTo(1L);
         assertThat(row.enoughData()).isTrue(); // exactly at the threshold, which is inclusive
@@ -99,7 +98,7 @@ class SourceBreakdownIntegrationTest extends IntegrationTestBase {
     void anAdminIsInNoRowAtAll() {
         String source = "ADM-" + UUID.randomUUID().toString().substring(0, 8);
         master(source).role(Role.ADMIN).verified().withObject().withEstimate()
-                .sharedFromObject().signed().build();
+                .sent().signed().build();
 
         // Not "the row is zero" — with no masters under that source there is no row, which is the
         // shape that keeps the sums above equal to the funnel (which also filters role = USER).
@@ -181,9 +180,9 @@ class SourceBreakdownIntegrationTest extends IntegrationTestBase {
         private boolean verified;
         private boolean object;
         private boolean estimate;
+        private boolean sent;
         private boolean signed;
-        private boolean objectLink;
-        private boolean estimateLink;
+        private boolean mintedOnly;
 
         private MasterFixture(String source) {
             this.source = source;
@@ -196,9 +195,11 @@ class SourceBreakdownIntegrationTest extends IntegrationTestBase {
         MasterFixture verified() { this.verified = true; return this; }
         MasterFixture withObject() { this.object = true; return this; }
         MasterFixture withEstimate() { this.estimate = true; return this; }
+        /** A SENT estimate — what `shared` counts since 2026-11-09 (the link really left). */
+        MasterFixture sent() { this.sent = true; return this; }
         MasterFixture signed() { this.signed = true; return this; }
-        MasterFixture sharedFromObject() { this.objectLink = true; return this; }
-        MasterFixture sharedFromEstimate() { this.estimateLink = true; return this; }
+        /** A link minted on the DRAFT and an object portal published, but nothing marked sent. */
+        MasterFixture mintedOnly() { this.mintedOnly = true; return this; }
 
         UUID build() {
             String unique = UUID.randomUUID().toString();
@@ -219,7 +220,7 @@ class SourceBreakdownIntegrationTest extends IntegrationTestBase {
                     .referralCode(unique.substring(0, 10)) // NOT NULL since V41, no entity default
                     .build());
 
-            if (!object && !estimate && !objectLink && !estimateLink && !signed) {
+            if (!object && !estimate && !sent && !signed && !mintedOnly) {
                 return owner.getId();
             }
             Project project = projectRepository.save(Project.builder()
@@ -228,26 +229,31 @@ class SourceBreakdownIntegrationTest extends IntegrationTestBase {
                     .address("вул. Тестова, 1")
                     .status(ProjectStatus.DRAFT)
                     .build());
-            if (estimate || signed || estimateLink) {
-                Estimate est = estimateRepository.save(Estimate.builder()
-                        .project(project)
-                        .status(signed ? EstimateStatus.SIGNED : EstimateStatus.SENT)
-                        .build());
-                if (estimateLink) {
+            if (estimate || mintedOnly) {
+                Estimate draft = estimate(project, EstimateStatus.DRAFT);
+                if (mintedOnly) {
                     estimateShareLinkRepository.save(EstimateShareLink.builder()
-                            .estimate(est)
+                            .estimate(draft)
                             .token(UUID.randomUUID().toString())
+                            .build());
+                    projectShareLinkRepository.save(ProjectShareLink.builder()
+                            .project(project)
+                            .token(UUID.randomUUID().toString())
+                            .kind(ShareLinkKind.PORTAL)
                             .build());
                 }
             }
-            if (objectLink) {
-                projectShareLinkRepository.save(ProjectShareLink.builder()
-                        .project(project)
-                        .token(UUID.randomUUID().toString())
-                        .kind(ShareLinkKind.PORTAL)
-                        .build());
+            if (sent) {
+                estimate(project, EstimateStatus.SENT);
+            }
+            if (signed) {
+                estimate(project, EstimateStatus.SIGNED);
             }
             return owner.getId();
+        }
+
+        private Estimate estimate(Project project, EstimateStatus status) {
+            return estimateRepository.save(Estimate.builder().project(project).status(status).build());
         }
     }
 }

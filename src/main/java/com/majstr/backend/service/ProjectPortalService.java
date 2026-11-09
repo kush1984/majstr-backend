@@ -99,7 +99,7 @@ public class ProjectPortalService {
     @Transactional
     public PortalStateResponse update(UUID projectId, List<UUID> estimateIds, UUID ownerId) {
         Project project = projectService.loadOwned(projectId, ownerId);
-        requireSharable(project.getOwner());
+        requireSharable(project.getOwner(), false);
 
         // Publishing no longer flips DRAFT to SENT (review P1-13): the sheet publishes as it OPENS.
         // markSent / sendEmail do, once the link really left.
@@ -117,7 +117,7 @@ public class ProjectPortalService {
     @Transactional
     public void markSent(UUID projectId, UUID ownerId) {
         Project project = projectService.loadOwned(projectId, ownerId);
-        requireSharable(project.getOwner());
+        requireSharable(project.getOwner(), false);
         flipVisibleDraftsToSent(projectId);
     }
 
@@ -133,7 +133,7 @@ public class ProjectPortalService {
     @Transactional
     public PortalStateResponse sendEmail(UUID projectId, UUID ownerId) {
         Project project = projectService.loadOwned(projectId, ownerId);
-        requireSharable(project.getOwner());
+        requireSharable(project.getOwner(), true);
         ProjectShareLink link = requireUsableLink(projectId, ShareLinkKind.PORTAL);
         flipVisibleDraftsToSent(projectId);
         emailLink(project, buildUrl(link.getToken(), ShareLinkKind.PORTAL));
@@ -166,7 +166,7 @@ public class ProjectPortalService {
     @Transactional
     public PortalStateResponse updateEconomy(UUID projectId, boolean paymentsVisible, UUID ownerId) {
         Project project = projectService.loadOwned(projectId, ownerId);
-        requireSharable(project.getOwner());
+        requireSharable(project.getOwner(), false);
         ProjectShareLink link = mintOrReuse(project, ShareLinkKind.ECONOMY);
         link.setPaymentsVisible(paymentsVisible);
         return stateOf(project, Optional.of(link), ShareLinkKind.ECONOMY, PublicEstimateService::isTheDeal);
@@ -188,7 +188,7 @@ public class ProjectPortalService {
     @Transactional(readOnly = true)
     public PortalStateResponse sendEconomyEmail(UUID projectId, UUID ownerId) {
         Project project = projectService.loadOwned(projectId, ownerId);
-        requireSharable(project.getOwner());
+        requireSharable(project.getOwner(), true);
         ProjectShareLink link = requireUsableLink(projectId, ShareLinkKind.ECONOMY);
         emailLink(project, buildUrl(link.getToken(), ShareLinkKind.ECONOMY));
         return stateOf(project, Optional.of(link), ShareLinkKind.ECONOMY, PublicEstimateService::isTheDeal);
@@ -212,7 +212,7 @@ public class ProjectPortalService {
         // FOR UPDATE (B-60): DRAFT→SENT is the moment the act becomes signable, and the guards
         // below read the lines and receipts it is being published with.
         WorkAct act = loadOwnedActForUpdate(actId, ownerId);
-        requireSharable(act.getProject().getOwner());
+        requireSharable(act.getProject().getOwner(), false);
         if (act.getStatus() == WorkActStatus.REJECTED) {
             throw new InvalidEstimateStatusException("error.work-act.not-shareable");
         }
@@ -252,7 +252,7 @@ public class ProjectPortalService {
     @Transactional(readOnly = true)
     public ActShareStateResponse sendActEmail(UUID actId, UUID ownerId) {
         WorkAct act = loadOwnedAct(actId, ownerId);
-        requireSharable(act.getProject().getOwner());
+        requireSharable(act.getProject().getOwner(), true);
         ProjectShareLink link = actLink(actId)
                 .orElseThrow(() -> new ResourceNotFoundException("ACT link not found for act " + actId));
         emailLink(act.getProject(), portalProperties.publicBaseUrl() + ACT_PATH + link.getToken());
@@ -364,10 +364,15 @@ public class ProjectPortalService {
                 client.getEmail(), client.getFullName(), contractorName, project.getName(), url);
     }
 
-    /** Same plan + {@link SendReadiness} gate as the legacy per-estimate share, for every link kind. */
-    private void requireSharable(User owner) {
+    /** Same plan + {@link SendReadiness} gate as the per-estimate share, for every link kind: publishing
+     *  and marking sent are the master's own send (a name), a {@code send-email} is ours (+ email). */
+    private void requireSharable(User owner, boolean ourLetter) {
         featureGuard.requireFeature(owner, Feature.CLIENT_PORTAL);
-        SendReadiness.require(owner);
+        if (ourLetter) {
+            SendReadiness.weSendTheLetter(owner);
+        } else {
+            SendReadiness.masterSendsItself(owner);
+        }
     }
 
     private String generateToken() {
