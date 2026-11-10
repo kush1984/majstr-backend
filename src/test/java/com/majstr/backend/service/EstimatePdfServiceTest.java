@@ -137,6 +137,21 @@ class EstimatePdfServiceTest {
         assertThat(text).doesNotContain("Тел.");
     }
 
+    /** V198: a client may have no phone — the PDF names him, and no «, null». */
+    @Test
+    void render_aClientWithNoPhone_printsTheNameAlone() throws Exception {
+        given(featureGuard.isEnabled(org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.eq(Feature.BRANDED_PDF))).willReturn(false);
+        EstimatePdfService.PdfModel base = sampleModel();
+        base.client().setPhone(null);
+
+        String text = textOf(pdfService.render(base));
+
+        assertThat(text).contains("Олена Іваненко");
+        assertThat(text).doesNotContain("null");
+        assertThat(text).doesNotContain("Олена Іваненко,");
+    }
+
     /** V192: an object with no address prints no «Адреса» line. */
     @Test
     void render_anObjectWithNoAddress_printsNoAddressLine() throws Exception {

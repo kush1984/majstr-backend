@@ -52,7 +52,7 @@ public class ClientService {
                 .id(requestedId)
                 .owner(owner)
                 .fullName(req.fullName().trim())
-                .phone(req.phone().trim())
+                .phone(normalize(req.phone()))
                 .address(normalize(req.address()))
                 .email(normalize(req.email()))
                 .clientType(req.clientType() == null ? ClientType.PERSON : req.clientType())
@@ -81,7 +81,7 @@ public class ClientService {
     public ClientResponse update(UUID id, ClientRequest req, UUID ownerId) {
         Client client = loadOwned(id, ownerId);
         client.setFullName(req.fullName().trim());
-        client.setPhone(req.phone().trim());
+        client.setPhone(normalize(req.phone()));
         client.setAddress(normalize(req.address()));
         client.setEmail(normalize(req.email()));
         // Document requisites (acts iteration) — a full-PUT form, so a blank field clears. A null

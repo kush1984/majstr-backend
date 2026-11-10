@@ -67,6 +67,24 @@ class ClientServiceTest {
         assertThat(resp.email()).isEqualTo("olena@example.com");
     }
 
+    /** V198: the phone is optional — absent or blank is stored as no phone, on create and update. */
+    @Test
+    void create_and_update_withoutAPhone_storeNull() {
+        UUID id = UUID.randomUUID();
+        UUID ownerId = UUID.randomUUID();
+        given(userRepository.getReferenceById(ownerId)).willReturn(User.builder().id(ownerId).build());
+        given(clientRepository.save(any(Client.class))).willAnswer(inv -> inv.getArgument(0));
+
+        assertThat(clientService.create(person("Олена", null, null, null), ownerId).phone()).isNull();
+        assertThat(clientService.create(person("Олена", "   ", null, null), ownerId).phone()).isNull();
+
+        Client existing = Client.builder().id(id).owner(User.builder().id(ownerId).build())
+                .fullName("Олена").phone("+380671234567").build();
+        given(clientRepository.findById(id)).willReturn(Optional.of(existing));
+        clientService.update(id, person("Олена", "", null, null), ownerId);
+        assertThat(existing.getPhone()).isNull();
+    }
+
     @Test
     void create_and_update_saveDocumentRequisites() {
         UUID id = UUID.randomUUID();

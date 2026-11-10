@@ -144,7 +144,9 @@ public class EstimatePdfService {
             addInfoRow(info, "Адреса:", project.getAddress().trim());
         }
         if (client != null) {
-            addInfoRow(info, "Клієнт:", client.getFullName() + ", " + client.getPhone());
+            String phone = client.getPhone();
+            addInfoRow(info, "Клієнт:", phone == null || phone.isBlank()
+                    ? client.getFullName() : client.getFullName() + ", " + phone);
         }
         // Kyiv, not UTC: an estimate created after midnight local time would otherwise be
         // dated to the previous day on the document the client keeps.

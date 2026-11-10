@@ -7,7 +7,8 @@ import jakarta.validation.constraints.Size;
 
 public record ClientRequest(
         @NotBlank @Size(max = 255) String fullName,
-        @NotBlank @Size(max = 50) String phone,
+        // Optional (V198): a client met on site may not have given a number yet.
+        @Size(max = 50) String phone,
         @Size(max = 512) String address,
         // Optional — format checked only when present.
         @Email @Size(max = 255) String email,

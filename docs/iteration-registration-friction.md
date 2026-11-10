@@ -311,3 +311,12 @@ LIBRARY`, its `trade` is not his, and the library ships its name+type+unit under
 - PWA: `useVisibleCatalog` (same query and cache, a `select`) on the catalog page, the catalog picker,
   the autocomplete fallback and the item form's categories; pricing readers keep `useCatalog`.
 - Tests: `CatalogTradeVisibilityIntegrationTest`, `CatalogPage.test`, `useCatalog.test`.
+
+## A client's phone is optional (V198, PWA 1.75.6, 2026-11-10)
+A master adds the client on site, often before he has the number, and the required phone stopped the
+object form. V198 drops `clients.phone NOT NULL`; `ClientRequest.phone` is `@Size(max = 50)` only and
+`ClientService` stores a blank as NULL. The estimate PDF prints «Клієнт: name» without «, null»; the act
+PDF and the portal never printed the client's phone. PWA: `clientDraftError` needs only the name
+(`estimate.enterClientName`), the picker and the edit dialog label the field «Телефон (необов'язково)»,
+a client row shows a phone only when there is one, `ClientResponse.phone` is `?: string | null`.
+Tests: `ClientServiceTest`, `EstimatePdfServiceTest`, `ClientPicker.test`, `ClientEditModal.test`.
