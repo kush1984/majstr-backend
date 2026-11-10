@@ -369,6 +369,7 @@ public class SignedDocumentService {
                 .name(p.name())
                 .address(p.address())
                 .status(live.getStatus())
+                .sample(p.marksSample() || live.isSample())
                 .build();
     }
 
@@ -382,7 +383,7 @@ public class SignedDocumentService {
     }
 
     private static SignedSnapshot.ProjectPart projectOf(Project p) {
-        return new SignedSnapshot.ProjectPart(p.getId(), p.getName(), p.getAddress());
+        return new SignedSnapshot.ProjectPart(p.getId(), p.getName(), p.getAddress(), p.isSample() ? Boolean.TRUE : null);
     }
 
     private static SignedSnapshot.ClientPart clientOf(Client c) {

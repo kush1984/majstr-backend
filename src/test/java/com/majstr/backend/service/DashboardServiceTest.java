@@ -40,7 +40,7 @@ class DashboardServiceTest {
     void metrics_composesCountsAndSum() {
         given(projectRepository.countInProgressStage(ownerId)).willReturn(3L);
         given(projectRepository.countPendingSignatureStage(ownerId)).willReturn(5L);
-        given(projectRepository.countByOwnerIdAndStatusAndCompletedAtGreaterThanEqual(
+        given(projectRepository.countByOwnerIdAndSampleFalseAndStatusAndCompletedAtGreaterThanEqual(
                 eq(ownerId), eq(ProjectStatus.COMPLETED), any(Instant.class))).willReturn(2L);
         given(estimateRepository.sumLatestEstimateTotalForCompletedSince(eq(ownerId), any(Instant.class)))
                 .willReturn(new BigDecimal("12345.5"));
@@ -59,7 +59,7 @@ class DashboardServiceTest {
     void metrics_nullSumBecomesZero() {
         given(projectRepository.countInProgressStage(ownerId)).willReturn(0L);
         given(projectRepository.countPendingSignatureStage(ownerId)).willReturn(0L);
-        given(projectRepository.countByOwnerIdAndStatusAndCompletedAtGreaterThanEqual(
+        given(projectRepository.countByOwnerIdAndSampleFalseAndStatusAndCompletedAtGreaterThanEqual(
                 eq(ownerId), eq(ProjectStatus.COMPLETED), any(Instant.class))).willReturn(0L);
         given(estimateRepository.sumLatestEstimateTotalForCompletedSince(eq(ownerId), any(Instant.class)))
                 .willReturn(null);
@@ -73,13 +73,13 @@ class DashboardServiceTest {
     void metrics_usesFirstDayOfTheMastersOwnMonth_notUtc() {
         given(projectRepository.countInProgressStage(any())).willReturn(0L);
         given(projectRepository.countPendingSignatureStage(any())).willReturn(0L);
-        given(projectRepository.countByOwnerIdAndStatusAndCompletedAtGreaterThanEqual(any(), any(), any())).willReturn(0L);
+        given(projectRepository.countByOwnerIdAndSampleFalseAndStatusAndCompletedAtGreaterThanEqual(any(), any(), any())).willReturn(0L);
         given(estimateRepository.sumLatestEstimateTotalForCompletedSince(any(), any())).willReturn(BigDecimal.ZERO);
 
         dashboardService.metrics(ownerId);
 
         ArgumentCaptor<Instant> cap = ArgumentCaptor.forClass(Instant.class);
-        verify(projectRepository).countByOwnerIdAndStatusAndCompletedAtGreaterThanEqual(
+        verify(projectRepository).countByOwnerIdAndSampleFalseAndStatusAndCompletedAtGreaterThanEqual(
                 eq(ownerId), eq(ProjectStatus.COMPLETED), cap.capture());
         // Kyiv, not UTC (review B-67): the boundary has to be midnight in the zone the MASTER
         // lives in, or on the 1st until 02:00/03:00 local the dashboard opens on the previous month

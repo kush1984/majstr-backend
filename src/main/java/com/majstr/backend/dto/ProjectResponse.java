@@ -30,7 +30,9 @@ public record ProjectResponse(
         long unreadQuestions,
         Instant completedAt,
         Instant createdAt,
-        Instant updatedAt
+        Instant updatedAt,
+        /** The training sample (V197): the app badges it and offers its delete at any stage. */
+        boolean sample
 ) {
     /** Use when neither the latest-estimate summary nor the stage flags are loaded (e.g. a
      *  freshly created project, which by definition has no estimates yet). */
@@ -57,7 +59,8 @@ public record ProjectResponse(
                 unreadQuestions,
                 project.getCompletedAt(),
                 project.getCreatedAt(),
-                project.getUpdatedAt()
+                project.getUpdatedAt(),
+                project.isSample()
         );
     }
 }

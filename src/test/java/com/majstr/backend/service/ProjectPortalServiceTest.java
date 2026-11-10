@@ -1,7 +1,9 @@
 package com.majstr.backend.service;
 
+import com.majstr.backend.config.JwtProperties;
 import com.majstr.backend.config.PortalProperties;
 import com.majstr.backend.dto.ActShareStateResponse;
+import com.majstr.backend.dto.ClientPreviewResponse;
 import com.majstr.backend.dto.PortalStateResponse;
 import com.majstr.backend.email.EmailService;
 import com.majstr.backend.entity.Client;
@@ -31,6 +33,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
+import org.mockito.Spy;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.time.Instant;
@@ -66,6 +69,8 @@ class ProjectPortalServiceTest {
     @Mock ActFinalGuard finalGuard;
     @Mock ActAdvanceGuard advanceGuard;
     @Mock ActReceiptDuplicateGuard receiptDuplicateGuard;
+    @Spy PortalPreviewTokens previewTokens = new PortalPreviewTokens(
+            new JwtProperties("preview-test-secret-of-at-least-32-bytes", 15, 30, 30, "majstr"));
     @InjectMocks ProjectPortalService portalService;
 
     private final UUID projectId = UUID.randomUUID();
@@ -184,6 +189,42 @@ class ProjectPortalServiceTest {
 
         assertThat(state.url()).endsWith("?p=existing-token");
         verify(linkRepository, never()).save(any());
+    }
+
+    @Test
+    void preview_showsTheTickedSet_publishesNothing_andDropsASignedOne() {
+        // No name on purpose: he may look before giving one.
+        Project p = project(false, null);
+        p.getOwner().setFullName(null);
+        Estimate ticked = estimate(p, EstimateStatus.DRAFT, false);
+        Estimate published = estimate(p, EstimateStatus.SENT, true);
+        Estimate signed = estimate(p, EstimateStatus.SIGNED, false);
+        given(projectService.loadOwned(projectId, ownerId)).willReturn(p);
+        given(estimateRepository.findByProjectIdOrderByCreatedAtDesc(projectId))
+                .willReturn(List.of(ticked, published, signed));
+        given(portalProperties.publicBaseUrl()).willReturn("https://majstr.pro");
+
+        ClientPreviewResponse preview = portalService.preview(projectId, List.of(ticked.getId(), signed.getId()), ownerId);
+
+        assertThat(preview.url()).startsWith("https://majstr.pro/portal/index.html?vp=");
+        String pass = preview.url().substring(preview.url().indexOf("?vp=") + 4);
+        assertThat(previewTokens.portalOf(pass))
+                .contains(new PortalPreviewTokens.PortalPass(projectId, List.of(ticked.getId())));
+        // The published set and every status are left exactly as they were; no link is minted.
+        assertThat(ticked.isPortalVisible()).isFalse();
+        assertThat(published.isPortalVisible()).isTrue();
+        assertThat(ticked.getStatus()).isEqualTo(EstimateStatus.DRAFT);
+        verify(linkRepository, never()).save(any());
+    }
+
+    @Test
+    void preview_refusesAForeignEstimateId() {
+        Project p = project(true, null);
+        given(projectService.loadOwned(projectId, ownerId)).willReturn(p);
+        given(estimateRepository.findByProjectIdOrderByCreatedAtDesc(projectId)).willReturn(List.of());
+
+        assertThatThrownBy(() -> portalService.preview(projectId, List.of(UUID.randomUUID()), ownerId))
+                .isInstanceOf(ResourceNotFoundException.class);
     }
 
     @Test

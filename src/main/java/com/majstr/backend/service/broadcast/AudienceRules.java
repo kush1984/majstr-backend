@@ -12,7 +12,9 @@ import java.util.UUID;
  *
  * <p>Disjoint by construction — the order of the checks IS the rule. A master with a near-empty
  * estimate who has also been away a month is {@link BroadcastSegment#EMPTY_ESTIMATE}, never also
- * {@link BroadcastSegment#INACTIVE}: one letter about the thing he is actually stuck on.</p>
+ * {@link BroadcastSegment#INACTIVE}: one letter about the thing he is actually stuck on. So is one
+ * whose real estimate never reached a client: {@link BroadcastSegment#NOT_HANDED_OVER} comes before
+ * INACTIVE, whether he still logs in or not.</p>
  *
  * <p><b>{@link BroadcastSegment#UNVERIFIED} stays FIRST</b>, although since 2026-11-09 an unverified
  * master can share and print without it: an unverified address may be somebody else's, or mistyped,
@@ -34,7 +36,9 @@ public final class AudienceRules {
 
     public record Master(UUID id, String fullName, String email, boolean emailVerified,
                          Instant registeredAt, Instant lastActiveAt,
-                         long objects, long estimates, long maxEstimateLines) {
+                         long objects, long estimates, long maxEstimateLines,
+                         /** In {@code ClientHandoffs#handedToClient}: shared, or made a PDF. */
+                         boolean handedToClient) {
 
         /** Never-seen falls back to the registration: the tracker stamps only authenticated calls. */
         public Instant lastSeen() {
@@ -55,6 +59,9 @@ public final class AudienceRules {
         }
         if (m.maxEstimateLines() < FULL_ESTIMATE_LINES) {
             return settled ? Optional.of(BroadcastSegment.EMPTY_ESTIMATE) : Optional.empty();
+        }
+        if (!m.handedToClient()) {
+            return settled ? Optional.of(BroadcastSegment.NOT_HANDED_OVER) : Optional.empty();
         }
         return m.lastSeen().isBefore(now.minus(INACTIVE_AFTER))
                 ? Optional.of(BroadcastSegment.INACTIVE)

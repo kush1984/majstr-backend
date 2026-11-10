@@ -72,8 +72,13 @@ class BroadcastIntegrationTest extends IntegrationTestBase {
         estimate(object(emptyEstimate), EstimateKind.REGULAR, 2);
         UUID inactive = master("FREE", "USER", true, 90, 40);
         estimate(object(inactive), EstimateKind.REGULAR, 7);
+        handedOver(inactive);
         UUID activeAndFull = master("FREE", "USER", true, 90, 1);
         estimate(object(activeAndFull), EstimateKind.REGULAR, 7);
+        handedOver(activeAndFull);
+        // A real estimate no client saw: away a month or not, the letter is about the handover.
+        UUID notHandedOver = master("FREE", "USER", true, 90, 40);
+        estimate(object(notHandedOver), EstimateKind.REGULAR, 7);
         // An ADDENDUM is the act's paperwork, not an estimate he wrote: 9 lines there count for nothing.
         UUID onlyAddendum = master("FREE", "USER", true, 10, 1);
         estimate(object(onlyAddendum), EstimateKind.ADDENDUM, 9);
@@ -84,7 +89,8 @@ class BroadcastIntegrationTest extends IntegrationTestBase {
         assertThat(got.get(BroadcastSegment.NO_OBJECT)).contains(noObject);
         assertThat(got.get(BroadcastSegment.NO_ESTIMATE)).contains(noEstimate, onlyAddendum);
         assertThat(got.get(BroadcastSegment.EMPTY_ESTIMATE)).contains(emptyEstimate);
-        assertThat(got.get(BroadcastSegment.INACTIVE)).contains(inactive);
+        assertThat(got.get(BroadcastSegment.NOT_HANDED_OVER)).contains(notHandedOver);
+        assertThat(got.get(BroadcastSegment.INACTIVE)).contains(inactive).doesNotContain(notHandedOver);
         assertThat(allIds(got)).doesNotContain(activeAndFull);
     }
 
@@ -103,6 +109,7 @@ class BroadcastIntegrationTest extends IntegrationTestBase {
     void aSendWritesOneRowPerTickedMaster_andTheLinkUnsubscribesAnonymously() throws Exception {
         UUID inactive = master("FREE", "USER", true, 90, 40);
         estimate(object(inactive), EstimateKind.REGULAR, 6);
+        handedOver(inactive);
         UUID notInSegment = master("FREE", "USER", true, 90, 1);
 
         BroadcastSummary summary = broadcastService.send(new BroadcastSendRequest(BroadcastSegment.INACTIVE,
@@ -177,6 +184,14 @@ class BroadcastIntegrationTest extends IntegrationTestBase {
                 """, id, id + "@t.ua", id + "@t.ua", id.toString().substring(0, 10), verified, plan, role,
                 registered, registered, lastActive);
         return id;
+    }
+
+    /** His estimates reached the client (SENT): past the «не віддав клієнту» step. */
+    private void handedOver(UUID ownerId) {
+        jdbc.update("""
+                UPDATE estimates SET status = 'SENT'
+                WHERE kind <> 'ADDENDUM' AND project_id IN (SELECT id FROM projects WHERE owner_id = ?)
+                """, ownerId);
     }
 
     private Project object(UUID ownerId) {

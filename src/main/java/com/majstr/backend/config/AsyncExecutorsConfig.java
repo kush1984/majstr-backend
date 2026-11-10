@@ -42,6 +42,12 @@ public class AsyncExecutorsConfig {
         return executor("broadcast-", 1, 20, false);
     }
 
+    /** Usage rows (a PDF handed out): one insert each, never worth a second thread. */
+    @Bean
+    ThreadPoolTaskExecutor metricsExecutor() {
+        return executor("metrics-", 1, 1000, true);
+    }
+
     private static ThreadPoolTaskExecutor executor(String prefix, int threads, int queue, boolean drain) {
         ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
         executor.setThreadNamePrefix(prefix);

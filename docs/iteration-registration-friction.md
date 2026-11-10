@@ -266,3 +266,48 @@ Two findings from testing the shipped round on a phone:
 - **V194 kept no copy of what it deleted** — a fair note; it is applied and stays. Only untouched
   re-filed DEFAULTS went back to their shipped trade: own templates carry their trade on their own
   row, and a default edited after re-filing had already been forked with that trade.
+
+## The name sheet carries the action on (PWA 1.75.1, 2026-11-10)
+The owner's report: after «Зберегти і продовжити» on «Як вас підписати в документі?» nothing happened,
+and the master had to press «Подивитися, як побачить клієнт» (or «PDF») again. That was deliberate: the
+sheet spends the tap the new tab was reserved in, and iOS drops a `window.open` after an await. But the
+sheet's own button IS a tap. `senderSheetStore.tapContinue()` runs the waiting action's
+`onContinueTap` inside that click, before the save is awaited: the preview and the three PDF doors
+(estimate, act editor, act list) reserve their tab there and go on once the name is saved; a failed save
+closes it again; a blank name runs nothing. The share sheet already went on (no tab is needed).
+Tests: `SenderSheetHost.test` (the tap runs in the click, undone on a failed save, never for a blank
+name), `useClientPreview.test` (one press, the preview opens). PWA gate green: 1885 tests.
+
+## «Підтвердіть email» opens over the share sheet (PWA 1.75.2, 2026-11-10)
+The same shape, reported by the owner: «надіслати листом» with an unverified email CLOSED the share
+sheet and opened «Підтвердіть email» in its place, so «Пізніше» left the master with nothing and he
+started over from «Показати посилання». Both sheets (`SharePortalSheet` — estimate and object, and
+`ActShareSheet`) now own the verify modal and render it AFTER themselves, so it stacks on top; the
+sheet stays open, «Пізніше» returns to the link. The parents' `onNeedEmailVerify` prop and their own
+modals are gone. Tests: `SharePortalSheet.test` and `ActShareSheet.test` click «Пізніше» and find the
+link still there. PWA gate green: 1885 tests.
+
+## «Вибрати напрям» in the empty template picker carries the estimate on (PWA 1.75.4, 2026-11-10)
+The picker's «Вибрати напрям» sent the master to `/welcome` and back to the object with the picker
+closed, so the new estimate had to be started again. The picker now sends `resume: { openTemplates: true }`
+alongside `from`; `TradesOnboardingPage` hands it back as the return navigation's state only when a
+system trade was saved online (a skip or a custom-only answer has no bundles to show), and
+`ProjectDetailPage` reopens the picker on it and clears the state.
+
+## A trade taken off the profile HIDES its positions, never deletes them (PWA 1.75.5, 2026-11-10)
+The default bundles follow the trades (read per trade, never copied); the catalog did not, because a
+trade's positions are COPIED into the master's catalog and priced by him. The owner chose to hide, not
+delete. `CatalogService.visibility` marks a row `CatalogItemResponse.hidden` when it is `source =
+LIBRARY`, its `trade` is not his, and the library ships its name+type+unit under none of his trades
+(`CatalogTemplateRepository.findNameKeysForTrades`; one row serves two trades, V118).
+- Nothing is deleted and no write path is filtered: every apply, dictation, import and the PWA's
+  offline template apply still price from the hidden row; a trade put back shows it with his price
+  (`addTemplatesForTrades` never overwrites).
+- What he typed or imported (`MANUAL`/`IMPORT`) and his own templates never hide.
+- `listForOwner` MARKS (the PWA cache needs the whole list to price offline); `search` DROPS, reading
+  `SEARCH_SCAN` = 200 rows before the 20-row cap so hidden rows cannot crowd the page out.
+- Re-typing a hidden position through the create door (it updates the existing row by name+type+unit)
+  turns it `MANUAL`, or it would vanish from the screen he saved it on.
+- PWA: `useVisibleCatalog` (same query and cache, a `select`) on the catalog page, the catalog picker,
+  the autocomplete fallback and the item form's categories; pricing readers keep `useCatalog`.
+- Tests: `CatalogTradeVisibilityIntegrationTest`, `CatalogPage.test`, `useCatalog.test`.

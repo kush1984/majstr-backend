@@ -144,6 +144,7 @@ public interface WorkActReceiptRepository extends JpaRepository<WorkActReceipt, 
             SELECT r FROM WorkActReceipt r JOIN FETCH r.workAct wa JOIN FETCH wa.project
             WHERE wa.userId = :ownerId
               AND (:projectId IS NULL OR wa.project.id = :projectId)
+              AND (:projectId IS NOT NULL OR wa.project.sample = false)
               AND wa.status = com.majstr.backend.entity.WorkActStatus.SIGNED
               AND wa.receiptsToExpenses = false
               AND r.amount - r.returnedAmount > 0
@@ -177,6 +178,7 @@ public interface WorkActReceiptRepository extends JpaRepository<WorkActReceipt, 
             FROM WorkActReceipt r JOIN r.workAct wa
             WHERE wa.userId = :ownerId
               AND (:projectId IS NULL OR wa.project.id = :projectId)
+              AND (:projectId IS NOT NULL OR wa.project.sample = false)
               AND wa.status = com.majstr.backend.entity.WorkActStatus.SIGNED
               AND r.itemized = false
             GROUP BY wa.project.id, wa.id, wa.number, wa.signedAt

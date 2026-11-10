@@ -19,8 +19,13 @@ public enum BroadcastSegment {
     EMPTY_ESTIMATE("Кошторис майже порожній",
             "Пошта підтверджена · є кошторис, але в кожному менше 5 позицій · зареєстровані 3+ дні тому",
             "Відкрити кошторис"),
+    /** A real estimate that never reached a client — neither sent (SENT/SIGNED) nor printed to PDF.
+     *  The letter's button opens his latest draft. */
+    NOT_HANDED_OVER("Склали кошторис, не віддали клієнту",
+            "Пошта підтверджена · є кошторис із 5+ позицій · жоден не надіслано і PDF не сформовано · зареєстровані 3+ дні тому",
+            "Відкрити кошторис"),
     INACTIVE("Не заходили 30+ днів",
-            "Пошта підтверджена · є кошторис із 5+ позицій · не заходили 30+ днів");
+            "Пошта підтверджена · кошторис із 5+ позицій уже віддали клієнту · не заходили 30+ днів");
 
     private final String label;
     private final String criteria;

@@ -67,6 +67,7 @@ public class EstimatePdfService {
         PdfBrandFooter.install(PdfWriter.getInstance(document, out), fonts);
         document.open();
         try {
+            SampleMark.addTo(document, model.project(), fonts);
             addHeader(document, model);
             addProjectInfo(document, model);
             addItemsTable(document, "РОБОТИ", model.workItems());

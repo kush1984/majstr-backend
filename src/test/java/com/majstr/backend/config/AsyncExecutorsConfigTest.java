@@ -47,6 +47,7 @@ class AsyncExecutorsConfigTest {
         assertThat(config.mailExecutor().getThreadNamePrefix()).isEqualTo("mail-");
         assertThat(config.pushExecutor().getThreadNamePrefix()).isEqualTo("push-");
         assertThat(config.broadcastExecutor().getThreadNamePrefix()).isEqualTo("broadcast-");
+        assertThat(config.metricsExecutor().getThreadNamePrefix()).isEqualTo("metrics-");
     }
 
     private static void awaitQuietly(CountDownLatch latch) {

@@ -1,5 +1,6 @@
 package com.majstr.backend.service;
 
+import com.majstr.backend.config.JwtProperties;
 import com.majstr.backend.dto.PublicEstimateView;
 import com.majstr.backend.dto.PublicPortalView;
 import com.majstr.backend.dto.QuestionRequest;
@@ -8,6 +9,7 @@ import com.majstr.backend.dto.SignRequest;
 import com.majstr.backend.entity.Client;
 import com.majstr.backend.entity.Estimate;
 import com.majstr.backend.entity.EstimateItem;
+import com.majstr.backend.entity.EstimateKind;
 import com.majstr.backend.entity.ProjectMessage;
 import com.majstr.backend.entity.EstimateShareLink;
 import com.majstr.backend.entity.EstimateStatus;
@@ -31,6 +33,7 @@ import com.majstr.backend.repository.ProjectMessageRepository;
 import com.majstr.backend.repository.EstimateRepository;
 import com.majstr.backend.repository.EstimateShareLinkRepository;
 import com.majstr.backend.repository.PaymentReceiptRepository;
+import com.majstr.backend.repository.ProjectRepository;
 import com.majstr.backend.repository.ProjectShareLinkRepository;
 import com.majstr.backend.repository.WorkActItemRepository;
 import org.junit.jupiter.api.BeforeEach;
@@ -55,6 +58,7 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 
 @ExtendWith(MockitoExtension.class)
 class PublicEstimateServiceTest {
@@ -78,6 +82,9 @@ class PublicEstimateServiceTest {
     private final String token = "valid-token-xyz-1234567890";
 
     @Mock MaterialRefundCalculator refundCalculator;
+    @Mock private ProjectRepository projectRepository;
+    private final PortalPreviewTokens previewTokens = new PortalPreviewTokens(
+            new JwtProperties("preview-test-secret-of-at-least-32-bytes", 15, 30, 30, "majstr"));
 
     @BeforeEach
     void setUp() {
@@ -90,7 +97,46 @@ class PublicEstimateServiceTest {
                 paymentReceiptRepository, estimateRepository, itemRepository,
                 messageRepository, estimateService, projectPhotoService, featureGuard, pushService,
                 workActItemRepository, refundCalculator, messages, new AfterCommit(), signedDocuments,
-                transactionManager);
+                transactionManager, previewTokens, projectRepository);
+    }
+
+    @Test
+    void preview_rendersTheSameViewAsTheLink_forAPassTheServerIssued() {
+        Estimate estimate = sampleEstimate();
+        given(estimateRepository.findById(estimate.getId())).willReturn(Optional.of(estimate));
+        given(itemRepository.findByEstimateIdOrderBySortOrderAscIdAsc(estimate.getId()))
+                .willReturn(List.of(workItem(estimate), materialItem(estimate)));
+
+        PublicEstimateView view = publicService.viewPreview(previewTokens.issue(estimate.getId()));
+
+        assertThat(view.project().name()).isEqualTo("Квартира на Хрещатику");
+        assertThat(view.total()).isEqualByComparingTo("6810.00");
+        // A preview reads; it never touches a share link.
+        verifyNoInteractions(shareLinkRepository, projectShareLinkRepository, pushService);
+    }
+
+    @Test
+    void preview_aForgedOrUnknownPass_isTheSameNeutral404() {
+        Estimate estimate = sampleEstimate();
+        String pass = previewTokens.issue(estimate.getId());
+        String forged = pass.substring(0, pass.length() - 2) + (pass.endsWith("A") ? "BB" : "AA");
+
+        assertThatThrownBy(() -> publicService.viewPreview(forged)).isInstanceOf(ResourceNotFoundException.class);
+        assertThatThrownBy(() -> publicService.viewPreview("nonsense")).isInstanceOf(ResourceNotFoundException.class);
+        assertThatThrownBy(() -> publicService.viewPreview(null)).isInstanceOf(ResourceNotFoundException.class);
+        // The estimate is gone since the pass was issued.
+        given(estimateRepository.findById(estimate.getId())).willReturn(Optional.empty());
+        assertThatThrownBy(() -> publicService.viewPreview(pass)).isInstanceOf(ResourceNotFoundException.class);
+    }
+
+    @Test
+    void preview_neverOpensAnAddendum() {
+        Estimate estimate = sampleEstimate();
+        estimate.setKind(EstimateKind.ADDENDUM);
+        given(estimateRepository.findById(estimate.getId())).willReturn(Optional.of(estimate));
+
+        assertThatThrownBy(() -> publicService.viewPreview(previewTokens.issue(estimate.getId())))
+                .isInstanceOf(ResourceNotFoundException.class);
     }
 
     @Test

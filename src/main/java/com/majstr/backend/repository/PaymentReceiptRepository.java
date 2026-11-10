@@ -34,6 +34,7 @@ public interface PaymentReceiptRepository extends JpaRepository<PaymentReceipt, 
             LEFT JOIN FETCH r.planPayment
             WHERE p.owner.id = :ownerId AND r.receivedAt BETWEEN :from AND :to
               AND (:projectId IS NULL OR p.id = :projectId)
+              AND (:projectId IS NOT NULL OR p.sample = false)
             ORDER BY r.receivedAt DESC, r.createdAt DESC
             """)
     List<PaymentReceipt> findByOwnerAndPeriod(@Param("ownerId") UUID ownerId,
@@ -61,6 +62,7 @@ public interface PaymentReceiptRepository extends JpaRepository<PaymentReceipt, 
             SELECT r.project.id, COALESCE(SUM(r.amount), 0) FROM PaymentReceipt r
             WHERE r.project.owner.id = :ownerId AND r.materialRefund = true
               AND (:projectId IS NULL OR r.project.id = :projectId)
+              AND (:projectId IS NOT NULL OR r.project.sample = false)
             GROUP BY r.project.id
             """)
     List<Object[]> sumMaterialRefundsByOwner(@Param("ownerId") UUID ownerId,

@@ -74,6 +74,7 @@ public class WorkActPdfService {
         PdfBrandFooter.install(PdfWriter.getInstance(document, out), fonts);
         document.open();
         try {
+            SampleMark.addTo(document, model.project(), fonts);
             addTitle(document, model);
             addDatesAndObject(document, model);
             addParties(document, model);

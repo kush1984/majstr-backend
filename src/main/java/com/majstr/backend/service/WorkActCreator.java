@@ -82,7 +82,7 @@ class WorkActCreator {
                 .id(requestedId)
                 .userId(owner.getId())
                 .project(project)
-                .number(nextNumber(owner, req))
+                .number(project.isSample() ? nextSampleNumber(owner) : nextNumber(owner, req))
                 .title(trim(req.title()))
                 .kind(req.kind())
                 .status(WorkActStatus.DRAFT)
@@ -114,6 +114,17 @@ class WorkActCreator {
             case WITH_YEAR -> seq + "/" + req.issuedAt().getYear();
         };
     }
+
+    /**
+     * A training sample's act (V197) is numbered on its own «П-N» row: a test act must neither take
+     * the master's «№1» nor move his sequence on. {@link WorkActRepository#maxNumberSeqForUser} reads
+     * only numbers that START with a digit, so these never enter it.
+     */
+    private String nextSampleNumber(User owner) {
+        return SAMPLE_NUMBER_PREFIX + (workActRepository.maxSampleNumberSeqForUser(owner.getId()) + 1);
+    }
+
+    static final String SAMPLE_NUMBER_PREFIX = "П-";
 
     private static String trim(String s) {
         return (s == null || s.isBlank()) ? null : s.trim();

@@ -4,18 +4,17 @@ package com.majstr.backend.dto;
  * Aggregate activation funnel across masters (ROLE_USER) — where they drop off.
  * Raw counts; the admin page renders the percentages (vs registered and vs the
  * previous step). All values are computed with a handful of aggregate queries
- * (no per-user loop).
+ * (no per-user loop); the three handover sets come from {@code ClientHandoffs}.
  *
- * <p>{@code shared} = published an object-level link (PORTAL/ECONOMY/ACT) OR minted a per-estimate
- * link, MESSAGE excluded, revoked links still counted. See
- * {@code MetricsService.sharedWithClientCount()} — figures recorded before the
- * analytics-shared-fix iteration counted only the per-estimate half and are NOT comparable.</p>
+ * <p>The chain is registered → object → estimate → {@code handedToClient} → signed
+ * (iteration-first-experience, 2026-11-09). {@code handedToClient} = {@code shared} ∪
+ * {@code pdfMade}, a union of masters: {@code shared} = an estimate reached SENT or SIGNED (the link
+ * really left, or our letter); {@code pdfMade} = made an estimate or act PDF in the app (counted
+ * from V196 on — earlier PDFs left no trace). {@code clientDownloadedPdf} = masters whose client
+ * downloaded a PDF from a link — beside the chain.</p>
  *
- * <p>{@code verifiedEmail} is NOT a step of the chain any more (share-without-verification,
- * 2026-11-09): sharing no longer needs it, so the page reads registered → object → estimate → shared
- * → signed and shows the verified count beside it. {@code sharedUnverified} = the masters in
- * {@code shared} whose email is still unverified today — the effect of dropping the gate (a master
- * who shared and verified later is no longer in it).</p>
+ * <p>{@code verifiedEmail} is NOT a step (share-without-verification): sharing does not need it.
+ * {@code sharedUnverified} = the masters in {@code shared} whose email is still unverified today.</p>
  */
 public record ActivationFunnelResponse(
         long registered,
@@ -24,5 +23,8 @@ public record ActivationFunnelResponse(
         long withEstimate,
         long shared,
         long withSigned,
-        long sharedUnverified
+        long sharedUnverified,
+        long pdfMade,
+        long handedToClient,
+        long clientDownloadedPdf
 ) {}

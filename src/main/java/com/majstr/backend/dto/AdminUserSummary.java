@@ -37,9 +37,13 @@ public record AdminUserSummary(
         long clientsCount,
         long projectsCount,
         long estimatesCount,
-        long signedEstimatesCount
+        long signedEstimatesCount,
+        /** Made a PDF in the app but no estimate of his reached SENT or SIGNED — the admin list's ⚠️
+         *  (iteration-first-experience): he works, and hands the paper over some other way. */
+        boolean pdfWithoutShare
 ) {
-    public static AdminUserSummary of(User user, long clients, long projects, long estimates, long signed) {
+    public static AdminUserSummary of(User user, long clients, long projects, long estimates, long signed,
+                                      boolean pdfWithoutShare) {
         return new AdminUserSummary(
                 user.getId(),
                 user.getEmail(),
@@ -57,11 +61,12 @@ public record AdminUserSummary(
                 clients,
                 projects,
                 estimates,
-                signed
+                signed,
+                pdfWithoutShare
         );
     }
 
     public static AdminUserSummary from(User user) {
-        return of(user, 0, 0, 0, 0);
+        return of(user, 0, 0, 0, 0, false);
     }
 }

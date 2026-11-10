@@ -50,7 +50,8 @@ one-line summary — keep the item in the file as a record.
   ADMIN and paying masters from (5); whether the privacy policy covers such service letters.
 
 ### The FREE cap counts every object ever made — після мітапу
-- **Status:** OPEN
+- **Status:** IN_PROGRESS (2026-11-09: the training sample «Приклад: …» outside the cap,
+  [iteration-sample-object.md](iteration-sample-object.md))
 - **Since:** 2026-10-19, objects-list (PWA)
 - **Context:** `users.lifetime_project_count` (V107) never decrements. A newcomer who «tries it out»
   after the meetup on a test object and signs it himself loses one of his two free objects for good,
@@ -462,7 +463,9 @@ one-line summary — keep the item in the file as a record.
   silently dropped. One send to a third-party address settles it, and this item closes.
 
 ### PDF-download counter for the bypass metric
-- **Status:** OPEN — rewritten 2026-11-09 (share-without-verification): the next iteration.
+- **Status:** RESOLVED 2026-11-09 — V196 `pdf_render` (one row per PDF handed out, MASTER or CLIENT, no
+  IP/UA), funnel «Сформували PDF» + «Віддали клієнту» = shared ∪ made a PDF (`ClientHandoffs`), the ⚠️ is
+  now `pdfWithoutShare`. See [iteration-first-experience.md](iteration-first-experience.md).
 - **Since:** Admin-activity iteration (2026-06-13)
 - **Context:** The admin used to flag a possible «PDF bypass» as **active + email-unverified** — exact
   only while an unverified master could not share. Since 2026-11-09 he can share and print without

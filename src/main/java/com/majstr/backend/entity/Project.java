@@ -72,6 +72,11 @@ public class Project {
     @Builder.Default
     private int estimatesDeleted = 0;
 
+    /** The training sample (V197): outside the cap, freely deleted, read by no metric. Set once, at creation. */
+    @Column(name = "sample", nullable = false, updatable = false)
+    @Builder.Default
+    private boolean sample = false;
+
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
 

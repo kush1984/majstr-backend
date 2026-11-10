@@ -41,7 +41,7 @@ public class DashboardService {
         // pendingEstimates (SENT-estimate count) could disagree with the list filter's object count.
         long activeProjects = projectRepository.countInProgressStage(ownerId);
         long pendingObjects = projectRepository.countPendingSignatureStage(ownerId);
-        long completedCount = projectRepository.countByOwnerIdAndStatusAndCompletedAtGreaterThanEqual(
+        long completedCount = projectRepository.countByOwnerIdAndSampleFalseAndStatusAndCompletedAtGreaterThanEqual(
                 ownerId, ProjectStatus.COMPLETED, monthStart);
 
         BigDecimal completedAmount = estimateRepository.sumLatestEstimateTotalForCompletedSince(ownerId, monthStart);

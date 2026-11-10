@@ -12,6 +12,7 @@ import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.Collection;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 @Repository
@@ -43,12 +44,13 @@ public interface EstimateRepository extends JpaRepository<Estimate, UUID> {
 
     /** Estimate count per owner for a set of users (admin list, no N+1). */
     @Query("SELECT e.project.owner.id AS ownerId, COUNT(e) AS cnt FROM Estimate e "
-            + "WHERE e.project.owner.id IN :ownerIds GROUP BY e.project.owner.id")
+            + "WHERE e.project.owner.id IN :ownerIds AND e.project.sample = false GROUP BY e.project.owner.id")
     List<OwnerCount> countByProjectOwnerIdIn(@Param("ownerIds") Collection<UUID> ownerIds);
 
     /** Estimate count per owner filtered by status (e.g. SIGNED) for the admin list. */
     @Query("SELECT e.project.owner.id AS ownerId, COUNT(e) AS cnt FROM Estimate e "
-            + "WHERE e.project.owner.id IN :ownerIds AND e.status = :status GROUP BY e.project.owner.id")
+            + "WHERE e.project.owner.id IN :ownerIds AND e.status = :status AND e.project.sample = false "
+            + "GROUP BY e.project.owner.id")
     List<OwnerCount> countByProjectOwnerIdInAndStatus(@Param("ownerIds") Collection<UUID> ownerIds,
                                                       @Param("status") EstimateStatus status);
 
@@ -60,17 +62,28 @@ public interface EstimateRepository extends JpaRepository<Estimate, UUID> {
                   FROM estimates e
                   WHERE e.kind <> 'ADDENDUM') x
             JOIN projects p ON p.id = x.project_id
-            WHERE p.owner_id IN (:ownerIds)
+            WHERE p.owner_id IN (:ownerIds) AND NOT p.sample
             GROUP BY p.owner_id
             """, nativeQuery = true)
     List<OwnerEstimateFill> findEstimateFillByOwnerIdIn(@Param("ownerIds") Collection<UUID> ownerIds);
 
+    /** The master's most recently touched DRAFT (never an ADDENDUM) — where the broadcast letter
+     *  «склали кошторис, не віддали клієнту» sends him. */
+    @Query(value = """
+            SELECT e.id FROM estimates e JOIN projects p ON p.id = e.project_id
+            WHERE p.owner_id = :ownerId AND NOT p.sample AND e.status = 'DRAFT' AND e.kind <> 'ADDENDUM'
+            ORDER BY e.updated_at DESC, e.id
+            LIMIT 1
+            """, nativeQuery = true)
+    Optional<UUID> findLatestDraftId(@Param("ownerId") UUID ownerId);
+
     /** Per-status estimate counts for one owner (admin user detail). Rows: [status, count]. */
-    @Query("SELECT e.status, COUNT(e) FROM Estimate e WHERE e.project.owner.id = :ownerId GROUP BY e.status")
+    @Query("SELECT e.status, COUNT(e) FROM Estimate e WHERE e.project.owner.id = :ownerId "
+            + "AND e.project.sample = false GROUP BY e.status")
     List<Object[]> countByStatusForOwner(@Param("ownerId") UUID ownerId);
 
     /** When the owner last created an estimate (admin user detail; null if none). */
-    @Query("SELECT MAX(e.createdAt) FROM Estimate e WHERE e.project.owner.id = :ownerId")
+    @Query("SELECT MAX(e.createdAt) FROM Estimate e WHERE e.project.owner.id = :ownerId AND e.project.sample = false")
     Instant findLastEstimateCreatedAt(@Param("ownerId") UUID ownerId);
 
     /**
@@ -82,13 +95,13 @@ public interface EstimateRepository extends JpaRepository<Estimate, UUID> {
      */
     @Query("""
             SELECT COUNT(DISTINCT e.project.owner.id) FROM Estimate e
-            WHERE e.project.owner.role = com.majstr.backend.entity.Role.USER
+            WHERE e.project.owner.role = com.majstr.backend.entity.Role.USER AND e.project.sample = false
             """)
     long countDistinctProjectOwners();
 
     @Query("""
             SELECT COUNT(DISTINCT e.project.owner.id) FROM Estimate e
-            WHERE e.status = :status AND e.project.owner.role = com.majstr.backend.entity.Role.USER
+            WHERE e.status = :status AND e.project.owner.role = com.majstr.backend.entity.Role.USER AND e.project.sample = false
             """)
     long countDistinctProjectOwnersByStatus(@Param("status") EstimateStatus status);
 
@@ -103,7 +116,7 @@ public interface EstimateRepository extends JpaRepository<Estimate, UUID> {
     @Query("""
             SELECT DISTINCT e.project.owner.id AS ownerId, e.project.owner.referralSource AS source
             FROM Estimate e
-            WHERE e.status IN :statuses AND e.project.owner.role = com.majstr.backend.entity.Role.USER
+            WHERE e.status IN :statuses AND e.project.owner.role = com.majstr.backend.entity.Role.USER AND e.project.sample = false
             """)
     List<OwnerSource> findOwnersWithEstimateIn(@Param("statuses") Collection<EstimateStatus> statuses);
 
@@ -112,7 +125,7 @@ public interface EstimateRepository extends JpaRepository<Estimate, UUID> {
     @Query("""
             SELECT e.project.owner.referralSource AS source, COUNT(DISTINCT e.project.owner.id) AS cnt
             FROM Estimate e
-            WHERE e.project.owner.role = com.majstr.backend.entity.Role.USER
+            WHERE e.project.owner.role = com.majstr.backend.entity.Role.USER AND e.project.sample = false
             GROUP BY e.project.owner.referralSource
             """)
     List<com.majstr.backend.dto.SourceCount> countEstimateOwnersBySource();
@@ -120,7 +133,7 @@ public interface EstimateRepository extends JpaRepository<Estimate, UUID> {
     @Query("""
             SELECT e.project.owner.referralSource AS source, COUNT(DISTINCT e.project.owner.id) AS cnt
             FROM Estimate e
-            WHERE e.status = :status AND e.project.owner.role = com.majstr.backend.entity.Role.USER
+            WHERE e.status = :status AND e.project.owner.role = com.majstr.backend.entity.Role.USER AND e.project.sample = false
             GROUP BY e.project.owner.referralSource
             """)
     List<com.majstr.backend.dto.SourceCount> countOwnersByStatusAndSource(@Param("status") EstimateStatus status);
@@ -134,7 +147,7 @@ public interface EstimateRepository extends JpaRepository<Estimate, UUID> {
     @Query("""
             SELECT e.project.owner.utmSource AS source, COUNT(DISTINCT e.project.owner.id) AS cnt
             FROM Estimate e
-            WHERE e.status = :status AND e.project.owner.role = com.majstr.backend.entity.Role.USER
+            WHERE e.status = :status AND e.project.owner.role = com.majstr.backend.entity.Role.USER AND e.project.sample = false
             GROUP BY e.project.owner.utmSource
             """)
     List<com.majstr.backend.dto.SourceCount> countOwnersByStatusAndUtmSource(@Param("status") EstimateStatus status);
@@ -143,7 +156,7 @@ public interface EstimateRepository extends JpaRepository<Estimate, UUID> {
     @Query("""
             SELECT e.project.owner.firstReferrerHost AS source, COUNT(DISTINCT e.project.owner.id) AS cnt
             FROM Estimate e
-            WHERE e.status = :status AND e.project.owner.role = com.majstr.backend.entity.Role.USER
+            WHERE e.status = :status AND e.project.owner.role = com.majstr.backend.entity.Role.USER AND e.project.sample = false
             GROUP BY e.project.owner.firstReferrerHost
             """)
     List<com.majstr.backend.dto.SourceCount> countOwnersByStatusAndReferrerHost(@Param("status") EstimateStatus status);
@@ -152,7 +165,7 @@ public interface EstimateRepository extends JpaRepository<Estimate, UUID> {
     @Query("""
             SELECT e.project.owner.firstEntryPath AS source, COUNT(DISTINCT e.project.owner.id) AS cnt
             FROM Estimate e
-            WHERE e.status = :status AND e.project.owner.role = com.majstr.backend.entity.Role.USER
+            WHERE e.status = :status AND e.project.owner.role = com.majstr.backend.entity.Role.USER AND e.project.sample = false
             GROUP BY e.project.owner.firstEntryPath
             """)
     List<com.majstr.backend.dto.SourceCount> countOwnersByStatusAndEntryPath(@Param("status") EstimateStatus status);
@@ -232,6 +245,7 @@ public interface EstimateRepository extends JpaRepository<Estimate, UUID> {
                     0) AS total
                 FROM projects p
                 WHERE p.owner_id = :ownerId
+                  AND NOT p.sample
                   AND p.status = 'COMPLETED'
                   AND p.completed_at >= :monthStart
             ) t
@@ -436,7 +450,7 @@ public interface EstimateRepository extends JpaRepository<Estimate, UUID> {
      */
     @Query("""
             SELECT COUNT(DISTINCT e.project.owner.id) FROM Estimate e
-            WHERE e.project.owner.role = com.majstr.backend.entity.Role.USER
+            WHERE e.project.owner.role = com.majstr.backend.entity.Role.USER AND e.project.sample = false
               AND e.markupPercent > 0
               AND e.createdAt >= :since
               AND (:signed = false OR e.status = com.majstr.backend.entity.EstimateStatus.SIGNED)

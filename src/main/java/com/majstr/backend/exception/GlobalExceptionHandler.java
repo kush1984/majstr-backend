@@ -429,6 +429,15 @@ public class GlobalExceptionHandler {
         return ResponseEntity.status(HttpStatus.CONFLICT).body(body);
     }
 
+    @ExceptionHandler(SampleProjectExistsException.class)
+    public ResponseEntity<ErrorResponse> handleSampleProjectExists(
+            SampleProjectExistsException ex, HttpServletRequest req) {
+        ErrorResponse body = ErrorResponse.coded(HttpStatus.CONFLICT.value(),
+                HttpStatus.CONFLICT.getReasonPhrase(), msg(ex.getMessage()), req.getRequestURI(),
+                "SAMPLE_PROJECT_EXISTS");
+        return ResponseEntity.status(HttpStatus.CONFLICT).body(body);
+    }
+
     @ExceptionHandler(ProjectHasSignedMoneyException.class)
     public ResponseEntity<ErrorResponse> handleProjectHasSignedMoney(
             ProjectHasSignedMoneyException ex, HttpServletRequest req) {

@@ -26,6 +26,12 @@ public interface ProjectRepository extends JpaRepository<Project, UUID> {
 
     long countByOwnerId(UUID ownerId);
 
+    /** The admin's object count: the training sample (V197) is not an object the master made. */
+    long countByOwnerIdAndSampleFalse(UUID ownerId);
+
+    /** One live training sample per account (V197) — the partial unique index is the floor under it. */
+    boolean existsByOwnerIdAndSampleTrue(UUID ownerId);
+
     /** Serialises writes that number rows within one object (a receipt's «Чек №N», review B-31d). */
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("SELECT p FROM Project p WHERE p.id = :id")
@@ -35,7 +41,7 @@ public interface ProjectRepository extends JpaRepository<Project, UUID> {
 
     long countByOwnerIdAndStatus(UUID ownerId, ProjectStatus status);
 
-    long countByOwnerIdAndStatusAndCompletedAtGreaterThanEqual(UUID ownerId, ProjectStatus status, Instant since);
+    long countByOwnerIdAndSampleFalseAndStatusAndCompletedAtGreaterThanEqual(UUID ownerId, ProjectStatus status, Instant since);
 
     /** Dashboard "Активні" (object-status-unification): objects derived as IN_PROGRESS — not
      *  cancelled, not completed, and with at least one SIGNED estimate. Replaces the old
@@ -46,7 +52,7 @@ public interface ProjectRepository extends JpaRepository<Project, UUID> {
             SELECT COUNT(DISTINCT p.id)
             FROM projects p
             JOIN estimates e ON e.project_id = p.id AND e.status = 'SIGNED'
-            WHERE p.owner_id = :ownerId AND p.status <> 'CANCELLED' AND p.completed_at IS NULL
+            WHERE p.owner_id = :ownerId AND NOT p.sample AND p.status <> 'CANCELLED' AND p.completed_at IS NULL
             """, nativeQuery = true)
     long countInProgressStage(@Param("ownerId") UUID ownerId);
 
@@ -58,7 +64,7 @@ public interface ProjectRepository extends JpaRepository<Project, UUID> {
     @Query(value = """
             SELECT COUNT(DISTINCT p.id)
             FROM projects p
-            WHERE p.owner_id = :ownerId AND p.status <> 'CANCELLED' AND p.completed_at IS NULL
+            WHERE p.owner_id = :ownerId AND NOT p.sample AND p.status <> 'CANCELLED' AND p.completed_at IS NULL
                   AND EXISTS (SELECT 1 FROM estimates e WHERE e.project_id = p.id AND e.status = 'SENT')
                   AND NOT EXISTS (SELECT 1 FROM estimates e2 WHERE e2.project_id = p.id AND e2.status = 'SIGNED')
             """, nativeQuery = true)
@@ -88,7 +94,7 @@ public interface ProjectRepository extends JpaRepository<Project, UUID> {
 
     /** Project count per owner for a set of users (admin list, no N+1). */
     @Query("SELECT p.owner.id AS ownerId, COUNT(p) AS cnt FROM Project p "
-            + "WHERE p.owner.id IN :ownerIds GROUP BY p.owner.id")
+            + "WHERE p.owner.id IN :ownerIds AND p.sample = false GROUP BY p.owner.id")
     List<OwnerCount> countByOwnerIdIn(@Param("ownerIds") Collection<UUID> ownerIds);
 
     /**
@@ -100,7 +106,7 @@ public interface ProjectRepository extends JpaRepository<Project, UUID> {
      */
     @Query("""
             SELECT COUNT(DISTINCT p.owner.id) FROM Project p
-            WHERE p.owner.role = com.majstr.backend.entity.Role.USER
+            WHERE p.owner.role = com.majstr.backend.entity.Role.USER AND p.sample = false
             """)
     long countDistinctOwners();
 
@@ -119,7 +125,7 @@ public interface ProjectRepository extends JpaRepository<Project, UUID> {
     @Query("""
             SELECT p.name AS name, p.estimatesCreated AS created, p.estimatesDeleted AS deleted
             FROM Project p
-            WHERE p.owner.id = :ownerId
+            WHERE p.owner.id = :ownerId AND p.sample = false
             ORDER BY p.createdAt DESC
             """)
     List<ProjectEstimateStat> findEstimateStatsByOwner(@Param("ownerId") UUID ownerId);
@@ -136,7 +142,7 @@ public interface ProjectRepository extends JpaRepository<Project, UUID> {
     @Query("""
             SELECT p.owner.referralSource AS source, COUNT(DISTINCT p.owner.id) AS cnt
             FROM Project p
-            WHERE p.owner.role = com.majstr.backend.entity.Role.USER
+            WHERE p.owner.role = com.majstr.backend.entity.Role.USER AND p.sample = false
             GROUP BY p.owner.referralSource
             """)
     List<com.majstr.backend.dto.SourceCount> countActivatedOwnersBySource();

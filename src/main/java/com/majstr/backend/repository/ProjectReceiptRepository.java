@@ -96,7 +96,8 @@ public interface ProjectReceiptRepository extends JpaRepository<ProjectReceipt, 
     @Query("""
             SELECT r.projectId, COALESCE(SUM(r.amount), 0) FROM ProjectReceipt r
             WHERE r.reimbursable = true AND r.billedOnActId IS NULL
-              AND r.projectId IN (SELECT p.id FROM Project p WHERE p.owner.id = :ownerId)
+              AND r.projectId IN (SELECT p.id FROM Project p WHERE p.owner.id = :ownerId
+                                    AND (:projectId IS NOT NULL OR p.sample = false))
               AND (:projectId IS NULL OR r.projectId = :projectId)
             GROUP BY r.projectId
             """)
@@ -145,7 +146,8 @@ public interface ProjectReceiptRepository extends JpaRepository<ProjectReceipt, 
     @Query("""
             SELECT r FROM ProjectReceipt r
             WHERE r.reimbursable = true AND r.amount > 0
-              AND r.projectId IN (SELECT p.id FROM Project p WHERE p.owner.id = :ownerId)
+              AND r.projectId IN (SELECT p.id FROM Project p WHERE p.owner.id = :ownerId
+                                    AND (:projectId IS NOT NULL OR p.sample = false))
               AND (:projectId IS NULL OR r.projectId = :projectId)
               AND (r.billedOnActId IS NULL OR r.billedOnActId IN
                    (SELECT a.id FROM WorkAct a WHERE a.receiptsToExpenses = false))

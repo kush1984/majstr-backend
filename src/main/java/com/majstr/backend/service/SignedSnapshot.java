@@ -8,6 +8,7 @@ import com.majstr.backend.entity.Trade;
 import com.majstr.backend.entity.Unit;
 import com.majstr.backend.entity.WorkActKind;
 import com.majstr.backend.entity.WorkActLineKind;
+import com.fasterxml.jackson.annotation.JsonInclude;
 import tools.jackson.core.StreamWriteFeature;
 import tools.jackson.databind.MapperFeature;
 import tools.jackson.databind.SerializationFeature;
@@ -60,7 +61,19 @@ public final class SignedSnapshot {
                              boolean vatPayer, String vatId, Short taxGroup, BigDecimal taxRate,
                              String docCity, boolean branded, String logoSha256) { }
 
-    public record ProjectPart(UUID id, String name, String address) { }
+    /** {@code sample} (V197) is written only when TRUE — absent means a real object, so every
+     *  snapshot signed before it, and every one of a real object, keeps exactly its canonical text. */
+    public record ProjectPart(UUID id, String name, String address,
+                              @JsonInclude(JsonInclude.Include.NON_NULL) Boolean sample) {
+        public ProjectPart(UUID id, String name, String address) {
+            this(id, name, address, null);
+        }
+
+        /** Not a bean getter on purpose: «isSample» would be written as a second {@code sample} key. */
+        public boolean marksSample() {
+            return Boolean.TRUE.equals(sample);
+        }
+    }
 
     public record ClientPart(String fullName, String phone, String email, ClientType clientType,
                              String taxId, String legalName, String legalAddress,

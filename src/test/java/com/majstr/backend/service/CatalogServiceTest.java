@@ -346,15 +346,18 @@ class CatalogServiceTest {
     void search_buildsLoweredPatternAndPrefix_clampsLimit_andMapsResults() {
         given(catalogRepository.searchByOwner(eq(ownerId), eq(ItemType.WORK),
                 eq("%плит%"), eq("плит%"), any(Pageable.class)))
-                .willReturn(List.of(item("Плитка", "Укладання плитки")));
+                .willReturn(java.util.stream.IntStream.range(0, 25)
+                        .mapToObj(i -> item("Плитка", "Укладання плитки " + i)).toList());
 
         List<CatalogItemResponse> res = catalogService.search(ownerId, "  Плит  ", ItemType.WORK, 999);
 
-        assertThat(res).extracting(CatalogItemResponse::name).containsExactly("Укладання плитки");
+        assertThat(res).hasSize(20); // limit clamped from 999
+        assertThat(res.get(0).name()).isEqualTo("Укладання плитки 0");
         ArgumentCaptor<Pageable> page = ArgumentCaptor.forClass(Pageable.class);
         verify(catalogRepository).searchByOwner(eq(ownerId), eq(ItemType.WORK),
                 eq("%плит%"), eq("плит%"), page.capture());
-        assertThat(page.getValue().getPageSize()).isEqualTo(20); // limit clamped from 999
+        // Read past the cap, so positions of a trade taken off the profile cannot crowd it out.
+        assertThat(page.getValue().getPageSize()).isEqualTo(200);
         assertThat(page.getValue().getPageNumber()).isZero();
     }
 

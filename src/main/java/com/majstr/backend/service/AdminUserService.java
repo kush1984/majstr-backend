@@ -13,6 +13,7 @@ import com.majstr.backend.entity.Payment;
 import com.majstr.backend.entity.PaymentKind;
 import com.majstr.backend.repository.OwnerCount;
 import com.majstr.backend.repository.PaymentRepository;
+import com.majstr.backend.repository.PdfRenderRepository;
 import com.majstr.backend.repository.ProjectRepository;
 import com.majstr.backend.repository.ReferralRewardRepository;
 import com.majstr.backend.repository.UserRepository;
@@ -27,9 +28,11 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.EnumMap;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 
 /**
@@ -60,6 +63,7 @@ public class AdminUserService {
     private final PaymentRepository paymentRepository;
     private final ReferralRewardRepository referralRewardRepository;
     private final UpgradeEventService upgradeEventService;
+    private final PdfRenderRepository pdfRenderRepository;
 
     @Transactional(readOnly = true)
     public Page<AdminUserSummary> search(Plan plan, String source, String search, Pageable pageable) {
@@ -90,12 +94,18 @@ public class AdminUserService {
         Map<UUID, Long> estimates = toMap(estimateRepository.countByProjectOwnerIdIn(ids));
         Map<UUID, Long> signed = toMap(
                 estimateRepository.countByProjectOwnerIdInAndStatus(ids, EstimateStatus.SIGNED));
+        Map<UUID, Long> sent = toMap(
+                estimateRepository.countByProjectOwnerIdInAndStatus(ids, EstimateStatus.SENT));
+        Set<UUID> madePdf = new HashSet<>(pdfRenderRepository.findMasterPdfOwnersIn(ids));
         return page.map(u -> AdminUserSummary.of(
                 u,
                 clients.getOrDefault(u.getId(), 0L),
                 projects.getOrDefault(u.getId(), 0L),
                 estimates.getOrDefault(u.getId(), 0L),
-                signed.getOrDefault(u.getId(), 0L)
+                signed.getOrDefault(u.getId(), 0L),
+                // «Поділився» here is the funnel's rule (SENT or SIGNED), as on the user card.
+                madePdf.contains(u.getId())
+                        && sent.getOrDefault(u.getId(), 0L) + signed.getOrDefault(u.getId(), 0L) == 0
         ));
     }
 
@@ -148,7 +158,7 @@ public class AdminUserService {
                 user.getLastDeviceType(),
                 user.getLastOs(),
                 clientRepository.countByOwnerId(userId),
-                projectRepository.countByOwnerId(userId),
+                projectRepository.countByOwnerIdAndSampleFalse(userId),
                 breakdown,
                 // The per-master twin of the funnel's `shared` (2026-11-09): an estimate that reached
                 // SENT or SIGNED — the same rule, or the two numbers on one admin page disagree.

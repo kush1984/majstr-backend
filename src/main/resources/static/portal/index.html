@@ -485,6 +485,33 @@
             font-weight: 600;
             line-height: 1.4;
         }
+        /* «Так кошторис побачить клієнт» — the master's own preview (?v=), above everything. Sticky so
+           it stays in sight while he scrolls the document he is checking. */
+        .preview-banner {
+            position: sticky;
+            top: 0;
+            z-index: 5;
+            margin: 0 0 16px;
+            padding: 12px 16px;
+            border-radius: 12px;
+            background: #fff1e3;
+            border: 1px solid var(--amber);
+            color: var(--ink);
+            font-weight: 600;
+            line-height: 1.4;
+        }
+        /* «Навчальний приклад Majstr» (V197): the training sample is a working object, so whoever
+           receives it must see it is not a real offer. */
+        .sample-banner {
+            margin: 0 0 16px;
+            padding: 12px 16px;
+            border-radius: 12px;
+            background: var(--ink);
+            color: #fff;
+            font-weight: 700;
+            line-height: 1.4;
+            text-align: center;
+        }
         /* Loading text (the script sets #root to a bare <p> while fetching). */
         #root > p { text-align: center; color: var(--muted); padding: 40px 0; }
         /* Shared object photos gallery. */
@@ -742,11 +769,18 @@
     const economyToken = params.get('e');
     const actToken = params.get('a');
     const legacyToken = params.get('t');
+    // ?v= is the MASTER looking at his own estimate before it leaves (a ten-minute preview pass):
+    // the ?t= view, read-only — no sign, question or PDF button, and nothing under it to call.
+    const previewToken = params.get('v');
+    // ?vp= is the same look at the object's SIGNATURE portal, with the estimates ticked in the sheet.
+    const portalPreviewToken = params.get('vp');
+    const isPreview = (Boolean(previewToken) || Boolean(portalPreviewToken))
+        && !portalToken && !economyToken && !actToken && !legacyToken;
     const root = document.getElementById('root');
     // ECONOMY acts are already SIGNED and immutable — no sign button/dialog for this mode.
     const isEconomy = Boolean(economyToken);
 
-    if (!portalToken && !economyToken && !actToken && !legacyToken) {
+    if (!portalToken && !economyToken && !actToken && !legacyToken && !previewToken && !portalPreviewToken) {
         root.innerHTML = '<div class="error">Невірне посилання</div>';
         return;
     }
@@ -757,7 +791,11 @@
         ? '/api/public/economy/' + encodeURIComponent(economyToken)
         : portalToken
         ? '/api/public/portal/' + encodeURIComponent(portalToken)
-        : '/api/public/estimates/' + encodeURIComponent(legacyToken);
+        : legacyToken
+        ? '/api/public/estimates/' + encodeURIComponent(legacyToken)
+        : portalPreviewToken
+        ? '/api/public/preview-portal/' + encodeURIComponent(portalPreviewToken)
+        : '/api/public/preview/' + encodeURIComponent(previewToken);
 
     // Where a section's sign / question / pdf endpoints live. Both portal kinds address them
     // per estimate; the legacy link has exactly one estimate.
@@ -1272,14 +1310,14 @@
 
                 ${est.notes ? `<section class="card"><h2>Умови</h2><p>${escapeHtml(est.notes)}</p></section>` : ''}
 
-                <section class="card">
+                ${isPreview ? (signedBanner ? `<section class="card">${signedBanner}</section>` : '') : `<section class="card">
                     ${signedBanner}
                     <div class="actions">
                         ${isEconomy ? '' : `<button class="primary" data-sign="${escapeHtml(est.id ?? '')}" data-version="${est.version ?? ''}" data-title="${escapeHtml(title)}" ${signed ? 'disabled' : ''}>Підписати</button>`}
                         <a class="btn" href="${api}/pdf">Завантажити PDF</a>
                         <button data-ask="${escapeHtml(est.id ?? '')}" data-title="${escapeHtml(title)}">Задати питання</button>
                     </div>
-                </section>
+                </section>`}
             </div>
         `;
     }
@@ -1300,6 +1338,8 @@
         const showSectionTotals = data.estimates.length > 1;
 
         root.innerHTML = `
+            ${isPreview ? '<p class="preview-banner" role="status">Так кошторис побачить клієнт. Це попередній перегляд — підписати чи задати питання тут не можна.</p>' : ''}
+            ${data.project && data.project.sample ? '<p class="sample-banner" role="note">Навчальний приклад Majstr — так виглядає готовий документ. Це не кошторис для замовника.</p>' : ''}
             <header class="card contractor">
                 ${data.contractor.logoUrl ? `<img alt="logo" src="${escapeHtml(data.contractor.logoUrl)}">` : ''}
                 <div>
@@ -1520,6 +1560,7 @@
                      електронний підпис.</p>
                </div>`;
         root.innerHTML = `
+            ${a.sample ? '<p class="sample-banner" role="note">Навчальний приклад Majstr — так виглядає готовий документ. Це не кошторис для замовника.</p>' : ''}
             <div class="card">
                 <p style="margin:0 0 4px;color:var(--muted)">${escapeHtml(a.contractorName || '')}</p>
                 <h2 style="margin:0">АКТ № ${escapeHtml(a.number)} приймання-передачі виконаних робіт</h2>
@@ -1771,7 +1812,9 @@
         try {
             const resp = await fetch(apiBase);
             if (resp.status === 404) {
-                showError('Посилання недійсне або прострочене. Зверніться до вашого майстра за новим посиланням.', false);
+                showError(isPreview
+                    ? 'Попередній перегляд застарів. Відкрийте його ще раз у застосунку.'
+                    : 'Посилання недійсне або прострочене. Зверніться до вашого майстра за новим посиланням.', false);
                 return;
             }
             if (resp.status === 429) {
@@ -1791,7 +1834,7 @@
             if (actToken) {
                 renderAct(data);
             } else {
-                render((portalToken || economyToken) ? data : adaptLegacy(data));
+                render((portalToken || economyToken || portalPreviewToken) ? data : adaptLegacy(data));
             }
         } catch (e) {
             monitoring.unreachable('load');

@@ -1,6 +1,7 @@
 package com.majstr.backend.service;
 
 import com.majstr.backend.config.PortalProperties;
+import com.majstr.backend.dto.ClientPreviewResponse;
 import com.majstr.backend.dto.ShareLinkResponse;
 import com.majstr.backend.email.EmailService;
 import com.majstr.backend.entity.Client;
@@ -48,6 +49,7 @@ public class ShareLinkService {
     private final FeatureGuard featureGuard;
     private final PortalProperties portalProperties;
     private final EmailService emailService;
+    private final PortalPreviewTokens previewTokens;
 
     /**
      * Mints the estimate's link, or returns the one it already has — idempotent, like every other
@@ -65,6 +67,25 @@ public class ShareLinkService {
         // The flip is now {@link #markSent}, called once the link really left — shared or copied.
         EstimateShareLink link = usableLink(estimateId).orElseGet(() -> repository.save(newLink(estimate)));
         return ShareLinkResponse.from(link, buildUrl(link.getToken()));
+    }
+
+    /**
+     * «Подивитися, як побачить клієнт» (iteration-first-experience): the client's page for this
+     * estimate, DRAFT included, with nothing minted and nothing marked — no link row, no status, no
+     * push, no letter. The page serves it read-only: no signature, no question, no PDF (a PDF there
+     * would count as the CLIENT's download). The name is NOT required: the master may well look
+     * before he has given one, and the empty header is part of what he should see.
+     */
+    @Transactional(readOnly = true)
+    public ClientPreviewResponse preview(UUID estimateId, UUID ownerId) {
+        Estimate estimate = estimateService.loadOwned(estimateId, ownerId);
+        if (estimate.getKind() == EstimateKind.ADDENDUM) {
+            throw new WorkActConflictException("error.estimate.addendum-readonly", "ESTIMATE_ADDENDUM_LOCKED");
+        }
+        featureGuard.requireFeature(estimate.getProject().getOwner(), Feature.CLIENT_PORTAL);
+        return new ClientPreviewResponse(
+                portalProperties.publicBaseUrl() + PORTAL_PATH + "?v=" + previewTokens.issue(estimateId),
+                previewTokens.expiresAt());
     }
 
     /**

@@ -54,7 +54,9 @@ public record PublicEstimateView(
     public record ProjectSummary(
             String name,
             String address,
-            String clientName
+            String clientName,
+            /** The training sample (V197): the page shows «Навчальний приклад Majstr». */
+            boolean sample
     ) {}
 
     public record Signature(

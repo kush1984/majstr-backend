@@ -4,7 +4,6 @@ import com.majstr.backend.dto.ActivationFunnelResponse;
 import com.majstr.backend.dto.CrewUsageResponse;
 import com.majstr.backend.dto.MetricsGrowthResponse;
 import com.majstr.backend.dto.MetricsOverviewResponse;
-import com.majstr.backend.dto.OwnerSource;
 import com.majstr.backend.dto.SourceBreakdownResponse;
 import com.majstr.backend.dto.SourceCount;
 import com.majstr.backend.dto.SubscriptionBreakdown;
@@ -68,6 +67,7 @@ public class MetricsService {
 
     private final UserRepository userRepository;
     private final PaymentRepository paymentRepository;
+    private final ClientHandoffs handoffs;
     private final ProjectRepository projectRepository;
     private final EstimateRepository estimateRepository;
     private final UpgradeEventRepository upgradeEventRepository;
@@ -197,21 +197,21 @@ public class MetricsService {
 
     /**
      * Activation funnel across masters (ROLE_USER): registered → created a project → created an
-     * estimate → shared with a client → got a signature, plus two counts beside the chain: verified
-     * email (no longer a step — sharing does not need it) and shared-while-unverified. Each is one
-     * aggregate query (no per-user loop).
+     * estimate → handed it to a client (shared ∪ made a PDF) → got a signature, plus counts beside the
+     * chain: shared, made a PDF, the client downloaded one, verified email (no longer a step — sharing
+     * does not need it) and shared-while-unverified. Each is one aggregate query (no per-user loop).
      *
      * <p>Every step filters {@code role = USER} explicitly. It used to rely on "admins have no
      * projects", which is true only until somebody makes one demo object on the admin account — at
      * which point the by-source report (which always filtered the role) would stop summing to this
      * one, for a purely technical reason.</p>
      *
-     * <p>What {@code shared} means is spelled out on {@link #sharedWithClientCount()}; read it before
-     * comparing this number to anything recorded before the analytics-shared-fix iteration.</p>
+     * <p>What {@code shared}, {@code pdfMade} and {@code handedToClient} mean is spelled out on
+     * {@link ClientHandoffs}; read it before comparing them to anything recorded earlier.</p>
      */
     @Transactional(readOnly = true)
     public ActivationFunnelResponse activationFunnel() {
-        Set<UUID> shared = sharedOwnerSources().keySet();
+        Set<UUID> shared = handoffs.shared().keySet();
         return new ActivationFunnelResponse(
                 userRepository.countByRole(Role.USER),
                 userRepository.countByRoleAndEmailVerifiedTrue(Role.USER),
@@ -219,7 +219,10 @@ public class MetricsService {
                 estimateRepository.countDistinctProjectOwners(),
                 shared.size(),
                 estimateRepository.countDistinctProjectOwnersByStatus(EstimateStatus.SIGNED),
-                shared.isEmpty() ? 0 : userRepository.countByIdInAndEmailVerifiedFalse(shared)
+                shared.isEmpty() ? 0 : userRepository.countByIdInAndEmailVerifiedFalse(shared),
+                handoffs.pdfMade().size(),
+                handoffs.handedToClient().size(),
+                handoffs.clientDownloadedPdf().size()
         );
     }
 
@@ -243,31 +246,6 @@ public class MetricsService {
     }
 
     /**
-     * Masters who ever put a document in front of a client: an estimate of theirs reached SENT or
-     * SIGNED ({@link EstimateRepository#findOwnersWithEstimateIn}).
-     *
-     * <p><b>Changed 2026-11-09 (share-without-verification).</b> It used to be «owns a link row» over
-     * both link tables — but the PWA mints a link when the share sheet OPENS, so a master who only
-     * looked counted as having shared, and with the email gate gone that would have inflated the
-     * very step this iteration is measured on. SENT is set only once the link really left
-     * ({@code ShareLinkService.markSent} / {@code sendByEmail}, {@code ProjectPortalService.markSent});
-     * an act exists only on a signed estimate, so it adds nobody. Figures before 2026-10-18 are
-     * slightly high (SENT was then set as the sheet opened); a sent estimate the master later deleted
-     * drops out.</p>
-     *
-     * <p>The ONE computation behind the aggregate {@code shared}, {@code sharedUnverified} and the
-     * by-source {@code shared} — which is what keeps the two reports summing to each other.</p>
-     */
-    private Map<UUID, String> sharedOwnerSources() {
-        Map<UUID, String> owners = new HashMap<>();
-        for (OwnerSource row : estimateRepository.findOwnersWithEstimateIn(
-                List.of(EstimateStatus.SENT, EstimateStatus.SIGNED))) {
-            owners.put(row.getOwnerId(), row.getSource());
-        }
-        return owners;
-    }
-
-    /**
      * Admin "by referral source" report — the WHOLE activation funnel per source, plus the two
      * PRO-interest counters. Counts only; a rev-share money layer comes with billing.
      *
@@ -275,9 +253,10 @@ public class MetricsService {
      * question a channel is judged by: <b>which source brings masters who reach a SIGNED
      * estimate</b>. Sign-ups are cheap; the signature is the product working.</p>
      *
-     * <p>Grouped queries folded through {@link #toSourceMap}, never a loop over users. {@code shared}
-     * is folded from {@link #sharedOwnerSources()} instead — the same computation the aggregate
-     * funnel uses, which is what keeps the two reports summing to each other.</p>
+     * <p>Grouped queries folded through {@link #toSourceMap}, never a loop over users. {@code shared},
+     * {@code pdfMade} and {@code handedToClient} are folded from {@link ClientHandoffs} instead — the
+     * same sets the aggregate funnel counts, which is what keeps the two reports summing to each
+     * other.</p>
      *
      * <p><b>This service owns the row order</b> (the page renders what it gets, in order). Default:
      * "% to signed" descending — but ONLY among sources with at least
@@ -298,12 +277,14 @@ public class MetricsService {
                 upgradeEventRepository.countDistinctUsersBySourceAndType(UpgradeEventType.CLICK));
         Map<String, Long> interested = toSourceMap(
                 upgradeEventRepository.countDistinctUsersBySourceAndType(UpgradeEventType.INTEREST));
-        Map<String, Long> shared = sharedOwnerSources().values().stream()
-                .collect(Collectors.groupingBy(s -> s, Collectors.counting()));
+        Map<String, Long> shared = bySource(handoffs.shared());
+        Map<String, Long> pdfMade = bySource(handoffs.pdfMade());
+        Map<String, Long> handed = bySource(handoffs.handedToClient());
 
         Set<String> sources = new HashSet<>();
         for (Map<String, Long> step : List.of(
-                registered, verified, activated, withEstimate, withSigned, shared, clicks, interested)) {
+                registered, verified, activated, withEstimate, withSigned, shared, clicks, interested,
+                pdfMade, handed)) {
             sources.addAll(step.keySet());
         }
 
@@ -318,6 +299,8 @@ public class MetricsService {
                         withSigned.getOrDefault(s, 0L),
                         clicks.getOrDefault(s, 0L),
                         interested.getOrDefault(s, 0L),
+                        pdfMade.getOrDefault(s, 0L),
+                        handed.getOrDefault(s, 0L),
                         registered.getOrDefault(s, 0L) >= SIGNIFICANT_SOURCE_MIN_REGISTRATIONS))
                 .sorted(BY_SIGNED_RATE)
                 .toList();
@@ -387,6 +370,13 @@ public class MetricsService {
                 .sorted(Comparator.comparingLong(SourceBreakdownResponse.UtmStat::registered).reversed()
                         .thenComparing(u -> u.source() == null ? "" : u.source()))
                 .toList();
+    }
+
+    /** A {@link ClientHandoffs} set grouped by source; a HashMap, since a source may be null. */
+    private static Map<String, Long> bySource(Map<UUID, String> owners) {
+        Map<String, Long> counts = new HashMap<>();
+        owners.values().forEach(source -> counts.merge(source, 1L, Long::sum));
+        return counts;
     }
 
     /** Grouped rows folded into a map. A {@link HashMap} on purpose: the UTM grouping column is

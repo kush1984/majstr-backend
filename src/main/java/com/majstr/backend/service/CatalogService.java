@@ -105,6 +105,11 @@ public class CatalogService {
             existing.setTrade(trade);
             existing.setCustomTrade(customTrade);
             existing.setDefaultPrice(req.defaultPrice());
+            // He typed a position he could not see (its trade is off his profile): it is his now,
+            // or it would vanish from the screen he just saved it on.
+            if (visibility(ownerId).hides(existing)) {
+                existing.setSource(CatalogItemSource.MANUAL);
+            }
             return CatalogItemResponse.from(existing); // managed entity → dirty-checked
         }
         CatalogItem item = CatalogItem.builder()
@@ -136,11 +141,40 @@ public class CatalogService {
                 : catalogRepository.findByOwnerIdAndTypeOrderByNameAsc(ownerId, type);
         Map<String, Integer> categoryRanks = categoryRanks();
         Map<String, List<SharedTrade>> sharedByKey = sharedTradesByNameKey(categoryRanks);
+        Visibility visibility = visibility(ownerId);
         return items.stream()
                 .sorted(BY_MASTERS_ORDER)
                 .map(item -> CatalogItemResponse.from(item, sharedTradesFor(item, sharedByKey),
-                        categoryRanks.get(categoryKey(item.getTrade(), item.getCategory()))))
+                        categoryRanks.get(categoryKey(item.getTrade(), item.getCategory())),
+                        visibility.hides(item)))
                 .toList();
+    }
+
+    /**
+     * Which of the master's positions belong to a trade he has taken off his profile. A trade's
+     * positions are COPIED into his catalog, and he prices them, so taking the trade off deletes
+     * nothing: the rows stay, every apply still prices from them, and putting the trade back shows
+     * them with his prices. Only the catalog screen and the pickers leave them out (the list marks
+     * them, the search drops them). A position he typed or imported is never hidden, and neither is
+     * one the library also ships under a trade he still has (one row serves both, V118).
+     */
+    private Visibility visibility(UUID ownerId) {
+        Set<Trade> trades = userRepository.findById(ownerId)
+                .map(u -> Set.copyOf(u.getTrades()))
+                .orElse(Set.of());
+        Set<String> keptKeys = trades.isEmpty() ? Set.of()
+                : Set.copyOf(catalogTemplateRepository.findNameKeysForTrades(
+                        trades.stream().map(Trade::name).toList()));
+        return new Visibility(trades, keptKeys);
+    }
+
+    private record Visibility(Set<Trade> trades, Set<String> keptKeys) {
+        boolean hides(CatalogItem item) {
+            return item.getSource() == CatalogItemSource.LIBRARY
+                    && !trades.contains(item.getTrade())
+                    && !keptKeys.contains(item.getName().trim().toLowerCase(Locale.ROOT)
+                            + "|" + item.getType() + "|" + item.getUnit());
+        }
     }
 
     /** {@code "TRADE|category" -> where that category sits in that trade's sequence} — see
@@ -192,6 +226,7 @@ public class CatalogService {
     }
 
     private static final int MAX_SEARCH_RESULTS = 20;
+    private static final int SEARCH_SCAN = 200;
 
     /**
      * Autocomplete: case-insensitive partial-name search over the owner's own
@@ -206,9 +241,14 @@ public class CatalogService {
             return List.of();
         }
         int safeLimit = Math.min(Math.max(limit, 1), MAX_SEARCH_RESULTS);
+        Visibility visibility = visibility(ownerId);
+        // Read past the cap: positions of a trade he took off are dropped here, and must not crowd
+        // the visible ones out of the page.
         return catalogRepository
-                .searchByOwner(ownerId, type, pattern, prefixPattern(query), PageRequest.of(0, safeLimit))
+                .searchByOwner(ownerId, type, pattern, prefixPattern(query), PageRequest.of(0, SEARCH_SCAN))
                 .stream()
+                .filter(item -> !visibility.hides(item))
+                .limit(safeLimit)
                 .map(CatalogItemResponse::from)
                 .toList();
     }

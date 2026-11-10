@@ -3,9 +3,11 @@ package com.majstr.backend.controller;
 import com.majstr.backend.dto.ProjectRequest;
 import com.majstr.backend.dto.ProjectResponse;
 import com.majstr.backend.dto.ProjectStatusUpdateRequest;
+import com.majstr.backend.dto.SampleProjectRequest;
 import com.majstr.backend.entity.ObjectStage;
 import com.majstr.backend.security.UserPrincipal;
 import com.majstr.backend.service.ProjectService;
+import com.majstr.backend.service.SampleProjectService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -37,6 +39,7 @@ import java.util.UUID;
 public class ProjectController {
 
     private final ProjectService projectService;
+    private final SampleProjectService sampleProjectService;
 
     @Operation(summary = "Create a project",
             description = "Offline-authored creates may send a client-generated UUID in the "
@@ -48,6 +51,17 @@ public class ProjectController {
             @AuthenticationPrincipal UserPrincipal principal) {
         return ResponseEntity.status(HttpStatus.CREATED)
                 .body(projectService.create(req, principal.id(), entityId));
+    }
+
+    @Operation(summary = "Create the training sample «Приклад: …»",
+            description = "One live sample per account (409 SAMPLE_PROJECT_EXISTS). Outside the FREE object "
+                    + "cap, deletable at any stage, read by no metric.")
+    @PostMapping("/sample")
+    public ResponseEntity<ProjectResponse> createSample(
+            @RequestBody(required = false) SampleProjectRequest req,
+            @AuthenticationPrincipal UserPrincipal principal) {
+        return ResponseEntity.status(HttpStatus.CREATED)
+                .body(sampleProjectService.create(principal.id(), req == null ? null : req.trade()));
     }
 
     @Operation(summary = "List my projects, optionally filtered by the derived object stage")

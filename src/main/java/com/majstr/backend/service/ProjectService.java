@@ -168,7 +168,11 @@ public class ProjectService {
         }
         // …and an object holding a signature or money is not deletable at all (B-70): every other
         // door refuses this one row at a time, and this cascade walked past all of them at once.
-        deleteGuard.requireNoSignedMoney(id);
+        // The training sample (V197) is the exception: no figure ever read its signature or money,
+        // so taking them with it rewrites nothing the master has seen.
+        if (!project.isSample()) {
+            deleteGuard.requireNoSignedMoney(id);
+        }
         List<String> blobKeys = blobKeysOf(id);
 
         // The shopping rows go first. They hang off the list (CASCADE) and off `estimates` (SET

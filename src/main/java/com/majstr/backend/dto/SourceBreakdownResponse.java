@@ -9,9 +9,9 @@ import java.util.List;
  * brings masters who reach a SIGNED estimate</b>, not merely which channel brings sign-ups.
  *
  * <p><b>Invariant:</b> for every step, the sum over all sources equals the matching field of
- * {@link ActivationFunnelResponse}. Both sides count masters only and both take {@code shared} from
- * the same union of the two link tables. A test pins this — but note it catches the two reports
- * DISAGREEING, not both being wrong the same way.</p>
+ * {@link ActivationFunnelResponse}. Both sides count masters only, and {@code shared}, {@code pdfMade}
+ * and {@code handedToClient} come from the same {@code ClientHandoffs} sets on both. A test pins this —
+ * but note it catches the two reports DISAGREEING, not both being wrong the same way.</p>
  *
  * <p><b>Read it with the threshold in hand.</b> Ranking sources by a percentage is meaningless at
  * small N: one registration that signs once is 100 % and would sit on top forever. Rows are
@@ -48,6 +48,9 @@ public record SourceBreakdownResponse(
             long withSigned,
             long proClicks,
             long proInterested,
+            /** Made a PDF in the app; {@code handedToClient} = {@code shared} ∪ that, per source. */
+            long pdfMade,
+            long handedToClient,
             /** {@code registered >= significanceThreshold} — computed here so the ordering and the
              *  page's grouping can never disagree about which rows are comparable. */
             boolean enoughData

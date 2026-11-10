@@ -19,6 +19,7 @@ import com.majstr.backend.entity.EstimateItem;
 import com.majstr.backend.entity.ItemType;
 import com.majstr.backend.entity.EstimateStatus;
 import com.majstr.backend.entity.MeasurementRefs;
+import com.majstr.backend.entity.PdfRender;
 import com.majstr.backend.entity.PercentBaseKind;
 import com.majstr.backend.entity.Project;
 import com.majstr.backend.entity.Trade;
@@ -66,6 +67,7 @@ import java.util.Optional;
 import java.util.Locale;
 import java.util.Set;
 import java.util.UUID;
+import java.util.function.Supplier;
 import java.util.stream.Collectors;
 
 @Service
@@ -116,6 +118,7 @@ public class EstimateService {
     private final MaterialParamService materialParamService;
     private final HeavyWork heavyWork;
     private final PlatformTransactionManager transactionManager;
+    private final PdfRenderLog pdfRenderLog;
 
     // ---- estimates ---------------------------------------------------------
 
@@ -727,13 +730,31 @@ public class EstimateService {
      */
     public byte[] renderPdf(UUID estimateId, UUID ownerId, List<UUID> receiptPhotoIds)
             throws IOException, DocumentException {
-        return render(Transactions.read(transactionManager, () -> {
+        PdfRenderLog.Traced<PdfJob> traced = Transactions.read(transactionManager, () -> {
             Estimate estimate = loadOwned(estimateId, ownerId);
             // The master hands the PDF over himself: it needs the name its header and «Підрядник»
             // line print, not a verified email (SendReadiness, share-without-verification).
             SendReadiness.masterSendsItself(estimate.getProject().getOwner());
-            return pdfJob(estimate, pdfImageKeys(estimate, receiptPhotoIds));
-        }));
+            return new PdfRenderLog.Traced<>(pdfJob(estimate, pdfImageKeys(estimate, receiptPhotoIds)),
+                    PdfRenderLog.Origin.of(estimate.getProject()));
+        });
+        byte[] pdf = render(traced.job());
+        pdfRenderLog.record(traced.origin(), PdfRender.Document.ESTIMATE, PdfRender.Reader.MASTER);
+        return pdf;
+    }
+
+    /**
+     * A PDF for the client, from a link the caller has already resolved inside {@code resolve} —
+     * rendered once the transaction has closed, and counted as the client's download (V196).
+     */
+    public byte[] renderForClient(Supplier<Estimate> resolve) throws IOException, DocumentException {
+        PdfRenderLog.Traced<PdfJob> traced = Transactions.read(transactionManager, () -> {
+            Estimate estimate = resolve.get();
+            return new PdfRenderLog.Traced<>(pdfJob(estimate), PdfRenderLog.Origin.of(estimate.getProject()));
+        });
+        byte[] pdf = render(traced.job());
+        pdfRenderLog.record(traced.origin(), PdfRender.Document.ESTIMATE, PdfRender.Reader.CLIENT);
+        return pdf;
     }
 
     /** What a PDF needs from the database, ready to print once the transaction has closed (B-121). */

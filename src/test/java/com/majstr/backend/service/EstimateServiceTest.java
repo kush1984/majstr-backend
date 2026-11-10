@@ -20,6 +20,7 @@ import com.majstr.backend.entity.EstimateKind;
 import com.majstr.backend.entity.EstimateStatus;
 import com.majstr.backend.entity.ItemType;
 import com.majstr.backend.entity.PercentBaseKind;
+import com.majstr.backend.entity.PdfRender;
 import com.majstr.backend.entity.PhotoSource;
 import com.majstr.backend.entity.PhotoVisibility;
 import com.majstr.backend.entity.Plan;
@@ -93,6 +94,7 @@ class EstimateServiceTest {
     @Mock private MaterialParamService materialParamService;
     @Mock private org.springframework.transaction.PlatformTransactionManager transactionManager;
     @org.mockito.Spy private HeavyWork heavyWork = new HeavyWork(1, 1, 0);
+    @Mock private PdfRenderLog pdfRenderLog;
 
     @InjectMocks private EstimateService estimateService;
 
@@ -203,6 +205,9 @@ class EstimateServiceTest {
         List<byte[]> embedded = captor.getValue().receiptImages();
         assertThat(embedded).hasSize(1);
         assertThat(embedded.get(0)).containsExactly(9, 9, 9);
+        // The master made it: the funnel's «Сформували PDF» (V196).
+        verify(pdfRenderLog).record(new PdfRenderLog.Origin(ownerId, projectId),
+                PdfRender.Document.ESTIMATE, PdfRender.Reader.MASTER);
     }
 
     @Test

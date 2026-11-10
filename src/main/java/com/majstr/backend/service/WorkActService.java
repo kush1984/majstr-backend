@@ -11,6 +11,7 @@ import com.majstr.backend.entity.Estimate;
 import com.majstr.backend.entity.EstimateItem;
 import com.majstr.backend.entity.EstimateKind;
 import com.majstr.backend.entity.EstimateStatus;
+import com.majstr.backend.entity.PdfRender;
 import com.majstr.backend.entity.Project;
 import com.majstr.backend.entity.Unit;
 import com.majstr.backend.entity.WorkAct;
@@ -91,6 +92,7 @@ public class WorkActService {
     private final EstimateRepository estimateRepository;
     private final EstimateItemRepository estimateItemRepository;
     private final PlatformTransactionManager transactionManager;
+    private final PdfRenderLog pdfRenderLog;
 
     // ---- reads (owner-scoped, ungated) ------------------------------------
 
@@ -114,26 +116,34 @@ public class WorkActService {
     /** Owner download of the act PDF. Estimate group names are resolved from the referenced
      *  estimates (a null/blank name falls back to «Кошторис»). */
     public byte[] renderPdf(UUID id, UUID ownerId) throws IOException, DocumentException {
-        return signedDocuments.print(Transactions.read(transactionManager, () -> {
+        PdfRenderLog.Traced<WorkActPdfService.PdfJob> traced = Transactions.read(transactionManager, () -> {
             WorkAct act = loadOwned(id, ownerId);
-            // A signed act is printed from what was signed (B-76), not from today's requisites.
-            Optional<SignedDocumentService.FrozenAct> frozen = signedDocuments.act(act);
-            if (frozen.isPresent()) {
-                return new WorkActPdfService.PdfJob(frozen.get().pdfModel(), frozen.get().pdfKey());
-            }
-            // A live act prints today's «Виконавець» — which needs a name since V190.
-            SendReadiness.masterSendsItself(act.getProject().getOwner());
-            List<WorkActItem> items = itemRepository.findByWorkActIdOrderBySortOrderAscIdAsc(id);
-            Map<UUID, String> names = new HashMap<>();
-            items.stream().map(WorkActItem::getEstimateId).filter(Objects::nonNull).distinct().forEach(estId ->
-                    estimateRepository.findById(estId).ifPresent(e ->
-                            names.put(estId, e.getName() == null || e.getName().isBlank() ? "Кошторис" : e.getName().trim())));
-            Project project = act.getProject();
-            return new WorkActPdfService.PdfJob(new WorkActPdfService.PdfModel(
-                    project.getOwner(), project, project.getClient(), act, items,
-                    receiptRows(id), names, act.getDocHash(),
-                    cumulativeCalculator.forDownload(act, items, receiptRepository.sumByWorkActId(id))).loaded(), null);
-        }));
+            return new PdfRenderLog.Traced<>(ownerPdfJob(act), PdfRenderLog.Origin.of(act.getProject()));
+        });
+        byte[] pdf = signedDocuments.print(traced.job());
+        pdfRenderLog.record(traced.origin(), PdfRender.Document.ACT, PdfRender.Reader.MASTER);
+        return pdf;
+    }
+
+    private WorkActPdfService.PdfJob ownerPdfJob(WorkAct act) {
+        UUID id = act.getId();
+        // A signed act is printed from what was signed (B-76), not from today's requisites.
+        Optional<SignedDocumentService.FrozenAct> frozen = signedDocuments.act(act);
+        if (frozen.isPresent()) {
+            return new WorkActPdfService.PdfJob(frozen.get().pdfModel(), frozen.get().pdfKey());
+        }
+        // A live act prints today's «Виконавець» — which needs a name since V190.
+        SendReadiness.masterSendsItself(act.getProject().getOwner());
+        List<WorkActItem> items = itemRepository.findByWorkActIdOrderBySortOrderAscIdAsc(id);
+        Map<UUID, String> names = new HashMap<>();
+        items.stream().map(WorkActItem::getEstimateId).filter(Objects::nonNull).distinct().forEach(estId ->
+                estimateRepository.findById(estId).ifPresent(e ->
+                        names.put(estId, e.getName() == null || e.getName().isBlank() ? "Кошторис" : e.getName().trim())));
+        Project project = act.getProject();
+        return new WorkActPdfService.PdfJob(new WorkActPdfService.PdfModel(
+                project.getOwner(), project, project.getClient(), act, items,
+                receiptRows(id), names, act.getDocHash(),
+                cumulativeCalculator.forDownload(act, items, receiptRepository.sumByWorkActId(id))).loaded(), null);
     }
 
     /**

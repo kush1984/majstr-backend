@@ -6,20 +6,24 @@ import com.majstr.backend.dto.OwnerSource;
 import com.majstr.backend.dto.SourceBreakdownResponse;
 import com.majstr.backend.dto.SourceCount;
 import com.majstr.backend.entity.EstimateStatus;
+import com.majstr.backend.entity.PdfRender;
 import com.majstr.backend.entity.Plan;
 import com.majstr.backend.entity.Role;
 import com.majstr.backend.entity.UpgradeEventType;
 import com.majstr.backend.entity.User;
 import com.majstr.backend.repository.EstimateRepository;
 import com.majstr.backend.repository.PaymentRepository;
+import com.majstr.backend.repository.PdfRenderRepository;
 import com.majstr.backend.repository.ProjectRepository;
 import com.majstr.backend.repository.UpgradeEventRepository;
 import com.majstr.backend.repository.UserRepository;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.test.util.ReflectionTestUtils;
 
 import java.math.BigDecimal;
 import java.time.Instant;
@@ -41,7 +45,15 @@ class MetricsServiceTest {
     @Mock com.majstr.backend.repository.ReferralRewardRepository referralRewardRepository;
     @Mock UpgradeEventRepository upgradeEventRepository;
     @Mock PaymentRepository paymentRepository;
+    @Mock PdfRenderRepository pdfRenderRepository;
     @InjectMocks MetricsService metricsService;
+
+    /** The real handover sets over the mocked queries — the computation under test is shared. */
+    @BeforeEach
+    void realHandoffs() {
+        ReflectionTestUtils.setField(metricsService, "handoffs",
+                new ClientHandoffs(estimateRepository, pdfRenderRepository));
+    }
 
     /** The boilerplate every overview test needs; money defaults to none. */
     private void noPayments() {
@@ -211,6 +223,54 @@ given(estimateRepository.findOwnersWithEstimateIn(SENT_OR_SIGNED))
         assertThat(f.withSigned()).isEqualTo(1L);
         // Asked over the SAME de-duplicated set the `shared` step counts, never a second definition.
         assertThat(f.sharedUnverified()).isEqualTo(1L);
+    }
+
+    @Test
+    void activationFunnel_handedToClientIsTheUnionOfSharedAndPdf_oneMasterOnce() {
+        UUID sharedOnly = UUID.randomUUID();
+        UUID both = UUID.randomUUID();
+        UUID pdfOnly = UUID.randomUUID();
+        given(estimateRepository.findOwnersWithEstimateIn(SENT_OR_SIGNED))
+                .willReturn(List.of(ownerSource(sharedOnly, "DIRECT"), ownerSource(both, "LIGA")));
+        given(pdfRenderRepository.findOwnersWithPdf(PdfRender.Reader.MASTER))
+                .willReturn(List.of(ownerSource(both, "LIGA"), ownerSource(pdfOnly, "LIGA")));
+        given(pdfRenderRepository.findOwnersWithPdf(PdfRender.Reader.CLIENT))
+                .willReturn(List.of(ownerSource(sharedOnly, "DIRECT")));
+
+        ActivationFunnelResponse f = metricsService.activationFunnel();
+
+        assertThat(f.shared()).isEqualTo(2L);
+        assertThat(f.pdfMade()).isEqualTo(2L);
+        // Three masters, not 2 + 2: the one who did both is one master.
+        assertThat(f.handedToClient()).isEqualTo(3L);
+        assertThat(f.clientDownloadedPdf()).isEqualTo(1L);
+    }
+
+    @Test
+    void bySource_handedToClientFoldsTheSameUnion_perSource() {
+        UUID both = UUID.randomUUID();
+        given(userRepository.countUsersBySource()).willReturn(List.of(count("LIGA", 3L), count("DIRECT", 1L)));
+        given(userRepository.countVerifiedUsersBySource()).willReturn(List.of());
+        given(projectRepository.countActivatedOwnersBySource()).willReturn(List.of());
+        given(estimateRepository.countEstimateOwnersBySource()).willReturn(List.of());
+        given(estimateRepository.countOwnersByStatusAndSource(EstimateStatus.SIGNED)).willReturn(List.of());
+        given(estimateRepository.findOwnersWithEstimateIn(SENT_OR_SIGNED))
+                .willReturn(List.of(ownerSource(both, "LIGA"), owner("DIRECT")));
+        given(pdfRenderRepository.findOwnersWithPdf(PdfRender.Reader.MASTER))
+                .willReturn(List.of(ownerSource(both, "LIGA"), owner("LIGA")));
+        given(upgradeEventRepository.countDistinctUsersBySourceAndType(any(UpgradeEventType.class)))
+                .willReturn(List.of());
+        noUtm();
+
+        List<SourceBreakdownResponse.SourceStat> rows = metricsService.bySource().sources();
+
+        SourceBreakdownResponse.SourceStat liga = rows.stream().filter(r -> "LIGA".equals(r.source())).findFirst().orElseThrow();
+        assertThat(liga.shared()).isEqualTo(1L);
+        assertThat(liga.pdfMade()).isEqualTo(2L);
+        assertThat(liga.handedToClient()).isEqualTo(2L);
+        SourceBreakdownResponse.SourceStat direct = rows.stream().filter(r -> "DIRECT".equals(r.source())).findFirst().orElseThrow();
+        assertThat(direct.handedToClient()).isEqualTo(1L);
+        assertThat(direct.pdfMade()).isZero();
     }
 
     @Test

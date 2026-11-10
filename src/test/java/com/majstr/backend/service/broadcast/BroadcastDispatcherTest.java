@@ -10,6 +10,7 @@ import com.majstr.backend.entity.BroadcastSegment;
 import com.majstr.backend.entity.User;
 import com.majstr.backend.repository.BroadcastRecipientRepository;
 import com.majstr.backend.repository.BroadcastRepository;
+import com.majstr.backend.repository.EstimateRepository;
 import com.majstr.backend.repository.UserRepository;
 import com.majstr.backend.service.EmailVerificationService;
 import org.junit.jupiter.api.BeforeEach;
@@ -37,6 +38,7 @@ class BroadcastDispatcherTest {
     @Mock BroadcastRepository broadcastRepository;
     @Mock BroadcastRecipientRepository recipientRepository;
     @Mock UserRepository userRepository;
+    @Mock EstimateRepository estimateRepository;
     @Mock EmailService emailService;
     @Mock EmailVerificationService emailVerificationService;
 
@@ -45,11 +47,35 @@ class BroadcastDispatcherTest {
 
     @BeforeEach
     void setUp() {
-        dispatcher = new BroadcastDispatcher(broadcastRepository, recipientRepository, userRepository,
+        dispatcher = new BroadcastDispatcher(broadcastRepository, recipientRepository, userRepository, estimateRepository,
                 emailService, emailVerificationService,
                 new BroadcastProperties("Андрій з Майстра", "majstr.app@ukr.net", 0),
                 new EmailProperties("key", "Majstr <hi@majstr.test>", "https://app.majstr.test"),
                 new PortalProperties("https://api.majstr.test"));
+    }
+
+    @Test
+    void notHandedOver_opensHisLatestDraft_orTheAppWhenHeHasNone() {
+        UUID userId = UUID.randomUUID();
+        UUID draft = UUID.randomUUID();
+        given(estimateRepository.findLatestDraftId(userId)).willReturn(Optional.of(draft));
+        assertThat(dispatcher.buttonUrl(BroadcastSegment.NOT_HANDED_OVER, userId))
+                .isEqualTo("https://app.majstr.test/estimates/" + draft);
+
+        given(estimateRepository.findLatestDraftId(userId)).willReturn(Optional.empty());
+        assertThat(dispatcher.buttonUrl(BroadcastSegment.NOT_HANDED_OVER, userId))
+                .isEqualTo("https://app.majstr.test/");
+        assertThat(dispatcher.buttonUrl(BroadcastSegment.INACTIVE, userId)).isEqualTo("https://app.majstr.test/");
+    }
+
+    @Test
+    void emptyEstimate_opensHisLatestDraftToo() {
+        UUID userId = UUID.randomUUID();
+        UUID draft = UUID.randomUUID();
+        given(estimateRepository.findLatestDraftId(userId)).willReturn(Optional.of(draft));
+
+        assertThat(dispatcher.buttonUrl(BroadcastSegment.EMPTY_ESTIMATE, userId))
+                .isEqualTo("https://app.majstr.test/estimates/" + draft);
     }
 
     @Test

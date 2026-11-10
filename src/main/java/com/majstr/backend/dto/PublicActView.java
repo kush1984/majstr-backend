@@ -40,7 +40,9 @@ public record PublicActView(
         /** The act's {@code @Version} at render time — the portal sends it back with the signature
          *  and a mismatch is refused (B-61). Every write to the act, its lines or its receipts
          *  moves it (B-60's {@code touch}), so it says «this is the document you were reading». */
-        long version
+        long version,
+        /** The training sample (V197): the page shows «Навчальний приклад Majstr». */
+        boolean sample
 ) {
     public record Item(
             String name,

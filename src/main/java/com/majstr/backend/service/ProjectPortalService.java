@@ -2,6 +2,7 @@ package com.majstr.backend.service;
 
 import com.majstr.backend.config.PortalProperties;
 import com.majstr.backend.dto.ActShareStateResponse;
+import com.majstr.backend.dto.ClientPreviewResponse;
 import com.majstr.backend.dto.PortalStateResponse;
 import com.majstr.backend.email.EmailService;
 import com.majstr.backend.entity.Client;
@@ -30,6 +31,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.security.SecureRandom;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.Base64;
 import java.util.HashSet;
 import java.util.List;
@@ -59,6 +61,7 @@ public class ProjectPortalService {
     private static final String PORTAL_PATH = "/portal/index.html?p=";
     private static final String ECONOMY_PATH = "/portal/index.html?e=";
     private static final String ACT_PATH = "/portal/index.html?a=";
+    private static final String PREVIEW_PATH = "/portal/index.html?vp=";
 
     private final ProjectShareLinkRepository linkRepository;
     private final EstimateRepository estimateRepository;
@@ -75,6 +78,7 @@ public class ProjectPortalService {
     private final FeatureGuard featureGuard;
     private final PortalProperties portalProperties;
     private final EmailService emailService;
+    private final PortalPreviewTokens previewTokens;
 
     // ---- SIGNATURE portal (PORTAL) — Кошторис tab -----------------------------------------
 
@@ -108,6 +112,28 @@ public class ProjectPortalService {
 
         ProjectShareLink link = mintOrReuse(project, ShareLinkKind.PORTAL);
         return stateOf(project, Optional.of(link), ShareLinkKind.PORTAL, ProjectPortalService::isSignaturePortalVisible);
+    }
+
+    /**
+     * «Подивитися, як побачить клієнт» for the object's SIGNATURE portal (iteration-first-experience):
+     * the estimates ticked in the sheet right now, through a ten-minute preview pass — nothing is
+     * published, minted or marked, so neither the client's live page nor the funnel moves. The set is
+     * checked like a publish (an id from another object is a 404); a SIGNED one is dropped, as the
+     * publish drops it. No name required: he may look before giving one.
+     */
+    @Transactional(readOnly = true)
+    public ClientPreviewResponse preview(UUID projectId, List<UUID> estimateIds, UUID ownerId) {
+        Project project = projectService.loadOwned(projectId, ownerId);
+        featureGuard.requireFeature(project.getOwner(), Feature.CLIENT_PORTAL);
+        List<UUID> shown = new ArrayList<>();
+        applyVisibility(projectId, estimateIds, (estimate, ticked) -> {
+            if (ticked && estimate.getStatus() != EstimateStatus.SIGNED) {
+                shown.add(estimate.getId());
+            }
+        });
+        return new ClientPreviewResponse(
+                portalProperties.publicBaseUrl() + PREVIEW_PATH + previewTokens.issuePortal(projectId, shown),
+                previewTokens.expiresAt());
     }
 
     /**

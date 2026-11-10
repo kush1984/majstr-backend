@@ -7,6 +7,7 @@ import com.majstr.backend.dto.QuestionRequest;
 import com.majstr.backend.dto.QuestionResponse;
 import com.majstr.backend.dto.SignRequest;
 import com.majstr.backend.entity.Client;
+import com.majstr.backend.entity.PdfRender;
 import com.majstr.backend.entity.ProjectMessage;
 import com.majstr.backend.entity.ProjectShareLink;
 import com.majstr.backend.entity.Project;
@@ -77,6 +78,7 @@ public class PublicActPortalService {
     private final PushService pushService;
     private final MessageSource messages;
     private final PlatformTransactionManager transactionManager;
+    private final PdfRenderLog pdfRenderLog;
 
     @Transactional(readOnly = true)
     public PublicActView view(String token) {
@@ -180,20 +182,27 @@ public class PublicActPortalService {
 
     /** The database part closes before the print: this is anonymous, and a pool has ten connections. */
     public byte[] pdf(String token) throws IOException, DocumentException {
-        return signedDocuments.print(Transactions.read(transactionManager, () -> {
+        PdfRenderLog.Traced<WorkActPdfService.PdfJob> traced = Transactions.read(transactionManager, () -> {
             WorkAct act = resolveShareableAct(token);
-            Optional<SignedDocumentService.FrozenAct> frozen = signedDocuments.act(act);
-            if (frozen.isPresent()) {
-                return new WorkActPdfService.PdfJob(frozen.get().pdfModel(), frozen.get().pdfKey());
-            }
-            List<WorkActItem> items = itemRepository.findByWorkActIdOrderBySortOrderAscIdAsc(act.getId());
-            List<WorkActPdfService.ReceiptRow> receipts = receiptRepository
-                    .findByWorkActIdNewestFirst(act.getId()).stream()
-                    .map(WorkActPdfService.ReceiptRow::from).toList();
-            return new WorkActPdfService.PdfJob(model(act, items, receipts, act.getDocHash(),
-                    cumulativeCalculator.forDownload(act, items, receiptRepository.sumByWorkActId(act.getId())))
-                    .loaded(), null);
-        }));
+            return new PdfRenderLog.Traced<>(pdfJob(act), PdfRenderLog.Origin.of(act.getProject()));
+        });
+        byte[] pdf = signedDocuments.print(traced.job());
+        pdfRenderLog.record(traced.origin(), PdfRender.Document.ACT, PdfRender.Reader.CLIENT);
+        return pdf;
+    }
+
+    private WorkActPdfService.PdfJob pdfJob(WorkAct act) {
+        Optional<SignedDocumentService.FrozenAct> frozen = signedDocuments.act(act);
+        if (frozen.isPresent()) {
+            return new WorkActPdfService.PdfJob(frozen.get().pdfModel(), frozen.get().pdfKey());
+        }
+        List<WorkActItem> items = itemRepository.findByWorkActIdOrderBySortOrderAscIdAsc(act.getId());
+        List<WorkActPdfService.ReceiptRow> receipts = receiptRepository
+                .findByWorkActIdNewestFirst(act.getId()).stream()
+                .map(WorkActPdfService.ReceiptRow::from).toList();
+        return new WorkActPdfService.PdfJob(model(act, items, receipts, act.getDocHash(),
+                cumulativeCalculator.forDownload(act, items, receiptRepository.sumByWorkActId(act.getId())))
+                .loaded(), null);
     }
 
     /** The photo of one receipt, for the portal's «Чеки та рахунки» block. Same defense-in-depth as
@@ -282,7 +291,7 @@ public class PublicActPortalService {
                 contractorName(owner), clientName(client),
                 itemViews, receiptViews, total, receiptsTotal, act.getAdvanceOffset(), payable,
                 HryvniaInWords.format(payable),
-                act.getSignedAt(), act.getSignerName(), act.getVersion());
+                act.getSignedAt(), act.getSignerName(), act.getVersion(), project.isSample());
     }
 
     private Map<UUID, String> estimateNames(List<WorkActItem> items) {

@@ -95,6 +95,13 @@ public interface WorkActRepository extends JpaRepository<WorkAct, UUID> {
             """, nativeQuery = true)
     int maxNumberSeqForUser(@Param("userId") UUID userId);
 
+    /** The training sample's own act row, «П-1», «П-2» (V197) — outside the sequence above. */
+    @Query(value = """
+            SELECT COALESCE(MAX(CAST(substring(number from '^П-([0-9]+)$') AS integer)), 0)
+            FROM work_act WHERE user_id = :userId
+            """, nativeQuery = true)
+    int maxSampleNumberSeqForUser(@Param("userId") UUID userId);
+
     /**
      * The admin's account delete, run before the user row goes: {@code work_act.user_id} is the
      * one FK to {@code users} with no ON DELETE action, and Postgres checks it before the cascade

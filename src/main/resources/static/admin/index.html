@@ -217,7 +217,9 @@
                     </div>
                     <p class="muted">«Поділились» — є кошторис зі статусом «Надіслано» або «Підписано»
                         (посилання справді пішло). До 18.10.2026 «Надіслано» ставилось уже при відкритті
-                        шторки, тож старі дані трохи завищені; видалений надісланий кошторис випадає.</p>
+                        шторки, тож старі дані трохи завищені; видалений надісланий кошторис випадає.
+                        «Поділились або сформували PDF» — кожен майстер один раз; PDF (кошторис чи акт) міг
+                        бути й для себе. PDF рахуємо з 09.11.2026: раніше вони ніде не записувались.</p>
                 </section>
 
                 <h2>За джерелом (партнерська атрибуція)</h2>
@@ -800,16 +802,22 @@
                 + (drop === null ? '' : `<div class="sub">${drop}% з попереднього кроку</div>`)
                 + '</div>';
         };
-        // A verified email is no longer a step: sharing does not need it (2026-11-09), so the chain
-        // runs registered → object → estimate → shared → signed, and the email sits beside it.
+        // The chain runs registered → object → estimate → handed to the client → signed. «Віддали
+        // клієнту» = shared a link ∪ made a PDF (one master once, the server's union); the two halves,
+        // the client's own PDF downloads and the email (no longer a step) sit beside it.
         const side = (label, n, sub) => `<div class="stat"><div class="label">${label}</div>`
             + `<div class="value">${n}</div><div class="sub">${sub}</div></div>`;
         document.getElementById('funnel').innerHTML =
             step('Зареєструвались', reg) +
             step("Створили об'єкт", f.withProject, reg) +
             step('Створили кошторис', f.withEstimate, f.withProject) +
-            step('Поділились з клієнтом', f.shared, f.withEstimate) +
-            step('Мають підписаний', f.withSigned, f.shared) +
+            // «Поділились або сформували PDF», not «віддали»: a PDF may have been made for himself.
+            step('Поділились або сформували PDF', f.handedToClient ?? f.shared, f.withEstimate) +
+            step('Мають підписаний', f.withSigned, f.handedToClient ?? f.shared) +
+            side('Поділились посиланням', f.shared,
+                f.handedToClient ? `${Math.round(f.shared / f.handedToClient * 100)}% з кроку «Поділились або сформували PDF»` : '—') +
+            side('Сформували PDF', f.pdfMade ?? 0, 'рахуємо з 09.11.2026 · кошторис або акт') +
+            side('Клієнт завантажив PDF з посилання', f.clientDownloadedPdf ?? 0, 'майстрів, чий клієнт завантажив') +
             side('Підтвердили email', f.verifiedEmail, `${pct(f.verifiedEmail)}% від реєстрацій · не крок воронки`) +
             side('Поділились без підтвердженої пошти', f.sharedUnverified ?? 0,
                 f.shared ? `${Math.round((f.sharedUnverified ?? 0) / f.shared * 100)}% з тих, хто поділився` : '—');
@@ -839,7 +847,7 @@
             let sep = '';
             if (!r.enoughData && !separatorDrawn) {
                 separatorDrawn = true;
-                sep = `<tr><td colspan="8" class="muted" style="padding-top:12px">Замало даних — менше ${threshold} реєстрацій. Відсотки тут нічого не означають.</td></tr>`;
+                sep = `<tr><td colspan="10" class="muted" style="padding-top:12px">Замало даних — менше ${threshold} реєстрацій. Відсотки тут нічого не означають.</td></tr>`;
             }
             return sep + `<tr>
                 <td>${name(r.source)}</td>
@@ -848,6 +856,8 @@
                 <td class="hide-mobile">${r.activated}</td>
                 <td class="hide-mobile">${r.withEstimate}</td>
                 <td class="hide-mobile">${r.shared}</td>
+                <td class="hide-mobile">${r.pdfMade ?? 0}</td>
+                <td class="hide-mobile">${r.handedToClient ?? r.shared}</td>
                 <td>${ratio(r.withSigned, r.registered)}</td>
                 <td class="hide-mobile">${r.proClicks} / ${r.proInterested}</td>
             </tr>`;
@@ -859,7 +869,9 @@
                 <th class="hide-mobile" title="Підтвердили email">Email</th>
                 <th class="hide-mobile" title="Створили об'єкт">Об'єкт</th>
                 <th class="hide-mobile" title="Створили кошторис">Кошторис</th>
-                <th class="hide-mobile" title="Поділились з клієнтом">Поділились</th>
+                <th class="hide-mobile" title="Кошторис став «Надіслано» або «Підписано»">Поділились</th>
+                <th class="hide-mobile" title="Сформували PDF у застосунку (з 09.11.2026)">PDF</th>
+                <th class="hide-mobile" title="Поділились або сформували PDF — кожен майстер один раз">Пос./PDF</th>
                 <th title="Дійшли до підписаного кошторису — головна цифра каналу">% до підпису</th>
                 <th class="hide-mobile" title="PRO-кліки / PRO-заявки">PRO</th>
             </tr></thead><tbody>`
@@ -1311,14 +1323,14 @@
         });
 
         document.getElementById('usersBody').innerHTML = withActivity.map(({ u, activeNow, activeToday }) => {
-            const bypass = u.estimatesCount > 0 && !u.emailVerified;
+            const bypass = u.pdfWithoutShare === true;
             const rowClass = activeNow ? 'active-row' : activeToday ? 'recent-row' : '';
             const rowTitle = activeNow ? ' title="Активний зараз"'
                 : activeToday ? ' title="Був онлайн за останню добу"' : '';
             const dot = activeNow ? '🟢 ' : activeToday ? '🟠 ' : '';
             return `
             <tr class="${rowClass}"${rowTitle}>
-                <td>${dot}<a href="#" class="user-link" data-user="${u.id}">${escapeHtml(u.email)}</a>${bypass ? ' <span title="Активний, але email не підтверджено (ділитися й завантажувати PDF можна й так; лист клієнту від нас — ні)">⚠️</span>' : ''}</td>
+                <td>${dot}<a href="#" class="user-link" data-user="${u.id}">${escapeHtml(u.email)}</a>${bypass ? ' <span title="Сформував PDF, але жоден кошторис не надіслав посиланням — віддає клієнту інакше (Viber, друк). Кандидат на дзвінок">⚠️</span>' : ''}</td>
                 <td>${u.emailVerified ? '✅' : '❌'}</td>
                 <td class="hide-mobile">${escapeHtml(u.fullName)}</td>
                 <td>${u.projectsCount}</td>
@@ -1922,6 +1934,28 @@
                 + '• **«скільки купити»**: Майстр сам рахує матеріали за Вашим кошторисом.\n\n'
                 + 'Дякую,\nАндрій, розробник Майстра'
         },
+        NOT_HANDED_OVER: {
+            subject: 'Ваш кошторис готовий — залишилось віддати клієнту',
+            body: 'Вітаю, {{імʼя}}!
+
+'
+                + 'Бачу, Ви склали в Майстрі кошторис, але клієнт його ще не бачив. '
+                + 'Віддати його можна за хвилину, і пошту для цього підтверджувати не треба:
+
+'
+                + '1. **Посиланням**: «Поділитися» → Viber чи Telegram. Клієнт відкриє кошторис на телефоні і зможе підписати його онлайн.
+'
+                + '2. **PDF**: «Зберегти PDF» і надіслати файлом.
+
+'
+                + 'Перш ніж надсилати, натисніть «Подивитися, як побачить клієнт» — відкриється саме та сторінка, яку отримає клієнт.
+
+'
+                + 'Якщо щось зупиняє, просто відповідайте на цей лист, я допоможу.
+
+'
+                + 'Андрій, розробник Майстра'
+        },
         EMPTY_ESTIMATE: {
             subject: 'Ваш кошторис можна заповнити за 5 хвилин',
             body: 'Вітаю, {{імʼя}}!\n\n'
@@ -1997,7 +2031,8 @@
         const meta = bcSegments.find(s => s.segment === segment);
         document.getElementById('bc-criteria').textContent = meta ? meta.criteria : '';
         document.getElementById('bc-button-label').textContent =
-            segment === 'UNVERIFIED' ? 'Підтвердити пошту' : segment === 'EMPTY_ESTIMATE' ? 'Відкрити кошторис' : 'Відкрити Майстр';
+            segment === 'UNVERIFIED' ? 'Підтвердити пошту'
+                : segment === 'EMPTY_ESTIMATE' || segment === 'NOT_HANDED_OVER' ? 'Відкрити кошторис' : 'Відкрити Майстр';
         const draft = bcReadDraft(segment);
         document.getElementById('bc-subject').value = draft.subject;
         document.getElementById('bc-body-text').value = draft.body;

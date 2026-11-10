@@ -48,7 +48,11 @@ public record CatalogItemResponse(
          *  still shows up under the OTHER trade's chip too — see {@code
          *  TradeFilterChips.tradeMatches} — and group it under that trade's category while its
          *  chip is the one selected. Empty for anything not (also) shipped under a second trade. */
-        List<SharedTrade> sharedTrades
+        List<SharedTrade> sharedTrades,
+        /** A position we shipped for a trade the master has since taken off his profile: kept with
+         *  his price (a trade put back shows it again), priced from on every apply, but left off the
+         *  catalog screen and the pickers. Never true for a position he typed or imported. */
+        boolean hidden
 ) {
     /** One foreign trade that ships this exact position, where that trade keeps it, and where that
      *  category sits in that trade's sequence — see {@link #categoryOrder}. */
@@ -56,11 +60,11 @@ public record CatalogItemResponse(
     }
 
     public static CatalogItemResponse from(CatalogItem item) {
-        return from(item, List.of(), null);
+        return from(item, List.of(), null, false);
     }
 
     public static CatalogItemResponse from(CatalogItem item, List<SharedTrade> sharedTrades,
-                                           Integer categoryOrder) {
+                                           Integer categoryOrder, boolean hidden) {
         var customTrade = item.getCustomTrade();
         return new CatalogItemResponse(
                 item.getId(),
@@ -76,7 +80,8 @@ public record CatalogItemResponse(
                 item.getSortOrder(),
                 categoryOrder,
                 item.getCreatedAt(),
-                sharedTrades
+                sharedTrades,
+                hidden
         );
     }
 }

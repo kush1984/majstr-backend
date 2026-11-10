@@ -65,6 +65,15 @@ public interface CatalogTemplateRepository extends JpaRepository<CatalogTemplate
             """, nativeQuery = true)
     List<Object[]> findNameKeysSharedAcrossTrades();
 
+    /** {@code "name_key|TYPE|UNIT"} of every position the library ships under one of {@code trades}
+     *  — what keeps a copied position visible once the trade it is STORED under is gone. */
+    @Query(value = """
+            SELECT DISTINCT lower(trim(name)) || '|' || type || '|' || unit
+            FROM catalog_templates
+            WHERE trade IN (:trades)
+            """, nativeQuery = true)
+    List<String> findNameKeysForTrades(@Param("trades") Collection<String> trades);
+
     /**
      * Where each (trade, category) sits in that trade's own sequence — {@code min(sort_order)} over
      * V118's global ranking, which for DRYWALL is the order the work is actually done in

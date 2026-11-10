@@ -5,6 +5,7 @@ import com.majstr.backend.dto.SourceBreakdownResponse;
 import com.majstr.backend.entity.Estimate;
 import com.majstr.backend.entity.EstimateShareLink;
 import com.majstr.backend.entity.EstimateStatus;
+import com.majstr.backend.entity.PdfRender;
 import com.majstr.backend.entity.Plan;
 import com.majstr.backend.entity.Project;
 import com.majstr.backend.entity.ProjectShareLink;
@@ -14,6 +15,7 @@ import com.majstr.backend.entity.ShareLinkKind;
 import com.majstr.backend.entity.User;
 import com.majstr.backend.repository.EstimateRepository;
 import com.majstr.backend.repository.EstimateShareLinkRepository;
+import com.majstr.backend.repository.PdfRenderRepository;
 import com.majstr.backend.repository.ProjectRepository;
 import com.majstr.backend.repository.ProjectShareLinkRepository;
 import com.majstr.backend.repository.UserRepository;
@@ -42,6 +44,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  */
 class SourceBreakdownIntegrationTest extends IntegrationTestBase {
 
+    @Autowired PdfRenderRepository pdfRenderRepository;
     @Autowired UserRepository userRepository;
     @Autowired ProjectRepository projectRepository;
     @Autowired EstimateRepository estimateRepository;
@@ -61,6 +64,9 @@ class SourceBreakdownIntegrationTest extends IntegrationTestBase {
         master("SUM-F").verified().withObject().withEstimate().sent().signed().build();
         // A link minted on a DRAFT (the sheet opened, nothing left) is not sharing (2026-11-09).
         master("SUM-G").withObject().withEstimate().mintedOnly().build();
+        // A PDF made in the app (V196) — and one master who both sent and made a PDF: one master.
+        master("SUM-H").verified().withObject().withEstimate().pdf().build();
+        master("SUM-I").withObject().withEstimate().sent().pdf().build();
 
         ActivationFunnelResponse funnel = metricsService.activationFunnel();
         List<SourceBreakdownResponse.SourceStat> rows = metricsService.bySource().sources();
@@ -71,6 +77,8 @@ class SourceBreakdownIntegrationTest extends IntegrationTestBase {
         assertThat(sum(rows, SourceBreakdownResponse.SourceStat::withEstimate)).isEqualTo(funnel.withEstimate());
         assertThat(sum(rows, SourceBreakdownResponse.SourceStat::shared)).isEqualTo(funnel.shared());
         assertThat(sum(rows, SourceBreakdownResponse.SourceStat::withSigned)).isEqualTo(funnel.withSigned());
+        assertThat(sum(rows, SourceBreakdownResponse.SourceStat::pdfMade)).isEqualTo(funnel.pdfMade());
+        assertThat(sum(rows, SourceBreakdownResponse.SourceStat::handedToClient)).isEqualTo(funnel.handedToClient());
     }
 
     @Test
@@ -183,6 +191,7 @@ class SourceBreakdownIntegrationTest extends IntegrationTestBase {
         private boolean sent;
         private boolean signed;
         private boolean mintedOnly;
+        private boolean pdf;
 
         private MasterFixture(String source) {
             this.source = source;
@@ -200,6 +209,8 @@ class SourceBreakdownIntegrationTest extends IntegrationTestBase {
         MasterFixture signed() { this.signed = true; return this; }
         /** A link minted on the DRAFT and an object portal published, but nothing marked sent. */
         MasterFixture mintedOnly() { this.mintedOnly = true; return this; }
+        /** Made a PDF in the app — written straight, as {@code PdfRenderLog} would after a download. */
+        MasterFixture pdf() { this.pdf = true; return this; }
 
         UUID build() {
             String unique = UUID.randomUUID().toString();
@@ -220,7 +231,7 @@ class SourceBreakdownIntegrationTest extends IntegrationTestBase {
                     .referralCode(unique.substring(0, 10)) // NOT NULL since V41, no entity default
                     .build());
 
-            if (!object && !estimate && !sent && !signed && !mintedOnly) {
+            if (!object && !estimate && !sent && !signed && !mintedOnly && !pdf) {
                 return owner.getId();
             }
             Project project = projectRepository.save(Project.builder()
@@ -248,6 +259,10 @@ class SourceBreakdownIntegrationTest extends IntegrationTestBase {
             }
             if (signed) {
                 estimate(project, EstimateStatus.SIGNED);
+            }
+            if (pdf) {
+                pdfRenderRepository.save(PdfRender.builder().ownerId(owner.getId()).projectId(project.getId())
+                        .document(PdfRender.Document.ESTIMATE).reader(PdfRender.Reader.MASTER).build());
             }
             return owner.getId();
         }

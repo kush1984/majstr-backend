@@ -1,6 +1,7 @@
 package com.majstr.backend.controller;
 
 import com.majstr.backend.dto.AddCatalogItemsBatchRequest;
+import com.majstr.backend.dto.ClientPreviewResponse;
 import com.majstr.backend.dto.CountInEconomyRequest;
 import com.majstr.backend.dto.EstimateConsolidateRequest;
 import com.majstr.backend.dto.TemplateLineRequest;
@@ -153,6 +154,14 @@ public class EstimateController {
     }
 
     // ---- share links ------------------------------------------------------
+
+    @Operation(summary = "A ten-minute pass to the client's page for this estimate: a preview that mints "
+            + "no link, changes no status and allows no signature")
+    @PostMapping("/api/estimates/{id}/client-preview")
+    public ClientPreviewResponse clientPreview(@PathVariable UUID id,
+                                               @AuthenticationPrincipal UserPrincipal principal) {
+        return shareLinkService.preview(id, principal.id());
+    }
 
     @Operation(summary = "Create a public share link for the estimate")
     @PostMapping("/api/estimates/{id}/share")

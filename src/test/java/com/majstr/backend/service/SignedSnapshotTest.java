@@ -56,6 +56,18 @@ class SignedSnapshotTest {
     }
 
     @Test
+    void theSampleMarkIsWrittenOnlyForTheSample_soEveryOtherSnapshotKeepsItsText() {
+        String sample = SignedSnapshot.canonical(new SignedSnapshot.ProjectPart(A, "Приклад", null, true));
+        assertThat(sample).isEqualTo("{\"address\":null,\"id\":\"" + A + "\",\"name\":\"Приклад\",\"sample\":true}");
+
+        // A snapshot stored before V197 has no such key: it reads as a real object.
+        SignedSnapshot.ProjectPart old = SignedSnapshot.read(
+                "{\"address\":\"Адреса\",\"id\":\"" + A + "\",\"name\":\"Обʼєкт\"}", SignedSnapshot.ProjectPart.class);
+        assertThat(old.marksSample()).isFalse();
+        assertThat(SignedSnapshot.read(sample, SignedSnapshot.ProjectPart.class).marksSample()).isTrue();
+    }
+
+    @Test
     void readingBackAndWritingAgainGivesTheSameText() {
         String text = SignedSnapshot.canonical(doc(Map.of(A, "Санвузол")));
         assertThat(SignedSnapshot.canonical(SignedSnapshot.read(text, SignedSnapshot.ActDoc.class))).isEqualTo(text);

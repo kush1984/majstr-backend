@@ -7,6 +7,7 @@ import com.majstr.backend.repository.OwnerCount;
 import com.majstr.backend.repository.OwnerEstimateFill;
 import com.majstr.backend.repository.ProjectRepository;
 import com.majstr.backend.repository.UserRepository;
+import com.majstr.backend.service.ClientHandoffs;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -17,13 +18,15 @@ import java.util.Comparator;
 import java.util.EnumMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
 /**
  * Reads the funnel facts for every broadcast-eligible master and sorts them into segments.
- * Three aggregate queries for the whole audience — never a loop of per-user lookups.
+ * A handful of aggregate queries for the whole audience — never a loop of per-user lookups. Who
+ * handed an estimate to a client is {@link ClientHandoffs}, the same set the admin funnel counts.
  */
 @Service
 @RequiredArgsConstructor
@@ -32,6 +35,7 @@ public class BroadcastAudience {
     private final UserRepository userRepository;
     private final ProjectRepository projectRepository;
     private final EstimateRepository estimateRepository;
+    private final ClientHandoffs handoffs;
 
     @Transactional(readOnly = true)
     public Map<BroadcastSegment, List<AudienceRules.Master>> bySegment(Instant now) {
@@ -48,6 +52,7 @@ public class BroadcastAudience {
                 .collect(Collectors.toMap(OwnerCount::getOwnerId, OwnerCount::getCnt));
         Map<UUID, OwnerEstimateFill> fill = estimateRepository.findEstimateFillByOwnerIdIn(ids).stream()
                 .collect(Collectors.toMap(OwnerEstimateFill::getOwnerId, Function.identity()));
+        Set<UUID> handed = handoffs.handedToClient().keySet();
 
         for (User u : users) {
             OwnerEstimateFill f = fill.get(u.getId());
@@ -56,7 +61,8 @@ public class BroadcastAudience {
                     u.getCreatedAt(), u.getLastActiveAt(),
                     objects.getOrDefault(u.getId(), 0L),
                     f == null ? 0 : f.getEstimates(),
-                    f == null ? 0 : f.getMaxLines());
+                    f == null ? 0 : f.getMaxLines(),
+                    handed.contains(u.getId()));
             AudienceRules.segmentOf(m, now).ifPresent(s -> out.get(s).add(m));
         }
         out.values().forEach(list -> list.sort(Comparator.comparing(AudienceRules.Master::registeredAt).reversed()));

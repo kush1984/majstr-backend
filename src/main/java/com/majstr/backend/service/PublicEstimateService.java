@@ -36,6 +36,7 @@ import com.majstr.backend.repository.ProjectMessageRepository;
 import com.majstr.backend.repository.EstimateRepository;
 import com.majstr.backend.repository.EstimateShareLinkRepository;
 import com.majstr.backend.repository.PaymentReceiptRepository;
+import com.majstr.backend.repository.ProjectRepository;
 import com.majstr.backend.repository.ProjectShareLinkRepository;
 import com.majstr.backend.repository.WorkActItemRepository;
 import lombok.RequiredArgsConstructor;
@@ -88,6 +89,8 @@ public class PublicEstimateService {
     private final AfterCommit afterCommit;
     private final SignedDocumentService signedDocuments;
     private final PlatformTransactionManager transactionManager;
+    private final PortalPreviewTokens previewTokens;
+    private final ProjectRepository projectRepository;
 
     /**
      * The SIGNED estimate this one replaces, or {@code null} when nothing is superseded — and a 409
@@ -176,8 +179,7 @@ public class PublicEstimateService {
 
     /** The database part closes before the render: these are anonymous, and a pool has ten connections. */
     public byte[] renderPdf(String token) throws IOException, DocumentException {
-        return estimateService.render(Transactions.read(transactionManager,
-                () -> estimateService.pdfJob(resolveEstimate(token))));
+        return estimateService.renderForClient(() -> resolveEstimate(token));
     }
 
     /**
@@ -189,6 +191,60 @@ public class PublicEstimateService {
         UUID projectId = Transactions.read(transactionManager,
                 () -> resolveEstimate(token).getProject().getId());
         return projectPhotoService.readSharedFile(projectId, photoId);
+    }
+
+    // ---- the master's own preview (?v=) -----------------------------------
+
+    /**
+     * The client's page for one estimate, read through a preview pass ({@link PortalPreviewTokens}):
+     * the same view the {@code ?t=} link builds, with no door to write through — no signature, no
+     * question, no PDF exists under it. A pass that is forged, expired, or names an estimate that is
+     * gone (or an ADDENDUM) is the same neutral 404 as a dead link.
+     */
+    @Transactional(readOnly = true)
+    public PublicEstimateView viewPreview(String token) {
+        return buildView(resolvePreview(token));
+    }
+
+    public ProjectPhotoService.PhotoFile readPreviewPhoto(String token, UUID photoId) throws IOException {
+        UUID projectId = Transactions.read(transactionManager,
+                () -> resolvePreview(token).getProject().getId());
+        return projectPhotoService.readSharedFile(projectId, photoId);
+    }
+
+    /**
+     * The object's SIGNATURE portal through a portal preview pass: the estimates the master ticked,
+     * NOT the published set, in the portal's own order (oldest first). Only estimates of the pass's
+     * object that are still not SIGNED are shown — what the publish itself would show. A dead pass,
+     * or an object that is gone, is the neutral 404.
+     */
+    @Transactional(readOnly = true)
+    public PublicPortalView viewPortalPreview(String token) {
+        PortalPreviewTokens.PortalPass pass = resolvePortalPreview(token);
+        Project project = projectRepository.findById(pass.projectId())
+                .orElseThrow(() -> new ResourceNotFoundException("Preview not found"));
+        List<Estimate> visible = estimateRepository.findAllById(pass.estimateIds()).stream()
+                .filter(e -> e.getProject().getId().equals(project.getId()))
+                .filter(e -> e.getStatus() != EstimateStatus.SIGNED && e.getKind() != EstimateKind.ADDENDUM)
+                .sorted(Comparator.comparing(Estimate::getCreatedAt))
+                .toList();
+        return signaturePortal(project, visible);
+    }
+
+    public ProjectPhotoService.PhotoFile readPortalPreviewPhoto(String token, UUID photoId) throws IOException {
+        return projectPhotoService.readSharedFile(resolvePortalPreview(token).projectId(), photoId);
+    }
+
+    private PortalPreviewTokens.PortalPass resolvePortalPreview(String token) {
+        return previewTokens.portalOf(token)
+                .orElseThrow(() -> new ResourceNotFoundException("Preview not found"));
+    }
+
+    private Estimate resolvePreview(String token) {
+        return previewTokens.estimateOf(token)
+                .flatMap(estimateRepository::findById)
+                .filter(e -> e.getKind() != EstimateKind.ADDENDUM)
+                .orElseThrow(() -> new ResourceNotFoundException("Preview not found"));
     }
 
     // ---- SIGNATURE portal token (?p=) --------------------------------------
@@ -209,13 +265,14 @@ public class PublicEstimateService {
      */
     @Transactional(readOnly = true)
     public PublicPortalView viewPortal(String token) {
-        ProjectShareLink link = resolveLink(token, ShareLinkKind.PORTAL);
-        Project project = link.getProject();
-        List<PublicPortalView.Section> sections =
-                estimateRepository.findByProjectIdAndPortalVisibleTrueOrderByCreatedAtAsc(project.getId())
-                        .stream()
-                        .map(this::sectionOf)
-                        .toList();
+        Project project = resolveLink(token, ShareLinkKind.PORTAL).getProject();
+        return signaturePortal(project,
+                estimateRepository.findByProjectIdAndPortalVisibleTrueOrderByCreatedAtAsc(project.getId()));
+    }
+
+    /** The SIGNATURE portal page for one object and the estimates it shows — the link and the preview alike. */
+    private PublicPortalView signaturePortal(Project project, List<Estimate> visible) {
+        List<PublicPortalView.Section> sections = visible.stream().map(this::sectionOf).toList();
         Client client = project.getClient();
         User contractor = project.getOwner();
         List<PublicEstimateView.SharedPhoto> sharedPhotos = projectPhotoService.sharedPhotos(project.getId())
@@ -228,7 +285,8 @@ public class PublicEstimateService {
                 new PublicEstimateView.ProjectSummary(
                         project.getName(),
                         project.getAddress(),
-                        client == null ? null : client.getFullName()),
+                        client == null ? null : client.getFullName(),
+                        project.isSample()),
                 sections,
                 sharedPhotos,
                 null);
@@ -247,8 +305,7 @@ public class PublicEstimateService {
     }
 
     public byte[] renderPortalPdf(String token, UUID estimateId) throws IOException, DocumentException {
-        return estimateService.render(Transactions.read(transactionManager,
-                () -> estimateService.pdfJob(resolvePortalEstimate(token, estimateId))));
+        return estimateService.renderForClient(() -> resolvePortalEstimate(token, estimateId));
     }
 
     public ProjectPhotoService.PhotoFile readPortalSharedPhoto(String token, UUID photoId) throws IOException {
@@ -281,7 +338,8 @@ public class PublicEstimateService {
                 new PublicEstimateView.ProjectSummary(
                         project.getName(),
                         project.getAddress(),
-                        client == null ? null : client.getFullName()),
+                        client == null ? null : client.getFullName(),
+                        project.isSample()),
                 sections,
                 sharedPhotos,
                 paymentsCard);
@@ -329,8 +387,7 @@ public class PublicEstimateService {
     }
 
     public byte[] renderEconomyPdf(String token, UUID estimateId) throws IOException, DocumentException {
-        return estimateService.render(Transactions.read(transactionManager,
-                () -> estimateService.pdfJob(resolveEconomyEstimate(token, estimateId))));
+        return estimateService.renderForClient(() -> resolveEconomyEstimate(token, estimateId));
     }
 
     public ProjectPhotoService.PhotoFile readEconomySharedPhoto(String token, UUID photoId) throws IOException {
@@ -711,7 +768,8 @@ public class PublicEstimateService {
                 new PublicEstimateView.ProjectSummary(
                         project.getName(),
                         project.getAddress(),
-                        client == null ? null : client.getFullName()),
+                        client == null ? null : client.getFullName(),
+                        project.isSample()),
                 estimate.getStatus(),
                 estimate.getValidUntil(),
                 estimate.getNotes(),

@@ -41,7 +41,8 @@ public interface ObjectExpenseRepository extends JpaRepository<ObjectExpense, UU
     @Query("""
             SELECT e FROM ObjectExpense e
             WHERE e.spentAt BETWEEN :from AND :to
-              AND e.objectId IN (SELECT p.id FROM Project p WHERE p.owner.id = :ownerId)
+              AND e.objectId IN (SELECT p.id FROM Project p WHERE p.owner.id = :ownerId
+                                    AND (:projectId IS NOT NULL OR p.sample = false))
               AND (:projectId IS NULL OR e.objectId = :projectId)
             ORDER BY e.spentAt DESC, e.createdAt DESC
             """)

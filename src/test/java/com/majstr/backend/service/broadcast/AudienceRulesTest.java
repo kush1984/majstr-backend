@@ -21,7 +21,23 @@ class AudienceRulesTest {
         assertThat(segment(true, LONG_AGO, NOW, 0, 0, 0)).contains(BroadcastSegment.NO_OBJECT);
         assertThat(segment(true, LONG_AGO, NOW, 1, 0, 0)).contains(BroadcastSegment.NO_ESTIMATE);
         assertThat(segment(true, LONG_AGO, NOW, 1, 2, 4)).contains(BroadcastSegment.EMPTY_ESTIMATE);
+        assertThat(segment(true, LONG_AGO, NOW, 1, 2, 5, false)).contains(BroadcastSegment.NOT_HANDED_OVER);
         assertThat(segment(true, LONG_AGO, NOW.minus(Duration.ofDays(31)), 1, 1, 5)).contains(BroadcastSegment.INACTIVE);
+    }
+
+    @Test
+    void aRealEstimateNoClientSaw_isItsOwnSegment_beforeInactive() {
+        Instant away = NOW.minus(Duration.ofDays(40));
+        // Away a month AND never handed over: one letter, about the handover.
+        assertThat(segment(true, LONG_AGO, away, 1, 1, 9, false)).contains(BroadcastSegment.NOT_HANDED_OVER);
+        assertThat(segment(true, LONG_AGO, away, 1, 1, 9, true)).contains(BroadcastSegment.INACTIVE);
+        // A near-empty estimate is still the earlier step, handed over or not.
+        assertThat(segment(true, LONG_AGO, away, 1, 1, 4, false)).contains(BroadcastSegment.EMPTY_ESTIMATE);
+        // Active and handed over: nothing to say.
+        assertThat(segment(true, LONG_AGO, NOW, 1, 1, 9, true)).isEmpty();
+        // Three days to settle, like every other nudge.
+        Instant twoDaysAgo = NOW.minus(Duration.ofDays(2));
+        assertThat(segment(true, twoDaysAgo, twoDaysAgo, 1, 1, 9, false)).isEmpty();
     }
 
     @Test
@@ -60,9 +76,15 @@ class AudienceRulesTest {
         assertThat(segment(true, NOW.minus(Duration.ofDays(10)), null, 1, 1, 9)).isEmpty();
     }
 
+    /** A master who already handed an estimate to a client — the case every older test is about. */
     private static Optional<BroadcastSegment> segment(boolean verified, Instant registered, Instant lastActive,
                                                       long objects, long estimates, long maxLines) {
+        return segment(verified, registered, lastActive, objects, estimates, maxLines, true);
+    }
+
+    private static Optional<BroadcastSegment> segment(boolean verified, Instant registered, Instant lastActive,
+                                                      long objects, long estimates, long maxLines, boolean handed) {
         return AudienceRules.segmentOf(new AudienceRules.Master(UUID.randomUUID(), "Петро", "p@t.ua", verified,
-                registered, lastActive, objects, estimates, maxLines), NOW);
+                registered, lastActive, objects, estimates, maxLines, handed), NOW);
     }
 }

@@ -342,6 +342,7 @@ class IdorMatrixIntegrationTest extends IntegrationTestBase {
         c.add(post("/api/estimates/{id}/dismiss-superseded", a.estimate));
         c.add(get("/api/estimates/{id}/pdf", a.estimate));
         c.add(post("/api/estimates/{id}/share", a.estimate));
+        c.add(post("/api/estimates/{id}/client-preview", a.estimate));
         c.add(post("/api/estimates/{id}/share/send-email", a.estimate));
         c.add(post("/api/estimates/{id}/share/mark-sent", a.estimate));
         c.add(del("/api/estimates/{id}/share/{linkId}", a.estimate, a.estimateShareLink));
@@ -449,6 +450,7 @@ class IdorMatrixIntegrationTest extends IntegrationTestBase {
         // --- the client portal and the message link -----------------------------
         c.add(get("/api/projects/{projectId}/portal", a.project));
         c.add(json("PUT", "/api/projects/{projectId}/portal", B_PORTAL, a.project));
+        c.add(json("POST", "/api/projects/{projectId}/portal/preview", B_PORTAL, a.project));
         c.add(post("/api/projects/{projectId}/portal/send-email", a.project));
         c.add(post("/api/projects/{projectId}/portal/mark-sent", a.project));
         c.add(get("/api/projects/{projectId}/portal/economy", a.project));
@@ -650,6 +652,12 @@ class IdorMatrixIntegrationTest extends IntegrationTestBase {
                 json("PUT", "/api/projects/{projectId}/portal",
                         "{\"estimateIds\":[\"" + a.estimate + "\"]}", b.project),
                 "A's estimate visibility", ESTIMATE_SQL, a.estimate));
+
+        // Nor may A's estimate appear in a preview of B's portal (a pass would show it to B).
+        c.add(new BodyCase(
+                json("POST", "/api/projects/{projectId}/portal/preview",
+                        "{\"estimateIds\":[\"" + a.estimate + "\"]}", b.project),
+                "A's estimate in B's portal preview", ESTIMATE_SQL, a.estimate));
 
         // Money: an app build from the plan era still names a stage on a receipt. The field is no
         // longer read, so A's old stage must not gain one.

@@ -49,6 +49,7 @@ class AdminUserServiceTest {
     @Mock com.majstr.backend.repository.PaymentRepository paymentRepository;
     @Mock com.majstr.backend.repository.ReferralRewardRepository referralRewardRepository;
     @Mock UpgradeEventService upgradeEventService;
+    @Mock com.majstr.backend.repository.PdfRenderRepository pdfRenderRepository;
     @InjectMocks AdminUserService adminUserService;
 
     @Test
@@ -70,6 +71,8 @@ class AdminUserServiceTest {
         given(estimateRepository.countByProjectOwnerIdIn(List.of(a, b))).willReturn(List.of(oc(a, 5), oc(b, 4)));
         given(estimateRepository.countByProjectOwnerIdInAndStatus(List.of(a, b), EstimateStatus.SIGNED))
                 .willReturn(List.of(oc(a, 1)));
+        // Both made a PDF; only b never got an estimate to a client.
+        given(pdfRenderRepository.findMasterPdfOwnersIn(List.of(a, b))).willReturn(List.of(a, b));
 
         Page<AdminUserSummary> page = adminUserService.search(null, null, null, pageable);
 
@@ -80,6 +83,7 @@ class AdminUserServiceTest {
         assertThat(sa.projectsCount()).isEqualTo(2);
         assertThat(sa.estimatesCount()).isEqualTo(5);
         assertThat(sa.signedEstimatesCount()).isEqualTo(1);
+        assertThat(sa.pdfWithoutShare()).isFalse();      // a PDF AND a signature: he shares
 
         AdminUserSummary sb = page.getContent().get(1);
         assertThat(sb.emailVerified()).isFalse();
@@ -87,6 +91,7 @@ class AdminUserServiceTest {
         assertThat(sb.projectsCount()).isEqualTo(1);
         assertThat(sb.estimatesCount()).isEqualTo(4);
         assertThat(sb.signedEstimatesCount()).isZero();  // absent in signed result → 0
+        assertThat(sb.pdfWithoutShare()).isTrue();       // the admin list's ⚠️
     }
 
     @Test
@@ -117,7 +122,7 @@ class AdminUserServiceTest {
                 new Object[]{EstimateStatus.SIGNED, 1L}
         ));
         given(clientRepository.countByOwnerId(id)).willReturn(4L);
-        given(projectRepository.countByOwnerId(id)).willReturn(3L);
+        given(projectRepository.countByOwnerIdAndSampleFalse(id)).willReturn(3L);
         given(catalogRepository.countByOwnerId(id)).willReturn(42L);
         given(estimateRepository.findLastEstimateCreatedAt(id)).willReturn(Instant.now());
         given(upgradeEventService.userActivity(id))

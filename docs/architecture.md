@@ -105,11 +105,19 @@ ticks them explicitly in the share sheet, nothing is shared by default. The page
 (`static/portal/index.html`) renders a section per visible estimate; sign / question / PDF
 are addressed per estimate under the project token
 (`/api/public/portal/{token}/estimates/{id}/...`), and an estimate is reachable only while
-`portal_visible` (else neutral 404). Legacy per-estimate links (`?t=`, `EstimateShareLink`)
-**stay valid** for URLs already sent — same page, one render path via a client-side adapter
-— but the PWA no longer creates them. Both token families share one core in
-`PublicEstimateService` (`doSign`/`doAsk`) so sign semantics exist once. See
+`portal_visible` (else neutral 404). Per-estimate links (`?t=`, `EstimateShareLink`) are the
+single-estimate share path (the estimate editor mints them) — same page, one render path via a
+client-side adapter. Both token families share one core in `PublicEstimateService`
+(`doSign`/`doAsk`) so sign semantics exist once. See
 [docs/iteration-portal-multi-estimate.md](iteration-portal-multi-estimate.md).
+
+**The master's own preview** (iteration-first-experience): `?v=` (one estimate) and `?vp=` (the
+object's SIGNATURE portal with the estimates ticked in the sheet) open the same page from a stateless
+ten-minute pass (`PortalPreviewTokens`, HMAC under a key derived from the JWT secret). Nothing is
+published, minted or marked; no sign, question or PDF route exists under `/api/public/preview*`.
+**The training sample** (V197) is banded «Навчальний приклад Majstr» on every page and PDF a client
+could see. See [docs/iteration-first-experience.md](iteration-first-experience.md),
+[docs/iteration-sample-object.md](iteration-sample-object.md).
 
 ### Client messages are a read-only inbox, but clients can attach files
 

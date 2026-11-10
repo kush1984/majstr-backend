@@ -11,6 +11,7 @@ import com.majstr.backend.entity.BroadcastSegment;
 import com.majstr.backend.entity.User;
 import com.majstr.backend.repository.BroadcastRecipientRepository;
 import com.majstr.backend.repository.BroadcastRepository;
+import com.majstr.backend.repository.EstimateRepository;
 import com.majstr.backend.repository.UserRepository;
 import com.majstr.backend.service.EmailVerificationService;
 import lombok.RequiredArgsConstructor;
@@ -43,6 +44,7 @@ public class BroadcastDispatcher {
     private final BroadcastRepository broadcastRepository;
     private final BroadcastRecipientRepository recipientRepository;
     private final UserRepository userRepository;
+    private final EstimateRepository estimateRepository;
     private final EmailService emailService;
     private final EmailVerificationService emailVerificationService;
     private final BroadcastProperties broadcastProperties;
@@ -107,9 +109,16 @@ public class BroadcastDispatcher {
     }
 
     String buttonUrl(BroadcastSegment segment, UUID userId) {
-        return segment == BroadcastSegment.UNVERIFIED
-                ? emailVerificationService.verifyLinkFor(userId)
-                : emailProperties.appUrl() + "/";
+        if (segment == BroadcastSegment.UNVERIFIED) {
+            return emailVerificationService.verifyLinkFor(userId);
+        }
+        if (segment == BroadcastSegment.NOT_HANDED_OVER || segment == BroadcastSegment.EMPTY_ESTIMATE) {
+            // «Відкрити кошторис» opens one: the draft he touched last, read at send time.
+            return estimateRepository.findLatestDraftId(userId)
+                    .map(id -> emailProperties.appUrl() + "/estimates/" + id)
+                    .orElse(emailProperties.appUrl() + "/");
+        }
+        return emailProperties.appUrl() + "/";
     }
 
     String unsubscribeUrl(String token) {

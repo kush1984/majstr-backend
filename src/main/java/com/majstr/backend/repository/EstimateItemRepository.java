@@ -39,6 +39,9 @@ public interface EstimateItemRepository extends JpaRepository<EstimateItem, UUID
     @Query(value = """
             SELECT lower(ei.name) AS name, COUNT(*) AS uses
             FROM estimate_items ei
+            JOIN estimates e ON e.id = ei.estimate_id
+            JOIN projects p ON p.id = e.project_id
+            WHERE NOT p.sample
             GROUP BY lower(ei.name)
             """, nativeQuery = true)
     List<UsedNameRow> aggregateUsedNames();
@@ -85,6 +88,7 @@ public interface EstimateItemRepository extends JpaRepository<EstimateItem, UUID
             JOIN estimates e ON e.id = ei.estimate_id
             JOIN projects p ON p.id = e.project_id
             WHERE e.status <> 'REJECTED'
+              AND NOT p.sample
               AND ei.type = 'WORK'
               AND ei.unit <> 'PERCENT'
               AND ei.unit_price > 0

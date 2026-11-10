@@ -4,9 +4,12 @@ import com.majstr.backend.dto.ProjectRequest;
 import com.majstr.backend.dto.ProjectResponse;
 import com.majstr.backend.entity.ObjectStage;
 import com.majstr.backend.entity.ProjectStatus;
+import com.majstr.backend.entity.Trade;
 import com.majstr.backend.exception.GlobalExceptionHandler;
+import com.majstr.backend.exception.SampleProjectExistsException;
 import com.majstr.backend.security.UserPrincipal;
 import com.majstr.backend.service.ProjectService;
+import com.majstr.backend.service.SampleProjectService;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -44,6 +47,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 class ProjectControllerTest {
 
     @Mock private ProjectService projectService;
+    @Mock private SampleProjectService sampleProjectService;
     @InjectMocks private ProjectController controller;
 
     private MockMvc mockMvc;
@@ -78,11 +82,44 @@ class ProjectControllerTest {
     }
 
     @Test
+    void createSample_returns201_andPassesThePickedTrade() throws Exception {
+        UUID projectId = UUID.randomUUID();
+        ProjectResponse stubbed = new ProjectResponse(
+                projectId, "Приклад: ванна 4 м²", null, ProjectStatus.DRAFT, ObjectStage.ASSESSMENT,
+                null, null, null, null, null, 0L, null, Instant.now(), Instant.now(), true);
+        given(sampleProjectService.create(userId, Trade.TILING)).willReturn(stubbed);
+
+        mockMvc.perform(post("/api/projects/sample")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"trade\":\"TILING\"}"))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.sample").value(true));
+    }
+
+    @Test
+    void createSample_withNoBody_letsTheServerPick() throws Exception {
+        given(sampleProjectService.create(userId, null)).willReturn(new ProjectResponse(
+                UUID.randomUUID(), "Приклад", null, ProjectStatus.DRAFT, ObjectStage.ASSESSMENT,
+                null, null, null, null, null, 0L, null, Instant.now(), Instant.now(), true));
+
+        mockMvc.perform(post("/api/projects/sample")).andExpect(status().isCreated());
+    }
+
+    @Test
+    void createSample_aSecondOne_is409SampleProjectExists() throws Exception {
+        given(sampleProjectService.create(userId, null)).willThrow(new SampleProjectExistsException());
+
+        mockMvc.perform(post("/api/projects/sample"))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("SAMPLE_PROJECT_EXISTS"));
+    }
+
+    @Test
     void create_returns201WithProjectResponse() throws Exception {
         UUID projectId = UUID.randomUUID();
         ProjectResponse stubbed = new ProjectResponse(
                 projectId, "Apartment 5", "Khreshchatyk 1", ProjectStatus.DRAFT, ObjectStage.ASSESSMENT,
-                "Bathroom + kitchen", null, null, null, null, 0L, null, Instant.now(), Instant.now());
+                "Bathroom + kitchen", null, null, null, null, 0L, null, Instant.now(), Instant.now(), false);
         // The controller calls the 3-arg overload (offline replay sends X-Entity-Uuid);
         // `any()` — not `any(UUID.class)` — because the header is absent here, so it is null.
         given(projectService.create(any(ProjectRequest.class), eq(userId), any())).willReturn(stubbed);
@@ -103,7 +140,7 @@ class ProjectControllerTest {
         UUID id = UUID.randomUUID();
         ProjectResponse stubbed = new ProjectResponse(
                 id, "P1", "Addr", ProjectStatus.IN_PROGRESS, ObjectStage.IN_PROGRESS,
-                null, null, null, null, null, 0L, null, Instant.now(), Instant.now());
+                null, null, null, null, null, 0L, null, Instant.now(), Instant.now(), false);
         given(projectService.listForOwner(userId, null)).willReturn(List.of(stubbed));
 
         mockMvc.perform(get("/api/projects"))
