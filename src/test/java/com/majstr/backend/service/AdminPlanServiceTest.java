@@ -4,6 +4,7 @@ import com.majstr.backend.config.LocalizationConfig;
 import com.majstr.backend.entity.AdminPlanGrant;
 import com.majstr.backend.entity.Plan;
 import com.majstr.backend.entity.User;
+import com.majstr.backend.exception.PlanTermValidationException;
 import com.majstr.backend.repository.AdminPlanGrantRepository;
 import com.majstr.backend.repository.UserRepository;
 import org.junit.jupiter.api.Test;
@@ -15,11 +16,13 @@ import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.time.Duration;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.time.ZonedDateTime;
 import java.util.Optional;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.verify;
 
@@ -65,7 +68,7 @@ class AdminPlanServiceTest {
         User u = user(Plan.PRO, NOW.plus(Duration.ofDays(5)));
         given(userRepository.findById(u.getId())).willReturn(Optional.of(u));
 
-        service.change(u.getId(), Plan.PRO, null, "boss@majstr.test");
+        service.change(u.getId(), Plan.PRO, null, null, "boss@majstr.test");
 
         assertThat(u.getPlanExpiresAt()).isNull();
         ArgumentCaptor<AdminPlanGrant> grant = ArgumentCaptor.forClass(AdminPlanGrant.class);
@@ -81,12 +84,49 @@ class AdminPlanServiceTest {
         User u = user(Plan.PRO, billed);
         given(userRepository.findById(u.getId())).willReturn(Optional.of(u));
 
-        service.change(u.getId(), Plan.FREE, 3, "boss@majstr.test");
+        service.change(u.getId(), Plan.FREE, 3, null, "boss@majstr.test");
 
         assertThat(u.getPlan()).isEqualTo(Plan.FREE);
         assertThat(u.getPlanExpiresAt()).isEqualTo(billed);
         ArgumentCaptor<AdminPlanGrant> grant = ArgumentCaptor.forClass(AdminPlanGrant.class);
         verify(grantRepository).save(grant.capture());
         assertThat(grant.getValue().getMonths()).isNull();
+    }
+
+    @Test
+    void aDateMeansThroughTheWholeOfThatDayInKyiv() {
+        Instant end = AdminPlanService.endOfDay(LocalDate.of(2026, 12, 14), NOW);
+        assertThat(end).isEqualTo(LocalDate.of(2026, 12, 15).atStartOfDay(LocalizationConfig.ZONE).toInstant());
+    }
+
+    @Test
+    void aDateMustBeAfterToday() {
+        assertThatThrownBy(() -> AdminPlanService.endOfDay(LocalDate.of(2026, 11, 11), NOW))
+                .isInstanceOf(PlanTermValidationException.class);
+        assertThatThrownBy(() -> AdminPlanService.endOfDay(LocalDate.of(2026, 10, 1), NOW))
+                .isInstanceOf(PlanTermValidationException.class);
+    }
+
+    @Test
+    void aDateReplacesARunningTermAndIsRecordedWithoutMonths() {
+        User u = user(Plan.PRO, NOW.plus(Duration.ofDays(60)));
+        given(userRepository.findById(u.getId())).willReturn(Optional.of(u));
+        LocalDate until = LocalDate.now(LocalizationConfig.ZONE).plusDays(10);
+
+        service.change(u.getId(), Plan.PRO, null, until, "boss@majstr.test");
+
+        Instant expected = until.plusDays(1).atStartOfDay(LocalizationConfig.ZONE).toInstant();
+        assertThat(u.getPlanExpiresAt()).isEqualTo(expected);
+        ArgumentCaptor<AdminPlanGrant> grant = ArgumentCaptor.forClass(AdminPlanGrant.class);
+        verify(grantRepository).save(grant.capture());
+        assertThat(grant.getValue().getMonths()).isNull();
+        assertThat(grant.getValue().getExpiresAt()).isEqualTo(expected);
+    }
+
+    @Test
+    void monthsAndADateTogetherAreRefused() {
+        assertThatThrownBy(() -> service.change(UUID.randomUUID(), Plan.PRO, 1,
+                LocalDate.now(LocalizationConfig.ZONE).plusDays(5), "boss@majstr.test"))
+                .isInstanceOf(PlanTermValidationException.class);
     }
 }

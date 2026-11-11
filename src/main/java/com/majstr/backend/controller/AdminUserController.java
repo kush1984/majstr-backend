@@ -82,7 +82,7 @@ public class AdminUserController {
     @PatchMapping("/{id}/plan")
     public AdminUserSummary changePlan(@PathVariable UUID id, @Valid @RequestBody PlanUpdateRequest req,
                                        @AuthenticationPrincipal UserPrincipal principal) {
-        return adminPlanService.change(id, req.plan(), req.months(), principal.email());
+        return adminPlanService.change(id, req.plan(), req.months(), req.until(), principal.email());
     }
 
     @Operation(summary = "How long a master was active (sessions, totals for 7/30 days) and who "

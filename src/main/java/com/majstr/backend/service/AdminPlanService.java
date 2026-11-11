@@ -5,6 +5,7 @@ import com.majstr.backend.dto.AdminUserSummary;
 import com.majstr.backend.entity.AdminPlanGrant;
 import com.majstr.backend.entity.Plan;
 import com.majstr.backend.entity.User;
+import com.majstr.backend.exception.PlanTermValidationException;
 import com.majstr.backend.exception.ResourceNotFoundException;
 import com.majstr.backend.repository.AdminPlanGrantRepository;
 import com.majstr.backend.repository.UserRepository;
@@ -14,6 +15,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
+import java.time.LocalDate;
 import java.util.UUID;
 
 /**
@@ -31,13 +33,17 @@ public class AdminPlanService {
     private final AdminPlanGrantRepository grantRepository;
 
     @Transactional
-    public AdminUserSummary change(UUID userId, Plan plan, Integer months, String actorEmail) {
+    public AdminUserSummary change(UUID userId, Plan plan, Integer months, LocalDate until, String actorEmail) {
+        if (plan != Plan.FREE && months != null && until != null) {
+            throw new PlanTermValidationException("error.plan-term.both");
+        }
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new ResourceNotFoundException("User not found: " + userId));
         Instant now = Instant.now();
         Integer term = plan == Plan.FREE ? null : months;
         if (plan != Plan.FREE) {
-            user.setPlanExpiresAt(term == null ? null : endOf(user, plan, term, now));
+            user.setPlanExpiresAt(until != null ? endOfDay(until, now)
+                    : term == null ? null : endOf(user, plan, term, now));
         }
         user.setPlan(plan);
         grantRepository.save(AdminPlanGrant.builder()
@@ -45,8 +51,19 @@ public class AdminPlanService {
                 .months(term).expiresAt(plan == Plan.FREE ? null : user.getPlanExpiresAt())
                 .createdAt(now).build());
         log.info("Admin {} set plan {} for {} ({})", actorEmail, plan, userId,
-                term == null ? (plan == Plan.FREE ? "free" : "no end") : term + " month(s)");
+                plan == Plan.FREE ? "free" : until != null ? "until " + until
+                        : term == null ? "no end" : term + " month(s)");
         return AdminUserSummary.from(user);
+    }
+
+    /** «PRO до 14.12» means through the whole of the 14th, Kyiv time: it ends at the 15th's midnight. */
+    static Instant endOfDay(LocalDate until, Instant now) {
+        Instant end = until.plusDays(1).atStartOfDay(LocalizationConfig.ZONE).toInstant();
+        if (!end.isAfter(now.atZone(LocalizationConfig.ZONE).toLocalDate().plusDays(1)
+                .atStartOfDay(LocalizationConfig.ZONE).toInstant())) {
+            throw new PlanTermValidationException("error.plan-term.past");
+        }
+        return end;
     }
 
     /** Months are ADDED to a running term of the same plan, so «+1 місяць» never shortens one. */

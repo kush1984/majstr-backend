@@ -599,9 +599,6 @@
     const dateFormat = new Intl.DateTimeFormat('uk-UA', { dateStyle: 'short', timeStyle: 'short' });
     const dayFormat = new Intl.DateTimeFormat('uk-UA', { day: '2-digit', month: '2-digit' });
     const numberFormat = new Intl.NumberFormat('uk-UA');
-    // The term a PRO/TEAM picked in the users list is granted for (V199); '' = no end.
-    const TERM_OPTIONS = '<option value="1">1 міс</option><option value="2">2 міс</option>'
-        + '<option value="3">3 міс</option><option value="">∞</option>';
 
     // ---- enum metadata (admin-internal labels; keep in sync with the DB enums) ----
     const TRADES = [
@@ -981,13 +978,15 @@
                &nbsp;·&nbsp; Email: <a href="mailto:${encodeURIComponent(d.email)}">${escapeHtml(d.email)}</a> ${yn(d.emailVerified)}</p>
             <p>Трейди: ${(d.trades || []).join(', ') || '—'}</p>
             <p>План: <span class="badge ${d.plan}">${d.plan}</span>
-               ${d.plan === 'FREE' ? '' : (d.planExpiresAt ? '<span class="muted">до ' + fmt(d.planExpiresAt) + '</span>' : '<span class="muted">без терміну</span>')}
+               ${d.plan === 'FREE' ? '' : (d.planExpiresAt ? '<span class="muted">до ' + lastDay(d.planExpiresAt) + ' включно</span>' : '<span class="muted">без терміну</span>')}
                &nbsp; Роль: <span class="badge ${d.role}">${d.role}</span></p>
             <p class="grant-row">Видати PRO:
                <button class="small grant-btn" data-months="1">+1 міс</button>
                <button class="small grant-btn" data-months="2">+2 міс</button>
                <button class="small grant-btn" data-months="3">+3 міс</button>
                <button class="small grant-btn" data-months="">Без терміну</button>
+               <span style="white-space:nowrap">або до <input type="date" id="grant-until" min="${tomorrowIso()}" style="max-width:150px">
+               <button class="small" id="grant-until-btn">Видати до дати</button></span>
                ${d.plan === 'FREE' ? '' : '<button class="small grant-btn" data-free="1">Зняти → FREE</button>'}
                <span class="muted" style="font-size:0.8rem">місяці додаються до чинного терміну PRO</span>
             </p>
@@ -1046,16 +1045,42 @@
             const months = b.dataset.months === '' || free ? null : Number(b.dataset.months);
             const what = free ? 'зняти PRO (перевести на FREE)' : 'видати PRO ' + (months ? 'на ' + months + ' міс.' : 'без терміну');
             if (!confirm(d.email + ': ' + what + '?')) return;
-            const resp = await grantPlan(id, free ? 'FREE' : 'PRO', months);
+            const resp = await grantPlan(id, free ? 'FREE' : 'PRO', months, null);
             if (!resp.ok) { alert('Не вдалося оновити план'); return; }
             loadUserDetail(id);
             loadUsers();
         }));
+        document.getElementById('grant-until-btn').addEventListener('click', async () => {
+            const until = document.getElementById('grant-until').value; // yyyy-mm-dd
+            if (!until) { alert('Оберіть дату'); return; }
+            const shown = until.split('-').reverse().join('.');
+            if (!confirm(d.email + ': видати PRO до ' + shown + ' включно?')) return;
+            const resp = await grantPlan(id, 'PRO', null, until);
+            if (!resp.ok) {
+                const body = await resp.json().catch(() => null);
+                alert(body && body.message ? body.message : 'Не вдалося оновити план');
+                return;
+            }
+            loadUserDetail(id);
+            loadUsers();
+        });
         renderActivity(id, fmt);
     }
 
-    async function grantPlan(id, plan, months) {
-        return api(`/admin/users/${id}/plan`, { method: 'PATCH', body: JSON.stringify({ plan, months }) });
+    async function grantPlan(id, plan, months, until) {
+        return api(`/admin/users/${id}/plan`, { method: 'PATCH', body: JSON.stringify({ plan, months, until }) });
+    }
+
+    // The last day a plan is on: a term ends at a midnight or mid-day instant, so the day it is
+    // still on is the one just before it — «до 14.12», never «до 15.12, 00:00».
+    function lastDay(iso) {
+        return new Intl.DateTimeFormat('uk-UA', { dateStyle: 'short' }).format(new Date(Date.parse(iso) - 60000));
+    }
+
+    // The earliest end date the server accepts: PRO «до» a day means through that whole day.
+    function tomorrowIso() {
+        const t = new Date(Date.now() + 24 * 60 * 60 * 1000);
+        return t.getFullYear() + '-' + String(t.getMonth() + 1).padStart(2, '0') + '-' + String(t.getDate()).padStart(2, '0');
     }
 
     function fmtMinutes(m) {
@@ -1087,7 +1112,8 @@
                 <thead><tr><th>Коли</th><th>Хто</th><th>План</th><th>Термін</th></tr></thead>
                 <tbody>${a.planGrants.map(g => `<tr>
                     <td>${fmt(g.at)}</td><td>${escapeHtml(g.by)}</td><td><span class="badge ${g.plan}">${g.plan}</span></td>
-                    <td>${g.plan === 'FREE' ? '—' : (g.months ? g.months + ' міс. · до ' + fmt(g.expiresAt) : 'без терміну')}</td>
+                    <td>${g.plan === 'FREE' ? '—' : g.months ? g.months + ' міс. · до ' + lastDay(g.expiresAt)
+                        : g.expiresAt ? 'до ' + lastDay(g.expiresAt) + ' включно' : 'без терміну'}</td>
                 </tr>`).join('')}</tbody>
             </table>` : '';
         box.innerHTML = `
@@ -1412,7 +1438,6 @@
                     <select data-user="${u.id}" class="plan-select">
                         ${['FREE','PRO','TEAM'].map(p => `<option value="${p}"${p === u.plan ? ' selected' : ''}>${p}</option>`).join('')}
                     </select>
-                    <select data-term-for="${u.id}" class="term-select" title="На скільки видати PRO/TEAM">${TERM_OPTIONS}</select>
                 </td>
             </tr>`;
         }).join('');
@@ -1424,8 +1449,8 @@
             sel.addEventListener('change', async (ev) => {
                 const id = ev.target.dataset.user;
                 const newPlan = ev.target.value;
-                const term = document.querySelector(`.term-select[data-term-for="${id}"]`).value;
-                const resp = await grantPlan(id, newPlan, term === '' ? null : Number(term));
+                // The list changes the plan only (a paid plan with no end); terms live in the user card.
+                const resp = await grantPlan(id, newPlan, null, null);
                 if (!resp.ok) alert('Не вдалося оновити план');
             });
         });

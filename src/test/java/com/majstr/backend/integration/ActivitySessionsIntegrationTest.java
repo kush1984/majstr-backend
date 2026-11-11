@@ -100,7 +100,7 @@ class ActivitySessionsIntegrationTest extends IntegrationTestBase {
     @Test
     void aGrantIsRecordedAndBothTablesGoWithTheAccount() {
         touch(Instant.now());
-        adminPlans.change(user.getId(), Plan.PRO, 2, "admin@majstr.test");
+        adminPlans.change(user.getId(), Plan.PRO, 2, null, "admin@majstr.test");
 
         AdminUserActivity a = adminActivity.activity(user.getId());
         assertThat(a.planGrants()).singleElement().satisfies(g -> {

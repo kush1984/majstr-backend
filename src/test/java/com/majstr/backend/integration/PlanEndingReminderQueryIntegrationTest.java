@@ -57,7 +57,7 @@ class PlanEndingReminderQueryIntegrationTest extends IntegrationTestBase {
         User trialThenPaid = user(Plan.PRO, inTwoDays, monthAgo, false, null);
         paid(trialThenPaid);
         User trialThenGranted = user(Plan.FREE, null, monthAgo, false, null);
-        adminPlans.change(trialThenGranted.getId(), Plan.PRO, 1, "admin@majstr.test");
+        adminPlans.change(trialThenGranted.getId(), Plan.PRO, 1, null, "admin@majstr.test");
         jdbc.update("UPDATE users SET plan_expires_at = ? WHERE id = ?", Timestamp.from(inTwoDays),
                 trialThenGranted.getId());
         User farOff = user(Plan.PRO, now.plus(Duration.ofDays(20)), null, false, null);

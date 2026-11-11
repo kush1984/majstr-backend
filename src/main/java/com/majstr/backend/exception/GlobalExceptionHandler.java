@@ -463,6 +463,13 @@ public class GlobalExceptionHandler {
         return ResponseEntity.status(HttpStatus.CONFLICT).body(body);
     }
 
+    @ExceptionHandler(PlanTermValidationException.class)
+    public ResponseEntity<ErrorResponse> handlePlanTerm(PlanTermValidationException ex, HttpServletRequest req) {
+        ErrorResponse body = ErrorResponse.coded(HttpStatus.BAD_REQUEST.value(),
+                HttpStatus.BAD_REQUEST.getReasonPhrase(), msg(ex.getMessage()), req.getRequestURI(), "PLAN_TERM_INVALID");
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(body);
+    }
+
     @ExceptionHandler(PhotoFolderValidationException.class)
     public ResponseEntity<ErrorResponse> handlePhotoFolderValidation(PhotoFolderValidationException ex, HttpServletRequest req) {
         ErrorResponse body = ErrorResponse.coded(HttpStatus.BAD_REQUEST.value(),

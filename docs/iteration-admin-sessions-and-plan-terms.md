@@ -30,13 +30,18 @@
   running term**, or after today — «+1 міс» never shortens a term. No `months` = no end
   (`plan_expires_at = NULL`, as admin grants always were). FREE ignores the term and leaves
   `plan_expires_at` alone (a billing date is billing's business).
+- **Or until a date** (`until`, a `LocalDate`): «PRO до 14.12» is on through the whole of the 14th
+  in Kyiv, so it ends at the 15th's midnight; the date replaces any running term. It must be after
+  today, and `months` with `until` together is refused — both 400 `PLAN_TERM_INVALID`. The grant
+  row carries `months = NULL` and the expiry.
 - Expiry needs nothing new: `BillingExpiryService` already downgrades every non-null
   `plan_expires_at`; an admin grant has no card, so no grace applies.
 - Every change is a row in `admin_plan_grant` (actor email, plan, months, resulting expiry) and a
   log line — the plan-change half of the «Audit log for sensitive actions» open question.
-- Admin page: the users list gets a term select beside the plan select (1/2/3 міс, ∞); the user
-  card gets «+1/+2/+3 міс», «Без терміну», «Зняти → FREE» (each confirmed), the plan's end date,
-  the «Активність» block and «Видачі плану з адмінки».
+- Admin page: terms live in the USER CARD only — «+1/+2/+3 міс», «Без терміну», a date picker with
+  «Видати до дати», «Зняти → FREE» (each confirmed), the plan's last day («до 14.12 включно»), the
+  «Активність» block and «Видачі плану з адмінки». The users list keeps its plain plan select
+  (a paid plan picked there has no end); its term select was dropped on the master's request.
 
 ## 3. «PRO закінчується» for every term that ends (V200)
 
