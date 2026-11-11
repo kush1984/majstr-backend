@@ -14,7 +14,7 @@ class ResendEmailHtmlTest {
 
     private static List<String> everyTemplate(String value) {
         return List.of(
-                ResendEmailService.verificationHtml(value, LINK),
+                ResendEmailService.verificationHtml(value, LINK, true),
                 ResendEmailService.passwordResetHtml(value, LINK),
                 ResendEmailService.estimateShareHtml(value, value, value, LINK),
                 ResendEmailService.signedActHtml(value, value, value));
@@ -39,21 +39,31 @@ class ResendEmailHtmlTest {
 
     @Test
     void theOwnLinkStillWorks() {
-        assertThat(ResendEmailService.verificationHtml("Олена", LINK)).contains("href=\"" + LINK + "\"");
+        assertThat(ResendEmailService.verificationHtml("Олена", LINK, true)).contains("href=\"" + LINK + "\"");
     }
 
     @Test
     void aMissingNameLeavesNoStrayComma() {
-        assertThat(ResendEmailService.verificationHtml(null, LINK)).contains("Вітаємо в Majstr!");
-        assertThat(ResendEmailService.verificationHtml(" ", LINK)).contains("Вітаємо в Majstr!");
+        assertThat(ResendEmailService.verificationHtml(null, LINK, true)).contains("Вітаємо в Majstr!");
+        assertThat(ResendEmailService.verificationHtml(" ", LINK, true)).contains("Вітаємо в Majstr!");
     }
 
     @Test
     void theLetterPromisesWhatVerificationStillGates() {
         // Sharing and the PDF no longer need a verified email (share-without-verification): the
         // letter names the account, the PRO trial and the letter to the client — not «щоб надсилати».
-        String html = ResendEmailService.verificationHtml("Олена", LINK).replaceAll("\\s+", " ");
+        String html = ResendEmailService.verificationHtml("Олена", LINK, true).replaceAll("\\s+", " ");
         assertThat(html).contains("пробний PRO").contains("кошторис клієнту листом")
                 .doesNotContain("щоб надсилати кошториси клієнтам");
+    }
+
+    @Test
+    void theTrialIsNamedOnlyWhileItIsOffered() {
+        // trial-days 0 switches the trial off (2026-11-11): the letter must not promise it.
+        String off = ResendEmailService.verificationHtml("Олена", LINK, false).replaceAll("\\s+", " ");
+        assertThat(off).doesNotContain("пробн")
+                .contains("не втратите доступ до акаунта і зможете надсилати кошторис клієнту листом");
+        String on = ResendEmailService.verificationHtml("Олена", LINK, true).replaceAll("\\s+", " ");
+        assertThat(on).contains("не втратите доступ до акаунта, зможете взяти пробний PRO і надсилати");
     }
 }

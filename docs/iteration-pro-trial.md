@@ -74,4 +74,9 @@ billing plumbing so nothing new has to expire it.
   is 0, `BillingService.startTrial` refuses it (409 `TRIAL_UNAVAILABLE`, after the verified-email
   check), and `/api/plan/limits` sends `trialDays: 0`, which hides every PWA offer (dashboard card,
   post-verification modal, profile button). Masters already mid-trial keep it and are still reminded.
+- **Nothing names the trial while it is off** (2026-11-11, same day): the verify-email letter
+  (`ResendEmailService.verificationHtml(..., trialOffered)`), the unverified banner and the verify modal
+  (PWA 1.76.3, `email.bannerTextNoTrial` / `modalTextNoTrial`) drop the PRO-trial clause when
+  `trialDays` is 0; the trial wording stays in place for when it comes back. The landing FAQ, the
+  `index.html` FAQ JSON-LD and `llms.txt` (public marketing, mirrored word-for-word) still mention it.
 - **To bring it back:** `BILLING_TRIAL_DAYS=30` on Railway — no code, no deploy.

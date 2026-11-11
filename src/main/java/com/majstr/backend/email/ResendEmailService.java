@@ -1,6 +1,7 @@
 package com.majstr.backend.email;
 
 import com.majstr.backend.config.BackgroundErrors;
+import com.majstr.backend.config.BillingProperties;
 import com.majstr.backend.config.EmailProperties;
 import com.majstr.backend.config.HttpClients;
 import com.majstr.backend.config.LocalizationConfig;
@@ -36,10 +37,12 @@ public class ResendEmailService implements EmailService {
     private static final String RESEND_URL = "https://api.resend.com/emails";
 
     private final EmailProperties props;
+    private final BillingProperties billing;
     private final RestClient restClient;
 
-    public ResendEmailService(EmailProperties props) {
+    public ResendEmailService(EmailProperties props, BillingProperties billing) {
         this.props = props;
+        this.billing = billing;
         // Explicit timeouts — a stalled mail API must not hold an @Async worker forever.
         this.restClient = HttpClients.forEmail();
     }
@@ -55,7 +58,8 @@ public class ResendEmailService implements EmailService {
             log.debug("Verify link: {}", link);
             return;
         }
-        send(user.getEmail(), "Підтвердіть email — Majstr", verificationHtml(user.getFullName(), link));
+        send(user.getEmail(), "Підтвердіть email — Majstr", verificationHtml(user.getFullName(), link,
+                billing.trialDays() > 0));
     }
 
     @Override
@@ -299,13 +303,13 @@ public class ResendEmailService implements EmailService {
                 """.formatted(nameSuffix(fullName), esc(link), esc(link), esc(link));
     }
 
-    static String verificationHtml(String fullName, String link) {
+    /** {@code trialOffered}: the PRO trial is named only while the server offers one (trial-days 0 = off). */
+    static String verificationHtml(String fullName, String link, boolean trialOffered) {
         return """
                 <div style="font-family:Arial,sans-serif;max-width:480px;margin:0 auto;color:#1a1a1a">
                   <h2 style="color:#F26B1F">Вітаємо в Majstr%s!</h2>
                   <p>Дякуємо за реєстрацію. Підтвердіть свою електронну пошту — так ви
-                     не втратите доступ до акаунта, зможете взяти пробний PRO і надсилати
-                     кошторис клієнту листом.</p>
+                     не втратите доступ до акаунта%s надсилати кошторис клієнту листом.</p>
                   <p>Поділитися кошторисом у Viber чи Telegram і завантажити PDF можна й
                      без підтвердження.</p>
                   <p style="margin:28px 0">
@@ -318,7 +322,9 @@ public class ResendEmailService implements EmailService {
                   <p style="font-size:13px;color:#666">Посилання дійсне 24 години. Якщо ви не
                      реєструвались у Majstr — просто проігноруйте цей лист.</p>
                 </div>
-                """.formatted(nameSuffix(fullName), esc(link), esc(link), esc(link));
+                """.formatted(nameSuffix(fullName),
+                trialOffered ? ", зможете взяти пробний PRO і" : " і зможете",
+                esc(link), esc(link), esc(link));
     }
 
     static String estimateShareHtml(String clientName, String contractorName, String projectName, String shareUrl) {
