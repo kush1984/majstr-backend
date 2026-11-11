@@ -33,7 +33,7 @@ public final class PlanConfig {
         //
         // OBJECT_ECONOMY, MEASUREMENTS and WORK_ACTS are a TEMPORARY addition (business decision,
         // revert by removing these lines): opened up to FREE while the AI-calling flows
-        // (ESTIMATE_IMPORT, RECEIPT_IMPORT, SKETCH_IMPORT, PROJECT_IMPORT — all still PRO-only below)
+        // (ESTIMATE_IMPORT, SKETCH_IMPORT, PROJECT_IMPORT — still PRO-only below; RECEIPT_IMPORT see below)
         // are hidden in the PWA to cut AI spend, to give FREE masters more value while that's the
         // case. None of the three calls an LLM, so this doesn't reintroduce the cost that was just
         // cut. The PWA mirrors this at features/plan/tempFreeUnlocks.ts — revert both sides together.
@@ -55,7 +55,13 @@ public final class PlanConfig {
                         Feature.PHOTO_REPORTS,
                         Feature.OBJECT_ECONOMY,
                         Feature.MEASUREMENTS,
-                        Feature.WORK_ACTS
+                        Feature.WORK_ACTS,
+                        // TEMPORARY too (master decision, 2026-11-11), revert by removing this line
+                        // and flipping TEMP_FREE_GETS_RECEIPT_IMPORT in the PWA's tempFreeUnlocks.ts:
+                        // a receipt with no QR is read by AI on the object and in an act for FREE,
+                        // so the estimate's «Додати з чеку» did the same. It DOES call an LLM —
+                        // bounded by AiFlowBudget and the verified-email rule every FREE AI call has.
+                        Feature.RECEIPT_IMPORT
                 )
         ));
 

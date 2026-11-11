@@ -69,6 +69,9 @@ class DefaultFeatureGuardTest {
         // TEMPORARY business decision — see the comment on Plan.FREE in PlanConfig: opened up to
         // FREE while the AI-calling flows are hidden in the PWA to cut AI spend.
         assertThat(guard.isEnabled(userOnPlan(Plan.FREE), Feature.OBJECT_ECONOMY)).isTrue();
+        // Same kind of temporary unlock (2026-11-11): the estimate's receipt photo read, consistent
+        // with the object and act receipts, which AI already reads on FREE.
+        assertThat(guard.isEnabled(userOnPlan(Plan.FREE), Feature.RECEIPT_IMPORT)).isTrue();
         assertThat(guard.isEnabled(userOnPlan(Plan.PRO),  Feature.OBJECT_ECONOMY)).isTrue();
         assertThat(guard.isEnabled(userOnPlan(Plan.TEAM), Feature.OBJECT_ECONOMY)).isTrue();
         assertThat(PlanConfig.minimumPlanFor(Feature.OBJECT_ECONOMY)).isEqualTo(Plan.FREE);
