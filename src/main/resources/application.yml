@@ -372,7 +372,10 @@ app:
     # recognition, project import) are temporarily hidden to cut AI spend (see
     # AI_MEASUREMENT_IMPORT_ENABLED in the PWA), so PRO now sells mainly on the non-AI features —
     # a longer trial gives those more room to prove themselves before the trial lapses.
-    trial-days: ${BILLING_TRIAL_DAYS:30}
+    # 0 = NO trial: nothing is offered and POST /api/billing/trial is refused (409 TRIAL_UNAVAILABLE).
+    # Switched OFF on 2026-11-11 (owner's decision, temporary): put it back with BILLING_TRIAL_DAYS=30
+    # on Railway, no deploy needed. Masters already mid-trial keep theirs.
+    trial-days: ${BILLING_TRIAL_DAYS:0}
     # How many days before the trial ends to start reminding — one notification per day, so at 3
     # the master hears about it on T-3, T-2 and T-1.
     trial-reminder-days: ${BILLING_TRIAL_REMINDER_DAYS:3}

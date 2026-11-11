@@ -67,3 +67,11 @@ billing plumbing so nothing new has to expire it.
   `MeasurementsSection.tsx` to cut AI spend): 15 days → 30. `trial-days` is still config
   (`BILLING_TRIAL_DAYS`); both bumps also backfilled anyone mid-trial, same GREATEST-based
   shape as the original migration.
+
+## Switched off (2026-11-11, temporary)
+
+- The owner closed the self-serve trial for now. `trial-days` **0 is the off switch**: the default
+  is 0, `BillingService.startTrial` refuses it (409 `TRIAL_UNAVAILABLE`, after the verified-email
+  check), and `/api/plan/limits` sends `trialDays: 0`, which hides every PWA offer (dashboard card,
+  post-verification modal, profile button). Masters already mid-trial keep it and are still reminded.
+- **To bring it back:** `BILLING_TRIAL_DAYS=30` on Railway — no code, no deploy.

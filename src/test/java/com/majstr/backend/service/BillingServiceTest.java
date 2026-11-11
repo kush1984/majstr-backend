@@ -596,6 +596,22 @@ class BillingServiceTest {
     }
 
     @Test
+    void startTrial_switchedOff_throwsAndGrantsNothing() {
+        // trial-days 0 is the off switch (2026-11-11): never a PRO that lapses the moment it starts.
+        UUID uid = UUID.randomUUID();
+        User user = verifiedFreeUser(uid);
+        given(userRepository.findWithTradesById(uid)).willReturn(Optional.of(user));
+        BillingProperties off = new BillingProperties("tok", "https://api.monobank.ua",
+                new BigDecimal("299"), 30, new BigDecimal("1494"), new BigDecimal("2748"), 3,
+                "http://ret", "http://hook", true, 3, 30, 0, 3);
+
+        assertThatThrownBy(() -> service(off).startTrial(uid))
+                .isInstanceOf(com.majstr.backend.exception.TrialNotAvailableException.class);
+        assertThat(user.getPlan()).isEqualTo(Plan.FREE);
+        assertThat(user.getTrialStartedAt()).isNull();
+    }
+
+    @Test
     void startTrial_alreadyUsed_throwsAndGrantsNothing() {
         UUID uid = UUID.randomUUID();
         User user = verifiedFreeUser(uid);

@@ -183,6 +183,10 @@ public class BillingService {
         if (!user.isEmailVerified()) {
             throw new EmailNotVerifiedException("error.email-not-verified");
         }
+        // trial-days 0 is the off switch (2026-11-11): a zero-day trial would be PRO that lapses at once.
+        if (props.trialDays() <= 0) {
+            throw new TrialNotAvailableException("Trial is switched off");
+        }
         if (user.getTrialStartedAt() != null) {
             throw new TrialNotAvailableException("Trial already used by " + user.getEmail());
         }
