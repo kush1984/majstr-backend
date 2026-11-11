@@ -1,6 +1,7 @@
 package com.majstr.backend.security;
 
 import com.majstr.backend.repository.UserRepository;
+import com.majstr.backend.service.ActivitySessionService;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
@@ -13,6 +14,7 @@ import java.util.UUID;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 
 @ExtendWith(MockitoExtension.class)
@@ -20,6 +22,9 @@ class LastActiveTrackerTest {
 
     @Mock
     private UserRepository userRepository;
+
+    @Mock
+    private ActivitySessionService activitySessions;
 
     @InjectMocks
     private LastActiveTracker tracker;
@@ -50,5 +55,14 @@ class LastActiveTrackerTest {
 
         // Second call inside the 5-min throttle is a no-op.
         verify(userRepository).touchLastActiveAndDevice(eq(id), any(Instant.class), eq("DESKTOP"), eq("Windows"));
+    }
+
+    @Test
+    void theSameThrottledTouchOpensOrStretchesTheSession() {
+        UUID id = UUID.randomUUID();
+        tracker.touch(id, "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) Mobile Safari/604.1");
+        tracker.touch(id, "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) Mobile Safari/604.1");
+
+        verify(activitySessions, times(1)).record(eq(id), any(Instant.class));
     }
 }

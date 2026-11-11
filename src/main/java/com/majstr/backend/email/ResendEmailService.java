@@ -146,6 +146,20 @@ public class ResendEmailService implements EmailService {
 
     @Override
     @Async("mailExecutor")
+    public void sendPlanEndingEmail(User user, Instant endsAt, long daysLeft) {
+        String upgradeUrl = props.appUrl() + "/profile";
+        if (!props.isConfigured()) {
+            log.warn("RESEND_API_KEY not set — skipping plan-ending email to {} ({} day(s) left)",
+                    user.getEmail(), daysLeft);
+            return;
+        }
+        send(user.getEmail(),
+                daysLeft == 1 ? "Majstr PRO закінчується завтра" : "Majstr PRO закінчується через " + daysLeft + " дн.",
+                planEndingHtml(daysLeft, fmt(endsAt), upgradeUrl));
+    }
+
+    @Override
+    @Async("mailExecutor")
     public void sendRenewReceiptEmail(User user, Instant until, BigDecimal amount) {
         if (!props.isConfigured()) {
             log.warn("RESEND_API_KEY not set — skipping renew receipt to {} (until {})", user.getEmail(), fmt(until));
@@ -347,6 +361,27 @@ public class ResendEmailService implements EmailService {
                   <p style="margin:24px 0">
                     <a href="%s" style="background:#F26B1F;color:#fff;text-decoration:none;
                        padding:12px 24px;border-radius:8px;display:inline-block;font-weight:bold">Оформити PRO</a>
+                  </p>
+                  <p style="font-size:13px;color:#666">Посилання: <a href="%s">%s</a></p>
+                </div>
+                """.formatted(lead, upgradeUrl, upgradeUrl, upgradeUrl);
+    }
+
+    private static String planEndingHtml(long daysLeft, String endsAt, String upgradeUrl) {
+        String lead = daysLeft == 1
+                ? "Завтра (<b>%s</b>) закінчується ваш Majstr PRO, і акаунт перейде на FREE.".formatted(endsAt)
+                : "Ваш Majstr PRO діє до <b>%s</b> — лишилось днів: <b>%d</b>. Після цього акаунт перейде на FREE."
+                        .formatted(endsAt, daysLeft);
+        return """
+                <div style="font-family:Arial,sans-serif;max-width:480px;margin:0 auto;color:#1a1a1a">
+                  <h2 style="color:#F26B1F">PRO закінчується</h2>
+                  <p>%s</p>
+                  <p>На FREE вимкнеться частина функцій PRO. <b>Ваші дані нікуди не зникнуть</b>:
+                     обʼєкти, кошториси й каталог лишаться на місці, просто частина дій стане
+                     недоступною, доки не продовжите PRO.</p>
+                  <p style="margin:24px 0">
+                    <a href="%s" style="background:#F26B1F;color:#fff;text-decoration:none;
+                       padding:12px 24px;border-radius:8px;display:inline-block;font-weight:bold">Продовжити PRO</a>
                   </p>
                   <p style="font-size:13px;color:#666">Посилання: <a href="%s">%s</a></p>
                 </div>

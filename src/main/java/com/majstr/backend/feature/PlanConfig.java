@@ -26,10 +26,12 @@ public final class PlanConfig {
 
         // FREE gets the full value-demonstrating workflow — portal, online
         // signing and photo reports — so a contractor can actually show a client
-        // the product. It's capped on quantity, not features: up to 2 projects,
+        // the product. It's capped on BOTH quantity and features: up to 2 projects
         // and up to 3 estimates PER project (enough for econom/mid/premium
         // variants, but it closes the "unlimited drafts on 2 projects" hole that
-        // sidestepped the paid plan). Only BRANDED_PDF and AI_ASSISTANT stay paid.
+        // sidestepped the paid plan), and whatever is not in the set below is paid —
+        // the branded PDF and the AI imports above all. The set is the rule; this
+        // comment only explains it.
         //
         // OBJECT_ECONOMY, MEASUREMENTS and WORK_ACTS are a TEMPORARY addition (business decision,
         // revert by removing these lines): opened up to FREE while the AI-calling flows

@@ -31,6 +31,9 @@ public interface EmailService {
     /** «Пробний PRO закінчується» — sent once a day over the trial's last days. */
     void sendTrialEndingEmail(User user, Instant endsAt, long daysLeft);
 
+    /** A paid term that ends rather than renews (V200): «PRO закінчується {endsAt}, далі буде FREE». */
+    void sendPlanEndingEmail(User user, Instant endsAt, long daysLeft);
+
     /** Auto-renew receipt: "payment received, PRO active until {until}". */
     void sendRenewReceiptEmail(User user, Instant until, BigDecimal amount);
 

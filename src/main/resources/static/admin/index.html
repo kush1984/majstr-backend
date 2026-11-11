@@ -599,6 +599,9 @@
     const dateFormat = new Intl.DateTimeFormat('uk-UA', { dateStyle: 'short', timeStyle: 'short' });
     const dayFormat = new Intl.DateTimeFormat('uk-UA', { day: '2-digit', month: '2-digit' });
     const numberFormat = new Intl.NumberFormat('uk-UA');
+    // The term a PRO/TEAM picked in the users list is granted for (V199); '' = no end.
+    const TERM_OPTIONS = '<option value="1">1 міс</option><option value="2">2 міс</option>'
+        + '<option value="3">3 міс</option><option value="">∞</option>';
 
     // ---- enum metadata (admin-internal labels; keep in sync with the DB enums) ----
     const TRADES = [
@@ -977,13 +980,24 @@
                 : '<span class="muted">—</span>'}
                &nbsp;·&nbsp; Email: <a href="mailto:${encodeURIComponent(d.email)}">${escapeHtml(d.email)}</a> ${yn(d.emailVerified)}</p>
             <p>Трейди: ${(d.trades || []).join(', ') || '—'}</p>
-            <p>План: <span class="badge ${d.plan}">${d.plan}</span> &nbsp; Роль: <span class="badge ${d.role}">${d.role}</span></p>
+            <p>План: <span class="badge ${d.plan}">${d.plan}</span>
+               ${d.plan === 'FREE' ? '' : (d.planExpiresAt ? '<span class="muted">до ' + fmt(d.planExpiresAt) + '</span>' : '<span class="muted">без терміну</span>')}
+               &nbsp; Роль: <span class="badge ${d.role}">${d.role}</span></p>
+            <p class="grant-row">Видати PRO:
+               <button class="small grant-btn" data-months="1">+1 міс</button>
+               <button class="small grant-btn" data-months="2">+2 міс</button>
+               <button class="small grant-btn" data-months="3">+3 міс</button>
+               <button class="small grant-btn" data-months="">Без терміну</button>
+               ${d.plan === 'FREE' ? '' : '<button class="small grant-btn" data-free="1">Зняти → FREE</button>'}
+               <span class="muted" style="font-size:0.8rem">місяці додаються до чинного терміну PRO</span>
+            </p>
             <p>Джерело:
                <input id="src-input" value="${escapeHtml(d.referralSource || 'DIRECT')}" style="max-width:150px">
                <button id="src-save" class="small" data-user="${id}">Зберегти</button>
                <span class="muted" style="font-size:0.8rem">first-touch; ручна правка — для конфліктів/лідів опитування</span>
             </p>
             <p class="muted">Реєстрація: ${fmt(d.createdAt)} &nbsp;·&nbsp; Остання активність: ${fmt(d.lastActiveAt)} &nbsp;·&nbsp; Пристрій: ${deviceLabel(d.lastDeviceType, d.lastOs)}</p>
+            <div id="activity-block"><p class="muted">Активність: завантаження…</p></div>
             <h2 style="text-transform:none; letter-spacing:0;">Воронка активації</h2>
             <table>
                 <tr><td>Клієнтів</td><td>${d.clientsCount}</td></tr>
@@ -1027,6 +1041,61 @@
         });
         const delBtn = document.getElementById('user-del');
         if (delBtn) delBtn.addEventListener('click', () => deleteUser(id, d.email));
+        document.querySelectorAll('.grant-btn').forEach(b => b.addEventListener('click', async () => {
+            const free = b.dataset.free === '1';
+            const months = b.dataset.months === '' || free ? null : Number(b.dataset.months);
+            const what = free ? 'зняти PRO (перевести на FREE)' : 'видати PRO ' + (months ? 'на ' + months + ' міс.' : 'без терміну');
+            if (!confirm(d.email + ': ' + what + '?')) return;
+            const resp = await grantPlan(id, free ? 'FREE' : 'PRO', months);
+            if (!resp.ok) { alert('Не вдалося оновити план'); return; }
+            loadUserDetail(id);
+            loadUsers();
+        }));
+        renderActivity(id, fmt);
+    }
+
+    async function grantPlan(id, plan, months) {
+        return api(`/admin/users/${id}/plan`, { method: 'PATCH', body: JSON.stringify({ plan, months }) });
+    }
+
+    function fmtMinutes(m) {
+        if (m < 60) return m + ' хв';
+        return Math.floor(m / 60) + ' год' + (m % 60 ? ' ' + (m % 60) + ' хв' : '');
+    }
+
+    // «Скільки був активний» (V199): a session ends after 30 minutes of silence, and its end is
+    // its last request — known to within the 5-minute activity throttle.
+    async function renderActivity(id, fmt) {
+        const box = document.getElementById('activity-block');
+        const resp = await api('/admin/users/' + id + '/activity');
+        if (!box) return;
+        if (!resp.ok) { box.innerHTML = '<p class="error">Не вдалося завантажити активність</p>'; return; }
+        const a = await resp.json();
+        const time = new Intl.DateTimeFormat('uk-UA', { hour: '2-digit', minute: '2-digit' });
+        const sessions = a.sessions.length ? `
+            <table>
+                <thead><tr><th>Почав</th><th>Закінчив</th><th>Тривалість</th></tr></thead>
+                <tbody>${a.sessions.map(s => `<tr>
+                    <td>${fmt(s.startedAt)}</td>
+                    <td>${s.open ? '<b>зараз у застосунку</b> <span class="muted">(' + time.format(new Date(s.endedAt)) + ')</span>' : time.format(new Date(s.endedAt))}</td>
+                    <td>${s.minutes < 5 ? '&lt; 5 хв' : fmtMinutes(s.minutes)}</td>
+                </tr>`).join('')}</tbody>
+            </table>` : '<p class="muted">Сеансів за 90 днів немає (облік сеансів почався в листопаді 2026).</p>';
+        const grants = a.planGrants.length ? `
+            <h2 style="text-transform:none; letter-spacing:0;">Видачі плану з адмінки</h2>
+            <table>
+                <thead><tr><th>Коли</th><th>Хто</th><th>План</th><th>Термін</th></tr></thead>
+                <tbody>${a.planGrants.map(g => `<tr>
+                    <td>${fmt(g.at)}</td><td>${escapeHtml(g.by)}</td><td><span class="badge ${g.plan}">${g.plan}</span></td>
+                    <td>${g.plan === 'FREE' ? '—' : (g.months ? g.months + ' міс. · до ' + fmt(g.expiresAt) : 'без терміну')}</td>
+                </tr>`).join('')}</tbody>
+            </table>` : '';
+        box.innerHTML = `
+            <h2 style="text-transform:none; letter-spacing:0;">Активність</h2>
+            <p>За 7 днів: <b>${fmtMinutes(a.minutesLast7Days)}</b> &nbsp;·&nbsp; за 30 днів: <b>${fmtMinutes(a.minutesLast30Days)}</b>
+               <span class="muted" style="font-size:0.8rem">· сеанс закінчується після 30 хв бездіяльності, точність ±5 хв</span></p>
+            ${sessions}
+            ${grants}`;
     }
 
     // Irreversible, so the admin types the email back — a confirm() is one Enter away from a slip.
@@ -1343,6 +1412,7 @@
                     <select data-user="${u.id}" class="plan-select">
                         ${['FREE','PRO','TEAM'].map(p => `<option value="${p}"${p === u.plan ? ' selected' : ''}>${p}</option>`).join('')}
                     </select>
+                    <select data-term-for="${u.id}" class="term-select" title="На скільки видати PRO/TEAM">${TERM_OPTIONS}</select>
                 </td>
             </tr>`;
         }).join('');
@@ -1354,7 +1424,8 @@
             sel.addEventListener('change', async (ev) => {
                 const id = ev.target.dataset.user;
                 const newPlan = ev.target.value;
-                const resp = await api(`/admin/users/${id}/plan`, { method: 'PATCH', body: JSON.stringify({ plan: newPlan }) });
+                const term = document.querySelector(`.term-select[data-term-for="${id}"]`).value;
+                const resp = await grantPlan(id, newPlan, term === '' ? null : Number(term));
                 if (!resp.ok) alert('Не вдалося оновити план');
             });
         });

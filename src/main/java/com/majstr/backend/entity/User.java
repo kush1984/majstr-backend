@@ -307,6 +307,10 @@ public class User {
     @Column(name = "trial_reminder_sent_at")
     private Instant trialReminderSentAt;
 
+    /** When «PRO закінчується» last went out for a non-trial term (V200, PlanEndingReminderService). */
+    @Column(name = "plan_ending_reminded_at")
+    private Instant planEndingRemindedAt;
+
     /** «Не надсилати мені такі листи» from a broadcast (V180). Transactional mail ignores it. */
     @Column(name = "broadcast_opt_out_at")
     private Instant broadcastOptOutAt;

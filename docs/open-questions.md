@@ -370,6 +370,7 @@ one-line summary — keep the item in the file as a record.
   a lightweight paper trail, but still logs, not a queryable `audit_events` table.
   The structured-audit want is unchanged; if it lands, fold these admin mutations
   (and the plan change) into it.
+- **Update (admin sessions, 2026-11-11, V199):** the PLAN change is now recorded in `admin_plan_grant` (actor email, plan, months, expiry) and shown on the user card. Delete-user and the catalog editors still only log; the general `audit_events` table is still open.
 
 ### Device / OS a master logs in from (admin)
 - **Status:** RESOLVED
@@ -1234,6 +1235,7 @@ one-line summary — keep the item in the file as a record.
   has unlimited PRO, so there's nothing to extend. Open: what to actually give a dateless-PRO
   referrer instead — a credit ledger (banked days applied when/if they drop to a dated plan),
   a payout, or nothing. Decide when admin-PRO referrers actually occur (rare — mostly staff).
+- **Update (2026-11-11, V199):** admins can now grant PRO for 1-3 months; such a grant HAS a date, so the reward stacks onto it. Only a grant made «без терміну» still hits this question.
 
 ### Two-sided referral bonus (perk for the referred master too)
 - **Status:** OPEN
@@ -2184,7 +2186,7 @@ one-line summary — keep the item in the file as a record.
   during the copy iteration and **declined for now** — honesty first, re-gate later if the data says so.
 
 ### Stale PlanConfig comment: "Only BRANDED_PDF and AI_ASSISTANT stay paid"
-- **Status:** OPEN
+- **Status:** RESOLVED 2026-11-11 — re-worded in the admin-sessions iteration (FREE is capped on quantity AND features; the set is the rule).
 - **Since:** Landing-copy-v2 iteration (2026-07-16)
 - **Context:** `PlanConfig`'s FREE block comment states the plan is "capped on quantity, not features"
   and that "Only BRANDED_PDF and AI_ASSISTANT stay paid". That stopped being true once MEASUREMENTS,
@@ -2193,6 +2195,7 @@ one-line summary — keep the item in the file as a record.
 - **Notes / options:** A comment-only fix (no behaviour change), deliberately not made inside a copy
   iteration. Fold it into whichever iteration next touches `PlanConfig` — and re-word it to state the
   actual rule, since this comment is what a future reader will trust.
+
 
 ### Landing og:image is the app icon, not a promo image
 - **Status:** RESOLVED (found 2026-10-28) — the PWA's `npm run og:images` renders 1200×630 cards from a

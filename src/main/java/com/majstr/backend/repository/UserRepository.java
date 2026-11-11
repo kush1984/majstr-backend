@@ -367,10 +367,35 @@ public interface UserRepository extends JpaRepository<User, UUID> {
               AND NOT EXISTS (
                   SELECT 1 FROM Payment p
                   WHERE p.userId = u.id AND p.status = com.majstr.backend.entity.PaymentStatus.SUCCESS)
+              AND NOT EXISTS (
+                  SELECT 1 FROM AdminPlanGrant g
+                  WHERE g.userId = u.id AND g.createdAt > u.trialStartedAt)
             """)
     List<User> findTrialEndingReminderDue(@Param("now") Instant now,
                                           @Param("cutoff") Instant cutoff,
                                           @Param("startOfToday") Instant startOfToday);
+
+    /**
+     * Every OTHER paid term ending within the window (V200): exactly the dated plans the trial
+     * reminder does not take, minus a renewable subscription (auto-renew on, card on file), which
+     * is about to be charged, not to end. Which of the two reminders is due is decided in
+     * {@code PlanEndingReminderService} against {@code planEndingRemindedAt}.
+     */
+    @Query("""
+            SELECT u FROM User u
+            WHERE u.plan <> com.majstr.backend.entity.Plan.FREE
+              AND u.planExpiresAt IS NOT NULL
+              AND u.planExpiresAt > :now AND u.planExpiresAt <= :cutoff
+              AND NOT (u.autoRenew = true AND u.cardToken IS NOT NULL)
+              AND NOT (u.trialStartedAt IS NOT NULL
+                  AND NOT EXISTS (
+                      SELECT 1 FROM Payment p
+                      WHERE p.userId = u.id AND p.status = com.majstr.backend.entity.PaymentStatus.SUCCESS)
+                  AND NOT EXISTS (
+                      SELECT 1 FROM AdminPlanGrant g
+                      WHERE g.userId = u.id AND g.createdAt > u.trialStartedAt))
+            """)
+    List<User> findPlanEndingCandidates(@Param("now") Instant now, @Param("cutoff") Instant cutoff);
 
     /**
      * Everyone currently on a paid plan, for the admin's bought / trial / granted split.

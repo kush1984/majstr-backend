@@ -1,6 +1,7 @@
 package com.majstr.backend.security;
 
 import com.majstr.backend.repository.UserRepository;
+import com.majstr.backend.service.ActivitySessionService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
@@ -31,6 +32,7 @@ public class LastActiveTracker {
     private static final Duration THROTTLE = Duration.ofMinutes(5);
 
     private final UserRepository userRepository;
+    private final ActivitySessionService activitySessions;
     private final ConcurrentMap<UUID, Instant> lastTouched = new ConcurrentHashMap<>();
 
     /**
@@ -55,6 +57,8 @@ public class LastActiveTracker {
             } else {
                 userRepository.touchLastActive(userId, now);
             }
+            // The same touch opens or stretches the master's session (V199, admin «скільки був активний»).
+            activitySessions.record(userId, now);
         } catch (Exception e) {
             log.warn("Failed to update last_active_at for {}: {}", userId, e.getMessage());
         }

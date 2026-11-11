@@ -1,15 +1,15 @@
 package com.majstr.backend.controller;
 
+import com.majstr.backend.dto.AdminUserActivity;
 import com.majstr.backend.dto.AdminUserDetail;
 import com.majstr.backend.dto.AdminUserSummary;
 import com.majstr.backend.dto.PageResponse;
 import com.majstr.backend.dto.PlanUpdateRequest;
 import com.majstr.backend.dto.ReferralSourceUpdateRequest;
 import com.majstr.backend.entity.Plan;
-import com.majstr.backend.entity.User;
-import com.majstr.backend.exception.ResourceNotFoundException;
-import com.majstr.backend.repository.UserRepository;
 import com.majstr.backend.security.UserPrincipal;
+import com.majstr.backend.service.AdminActivityService;
+import com.majstr.backend.service.AdminPlanService;
 import com.majstr.backend.service.AdminUserDeletionService;
 import com.majstr.backend.service.AdminUserService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -20,7 +20,6 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
-import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
@@ -42,7 +41,8 @@ public class AdminUserController {
 
     private static final int MAX_PAGE_SIZE = 100;
 
-    private final UserRepository userRepository;
+    private final AdminPlanService adminPlanService;
+    private final AdminActivityService adminActivityService;
     private final AdminUserService adminUserService;
     private final AdminUserDeletionService adminUserDeletionService;
 
@@ -77,14 +77,19 @@ public class AdminUserController {
         return adminUserService.detail(id);
     }
 
-    @Operation(summary = "Change a user's plan (manual upgrade until billing lands)")
+    @Operation(summary = "Change a user's plan; a paid plan for 1-3 months (added to a running term) "
+            + "or with no end. Recorded with the admin who made it.")
     @PatchMapping("/{id}/plan")
-    @Transactional
-    public AdminUserSummary changePlan(@PathVariable UUID id, @Valid @RequestBody PlanUpdateRequest req) {
-        User user = userRepository.findById(id)
-                .orElseThrow(() -> new ResourceNotFoundException("User not found: " + id));
-        user.setPlan(req.plan());
-        return AdminUserSummary.from(user);
+    public AdminUserSummary changePlan(@PathVariable UUID id, @Valid @RequestBody PlanUpdateRequest req,
+                                       @AuthenticationPrincipal UserPrincipal principal) {
+        return adminPlanService.change(id, req.plan(), req.months(), principal.email());
+    }
+
+    @Operation(summary = "How long a master was active (sessions, totals for 7/30 days) and who "
+            + "granted him which plan")
+    @GetMapping("/{id}/activity")
+    public AdminUserActivity activity(@PathVariable UUID id) {
+        return adminActivityService.activity(id);
     }
 
     @Operation(summary = "Manually set a master's referral source (conflicts / survey leads)")

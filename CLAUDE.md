@@ -63,7 +63,7 @@ controllers return DTOs. `passwordHash` never appears in any response (`UserResp
 
 `hibernate.ddl-auto: validate` — never express schema changes in entity annotations. Add a new
 `V<N>__<desc>.sql` under `src/main/resources/db/migration/`; **check the highest number first**
-(latest is **V198**; V183 and V185 are skipped — the unmerged bot takes the next free number at its merge). **Never edit an applied migration** — Flyway checksums it and a changed file
+(latest is **V200**; V183 and V185 are skipped — the unmerged bot takes the next free number at its merge). **Never edit an applied migration** — Flyway checksums it and a changed file
 fails startup (a COMMENT fix goes in the next migration's header, B-53). **A self-check may `RAISE EXCEPTION` only about the migration's OWN
 work** (review B-50): an assertion about data an admin can rename between deploys is a `RAISE
 WARNING`, and the integration tests keep it honest.
