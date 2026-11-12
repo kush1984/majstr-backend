@@ -3,6 +3,8 @@ package com.majstr.backend.controller;
 import com.majstr.backend.dto.ClientPreviewResponse;
 import com.majstr.backend.dto.EconomyUpdateRequest;
 import com.majstr.backend.dto.PortalPreviewRequest;
+import com.majstr.backend.dto.PortalSummaryRequest;
+import com.majstr.backend.dto.ProjectResponse;
 import com.majstr.backend.dto.PortalStateResponse;
 import com.majstr.backend.dto.PortalUpdateRequest;
 import com.majstr.backend.security.UserPrincipal;
@@ -45,6 +47,14 @@ public class ProjectPortalController {
                                       @Valid @RequestBody PortalUpdateRequest req,
                                       @AuthenticationPrincipal UserPrincipal principal) {
         return portalService.update(projectId, req.estimateIds(), principal.id());
+    }
+
+    @Operation(summary = "Where the client's page shows «Зведення»: after the positions, or at the top (V202)")
+    @PutMapping("/summary-placement")
+    public ProjectResponse setSummaryPlacement(@PathVariable UUID projectId,
+                                               @Valid @RequestBody PortalSummaryRequest req,
+                                               @AuthenticationPrincipal UserPrincipal principal) {
+        return portalService.setSummaryAtBottom(projectId, req.atBottom(), principal.id());
     }
 
     @Operation(summary = "A ten-minute pass to the client's portal page with the ticked estimates: a preview "

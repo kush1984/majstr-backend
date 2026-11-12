@@ -1336,6 +1336,9 @@
         // Per-section totals block is only worth repeating when there's more than one estimate to
         // scroll past — see renderSection's own comment for why.
         const showSectionTotals = data.estimates.length > 1;
+        // «Зведення» at the top (as every page shows it) or after the positions, before the photos —
+        // the master's choice in the share sheet (V202). One block, rendered in exactly one place.
+        const summaryAtBottom = Boolean(data.project && data.project.summaryAtBottom);
 
         root.innerHTML = `
             ${isPreview ? '<p class="preview-banner" role="status">Так кошторис побачить клієнт. Це попередній перегляд — підписати чи задати питання тут не можна.</p>' : ''}
@@ -1355,13 +1358,15 @@
                 ${data.project.clientName ? `<p style="margin:4px 0;">Клієнт: ${escapeHtml(data.project.clientName)}</p>` : ''}
             </section>
 
-            ${renderSummary(data.estimates)}
+            ${summaryAtBottom ? '' : renderSummary(data.estimates)}
 
             ${data.payments ? `<section class="card"><h2>Платежі</h2><div id="paymentsBody">${renderPaymentsBody(data.payments)}</div></section>` : ''}
 
             ${data.estimates.length
                 ? data.estimates.map((e) => renderSection(e, showSectionTotals)).join('')
                 : '<section class="card"><p style="text-align:center;color:var(--muted);">Майстер ще не додав кошторисів на портал.</p></section>'}
+
+            ${summaryAtBottom ? renderSummary(data.estimates) : ''}
 
             ${renderPhotos(data.sharedPhotos)}
         `;

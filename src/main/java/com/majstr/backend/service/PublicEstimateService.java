@@ -286,7 +286,8 @@ public class PublicEstimateService {
                         project.getName(),
                         project.getAddress(),
                         client == null ? null : client.getFullName(),
-                        project.isSample()),
+                        project.isSample(),
+                        project.isPortalSummaryAtBottom()),
                 sections,
                 sharedPhotos,
                 null);
@@ -339,7 +340,8 @@ public class PublicEstimateService {
                         project.getName(),
                         project.getAddress(),
                         client == null ? null : client.getFullName(),
-                        project.isSample()),
+                        project.isSample(),
+                        project.isPortalSummaryAtBottom()),
                 sections,
                 sharedPhotos,
                 paymentsCard);
@@ -769,7 +771,9 @@ public class PublicEstimateService {
                         project.getName(),
                         project.getAddress(),
                         client == null ? null : client.getFullName(),
-                        project.isSample()),
+                        project.isSample(),
+                        // A layout choice, not a printed value: the LIVE object's, even for a signed page.
+                        live.getProject().isPortalSummaryAtBottom()),
                 estimate.getStatus(),
                 estimate.getValidUntil(),
                 estimate.getNotes(),

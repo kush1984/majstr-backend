@@ -451,6 +451,7 @@ class IdorMatrixIntegrationTest extends IntegrationTestBase {
         c.add(get("/api/projects/{projectId}/portal", a.project));
         c.add(json("PUT", "/api/projects/{projectId}/portal", B_PORTAL, a.project));
         c.add(json("POST", "/api/projects/{projectId}/portal/preview", B_PORTAL, a.project));
+        c.add(json("PUT", "/api/projects/{projectId}/portal/summary-placement", "{\"atBottom\":true}", a.project));
         c.add(post("/api/projects/{projectId}/portal/send-email", a.project));
         c.add(post("/api/projects/{projectId}/portal/mark-sent", a.project));
         c.add(get("/api/projects/{projectId}/portal/economy", a.project));

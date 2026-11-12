@@ -56,7 +56,9 @@ public record PublicEstimateView(
             String address,
             String clientName,
             /** The training sample (V197): the page shows «Навчальний приклад Majstr». */
-            boolean sample
+            boolean sample,
+            /** «Зведення» goes after the positions instead of at the top — the master's choice (V202). */
+            boolean summaryAtBottom
     ) {}
 
     public record Signature(

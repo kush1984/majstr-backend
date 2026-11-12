@@ -4,6 +4,7 @@ import com.majstr.backend.config.PortalProperties;
 import com.majstr.backend.dto.ActShareStateResponse;
 import com.majstr.backend.dto.ClientPreviewResponse;
 import com.majstr.backend.dto.PortalStateResponse;
+import com.majstr.backend.dto.ProjectResponse;
 import com.majstr.backend.email.EmailService;
 import com.majstr.backend.entity.Client;
 import com.majstr.backend.entity.Estimate;
@@ -121,6 +122,18 @@ public class ProjectPortalService {
      * checked like a publish (an id from another object is a 404); a SIGNED one is dropped, as the
      * publish drops it. No name required: he may look before giving one.
      */
+    /**
+     * Where the client's page shows «Зведення» (V202). The object's choice, so every link of it — the
+     * portal, the economy page, each estimate's own ?t= — reads the same answer, the ones already sent
+     * included. No feature gate: it moves a block, it opens nothing.
+     */
+    @Transactional
+    public ProjectResponse setSummaryAtBottom(UUID projectId, boolean atBottom, UUID ownerId) {
+        Project project = projectService.loadOwned(projectId, ownerId);
+        project.setPortalSummaryAtBottom(atBottom);
+        return projectService.get(projectId, ownerId);
+    }
+
     @Transactional(readOnly = true)
     public ClientPreviewResponse preview(UUID projectId, List<UUID> estimateIds, UUID ownerId) {
         Project project = projectService.loadOwned(projectId, ownerId);

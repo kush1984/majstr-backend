@@ -31,8 +31,9 @@ public record ProjectResponse(
         Instant completedAt,
         Instant createdAt,
         Instant updatedAt,
-        /** The training sample (V197): the app badges it and offers its delete at any stage. */
-        boolean sample
+        boolean sample,
+        /** The client's page shows «Зведення» after the positions (V202); false = at the top. */
+        boolean portalSummaryAtBottom
 ) {
     /** Use when neither the latest-estimate summary nor the stage flags are loaded (e.g. a
      *  freshly created project, which by definition has no estimates yet). */
@@ -60,7 +61,8 @@ public record ProjectResponse(
                 project.getCompletedAt(),
                 project.getCreatedAt(),
                 project.getUpdatedAt(),
-                project.isSample()
+                project.isSample(),
+                project.isPortalSummaryAtBottom()
         );
     }
 }

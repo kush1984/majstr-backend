@@ -72,6 +72,11 @@ public class Project {
     @Builder.Default
     private int estimatesDeleted = 0;
 
+    /** The client's page shows «Зведення» after the positions, not at the top (V202). The master's choice. */
+    @Column(name = "portal_summary_at_bottom", nullable = false)
+    @Builder.Default
+    private boolean portalSummaryAtBottom = false;
+
     /** The training sample (V197): outside the cap, freely deleted, read by no metric. Set once, at creation. */
     @Column(name = "sample", nullable = false, updatable = false)
     @Builder.Default
