@@ -7,6 +7,7 @@ import com.majstr.backend.exception.CatalogImportException;
 import com.majstr.backend.security.UserPrincipal;
 import com.majstr.backend.service.importer.CatalogImportParser;
 import com.majstr.backend.service.importer.CatalogImportService;
+import com.majstr.backend.service.importer.PriceListReader;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -38,15 +39,22 @@ public class CatalogImportController {
 
     private final CatalogImportParser parser;
     private final CatalogImportService importService;
+    private final PriceListReader priceListReader;
 
-    @Operation(summary = "Parse an uploaded price list (.xlsx/.xls/.csv) — returns a review proposal")
+    @Operation(summary = "Parse an uploaded price list (.xlsx/.xls/.csv as a table; a PDF or a photo read by AI) "
+            + "— returns a review proposal")
     @PostMapping(value = "/parse", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
-    public CatalogImportParseResponse parseFile(@RequestParam("file") MultipartFile file) {
+    public CatalogImportParseResponse parseFile(@RequestParam("file") MultipartFile file,
+                                                @AuthenticationPrincipal UserPrincipal principal) {
         if (file == null || file.isEmpty()) {
             throw new CatalogImportException("error.import.empty");
         }
         try {
-            return parser.parseFile(file.getOriginalFilename(), file.getBytes());
+            byte[] bytes = file.getBytes();
+            if (PriceListReader.needsReading(file.getOriginalFilename(), file.getContentType(), bytes)) {
+                return priceListReader.read(principal.id(), file.getOriginalFilename(), file.getContentType(), bytes);
+            }
+            return parser.parseFile(file.getOriginalFilename(), bytes);
         } catch (IOException e) {
             throw new CatalogImportException("error.import.unreadable");
         }

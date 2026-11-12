@@ -14,7 +14,6 @@ import com.majstr.backend.dto.PaymentReceiptRequest;
 import com.majstr.backend.entity.ItemType;
 import com.majstr.backend.entity.Unit;
 import com.majstr.backend.entity.User;
-import com.majstr.backend.exception.CatalogImportException;
 import com.majstr.backend.exception.ResourceNotFoundException;
 import com.majstr.backend.feature.Feature;
 import com.majstr.backend.feature.FeatureGuard;
@@ -25,16 +24,10 @@ import com.majstr.backend.service.EstimateService.ImportEstimateData.ImportItem;
 import com.majstr.backend.service.PaymentService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.apache.poi.ss.usermodel.Cell;
-import org.apache.poi.ss.usermodel.DataFormatter;
-import org.apache.poi.ss.usermodel.Row;
-import org.apache.poi.ss.usermodel.Sheet;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
-import java.nio.charset.Charset;
-import java.nio.charset.StandardCharsets;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
@@ -55,8 +48,6 @@ import java.util.UUID;
 public class EstimateImportService {
 
     static final String DEPOSIT_LABEL = "Завдаток";
-    private static final int MAX_GRID_ROWS = 400;
-    private static final int MAX_GRID_COLS = 40;
 
     private final FeatureGuard featureGuard;
     private final UserRepository userRepository;
@@ -64,25 +55,14 @@ public class EstimateImportService {
     private final EstimateService estimateService;
     private final CatalogImportService catalogImportService;
     private final PaymentService paymentService;
-
-    private final DataFormatter dataFormatter = new DataFormatter(Locale.forLanguageTag("uk-UA"));
+    private final DocumentReader documentReader;
 
     /** Parse an uploaded file/photo into a review proposal. Nothing is written; the bytes are discarded. */
     public EstimateImportParseResponse parse(UUID ownerId, String filename, String contentType, byte[] bytes) {
         featureGuard.requireFeature(loadUser(ownerId), Feature.ESTIMATE_IMPORT);
 
-        String imageMediaType = imageMediaType(filename, contentType);
-        EstimateExtractor.Extracted extracted;
-        if (imageMediaType != null) {
-            extracted = extractor.extractFromImage(imageMediaType, bytes);
-        } else if (isSpreadsheet(filename, contentType)) {
-            extracted = extractor.extractFromText(spreadsheetToText(bytes));
-        } else if (isCsv(filename, contentType)) {
-            SafeWorkbook.requireSize(bytes);
-            extracted = extractor.extractFromText(decode(bytes));
-        } else {
-            throw new CatalogImportException("error.import.unsupported");
-        }
+        EstimateExtractor.Extracted extracted = extractor.extract(documentReader.read(filename, contentType, bytes,
+                "Extract the estimate positions from this document."));
         return toReview(extracted);
     }
 
@@ -165,73 +145,6 @@ public class EstimateImportService {
             return ItemType.MATERIAL;
         }
         return ItemType.WORK;
-    }
-
-    // ---- input type detection + text extraction -------------------------------
-
-    /** The image media type to send to Claude, or null if this isn't an image upload. */
-    private static String imageMediaType(String filename, String contentType) {
-        String ct = contentType == null ? "" : contentType.toLowerCase(Locale.ROOT);
-        if (ct.equals("image/jpeg") || ct.equals("image/jpg")) return "image/jpeg";
-        if (ct.equals("image/png")) return "image/png";
-        if (ct.equals("image/webp")) return "image/webp";
-        if (ct.equals("image/gif")) return "image/gif";
-        String name = filename == null ? "" : filename.toLowerCase(Locale.ROOT);
-        if (name.endsWith(".jpg") || name.endsWith(".jpeg")) return "image/jpeg";
-        if (name.endsWith(".png")) return "image/png";
-        if (name.endsWith(".webp")) return "image/webp";
-        if (name.endsWith(".gif")) return "image/gif";
-        return null;
-    }
-
-    private static boolean isSpreadsheet(String filename, String contentType) {
-        String name = filename == null ? "" : filename.toLowerCase(Locale.ROOT);
-        if (name.endsWith(".xlsx") || name.endsWith(".xls")) return true;
-        String ct = contentType == null ? "" : contentType.toLowerCase(Locale.ROOT);
-        return ct.contains("spreadsheet") || ct.contains("ms-excel");
-    }
-
-    private static boolean isCsv(String filename, String contentType) {
-        String name = filename == null ? "" : filename.toLowerCase(Locale.ROOT);
-        if (name.endsWith(".csv")) return true;
-        String ct = contentType == null ? "" : contentType.toLowerCase(Locale.ROOT);
-        return ct.contains("csv");
-    }
-
-    /** First sheet → tab-separated text grid (capped) for the model to read. */
-    private String spreadsheetToText(byte[] bytes) {
-        return SafeWorkbook.read(bytes, wb -> {
-            if (wb.getNumberOfSheets() == 0) {
-                throw new CatalogImportException("error.import.unreadable");
-            }
-            Sheet sheet = wb.getSheetAt(0);
-            StringBuilder sb = new StringBuilder();
-            int rows = 0;
-            for (Row row : sheet) {
-                if (rows++ >= MAX_GRID_ROWS) break;
-                short last = row.getLastCellNum();
-                for (int c = 0; c < Math.min(last, MAX_GRID_COLS); c++) {
-                    if (c > 0) sb.append('\t');
-                    Cell cell = row.getCell(c);
-                    sb.append(cell == null ? "" : dataFormatter.formatCellValue(cell).trim());
-                }
-                sb.append('\n');
-            }
-            return sb.toString();
-        });
-    }
-
-    /** UTF-8, falling back to windows-1251 when the bytes aren't valid UTF-8 (old Excel CSVs). */
-    private static String decode(byte[] bytes) {
-        String asUtf8 = new String(bytes, StandardCharsets.UTF_8);
-        if (asUtf8.indexOf('�') >= 0) {
-            try {
-                return new String(bytes, Charset.forName("windows-1251"));
-            } catch (Exception ignore) {
-                return asUtf8;
-            }
-        }
-        return asUtf8;
     }
 
     private User loadUser(UUID ownerId) {

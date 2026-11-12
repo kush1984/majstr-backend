@@ -80,6 +80,10 @@ public class Project {
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
 
+    /** Set when «Перенести в Majstr» created this object (V201): outside the FREE lifetime cap. */
+    @Column(name = "transferred_at", updatable = false)
+    private Instant transferredAt;
+
     @Column(name = "updated_at", nullable = false)
     private Instant updatedAt;
 

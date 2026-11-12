@@ -101,6 +101,25 @@ public class ProjectService {
         return ProjectResponse.from(projectRepository.save(project));
     }
 
+    /**
+     * An object «Перенести в Majstr» creates (V201): the master's EXISTING job moving in, so it is
+     * outside the FREE lifetime cap (owner's decision) — no slot is reserved, the row is stamped
+     * {@code transferred_at} instead, and {@code TransferService} bounds how many there may be.
+     */
+    @Transactional
+    public Project createTransferred(String name, String address, UUID clientId, UUID ownerId) {
+        User owner = userRepository.getReferenceById(ownerId);
+        Client client = clientId == null ? null : clientService.loadOwned(clientId, ownerId);
+        return projectRepository.save(Project.builder()
+                .owner(owner)
+                .client(client)
+                .name(name.trim())
+                .address(normalize(address))
+                .status(ProjectStatus.DRAFT)
+                .transferredAt(java.time.Instant.now())
+                .build());
+    }
+
     /** {@code stage} filters on the DERIVED {@link ObjectStage}, not the raw {@link ProjectStatus}
      *  column (object-status-unification) — fetches the owner's whole list and filters in memory
      *  after computing each project's stage, rather than translating the priority chain into SQL.

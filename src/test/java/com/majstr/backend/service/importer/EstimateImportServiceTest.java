@@ -21,11 +21,13 @@ import com.majstr.backend.repository.UserRepository;
 import com.majstr.backend.service.EstimateService;
 import com.majstr.backend.service.EstimateService.ImportEstimateData;
 import com.majstr.backend.service.PaymentService;
+import com.majstr.backend.service.ai.AiInput;
 import com.majstr.backend.service.importer.EstimateExtractor.Extracted;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
+import org.mockito.Spy;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
@@ -38,6 +40,8 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyList;
+import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
@@ -57,6 +61,7 @@ class EstimateImportServiceTest {
     @Mock private CatalogImportService catalogImportService;
     @Mock private PaymentService paymentService;
 
+    @Spy private DocumentReader documentReader = new DocumentReader();
     @InjectMocks private EstimateImportService service;
 
     private final UUID ownerId = UUID.randomUUID();
@@ -71,7 +76,7 @@ class EstimateImportServiceTest {
     @Test
     void parse_normalizesUnitsAndFlagsUnreadableValues() {
         givenUser(Plan.PRO);
-        given(extractor.extractFromText(anyString())).willReturn(new Extracted(List.of(
+        given(extractor.extract(anyList())).willReturn(new Extracted(List.of(
                 new Extracted.Line("Малярка", "м²", new BigDecimal("5"), new BigDecimal("100"), "WORK", "Кухня"),
                 new Extracted.Line("Демонтаж", null, new BigDecimal("0"), new BigDecimal("0"), "матеріал", null)
         ), new BigDecimal("500")));
@@ -79,7 +84,6 @@ class EstimateImportServiceTest {
         EstimateImportParseResponse resp = service.parse(ownerId, "kosht.csv", "text/csv", "x".getBytes());
 
         verify(featureGuard).requireFeature(any(User.class), eq(Feature.ESTIMATE_IMPORT));
-        verify(extractor, never()).extractFromImage(anyString(), any());
         assertThat(resp.items()).hasSize(2);
 
         var good = resp.items().get(0);
@@ -102,13 +106,12 @@ class EstimateImportServiceTest {
     void parse_usesImageBranchForAPhoto() {
         givenUser(Plan.PRO);
         byte[] bytes = "img".getBytes();
-        given(extractor.extractFromImage("image/jpeg", bytes))
-                .willReturn(new Extracted(List.of(), null));
+        given(extractor.extract(anyList())).willReturn(new Extracted(List.of(), null));
 
         service.parse(ownerId, "photo.jpg", "image/jpeg", bytes);
 
-        verify(extractor).extractFromImage("image/jpeg", bytes);
-        verify(extractor, never()).extractFromText(anyString());
+        verify(extractor).extract(argThat(content -> content.getFirst() instanceof AiInput.Image img
+                && img.mediaType().equals("image/jpeg")));
     }
 
     @Test
@@ -118,8 +121,7 @@ class EstimateImportServiceTest {
         assertThatThrownBy(() -> service.parse(ownerId, "note.txt", "text/plain", "x".getBytes()))
                 .isInstanceOf(CatalogImportException.class);
 
-        verify(extractor, never()).extractFromText(anyString());
-        verify(extractor, never()).extractFromImage(anyString(), any());
+        verify(extractor, never()).extract(anyList());
     }
 
     @Test

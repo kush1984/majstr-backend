@@ -26,6 +26,9 @@ public interface ProjectRepository extends JpaRepository<Project, UUID> {
 
     long countByOwnerId(UUID ownerId);
 
+    /** Objects «Перенести в Majstr» created for this master (V201) — what its own bound counts. */
+    long countByOwnerIdAndTransferredAtIsNotNull(UUID ownerId);
+
     /** The admin's object count: the training sample (V197) is not an object the master made. */
     long countByOwnerIdAndSampleFalse(UUID ownerId);
 

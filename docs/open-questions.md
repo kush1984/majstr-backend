@@ -604,6 +604,16 @@ one-line summary — keep the item in the file as a record.
 
 ---
 
+### «Перенести в Majstr» skips the FREE object cap — bounded, not closed
+- **Status:** OPEN
+- **Since:** Transfer iteration (2026-11-12, V201)
+- **Context:** The owner chose that objects created by moving existing estimates in do not count
+  toward the FREE lifetime cap (`projects.transferred_at`). That is a door around the cap: any
+  PDF that reads as an estimate makes an object. Bounded by `TransferService.MAX_TRANSFERRED_OBJECTS`
+  (50 per account) and the AI budget per read.
+- **Notes / options:** Watch admin numbers for FREE accounts with many transferred objects; if it is
+  abused, count transferred objects above a small allowance, or require a verified email per batch.
+
 ## Security
 
 ### Automated security scanning (IDOR matrix + secrets done; deps and DAST open)
@@ -1888,9 +1898,10 @@ one-line summary — keep the item in the file as a record.
   pile can still grow, because **OTHER stays the default** when the dropdown is untouched — but it
   grows from a choice not taken, not from a missing control. Net effect on this item: unchanged
   priority, not raised.
+- **Update (2026-11-12, transfer):** imported positions no longer all land in OTHER — «Перенести в Majstr» files each under the trade the master's own catalog or our library gives it (`TradeFiler`). The plain price-list import still takes ONE trade per batch; the bulk-move want for the existing pile is unchanged.
 
 ### Price-list import from a photo / handwriting (vision-LLM)
-- **Status:** OPEN
+- **Status:** RESOLVED 2026-11-12 — `PriceListReader`: a PDF or a photo on `/api/catalog/import/parse` is read by the model into the SAME `CatalogImportParseResponse`; Excel/CSV keep the deterministic parser. The file is never stored.
 - **Since:** Catalog price-import iteration (2026-07-06)
 - **Context:** The Excel/CSV/paste import (this iteration) lands on a review screen built to
   be **modality-agnostic**. The natural next modality is a photo of a paper price list or a
@@ -1907,6 +1918,7 @@ one-line summary — keep the item in the file as a record.
   Anthropic, Opus 4.8, base64 `image` block, structured JSON out). To add photo/handwriting
   import for the **catalog price list**, reuse that service with a `{name, unit, price}` schema
   and return the existing `CatalogImportParseResponse`. Provider/prompt are now decided.
+
 
 ### Import an ESTIMATE (not a price list) from a file
 - **Status:** RESOLVED

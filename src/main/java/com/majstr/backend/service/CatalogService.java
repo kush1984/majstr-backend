@@ -432,7 +432,7 @@ public class CatalogService {
     }
 
     /** Trim, collapse internal whitespace, and treat blank as "no category". */
-    static String normalizeCategory(String raw) {
+    public static String normalizeCategory(String raw) {
         if (raw == null) {
             return null;
         }

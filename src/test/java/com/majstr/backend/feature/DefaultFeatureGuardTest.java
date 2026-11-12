@@ -72,6 +72,7 @@ class DefaultFeatureGuardTest {
         // Same kind of temporary unlock (2026-11-11): the estimate's receipt photo read, consistent
         // with the object and act receipts, which AI already reads on FREE.
         assertThat(guard.isEnabled(userOnPlan(Plan.FREE), Feature.RECEIPT_IMPORT)).isTrue();
+        assertThat(guard.isEnabled(userOnPlan(Plan.FREE), Feature.ESTIMATE_IMPORT)).isTrue();
         assertThat(guard.isEnabled(userOnPlan(Plan.PRO),  Feature.OBJECT_ECONOMY)).isTrue();
         assertThat(guard.isEnabled(userOnPlan(Plan.TEAM), Feature.OBJECT_ECONOMY)).isTrue();
         assertThat(PlanConfig.minimumPlanFor(Feature.OBJECT_ECONOMY)).isEqualTo(Plan.FREE);

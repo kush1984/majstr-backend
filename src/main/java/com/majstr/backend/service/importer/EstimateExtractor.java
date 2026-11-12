@@ -122,6 +122,53 @@ public class EstimateExtractor {
     private final AiExtractors extractors;
     private final ObjectMapper objectMapper;
 
+    /**
+     * «Перенести в Majstr»: the same estimate reading, plus what KIND of document this is and whose.
+     * A price list is positions with prices and nothing else; an estimate also carries quantities
+     * and usually a sum, an object, an address or a client. The meta comes back as written on the
+     * paper — the master confirms it on the review screen.
+     */
+    private static final String DOCUMENT_SYSTEM_PROMPT = SYSTEM_PROMPT + """
+
+            This document may also be a PRICE LIST rather than an estimate. Decide which, and return:
+              - documentKind: "PRICE_LIST" when it lists positions with unit prices and nothing ties
+                it to one job (no quantities to speak of, no object, no client, no grand total of a
+                job); otherwise "ESTIMATE".
+              - objectName: the object / job as the document names it (e.g. "Квартира, вул. Франка
+                12, кв. 5", "Будинок у Дублянах"), else "".
+              - address: the object's address if written, else "".
+              - clientName: the customer (замовник) as written, else "".
+              - title: the document's own title (e.g. "Кошторис на ремонт ванної"), else "".
+            For a PRICE_LIST, quantity is 0 for every position.
+            """;
+
+    /** Read any accepted document (see {@link DocumentReader}) as an estimate. */
+    public Extracted extract(List<AiInput> content) {
+        return call(AiFlow.ESTIMATE, content, SYSTEM_PROMPT);
+    }
+
+    /** Read a document AND classify it — the transfer flow. */
+    @SuppressWarnings("unchecked")
+    public Document extractDocument(List<AiInput> content) {
+        String json = extractors.forFlow(AiFlow.ESTIMATE).requestJson(content, DOCUMENT_SYSTEM_PROMPT, DOCUMENT_SCHEMA);
+        Extracted lines = parse(AiFlow.ESTIMATE, json);
+        try {
+            Map<String, Object> root = objectMapper.readValue(json, Map.class);
+            String kind = str(root.get("documentKind"));
+            return new Document("PRICE_LIST".equalsIgnoreCase(kind) ? DocumentKind.PRICE_LIST : DocumentKind.ESTIMATE,
+                    str(root.get("objectName")), str(root.get("address")), str(root.get("clientName")),
+                    str(root.get("title")), lines);
+        } catch (Exception e) {
+            throw new AiExtractionException("error.ai.unavailable", e);
+        }
+    }
+
+    public enum DocumentKind { ESTIMATE, PRICE_LIST }
+
+    /** A classified document: its kind, the meta the paper carries (null = not written), its lines. */
+    public record Document(DocumentKind kind, String objectName, String address, String clientName,
+                           String title, Extracted extracted) {}
+
     /** Extract from a spreadsheet/CSV already rendered to a plain text grid. */
     public Extracted extractFromText(String grid) {
         String instruction = "Extract the estimate positions from this spreadsheet grid:\n\n" + grid;
@@ -234,6 +281,25 @@ public class EstimateExtractor {
                             "type", "array",
                             "items", lineSchema()),
                     "depositAmount", NUMBER));
+
+    private static final Map<String, Object> DOCUMENT_SCHEMA = documentSchema();
+
+    private static Map<String, Object> documentSchema() {
+        Map<String, Object> properties = new LinkedHashMap<>();
+        properties.put("documentKind", STRING);
+        properties.put("objectName", STRING);
+        properties.put("address", STRING);
+        properties.put("clientName", STRING);
+        properties.put("title", STRING);
+        properties.put("items", Map.of("type", "array", "items", lineSchema()));
+        properties.put("depositAmount", NUMBER);
+        return Map.of(
+                "type", "object",
+                "additionalProperties", false,
+                "required", List.of("documentKind", "objectName", "address", "clientName", "title",
+                        "items", "depositAmount"),
+                "properties", properties);
+    }
 
     private static Map<String, Object> lineSchema() {
         Map<String, Object> properties = new LinkedHashMap<>();
