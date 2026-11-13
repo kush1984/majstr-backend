@@ -43,5 +43,9 @@ public record MaterialCalculationResponse(
         BigDecimal perimeter,
         boolean estimateSigned,
         boolean quantitiesMissing,
-        StoredMaterialParams answers
+        StoredMaterialParams answers,
+        /* The estimate's stored tile layouts (V203), paused ones included — the screen says so. */
+        List<TileLayoutView> tileLayouts,
+        /* Lines not read by their own name and how they were read instead — «рахувати як» (V204). */
+        List<PositionMatch> matches
 ) {}

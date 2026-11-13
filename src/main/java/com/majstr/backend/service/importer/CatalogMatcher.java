@@ -145,6 +145,15 @@ public final class CatalogMatcher {
         return stems;
     }
 
+    /**
+     * How alike two position names are, 0..1 — the same stems and Dice this matcher decides with. Used to
+     * RANK suggestions the master then picks from (the materials screen's «рахувати як»), never to apply
+     * one: a near name is often a different job («укривання … МДФ» vs «… картоном»).
+     */
+    public static double similarity(String a, String b) {
+        return dice(stems(a), stems(b));
+    }
+
     /** Dice coefficient: 2·|A∩B| / (|A|+|B|) — symmetric, so neither a long catalog name nor a
      *  long spoken one is rewarded for size alone. */
     private static double dice(Set<String> a, Set<String> b) {

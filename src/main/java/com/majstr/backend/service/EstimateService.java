@@ -116,6 +116,7 @@ public class EstimateService {
      *  repositories only, which is also why the ownership check for its endpoint lives in
      *  {@code MaterialCalculatorService} and not there. */
     private final MaterialParamService materialParamService;
+    private final TileLayoutService tileLayoutService;
     private final HeavyWork heavyWork;
     private final PlatformTransactionManager transactionManager;
     private final PdfRenderLog pdfRenderLog;
@@ -348,6 +349,7 @@ public class EstimateService {
         // on a copy the master made with one tap would be V142's bug one level up. See
         // MaterialParamService#copyToDuplicate for why a consolidation deliberately does NOT.
         materialParamService.copyToDuplicate(estimateId, copy.getId(), copyBySourceId);
+        tileLayoutService.copyToDuplicate(estimateId, copy.getId(), copyBySourceId);
 
         // A SIGNED source is a LIVE DEAL, and it stays one until the copy is signed too (B-63).
         // Uncounting it here read «За договором 0» on a 50 000 job with 20 000 already paid, and
@@ -1094,6 +1096,11 @@ public class EstimateService {
         boolean percentBoundaryCrossed = (item.getUnit() == Unit.PERCENT) != (req.unit() == Unit.PERCENT);
         if (item.getUnit() != req.unit() || !item.getName().equals(req.name().trim())) {
             materialParamService.clearForItem(item.getId()); // another line now (review B-112)
+        }
+        if (item.getUnit() != req.unit()) {
+            // A rename only PAUSES a tile layout (another format in the name); a line that is no longer
+            // m² has no tiles to lay at all (V203).
+            tileLayoutService.clearForItem(item.getId());
         }
         item.setType(req.type());
         item.setName(req.name().trim());

@@ -113,6 +113,8 @@ class IdorMatrixIntegrationTest extends IntegrationTestBase {
     private static final String B_TEMPLATE_TRADE = "{\"trade\":\"PAINTER\"}";
     private static final String B_TEMPLATE_ITEM = "{\"name\":\"Позиція\",\"type\":\"WORK\",\"unit\":\"M2\"}";
     private static final String B_MATERIAL_PARAMS = "{\"perimeter\":10}";
+    private static final String B_TILE_LAYOUT = "{\"tileWidthMm\":600,\"tileHeightMm\":300,\"laidArea\":5,"
+            + "\"minTiles\":30,\"maxTiles\":36,\"spare\":2,\"params\":\"{}\"}";
     private static final String B_MATERIAL_NORM = "{\"qtyPerUnit\":1.5}";
     private static final String B_ROOM = "{\"name\":\"Кімната\"}";
     private static final String B_MEASUREMENT_ITEM =
@@ -384,6 +386,10 @@ class IdorMatrixIntegrationTest extends IntegrationTestBase {
                 B_MATERIAL_PARAMS, a.estimate));
         c.add(json("POST", "/api/estimates/{estimateId}/materials/shopping-list",
                 "{\"materials\":[{\"materialId\":\"" + a.material + "\",\"quantity\":1}]}", a.estimate));
+        c.add(get("/api/estimates/{estimateId}/materials/tile-layouts", a.estimate));
+        c.add(json("PUT", "/api/estimates/{estimateId}/materials/tile-layouts/{itemId}",
+                B_TILE_LAYOUT, a.estimate, a.estimateItem));
+        c.add(del("/api/estimates/{estimateId}/materials/tile-layouts/{itemId}", a.estimate, a.estimateItem));
 
         // --- dictation and the receipt-items import on a foreign estimate --------
         c.add(json("POST", "/api/estimates/{id}/dictation/parse", B_DICTATION_PARSE, a.estimate));
@@ -536,6 +542,10 @@ class IdorMatrixIntegrationTest extends IntegrationTestBase {
                 "{\"items\":[{\"catalogItemId\":\"" + a.catalogItem + "\",\"quantity\":1}]}",
                 b.estimate));
         c.add(del("/api/estimates/{id}/share/{linkId}", b.estimate, a.estimateShareLink));
+        // A foreign line under B's own estimate is a 404 (MaterialCalculatorService#itemInEstimate).
+        c.add(json("PUT", "/api/estimates/{estimateId}/materials/tile-layouts/{itemId}",
+                B_TILE_LAYOUT, b.estimate, a.estimateItem));
+        c.add(del("/api/estimates/{estimateId}/materials/tile-layouts/{itemId}", b.estimate, a.estimateItem));
 
         // --- bundles ------------------------------------------------------------
         c.add(watching(json("PATCH", "/api/estimate-templates/{id}/items/{itemId}",

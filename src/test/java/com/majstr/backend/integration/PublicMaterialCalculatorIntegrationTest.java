@@ -556,7 +556,7 @@ class PublicMaterialCalculatorIntegrationTest extends IntegrationTestBase {
         return publicService.calculate(req).materials().stream()
                 .flatMap(m -> m.sources().stream())
                 .filter(s -> s.name() != null)
-                .map(s -> new MaterialCalculatorService.CalcLine(s.estimateItemId(), s.name(), s.unit(), null, s.quantity(), false))
+                .map(s -> new MaterialCalculatorService.CalcLine(s.estimateItemId(), s.name(), s.unit(), null, s.quantity(), MaterialCalculatorService.CourseLayout.STRAIGHT))
                 .collect(java.util.stream.Collectors.toMap(MaterialCalculatorService.CalcLine::name, l -> l,
                         (a, b) -> a, java.util.LinkedHashMap::new))
                 .values().stream().toList();

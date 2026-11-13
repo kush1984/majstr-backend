@@ -7,6 +7,8 @@ import com.majstr.backend.dto.MaterialParamsRequest;
 import com.majstr.backend.dto.PerPositionAnswers;
 import com.majstr.backend.dto.ShoppingListResponse;
 import com.majstr.backend.dto.StoredMaterialParams;
+import com.majstr.backend.dto.TileLayoutRequest;
+import com.majstr.backend.dto.TileLayoutView;
 import com.majstr.backend.security.UserPrincipal;
 import com.majstr.backend.service.MaterialCalculatorService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -14,7 +16,9 @@ import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.HttpStatus;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -22,9 +26,11 @@ import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.math.BigDecimal;
+import java.util.List;
 import java.util.UUID;
 
 /**
@@ -114,5 +120,31 @@ public class MaterialCalculatorController {
                                               @Valid @RequestBody MaterialApplyRequest req,
                                               @AuthenticationPrincipal UserPrincipal principal) {
         return calculatorService.toShoppingList(estimateId, principal.id(), req);
+    }
+
+    @GetMapping("/tile-layouts")
+    @Operation(summary = "The estimate's stored tile layouts (V203), paused ones flagged")
+    public List<TileLayoutView> tileLayouts(@PathVariable UUID estimateId,
+                                            @AuthenticationPrincipal UserPrincipal principal) {
+        return calculatorService.tileLayouts(estimateId, principal.id());
+    }
+
+    @PutMapping("/tile-layouts/{itemId}")
+    @Operation(summary = "Store a tiling line's layout (V203): the calculator then buys its laid part in "
+            + "whole tiles, the rest by area. Insert or replace — idempotent")
+    public TileLayoutView saveTileLayout(@PathVariable UUID estimateId,
+                                         @PathVariable UUID itemId,
+                                         @Valid @RequestBody TileLayoutRequest req,
+                                         @AuthenticationPrincipal UserPrincipal principal) {
+        return calculatorService.saveTileLayout(estimateId, itemId, principal.id(), req);
+    }
+
+    @DeleteMapping("/tile-layouts/{itemId}")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    @Operation(summary = "Forget a line's tile layout — the line is bought by area again. Idempotent")
+    public void deleteTileLayout(@PathVariable UUID estimateId,
+                                 @PathVariable UUID itemId,
+                                 @AuthenticationPrincipal UserPrincipal principal) {
+        calculatorService.deleteTileLayout(estimateId, itemId, principal.id());
     }
 }

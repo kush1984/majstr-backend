@@ -17,6 +17,7 @@ import com.majstr.backend.entity.Unit;
 import com.majstr.backend.exception.PublicCalcValidationException;
 import com.majstr.backend.service.MaterialCalculatorService.CalcLine;
 import com.majstr.backend.service.MaterialCalculatorService.Computed;
+import com.majstr.backend.service.MaterialCalculatorService.CourseLayout;
 import com.majstr.backend.service.MaterialCalculatorService.OwnNorm;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -169,9 +170,9 @@ public class PublicMaterialCalculatorService {
             throw new PublicCalcValidationException("error.public-calc.format-required");
         }
         List<CalcLine> lines = new ArrayList<>();
-        lines.add(line(TILE_PRIMER, Trade.TILING, in.area(), false));
+        lines.add(line(TILE_PRIMER, Trade.TILING, in.area(), CourseLayout.STRAIGHT));
         lines.add(line(TILE_POSITIONS.get(in.format()), Trade.TILING, in.area(),
-                in.layout() == TileLayout.DIAGONAL));
+                in.layout() == TileLayout.DIAGONAL ? CourseLayout.DIAGONAL : CourseLayout.STRAIGHT));
         return lines;
     }
 
@@ -193,7 +194,7 @@ public class PublicMaterialCalculatorService {
         // A «перегородки 2 сторони» position is priced and normed per m² of SHEATHING, both faces
         // already in it (V127 decision 1); the visitor types the partition's own area, one face.
         BigDecimal quantity = in.work() == DrywallWork.PARTITION ? in.area().multiply(PARTITION_FACES) : in.area();
-        return List.of(line(position, Trade.DRYWALL, quantity, false));
+        return List.of(line(position, Trade.DRYWALL, quantity, CourseLayout.STRAIGHT));
     }
 
     private Job plaster(Inputs in) {
@@ -211,7 +212,7 @@ public class PublicMaterialCalculatorService {
                 throw new PublicCalcValidationException("error.public-calc.machine-gypsum-only");
             }
             requireThickness(mm, 5, 40, "error.public-calc.thickness-range-cement-lime");
-            main = line(PLASTER_CEMENT_LIME, Trade.TILING, in.area(), false);
+            main = line(PLASTER_CEMENT_LIME, Trade.TILING, in.area(), CourseLayout.STRAIGHT);
             material = "PLASTER_CEMENT_LIME";
         } else {
             requireThickness(mm, 5, 60, "error.public-calc.thickness-range-gypsum");
@@ -221,10 +222,10 @@ public class PublicMaterialCalculatorService {
                     ? (to20 ? PLASTER_MACHINE_TO_20 : PLASTER_MACHINE_OVER_20)
                     : (to20 ? PLASTER_GYPSUM_TO_20
                         : mm.compareTo(FIFTY) <= 0 ? PLASTER_GYPSUM_TO_50 : PLASTER_GYPSUM_OVER_50);
-            main = line(position, Trade.PAINTER, in.area(), false);
+            main = line(position, Trade.PAINTER, in.area(), CourseLayout.STRAIGHT);
             material = method == PlasterMethod.MACHINE ? "PLASTER_GYPSUM_MACHINE" : "PLASTER_GYPSUM";
         }
-        List<CalcLine> lines = List.of(line(PLASTER_PRIMER, Trade.PAINTER, in.area(), false), main);
+        List<CalcLine> lines = List.of(line(PLASTER_PRIMER, Trade.PAINTER, in.area(), CourseLayout.STRAIGHT), main);
         Job job = Job.of(lines, null, material);
         layer(job, main, mm);
         return job;
@@ -245,23 +246,23 @@ public class PublicMaterialCalculatorService {
         if (cement) {
             requireThickness(mm, 10, 100, "error.public-calc.thickness-range-screed");
             main = line(in.area().compareTo(TWENTY) <= 0 ? SCREED_CEMENT_TO_20 : SCREED_CEMENT_OVER_20,
-                    Trade.FLOORING, in.area(), false);
+                    Trade.FLOORING, in.area(), CourseLayout.STRAIGHT);
         } else {
             requireThickness(mm, 2, 30, "error.public-calc.thickness-range-self-levelling");
-            main = line(SCREED_SELF_LEVELLING, Trade.FLOORING, in.area(), false);
+            main = line(SCREED_SELF_LEVELLING, Trade.FLOORING, in.area(), CourseLayout.STRAIGHT);
         }
         List<CalcLine> lines = new ArrayList<>();
-        lines.add(line(SCREED_PRIMER, Trade.FLOORING, in.area(), false));
+        lines.add(line(SCREED_PRIMER, Trade.FLOORING, in.area(), CourseLayout.STRAIGHT));
         if (film) {
-            lines.add(line(SCREED_FILM, Trade.FLOORING, in.area(), false));
+            lines.add(line(SCREED_FILM, Trade.FLOORING, in.area(), CourseLayout.STRAIGHT));
         }
         if (mesh) {
-            lines.add(line(SCREED_MESH, Trade.FLOORING, in.area(), false));
+            lines.add(line(SCREED_MESH, Trade.FLOORING, in.area(), CourseLayout.STRAIGHT));
         }
         lines.add(main);
         if (in.perimeter() != null) {
             // The tape's norm reads the perimeter, not this quantity; the line only names the position.
-            lines.add(line(SCREED_DAMPER_TAPE, Trade.FLOORING, in.area(), false));
+            lines.add(line(SCREED_DAMPER_TAPE, Trade.FLOORING, in.area(), CourseLayout.STRAIGHT));
         }
         Job job = Job.of(lines, in.perimeter(), cement ? "SCREED_CEMENT" : "SELF_LEVELLING");
         layer(job, main, mm);
@@ -284,9 +285,9 @@ public class PublicMaterialCalculatorService {
         }
     }
 
-    private static CalcLine line(String name, Trade trade, BigDecimal quantity, boolean diagonal) {
+    private static CalcLine line(String name, Trade trade, BigDecimal quantity, CourseLayout layout) {
         // A stable id per position, so a missing per-position answer would name the same line every time.
         UUID id = UUID.nameUUIDFromBytes(("public-calc:" + name).getBytes(StandardCharsets.UTF_8));
-        return new CalcLine(id, name, Unit.M2, trade, quantity, diagonal);
+        return new CalcLine(id, name, Unit.M2, trade, quantity, layout);
     }
 }

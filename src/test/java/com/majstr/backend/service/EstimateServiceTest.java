@@ -92,6 +92,7 @@ class EstimateServiceTest {
     @Mock private WorkActRepository workActRepository;
     @Mock private com.majstr.backend.repository.ShoppingListItemRepository shoppingListItemRepository;
     @Mock private MaterialParamService materialParamService;
+    @Mock private TileLayoutService tileLayoutService;
     @Mock private org.springframework.transaction.PlatformTransactionManager transactionManager;
     @org.mockito.Spy private HeavyWork heavyWork = new HeavyWork(1, 1, 0);
     @Mock private PdfRenderLog pdfRenderLog;

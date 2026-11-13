@@ -161,6 +161,19 @@ one-line summary — keep the item in the file as a record.
 - **Notes / options:** a box size is a property of the PRODUCT on one position, so it is a
   per-position answer (V142's `estimate_material_param`), not a habit. Herringbone needs its own
   checked figure before it gets one; do not reuse 1,05.
+- **2026-11-12:** herringbone half DONE — «ялинкою» scales the tile by `HERRINGBONE_LAYOUT` 1,09
+  (sources 15–20 % vs ~10 % straight), [iteration-tile-layout](iteration-tile-layout.md) stage 0. The box
+  count and the other layouts stay open; the tile layout (stages 2–4) answers boxes for a laid-out position.
+- **2026-11-12:** the tile layout shipped in code (stages 0–4, [iteration-tile-layout](iteration-tile-layout.md)):
+  a laid-out line is bought in whole tiles. Still open: a BOX count (m² per box is still never asked in the
+  app), diagonal / herringbone inside the layout, non-rectangular surfaces. ~~The layout on the public
+  /kalkulyator-plytky page~~ — done 2026-11-12.
+- **2026-11-13:** a line in the master's own words is no longer silent (V204 «рахувати як», the tile
+  format rule, spelling): see [iteration-tile-layout](iteration-tile-layout.md). Still open: masters'
+  answers stay private — nobody reads which wordings are common enough to become a library position; and
+  **«мої матеріали для моєї позиції»** — his own work («на 1 м² — фарба 0,25 л») has no norm of his own
+  (a master can only correct a shipped norm today), so its materials are added by hand. Build only if
+  masters ask (owner, 2026-11-13).
 
 ### Album takeoff has no entry point and no job runner to host it
 - **Status:** OPEN
@@ -1300,6 +1313,30 @@ one-line summary — keep the item in the file as a record.
 - **Since:** step 4
 - **Context:** `Plan.TEAM` exists in the enum but unlocks the same per-user features as PRO plus `AI_ASSISTANT`. No notion of a workspace shared between several users.
 - **Notes / options:** Workspaces would need new entities (`Workspace`, `WorkspaceMember`) and ownership semantics on existing tables would shift from `owner_id (User)` to `workspace_id`. Big change; do not start until customers ask.
+- **Demand so far (2026-11-12):** asked at the 2026-11-11 webinar (several masters on one object), by Ілля
+  Гончар, and by a webinar attendee who wanted the CLIENT to edit the estimate. Nobody has been
+  interviewed yet.
+- **The owner's vision — HIS OWN JUDGEMENT, NOT VALIDATED WITH ANY USER (2026-11-12).** Recorded as a
+  starting point for those conversations, not as a decision:
+  - A **contractor** owns the object (a flat, a house) and keeps everything client-facing: the
+    client, share links / portal, signatures, acts, the object's money.
+  - Several **crews** work on it (painters, plasterers, electricians …). The contractor gives each
+    crew ITS OWN estimate(s) as an entry point; a crew sees **only its own** and nothing else.
+  - Either the contractor hands a ready estimate and the crew works to it, or the crew builds its
+    own estimate(s) there.
+  - All communication with the client goes through the contractor. A crew has **restricted
+    rights** — e.g. cannot copy a share link or make acts; exactly what a crew sees is still open.
+- **What already fits it:** crew vs client prices on the line (`source_unit_price`, V85, «Твоя
+  націнка»; crew prices never reach the client) and positions filed by trade — so «the painters'
+  estimate» cuts along a seam that exists. This is narrower than generic shared workspaces:
+  per-estimate access for an invited crew account inside the contractor's object.
+- **Questions to ask users before any design:** (1) who pays for a crew's account — free on the
+  contractor's invite, or its own plan (sets TEAM's price); (2) does a crew need its OWN act toward
+  the contractor («I did this much, pay me»), a different document from the contractor's act to the
+  client; (3) what a crew records — done work only, or also materials, receipts, photos; (4) a crew
+  edits after the client signed the contractor's version — who approves; (5) does one crew work for
+  several contractors (one crew account seeing objects of different owners — shapes the whole
+  access model). (1), (2) and (5) decide how big the step is.
 
 ### Material metrics per object (concrete / brick / rebar totals)
 - **Status:** OPEN

@@ -16,6 +16,7 @@ import com.majstr.backend.entity.Material;
 import com.majstr.backend.entity.MaterialNorm;
 import com.majstr.backend.entity.MaterialPrefKey;
 import com.majstr.backend.entity.NormBasis;
+import com.majstr.backend.entity.PercentBaseKind;
 import com.majstr.backend.entity.Project;
 import com.majstr.backend.entity.Trade;
 import com.majstr.backend.entity.Unit;
@@ -75,6 +76,8 @@ class MaterialCalculatorServiceTest {
     @Mock CatalogItemRepository catalogItemRepository;
     @Mock ShoppingListService shoppingListService;
     @Mock MaterialParamService paramService;
+    @Mock MaterialAliasService aliasService;
+    @Mock TileLayoutService tileLayoutService;
 
     @InjectMocks MaterialCalculatorService service;
 
@@ -496,6 +499,67 @@ class MaterialCalculatorServiceTest {
         assertThat(line.baseQuantity()).isEqualByComparingTo("10.5");
         assertThat(line.quantity()).isEqualByComparingTo("11");
         assertThat(line.packages()).isNull();
+    }
+
+    // --- the layout surcharge lines scale the tile of the position they ride on -----------------
+
+    @Test
+    void aDiagonalLineScalesTheTileOfItsPositionByTheDiagonalFigure() {
+        assertThat(tileFor(PercentBaseKind.POSITION, "Укладання плитки по діагоналі (плюс % до м.кв.)"))
+                .isEqualByComparingTo("21");
+    }
+
+    @Test
+    void aHerringboneLineScalesTheTileOfItsPositionByTheHerringboneFigure() {
+        assertThat(tileFor(PercentBaseKind.POSITION, "Укладання плитки ялинкою (плюс % до м.кв.)"))
+                .isEqualByComparingTo("21.8");
+    }
+
+    @Test
+    void aTotalBasedHerringboneLineMarksEveryPosition() {
+        assertThat(tileFor(PercentBaseKind.TOTAL, "Укладання плитки ялинкою (плюс % до м.кв.)"))
+                .isEqualByComparingTo("21.8");
+    }
+
+    @Test
+    void aPositionMarkedBothDiagonalAndHerringboneTakesTheHerringboneFigure() {
+        Material tile = material("CERAMIC_TILE_300X600", "Плитка", Unit.M2, null, null);
+        EstimateItem laying = item("Укладання плитки 300х600", Unit.M2, "20", Trade.TILING);
+        given(List.of(laying,
+                        surcharge("Укладання плитки по діагоналі (плюс % до м.кв.)", PercentBaseKind.POSITION, laying),
+                        surcharge("Укладання плитки ялинкою (плюс % до м.кв.)", PercentBaseKind.POSITION, laying)),
+                List.of(norm(Trade.TILING, "укладання плитки 300х600", Unit.M2, tile, "1.00")));
+
+        assertThat(only(calculate(NO_WASTE, null)).baseQuantity()).isEqualByComparingTo("21.8");
+    }
+
+    @Test
+    void aLayoutLineDoesNotScaleTheAdhesiveOfThatPosition() {
+        Material adhesive = material("TILE_ADHESIVE", "Клей для плитки", Unit.KG, null, null);
+        EstimateItem laying = item("Укладання плитки 300х600", Unit.M2, "20", Trade.TILING);
+        given(List.of(laying,
+                        surcharge("Укладання плитки ялинкою (плюс % до м.кв.)", PercentBaseKind.POSITION, laying)),
+                List.of(norm(Trade.TILING, "укладання плитки 300х600", Unit.M2, adhesive, "5")));
+
+        assertThat(only(calculate(NO_WASTE, null)).baseQuantity()).isEqualByComparingTo("100");
+    }
+
+    /** The tile of one 20 m² laying position with one surcharge line of {@code kind}, no allowance. */
+    private BigDecimal tileFor(PercentBaseKind kind, String surchargeName) {
+        Material tile = material("CERAMIC_TILE_300X600", "Плитка", Unit.M2, null, null);
+        EstimateItem laying = item("Укладання плитки 300х600", Unit.M2, "20", Trade.TILING);
+        given(List.of(laying, surcharge(surchargeName, kind, laying)),
+                List.of(norm(Trade.TILING, "укладання плитки 300х600", Unit.M2, tile, "1.00")));
+        return only(calculate(NO_WASTE, null)).baseQuantity();
+    }
+
+    private EstimateItem surcharge(String name, PercentBaseKind kind, EstimateItem base) {
+        EstimateItem line = item(name, Unit.PERCENT, "15", Trade.TILING);
+        line.setPercentBaseKind(kind);
+        if (kind == PercentBaseKind.POSITION) {
+            line.setPercentBaseItemId(base.getId());
+        }
+        return line;
     }
 
     /** Exactly one package must not become two — CEILING has to see an exact division. */

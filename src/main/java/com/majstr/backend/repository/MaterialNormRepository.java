@@ -74,4 +74,31 @@ public interface MaterialNormRepository extends JpaRepository<MaterialNorm, UUID
      * reads worse than the two-line filter it replaces.
      */
     List<MaterialNorm> findByOwnerIdAndNameKeyAndUnit(UUID ownerId, String nameKey, Unit unit);
+
+    /**
+     * Every library position that buys something, with the name the catalog SHOWS it under — the list a
+     * master picks «рахувати як» from (V204). One row per (key, unit); a key the catalog no longer ships
+     * keeps its key as the name.
+     */
+    @Query(value = """
+            SELECT n.name_key AS nameKey, n.unit AS unit, min(n.trade) AS trade,
+                   coalesce((SELECT min(t.name) FROM catalog_templates t
+                              WHERE lower(btrim(regexp_replace(t.name, '\\s+', ' ', 'g'))) = n.name_key
+                                AND t.unit = n.unit), n.name_key) AS name
+            FROM material_norm n
+            WHERE n.owner_id IS NULL AND n.material_id IS NOT NULL
+            GROUP BY n.name_key, n.unit
+            """, nativeQuery = true)
+    List<LibraryPosition> findLibraryPositions();
+
+    /** A library position as {@link #findLibraryPositions} reads it. */
+    interface LibraryPosition {
+        String getNameKey();
+
+        String getUnit();
+
+        String getTrade();
+
+        String getName();
+    }
 }
