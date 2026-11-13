@@ -28,8 +28,8 @@ class PortalMonitoringTest {
     void theTokenIsScrubbedAndNothingTypedIsRead() throws IOException {
         String reporter = reporter();
         assertThat(reporter)
-                .contains("(?:p|e|a|t|m)=")
-                .contains("portal|estimates|economy|act|messages?")
+                .contains("(?:p|e|a|t|m|l)=")
+                .contains("portal|estimates|economy|act|messages?|price-list")
                 .contains("request: { url: scrub(")
                 .as("Sentry infers the sender's IP for a 'javascript' event")
                 .contains("platform: 'other'").contains("user: { ip_address: null }")

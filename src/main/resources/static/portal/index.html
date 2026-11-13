@@ -390,6 +390,17 @@
             gap: 12px;
             margin-top: 4px;
         }
+        /* Price list (?l=, V205): name left, price right, the price never wraps. */
+        .price-list h2 { margin: 0 0 8px; }
+        .pl-category { font-size: 0.85rem; color: var(--muted); margin: 14px 0 4px; font-weight: 700; }
+        .pl-items { list-style: none; margin: 0; padding: 0; }
+        .pl-items li {
+            display: flex; justify-content: space-between; align-items: baseline; gap: 12px;
+            padding: 9px 0; border-top: 1px solid var(--line);
+        }
+        .pl-name { display: flex; flex-direction: column; gap: 2px; min-width: 0; overflow-wrap: anywhere; }
+        .pl-desc { font-size: 0.8rem; color: var(--muted); }
+        .pl-price { font-weight: 700; white-space: nowrap; }
         /*
          * Touch reliability. The client opens this page on a phone, and «Підписати» is the one
          * action it exists for — a tap that does not register is the whole feature failing.
@@ -704,8 +715,8 @@
         let config;          // undefined = not asked yet, null = reporting is off
         let sent = 0;
         const scrub = (s) => String(s == null ? '' : s)
-            .replace(/([?&](?:p|e|a|t|m)=)[^&#\s"']*/g, '$1[token]')
-            .replace(/(\/api\/public\/(?:portal|estimates|economy|act|messages?)\/)[^/?#\s"']+/g, '$1[token]');
+            .replace(/([?&](?:p|e|a|t|m|l)=)[^&#\s"']*/g, '$1[token]')
+            .replace(/(\/api\/public\/(?:portal|estimates|economy|act|messages?|price-list)\/)[^/?#\s"']+/g, '$1[token]');
 
         async function endpoint() {
             if (config === undefined) {
@@ -774,18 +785,27 @@
     const previewToken = params.get('v');
     // ?vp= is the same look at the object's SIGNATURE portal, with the estimates ticked in the sheet.
     const portalPreviewToken = params.get('vp');
-    const isPreview = (Boolean(previewToken) || Boolean(portalPreviewToken))
+    // ?l= is the master's price list (V205): his ticked works and their prices, read-only.
+    const priceListToken = params.get('l');
+    // ?vl= is the master looking at his price list before it leaves (a ten-minute pass, no link minted).
+    const priceListPreviewToken = params.get('vl');
+    const isPreview = (Boolean(previewToken) || Boolean(portalPreviewToken) || Boolean(priceListPreviewToken))
         && !portalToken && !economyToken && !actToken && !legacyToken;
     const root = document.getElementById('root');
     // ECONOMY acts are already SIGNED and immutable — no sign button/dialog for this mode.
     const isEconomy = Boolean(economyToken);
 
-    if (!portalToken && !economyToken && !actToken && !legacyToken && !previewToken && !portalPreviewToken) {
+    if (!portalToken && !economyToken && !actToken && !legacyToken && !previewToken && !portalPreviewToken
+        && !priceListToken && !priceListPreviewToken) {
         root.innerHTML = '<div class="error">Невірне посилання</div>';
         return;
     }
 
-    const apiBase = actToken
+    const apiBase = priceListToken
+        ? '/api/public/price-list/' + encodeURIComponent(priceListToken)
+        : priceListPreviewToken
+        ? '/api/public/price-list-preview/' + encodeURIComponent(priceListPreviewToken)
+        : actToken
         ? '/api/public/act/' + encodeURIComponent(actToken)
         : economyToken
         ? '/api/public/economy/' + encodeURIComponent(economyToken)
@@ -1506,6 +1526,57 @@
         return p.length === 3 ? p[2] + '.' + p[1] + '.' + p[0] : iso;
     }
 
+    // The master's price list (?l=, V205): a header, then trade → category → works with their price.
+    // Nothing to sign or ask here — the client calls the master, and the estimate comes after measuring.
+    function renderPriceList(data) {
+        document.title = 'Ціни на роботи';
+        const phone = data.contractor.phone;
+        const trades = data.trades.map((trade) => `
+            <section class="card price-list">
+                <h2>${escapeHtml(trade.name)}</h2>
+                ${trade.sections.map((section) => `
+                    ${section.category ? `<h3 class="pl-category">${escapeHtml(section.category)}</h3>` : ''}
+                    <ul class="pl-items">
+                        ${section.items.map((item) => `
+                            <li>
+                                <div class="pl-name">
+                                    <span>${escapeHtml(item.name)}</span>
+                                    ${item.description ? `<span class="pl-desc">${escapeHtml(item.description)}</span>` : ''}
+                                </div>
+                                <span class="pl-price">${escapeHtml(priceText(item.price))}&nbsp;₴/${escapeHtml(item.unit)}</span>
+                            </li>`).join('')}
+                    </ul>`).join('')}
+            </section>`).join('');
+        root.innerHTML = `
+            ${isPreview ? '<p class="preview-banner" role="status">Так прайс побачить клієнт. Це попередній перегляд — посилання ще не створено.</p>' : ''}
+            <header class="card contractor">
+                ${data.contractor.logoUrl ? `<img alt="logo" src="${escapeHtml(data.contractor.logoUrl)}">` : ''}
+                <div>
+                    <p class="name">${escapeHtml(data.contractor.companyName)}</p>
+                    ${phone ? `<p class="phone">${escapeHtml(phone)}</p>` : ''}
+                </div>
+            </header>
+            <section class="card">
+                <h2 style="margin:0">Ціни на роботи</h2>
+                <p style="margin:4px 0 0;color:var(--muted);">станом на ${escapeHtml(dateFormat.format(new Date(data.date)))}</p>
+            </section>
+            ${data.trades.length ? trades : '<section class="card"><p>Майстер ще не додав робіт до прайсу.</p></section>'}
+            <section class="card">
+                <p style="margin:0 0 12px;color:var(--muted);">Остаточна вартість — у кошторисі після замірів.</p>
+                <div class="actions">
+                    ${phone ? `<a class="btn primary" href="tel:${escapeHtml(phone.replace(/[^+\d]/g, ''))}">Зателефонувати</a>` : ''}
+                    ${isPreview ? '' : `<a class="btn" href="${apiBase}/pdf">Завантажити PDF</a>`}
+                </div>
+            </section>
+        `;
+    }
+
+    // A whole price prints without kopecks; one that has them keeps them.
+    function priceText(value) {
+        const n = Number(value);
+        return Number.isInteger(n) ? percentFormat.format(n) : moneyFormat.format(n);
+    }
+
     function renderAct(a) {
         closeInfoPopover();
         const signed = a.status === 'SIGNED';
@@ -1836,7 +1907,9 @@
             const data = await resp.json();
             // The act view (?a=) is a different document shape entirely — its own render branch,
             // BEFORE adaptLegacy, which expects the estimate shape and would render garbage.
-            if (actToken) {
+            if (priceListToken || priceListPreviewToken) {
+                renderPriceList(data);
+            } else if (actToken) {
                 renderAct(data);
             } else {
                 render((portalToken || economyToken || portalPreviewToken) ? data : adaptLegacy(data));

@@ -70,6 +70,17 @@ class PortalPreviewTokensTest {
                 .contains(new PortalPreviewTokens.PortalPass(project, List.of()));
     }
 
+    @Test
+    void aPriceListPassNamesTheMasterForTenMinutes_andIsNoOtherKind() {
+        UUID owner = UUID.randomUUID();
+        String pass = at(ISSUED).issuePriceList(owner);
+
+        assertThat(at(ISSUED.plusSeconds(599)).priceListOf(pass)).contains(owner);
+        assertThat(at(ISSUED.plusSeconds(600)).priceListOf(pass)).isEmpty();
+        assertThat(at(ISSUED).estimateOf(pass)).isEmpty();
+        assertThat(at(ISSUED).priceListOf(at(ISSUED).issue(owner))).isEmpty();
+    }
+
     private static PortalPreviewTokens at(Instant now) {
         return new PortalPreviewTokens(JWT, Clock.fixed(now, ZoneOffset.UTC));
     }

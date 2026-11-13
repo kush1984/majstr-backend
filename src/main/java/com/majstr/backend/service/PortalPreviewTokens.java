@@ -46,6 +46,7 @@ public class PortalPreviewTokens {
     private static final String LABEL = "majstr/portal-preview/v1";
     private static final byte ESTIMATE = 'E';
     private static final byte PORTAL = 'P';
+    private static final byte PRICE_LIST = 'L';
     private static final int UUID_BYTES = 16;
     private static final int HEAD_BYTES = 1 + Long.BYTES;
     private static final Base64.Encoder ENCODER = Base64.getUrlEncoder().withoutPadding();
@@ -96,6 +97,16 @@ public class PortalPreviewTokens {
     public Optional<PortalPass> portalOf(String token) {
         return open(token, PORTAL).filter(ids -> !ids.isEmpty())
                 .map(ids -> new PortalPass(ids.get(0), List.copyOf(ids.subList(1, ids.size()))));
+    }
+
+    /** The master's price list as he ticked it (V205): the pass names him, the page reads his saved ticks. */
+    public String issuePriceList(UUID ownerId) {
+        return seal(PRICE_LIST, List.of(ownerId));
+    }
+
+    /** The master a live price-list pass names; empty for anything else. */
+    public Optional<UUID> priceListOf(String token) {
+        return open(token, PRICE_LIST).filter(ids -> ids.size() == 1).map(ids -> ids.get(0));
     }
 
     private String seal(byte kind, List<UUID> ids) {

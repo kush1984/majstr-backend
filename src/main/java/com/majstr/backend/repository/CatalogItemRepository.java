@@ -133,4 +133,31 @@ public interface CatalogItemRepository extends JpaRepository<CatalogItem, UUID> 
                                     @Param("pattern") String pattern,
                                     @Param("prefix") String prefix,
                                     Pageable pageable);
+
+    /**
+     * The master's positions still at the price our library ships them at — copied from
+     * {@code catalog_templates} and never repriced. «Поділитися прайсом» leaves them unticked: a price the
+     * master never looked at should not reach a client by default (V205).
+     */
+    @Query(value = """
+            SELECT ci.id FROM catalog_items ci
+            WHERE ci.owner_id = :ownerId AND ci.source = 'LIBRARY'
+              AND EXISTS (SELECT 1 FROM catalog_templates t
+                          WHERE lower(trim(t.name)) = lower(trim(ci.name))
+                            AND t.type = ci.type AND t.unit = ci.unit
+                            AND t.suggested_price = ci.default_price)
+            """, nativeQuery = true)
+    List<UUID> findLibraryPricedIds(@Param("ownerId") UUID ownerId);
+
+    @Query("SELECT c.id FROM CatalogItem c WHERE c.owner.id = :ownerId AND c.inPriceList = true")
+    List<UUID> findPriceListIds(@Param("ownerId") UUID ownerId);
+
+    /** Replaces the master's price-list ticks. Only his own priced WORK rows can be ticked; any other id
+     *  in the request is silently ignored, so a foreign id changes nothing (V205). */
+    @Modifying(flushAutomatically = true, clearAutomatically = true)
+    @Query(value = """
+            UPDATE catalog_items SET in_price_list = (id IN (:ids) AND type = 'WORK' AND default_price > 0)
+            WHERE owner_id = :ownerId
+            """, nativeQuery = true)
+    int setPriceList(@Param("ownerId") UUID ownerId, @Param("ids") Collection<UUID> ids);
 }

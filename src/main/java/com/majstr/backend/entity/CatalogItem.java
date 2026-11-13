@@ -112,6 +112,10 @@ public class CatalogItem {
     @Column(name = "sort_order", nullable = false)
     private int sortOrder;
 
+    /** Ticked for the price list the master shares with clients (V205). */
+    @Column(name = "in_price_list", nullable = false)
+    private boolean inPriceList;
+
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
 
