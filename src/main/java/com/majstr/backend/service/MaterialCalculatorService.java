@@ -567,6 +567,7 @@ public class MaterialCalculatorService {
             throw new TileLayoutValidationException("error.tile-layout.range");
         }
         EstimateTileLayout row = tileLayoutService.save(estimateId, itemId, req);
+        refreshShoppingList(estimateId, ownerId);
         return view(row, paused(item, row));
     }
 
@@ -599,6 +600,25 @@ public class MaterialCalculatorService {
         estimateService.loadOwned(estimateId, ownerId);
         itemInEstimate(estimateId, itemId);
         tileLayoutService.delete(itemId);
+        refreshShoppingList(estimateId, ownerId);
+    }
+
+    /**
+     * A layout changes what is bought, so an estimate whose materials are ALREADY on the object's list sends
+     * them again, as «У список покупок» would (owner, 2026-11-13: «нехай сам підтягується»). With his stored
+     * answers and his own allowance; a quantity he typed on the list stays his (`applyCalculated`). An
+     * estimate never sent to the list stays off it — putting it there is his choice.
+     */
+    private void refreshShoppingList(UUID estimateId, UUID ownerId) {
+        UUID projectId = estimateService.loadOwned(estimateId, ownerId).getProject().getId();
+        if (!shoppingListService.hasCalculatedRows(projectId, estimateId)) {
+            return;
+        }
+        List<MaterialLineRequest> lines = calculate(estimateId, ownerId, null, null, PerPositionAnswers.NONE)
+                .materials().stream()
+                .map(m -> new MaterialLineRequest(m.materialId(), m.quantity()))
+                .toList();
+        toShoppingList(estimateId, ownerId, new MaterialApplyRequest(lines));
     }
 
     /** A line of THIS estimate, or the neutral 404 — never another estimate's line under this one. */

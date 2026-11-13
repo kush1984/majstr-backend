@@ -228,6 +228,16 @@ public class ShoppingListService {
         return render(list, project);
     }
 
+    /** Whether this estimate's calculated materials are on the object's list — its own rows, open or not. */
+    // No readOnly: it is asked from inside a layout save, which goes on to write the list.
+    @Transactional
+    public boolean hasCalculatedRows(UUID projectId, UUID estimateId) {
+        return listRepository.findByProjectId(projectId)
+                .map(list -> !itemRepository.findByShoppingListIdAndSourceAndSourceEstimateId(
+                        list.getId(), ShoppingListItemSource.CALCULATOR, estimateId).isEmpty())
+                .orElse(false);
+    }
+
     /**
      * Put the result of a calculation of ONE estimate onto the object's list, obeying both rules in
      * the class javadoc. Returns the whole list, because a recalculation can change several rows at

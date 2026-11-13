@@ -246,6 +246,24 @@ PWA: `PositionMatchCard`. Tests: `MaterialAliasIntegrationTest`, `TileLayoutInte
 - The object's rectangular measured surfaces are offered with one tap even when the line names none.
 - No red «Розміри поверхні…» while the sizes are still empty.
 
+## The owner's test round (2026-11-13/14)
+
+- **The materials screen says a laid tile in TILES**: «<line>: розкладка — 772 шт, уже з запасом на бій»,
+  «17,5 м² за площею», «17,5 м² + запас 10 % = 1925 шт», «Разом: 2697 шт (≈ 26,97 м²)» — never the blended
+  «запас 6,94 %» or a coefficient to edit (`TileMath`). The by-area part is the total less the laid tiles, so
+  the three always add up.
+- **Less laid than the line**: the layout screen says what the layout counted and ASKS about the rest —
+  «+ Стіна / + Підлога», or «Решту N м² — за площею» (saves, as «Готово»).
+- **«Зберегти в заміри» keeps each surface's own name** («Фартух»), one element per surface.
+- **The shopping list follows a layout**: saving or removing a layout re-sends the estimate's materials when
+  they are ALREADY on the object's list (`refreshShoppingList`, his stored answers and allowance; a quantity
+  he typed on the list stays his). An estimate never sent stays off it.
+- **/kalkulyator-plytky is one form with a switch** — «За площею + запас» or «По розкладці на стінах»
+  (`#layout-section` inside the form, `layoutBridge.ts` between the two scripts). «Порахувати» answers both
+  in the same «Що купити»: by layout the tile is the rows' pieces (laid m², the range, boxes) and the
+  adhesive, grout and primer are the server's on the laid m². The separate «Купити: …» total is gone; the
+  layout follows the form's format and joint; mosaic and «кабанчик» are refused by layout.
+
 ## Later, noted by the owner
 
 - ~~The public SEO page /kalkulyator-plytky~~ — done above, ships with the layout.

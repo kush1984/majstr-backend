@@ -157,6 +157,30 @@ class TileLayoutIntegrationTest extends IntegrationTestBase {
     }
 
     @Test
+    void anEstimateAlreadyOnTheListIsSentAgainWhenItsLayoutChanges() {
+        UUID item = addWork("Укладання плитки 300х600", Unit.M2, "25");
+        CalculatedMaterialLine byArea = tileLine(calc());
+        calculatorService.toShoppingList(estimateId, ownerId,
+                new MaterialApplyRequest(List.of(new MaterialLineRequest(byArea.materialId(), byArea.quantity()))));
+
+        calculatorService.saveTileLayout(estimateId, item, ownerId, layout(600, 300, "7.5", 40, 42, 3));
+        BigDecimal afterSave = tileOnList();
+        assertThat(afterSave).as("the list follows the layout by itself").isNotEqualByComparingTo(byArea.quantity());
+
+        calculatorService.deleteTileLayout(estimateId, item, ownerId);
+        assertThat(tileOnList()).as("and follows its removal").isNotEqualByComparingTo(afterSave);
+    }
+
+    @Test
+    void anEstimateNeverSentToTheListStaysOffIt() {
+        UUID item = addWork("Укладання плитки 300х600", Unit.M2, "25");
+        calculatorService.saveTileLayout(estimateId, item, ownerId, layout(600, 300, "7.5", 40, 42, 3));
+        assertThat(jdbc.queryForObject(
+                "SELECT count(*) FROM shopping_list_item WHERE source_estimate_id = ?", Integer.class, estimateId))
+                .isZero();
+    }
+
+    @Test
     void savingAgainReplacesTheOneRow() {
         UUID item = addWork(TILING_300X600, Unit.M2, "20");
         calculatorService.saveTileLayout(estimateId, item, ownerId, layout(600, 300, "9", 50, 60, 3));
@@ -292,6 +316,12 @@ class TileLayoutIntegrationTest extends IntegrationTestBase {
         return r.materials().stream().filter(m -> m.name().startsWith(prefix)).findFirst()
                 .orElseThrow(() -> new AssertionError("no material " + prefix + " in " + r.materials().stream()
                         .map(CalculatedMaterialLine::name).toList()));
+    }
+
+    private BigDecimal tileOnList() {
+        return jdbc.queryForObject(
+                "SELECT quantity FROM shopping_list_item WHERE source_estimate_id = ? AND name LIKE 'Плитка 300×600%'"
+                        + " AND cleared_at IS NULL", BigDecimal.class, estimateId);
     }
 
     private int layoutCount(UUID item) {
