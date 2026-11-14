@@ -17,6 +17,9 @@ works pre-ticked by a rule the master could not see, and a bar sized for the del
    sees, prices come from the catalog and stay live.
 2. The same tree as the catalog (trade → category → work) with checkboxes, works only.
    - **Nothing is ticked for him.** The first visit is empty; after that, what he ticked last time.
+     1.80.1 / V208: the ticks 1.79.0 pre-ticked AND saved (its preview and share stored them) were all
+     cleared, and the screen ticks only from the server's answer after it opened — never from the offline
+     snapshot, which could still hold 1.79.0's suggestion.
    - A work at **0 ₴** reads «без ціни — не піде в прайс» and cannot be ticked; a whole-category or
      whole-trade tick passes over it (`CatalogSelection.noteOf`, `tickableIds`). A tick kept on a work
      since priced at 0 or no longer on screen is neither counted nor sent.

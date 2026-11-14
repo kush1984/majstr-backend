@@ -1153,6 +1153,9 @@ public class EstimateService {
                 item.setNote(note);
                 item.setNoteOwn(true);
             }
+            // His comment replaces the library's hint the line came with: to him they are one comment,
+            // and clearing it must not bring the hint back (owner's ruling 2026-11-14).
+            item.setDescription(null);
         }
         if (req.noteVisible() != null) {
             item.setNoteVisible(req.noteVisible());

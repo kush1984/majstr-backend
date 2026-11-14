@@ -61,6 +61,26 @@
   підписав». The catalog row keeps ONE quiet line under the name: the master's comment when there is one,
   else the library's explanation (which keeps its (i)). A saved comment refetches the cached estimates.
 
+## One comment, behind the (i) (owner's ruling 2026-11-14, third round)
+
+«Якщо є коментар — показувати його в (i), так як зараз підказки показуються, і ті наші підказки давай
+також трактувати як коментарі, приєднані позиції можемо все змінювати чи видаляти.»
+
+- **The library hint (`description`) and the master's comment (`note`) are one comment to him.** Shown as
+  `note ?? description` (`commentOf`), behind an (i) beside the estimate row and the catalog row — no line
+  under the name on an estimate (the catalog keeps its one clamped line). A hidden note says «🔒 Клієнт цей
+  коментар не бачить» inside the (i).
+- **Editable and clearable alike.** `ItemForm` and `CatalogItemForm` prefill «Коментар» with that comment
+  and send `note` ONLY when it changed — so an untouched hint stays a hint the client never reads (no
+  visibility box, a one-line «Підказка з каталогу…» under the field). Any sent `note` (line or catalog)
+  also sets `description = NULL`: his comment replaces the hint, and clearing it does not bring the hint
+  back. The read-only «Що це означає» panel in the line form is gone.
+- The price list shows `note ?? description` under a work.
+- Client page: the comment sits in its own quiet panel inside the name cell (smaller, warm paper, a thin
+  amber edge).
+- **Session highlight restored** (it had been a dot since «calm cells», 2026-10-27): the line just changed
+  is painted `bg-success-soft`, the ones changed earlier this session `bg-brand-soft/30`; no dots.
+
 ## Not changed / open
 
 - Work acts do not carry the comment (same gap as the line `description`, already an open question).

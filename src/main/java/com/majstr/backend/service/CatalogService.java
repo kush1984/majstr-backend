@@ -310,6 +310,9 @@ public class CatalogService {
         if (requested == null) {
             return;
         }
+        // The hint the library shipped is his comment to edit or clear: whatever he sent replaces it here.
+        // Lines already in estimates keep theirs unless the comment below reaches them.
+        item.setDescription(null);
         String previous = item.getNote();
         String next = EstimateLineNote.clean(requested);
         if (Objects.equals(previous, next)) {

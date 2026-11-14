@@ -390,8 +390,21 @@
             gap: 12px;
             margin-top: 4px;
         }
-        /* The master's own comment under a line's name (V206). */
-        .item-note { display: block; font-size: 0.8rem; color: var(--muted); margin-top: 2px; white-space: pre-line; }
+        /* The master's own comment, inside the line's name cell (V206): a quiet panel of its own — smaller,
+           warm paper, a thin amber edge — so it reads as a note on the position, not as part of its name. */
+        .item-note {
+            display: block;
+            margin-top: 4px;
+            padding: 4px 8px;
+            font-size: 0.78rem;
+            line-height: 1.4;
+            color: var(--muted);
+            background: rgba(237, 226, 209, 0.55);
+            border-left: 2px solid rgba(245, 130, 31, 0.45);
+            border-radius: 0 6px 6px 0;
+            white-space: pre-line;
+            overflow-wrap: anywhere;
+        }
         /* Price list (?l=, V205): name left, price right, the price never wraps. */
         .price-list h2 { margin: 0 0 8px; }
         .pl-category { font-size: 0.85rem; color: var(--muted); margin: 14px 0 4px; font-weight: 700; }

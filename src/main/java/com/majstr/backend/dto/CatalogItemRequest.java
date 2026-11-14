@@ -28,7 +28,7 @@ public record CatalogItemRequest(
         /**
          * The master's own comment (V207). <b>Three-valued</b>, as on an estimate line: absent (null)
          * leaves it alone — an inline price edit or an older build's queue must not wipe it; blank
-         * clears it; text sets it.
+         * clears it; text sets it. Either way the position's library hint ({@code description}) goes.
          */
         @Size(max = 500) String note
 ) {

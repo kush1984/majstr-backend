@@ -64,7 +64,8 @@ public record EstimateItemRequest(
         /**
          * The master's own comment on the line (V206). <b>Three-valued</b>: absent (null) leaves the
          * stored one alone — an inline price edit, or an older build replaying its queue, must not wipe
-         * it; blank clears it; text sets it.
+         * it; blank clears it; text sets it. Either way the line's library hint ({@code description})
+         * goes: to the master the two are one comment.
          */
         @Size(max = 500) String note,
         /** Whether the client sees {@link #note}; null leaves it as is (a new line: visible). */

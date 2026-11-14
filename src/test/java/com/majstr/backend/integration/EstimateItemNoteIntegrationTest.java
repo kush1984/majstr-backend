@@ -158,6 +158,33 @@ class EstimateItemNoteIntegrationTest extends IntegrationTestBase {
     }
 
     @Test
+    void theLibraryHintIsOneCommentToHim_editedOrClearedOnTheLine_andInTheCatalog() {
+        Fixture f = sentEstimate();
+        jdbc.update("UPDATE estimate_items SET description = 'Рівень Q3' WHERE id = ?", f.itemId);
+
+        update(f, "Рівень Q3, без шліфування", null);
+        EstimateItem line = itemRepository.findById(f.itemId).orElseThrow();
+        assertThat(line.getNote()).isEqualTo("Рівень Q3, без шліфування");
+        assertThat(line.getDescription()).as("his comment replaces the hint").isNull();
+
+        update(f, "", null);
+        line = itemRepository.findById(f.itemId).orElseThrow();
+        assertThat(line.getNote()).isNull();
+        assertThat(line.getDescription()).as("cleared, the hint does not come back").isNull();
+
+        CatalogItemResponse position = catalogService.create(catalogRequest("Шліфування стиків", null), f.ownerId);
+        jdbc.update("UPDATE catalog_items SET description = 'Рівень Q4' WHERE id = ?", position.id());
+        catalogService.update(position.id(), new CatalogItemRequest("Шліфування стиків", null, null, null,
+                ItemType.WORK, Unit.M2, new BigDecimal("210.00")), f.ownerId);
+        assertThat(jdbc.queryForObject("SELECT description FROM catalog_items WHERE id = ?", String.class,
+                position.id())).as("an edit that does not touch the comment keeps the hint").isEqualTo("Рівень Q4");
+
+        CatalogItemResponse cleared = catalogService.update(position.id(), catalogRequest("Шліфування стиків", ""), f.ownerId);
+        assertThat(cleared.note()).isNull();
+        assertThat(cleared.description()).isNull();
+    }
+
+    @Test
     void aLineWhoseCommentNoLongerMatchesTheCatalogIsLeftAlone() {
         Fixture f = sentEstimate();
         CatalogItemResponse position = catalogService.create(catalogRequest("Фарбування стін", "у 2 шари"), f.ownerId);

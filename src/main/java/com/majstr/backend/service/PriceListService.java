@@ -199,7 +199,7 @@ public class PriceListService {
             order.sort(Comparator.comparingInt(c -> categoryOrder.get(tradeKey + "|" + c)));
             List<PublicPriceListView.Section> sections = order.stream()
                     .map(c -> new PublicPriceListView.Section(c, categories.get(c).stream()
-                            .map(i -> new PublicPriceListView.Item(i.name(), blankToNull(i.description()),
+                            .map(i -> new PublicPriceListView.Item(i.name(), blankToNull(i.note() != null ? i.note() : i.description()),
                                     UnitLabel.ua(i.unit()), i.defaultPrice()))
                             .toList()))
                     .toList();
