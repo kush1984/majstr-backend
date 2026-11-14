@@ -76,8 +76,10 @@
   also sets `description = NULL`: his comment replaces the hint, and clearing it does not bring the hint
   back. The read-only «Що це означає» panel in the line form is gone.
 - The price list shows `note ?? description` under a work.
-- Client page: the comment sits in its own quiet panel inside the name cell (smaller, warm paper, a thin
-  amber edge).
+- Client page: an (i) at the right end of the row opens the comment in the page's own info popover
+  (the panel under the name «дуже жахливо виглядає»). The narrow last column exists only when a line in
+  that table has a comment (`table.with-notes`); on a phone the price and sum columns give it their spare
+  room so the name keeps its width (`PortalLineNoteTest`).
 - **Session highlight restored** (it had been a dot since «calm cells», 2026-10-27): the line just changed
   is painted `bg-success-soft`, the ones changed earlier this session `bg-brand-soft/30`; no dots.
 

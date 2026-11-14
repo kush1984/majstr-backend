@@ -368,6 +368,7 @@
             background: color-mix(in srgb, var(--amber) 18%, var(--white));
             color: var(--amber-deep); font-size: 0.7rem; font-weight: 700; line-height: 1;
             border: none; padding: 0; cursor: pointer;
+            -webkit-tap-highlight-color: transparent;
         }
         /* An 18 px dot sits beside a heading, so it cannot simply be made 44 px — the hit area is
            grown instead, invisibly, past the drawn circle. Same trick for the popover's ✕. */
@@ -390,20 +391,11 @@
             gap: 12px;
             margin-top: 4px;
         }
-        /* The master's own comment, inside the line's name cell (V206): a quiet panel of its own — smaller,
-           warm paper, a thin amber edge — so it reads as a note on the position, not as part of its name. */
-        .item-note {
-            display: block;
-            margin-top: 4px;
-            padding: 4px 8px;
-            font-size: 0.78rem;
-            line-height: 1.4;
-            color: var(--muted);
-            background: rgba(237, 226, 209, 0.55);
-            border-left: 2px solid rgba(245, 130, 31, 0.45);
-            border-radius: 0 6px 6px 0;
-            white-space: pre-line;
-            overflow-wrap: anywhere;
+        /* The master's comment on a line (V206) is not printed under its name: an (i) in a narrow last
+           column — present only when some line has one — opens it in the same popover as the page's
+           other explanations, as the master's own app does. */
+        table.with-notes th:nth-child(6), table.with-notes td:nth-child(6) {
+            width: 30px; padding-left: 0; padding-right: 2px; text-align: right; vertical-align: middle;
         }
         /* Price list (?l=, V205): name left, price right, the price never wraps. */
         .price-list h2 { margin: 0 0 8px; }
@@ -652,6 +644,14 @@
             th.num, td.num { font-size: 0.76rem; }
             td.center, th.center { font-size: 0.72rem; }
             .actions button, .actions a.btn { width: 100%; text-align: center; }
+        }
+        /* With an (i) column the price and sum give it the room they had to spare, so the NAME keeps the
+           width it has without one — the figures still fit «15 925,00». */
+        @media (max-width: 480px) {
+            table.with-notes th:nth-child(4), table.with-notes td:nth-child(4) { width: 21%; }
+            table.with-notes th:nth-child(5), table.with-notes td:nth-child(5) { width: 25%; }
+            table.with-notes th:nth-child(6), table.with-notes td:nth-child(6) { width: 24px; }
+            table.with-notes thead th { letter-spacing: 0; }
         }
         /* The act's lines have SIX columns, a «№» first, so the nth-child widths above — written
            for the estimate table, where «Назва» is column 1 — handed the act's NAME the unit's
@@ -965,6 +965,10 @@
         const title = kind === 'WORK' ? 'Роботи' : 'Матеріали';
         const sections = toSections(subset);
         const sectioned = sections.length > 1 || sections[0].category !== '';
+        const withNotes = subset.some(i => i.note);
+        const noteCell = (i) => !withNotes ? ''
+            : i.note ? `<td><button type="button" class="info-trigger" data-note="${escapeHtml(i.note)}" aria-label="Коментар майстра">i</button></td>`
+                : '<td></td>';
         const collapsedSet = readCollapsed(foldKey);
         // Each section becomes its OWN <tbody>, so a `.collapsed` class on that tbody hides its
         // item and footer rows without touching sibling sections — a plain `~ [data-section-body]`
@@ -983,7 +987,7 @@
             const head = sectioned ? `
             <tr class="section" data-section-toggle role="button" tabindex="0"
                 aria-expanded="${isCollapsed ? 'false' : 'true'}">
-                <td colspan="5">
+                <td colspan="${withNotes ? 6 : 5}">
                     <span class="chevron" aria-hidden="true">▸</span>
                     ${escapeHtml(section.category || 'Без категорії')}
                     <span class="section-count" data-section-count>(${section.items.length})</span>
@@ -992,30 +996,30 @@
             </tr>` : '';
             const bodyRows = section.items.map(i => `
             <tr class="section-body">
-                <td>${escapeHtml(i.name)}${i.note ? `<span class="item-note">${escapeHtml(i.note)}</span>` : ''}</td>
+                <td>${escapeHtml(i.name)}</td>
                 <td class="center">${escapeHtml(unit(i.unit))}</td>
                 <td class="num">${escapeHtml(i.quantity)}</td>
                 <td class="num">${amount(i.unitPrice)}</td>
-                <td class="num">${amount(i.lineTotal)}</td>
+                <td class="num">${amount(i.lineTotal)}</td>${noteCell(i)}
             </tr>`).join('');
             const sum = section.items.reduce((acc, i) => acc + Number(i.lineTotal || 0), 0);
             const foot = (sectioned && section.items.length >= 2) ? `
             <tr class="section-total">
                 <td colspan="4">Разом по розділу</td>
-                <td class="num">${amount(sum)}</td>
+                <td class="num">${amount(sum)}</td>${withNotes ? '<td></td>' : ''}
             </tr>` : '';
             return `<tbody data-section="${escapeHtml(section.category)}" data-estimate-id="${escapeHtml(foldKey)}"${isCollapsed ? ' class="collapsed"' : ''}>${head}${bodyRows}${foot}</tbody>`;
         }).join('');
         return `
             <section class="card">
                 <h2>${title}</h2>
-                <table>
+                <table${withNotes ? ' class="with-notes"' : ''}>
                     <thead><tr>
                         <th>Назва</th>
                         <th class="center">Од.</th>
                         <th class="num">К-сть</th>
                         <th class="num">Ціна, ₴</th>
-                        <th class="num">Сума, ₴</th>
+                        <th class="num">Сума, ₴</th>${withNotes ? '<th aria-label="Коментар"></th>' : ''}
                     </tr></thead>
                     ${bodies}
                 </table>
@@ -1254,6 +1258,11 @@
         if (infoTrigger) {
             const key = infoTrigger.getAttribute('data-info');
             openInfoPopover(infoTrigger, INFO_TEXTS[key] || '');
+            return;
+        }
+        const noteTrigger = e.target.closest('[data-note]');
+        if (noteTrigger) {
+            openInfoPopover(noteTrigger, noteTrigger.getAttribute('data-note'));
             return;
         }
         // Dismiss on any click outside the popover itself — the scrim used to do this instead.
