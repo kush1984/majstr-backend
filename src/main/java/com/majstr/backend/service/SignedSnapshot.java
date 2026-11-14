@@ -41,7 +41,8 @@ import java.util.UUID;
  */
 public final class SignedSnapshot {
 
-    public static final int SCHEMA = 1;
+    /** 2 = an estimate line carries the master's client-visible {@code note} (V206). */
+    public static final int SCHEMA = 2;
 
     private static final JsonMapper CANONICAL = JsonMapper.builder()
             .enable(MapperFeature.SORT_PROPERTIES_ALPHABETICALLY)
@@ -107,7 +108,8 @@ public final class SignedSnapshot {
     public record EstimateLine(UUID id, ItemType type, String name, String category, Trade trade,
                                Unit unit, BigDecimal quantity, BigDecimal unitPrice,
                                BigDecimal lineTotal, PercentBaseKind percentBaseKind,
-                               UUID percentBaseItemId, String baseOriginLabel, int sortOrder) { }
+                               UUID percentBaseItemId, String baseOriginLabel, int sortOrder,
+                               String note) { }
 
     public record EstimateDoc(int schema, Contractor contractor, ProjectPart project, ClientPart client,
                               EstimatePart estimate, Signer signer, List<EstimateLine> lines) { }

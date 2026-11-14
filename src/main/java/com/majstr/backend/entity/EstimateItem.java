@@ -71,6 +71,19 @@ public class EstimateItem {
     @Column(name = "description", length = 500)
     private String description;
 
+    /** The master's own comment on this line (V206) — his words, unlike {@link #description}. */
+    @Column(name = "note", length = 500)
+    private String note;
+
+    /** The client reads {@link #note} on the page and in the PDF; false keeps it to the master. */
+    @Column(name = "note_visible", nullable = false)
+    @Builder.Default
+    private boolean noteVisible = true;
+
+    /** The master changed {@link #note} in this estimate (V207): a catalog edit of the comment skips it. */
+    @Column(name = "note_own", nullable = false)
+    private boolean noteOwn;
+
     @Enumerated(EnumType.STRING)
     @Column(name = "unit", nullable = false, length = 20)
     private Unit unit;

@@ -166,7 +166,8 @@ public class SignedDocumentService {
                 items.stream().map(i -> new SignedSnapshot.EstimateLine(i.getId(), i.getType(), i.getName(),
                         i.getCategory(), i.getTrade(), i.getUnit(), i.getQuantity(), i.getUnitPrice(),
                         i.getLineTotal(), i.getPercentBaseKind(), i.getPercentBaseItemId(),
-                        i.getBaseOriginLabel(), i.getSortOrder())).toList());
+                        i.getBaseOriginLabel(), i.getSortOrder(), EstimateLineNote.forClient(i)))
+                        .toList());
         String text = SignedSnapshot.canonical(doc);
         String hash = SignedSnapshot.sha256(text);
         SignedDocument row = repository.save(SignedDocument.builder()
@@ -319,7 +320,7 @@ public class SignedDocumentService {
                 .trade(l.trade()).unit(l.unit()).quantity(l.quantity()).unitPrice(l.unitPrice())
                 .lineTotal(l.lineTotal()).percentBaseKind(l.percentBaseKind())
                 .percentBaseItemId(l.percentBaseItemId()).baseOriginLabel(l.baseOriginLabel())
-                .sortOrder(l.sortOrder()).build()).toList();
+                .sortOrder(l.sortOrder()).note(l.note()).noteVisible(true).build()).toList();
         return new FrozenEstimate(contractor, project, client, estimate, items, row.getDocHash(),
                 doc.contractor().branded(), row.getPdfKey());
     }

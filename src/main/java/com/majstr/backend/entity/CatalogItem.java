@@ -56,6 +56,10 @@ public class CatalogItem {
     @Column(name = "description", length = 500)
     private String description;
 
+    /** The master's own comment (V207) — his words, unlike {@link #description}; lines added from here copy it. */
+    @Column(name = "note", length = 500)
+    private String note;
+
     /** Trade this position belongs to — copied from the template on every seed/
      *  reset/merge path, optionally set on manual create. Never null: a position
      *  with no specific trade is OTHER ("Інше"), the single catch-all (V33). Drives

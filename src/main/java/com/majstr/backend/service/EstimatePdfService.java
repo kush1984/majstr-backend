@@ -1,5 +1,6 @@
 package com.majstr.backend.service;
 
+import com.lowagie.text.Chunk;
 import com.lowagie.text.Document;
 import com.lowagie.text.DocumentException;
 import com.lowagie.text.Element;
@@ -210,7 +211,7 @@ public class EstimatePdfService {
             for (EstimateItem item : section.getValue()) {
                 BigDecimal lineTotal = amountOf(item);
                 sectionTotal = sectionTotal.add(lineTotal);
-                table.addCell(textCell(item.getName(), Element.ALIGN_LEFT));
+                table.addCell(nameCell(item));
                 table.addCell(textCell(UnitLabel.ua(item.getUnit()), Element.ALIGN_CENTER));
                 table.addCell(textCell(formatQuantity(item.getQuantity()), Element.ALIGN_RIGHT));
                 // A percentage has no price per unit. «500 ₴/%» meant nothing to the client and
@@ -376,6 +377,20 @@ public class EstimatePdfService {
         cell.setHorizontalAlignment(Element.ALIGN_CENTER);
         cell.setPadding(5);
         table.addCell(cell);
+    }
+
+    /** The line's name, and under it the master's comment when the client may read it (V206). */
+    private PdfPCell nameCell(EstimateItem item) {
+        String note = EstimateLineNote.forClient(item);
+        if (note == null) {
+            return textCell(item.getName(), Element.ALIGN_LEFT);
+        }
+        Phrase phrase = new Phrase(item.getName(), fonts.regular(10));
+        phrase.add(new Chunk("\n" + note, fonts.regular(8)));
+        PdfPCell cell = new PdfPCell(phrase);
+        cell.setHorizontalAlignment(Element.ALIGN_LEFT);
+        cell.setPadding(4);
+        return cell;
     }
 
     private PdfPCell textCell(String text, int alignment) {

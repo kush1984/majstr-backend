@@ -147,19 +147,12 @@ public class PriceListService {
         List<UUID> saved = catalogRepository.findPriceListIds(ownerId);
         // He has chosen once he has shared, or ticked and looked (a preview saves the ticks, mints no link).
         boolean configured = !saved.isEmpty() || linkRepository.existsByOwnerId(ownerId);
-        List<UUID> ticked = configured ? saved : suggested(ownerId, new HashSet<>(libraryPriced));
+        // Nothing is ticked for him (owner's ruling 2026-11-14): what he ticked last time, else nothing.
+        List<UUID> ticked = saved;
         String url = linkRepository.findFirstByOwnerIdAndRevokedFalse(ownerId)
                 .map(link -> portalProperties.publicBaseUrl() + PATH + link.getToken())
                 .orElse(null);
         return new PriceListResponse(url, configured, ticked, libraryPriced);
-    }
-
-    /** Before the first share: every priced work the master has put his own price on. */
-    private List<UUID> suggested(UUID ownerId, Set<UUID> libraryPriced) {
-        return catalogService.listForOwner(ownerId, ItemType.WORK).stream()
-                .filter(i -> !i.hidden() && isPriced(i) && !libraryPriced.contains(i.id()))
-                .map(CatalogItemResponse::id)
-                .toList();
     }
 
     private PriceListPdfService.PdfModel pdfModel(User owner) {

@@ -60,8 +60,24 @@ public record EstimateItemRequest(
          * only cycle protection the feature needs: a percentage can never point at a percentage, so
          * no cycle can be built in the first place.</p>
          */
-        UUID percentBaseItemId
+        UUID percentBaseItemId,
+        /**
+         * The master's own comment on the line (V206). <b>Three-valued</b>: absent (null) leaves the
+         * stored one alone — an inline price edit, or an older build replaying its queue, must not wipe
+         * it; blank clears it; text sets it.
+         */
+        @Size(max = 500) String note,
+        /** Whether the client sees {@link #note}; null leaves it as is (a new line: visible). */
+        Boolean noteVisible
 ) {
+
+    /** Every caller that does not touch the comment — it stays as it is. */
+    public EstimateItemRequest(ItemType type, String name, String category, Unit unit, BigDecimal quantity,
+                               BigDecimal unitPrice, Integer sortOrder, List<UUID> measurementRefs,
+                               boolean quantityManual, PercentBaseKind percentBaseKind, UUID percentBaseItemId) {
+        this(type, name, category, unit, quantity, unitPrice, sortOrder, measurementRefs, quantityManual,
+                percentBaseKind, percentBaseItemId, null, null);
+    }
 
     /**
      * A price of zero is only meaningful where nothing is priced per unit: a percentage measured

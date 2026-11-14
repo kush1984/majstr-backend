@@ -18,6 +18,8 @@ public record CatalogItemResponse(
          *  drywall finishing levels). Read-only: {@code CatalogItemRequest} has no matching
          *  field, so an edit from the PWA leaves whatever the library copy carried. */
         String description,
+        /** The master's own comment (V207); null = none. */
+        String note,
         Trade trade,
         /** Set only when this position is filed under a master-invented trade — {@code trade} is
          *  then always OTHER. Denormalized alongside its id so the client never needs a separate
@@ -71,6 +73,7 @@ public record CatalogItemResponse(
                 item.getName(),
                 item.getCategory(),
                 item.getDescription(),
+                item.getNote(),
                 item.getTrade(),
                 customTrade != null ? customTrade.getId() : null,
                 customTrade != null ? customTrade.getName() : null,

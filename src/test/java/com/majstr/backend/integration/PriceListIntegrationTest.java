@@ -68,12 +68,12 @@ class PriceListIntegrationTest extends IntegrationTestBase {
     }
 
     @Test
-    void beforeTheFirstShare_everyOwnPricedWorkIsSuggested_butNotZeroMaterialsOrLibraryPrices() {
+    void beforeTheFirstShare_nothingIsTickedForHim() {
         PriceListResponse state = priceLists.state(master.getId());
 
         assertThat(state.configured()).isFalse();
         assertThat(state.url()).isNull();
-        assertThat(state.itemIds()).containsExactly(ownPriced);
+        assertThat(state.itemIds()).isEmpty();
         assertThat(state.libraryPricedIds()).containsExactly(libraryPriced);
     }
 

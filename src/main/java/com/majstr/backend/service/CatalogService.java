@@ -10,6 +10,7 @@ import com.majstr.backend.entity.CatalogItem;
 import com.majstr.backend.entity.CatalogItemSource;
 import com.majstr.backend.entity.CatalogUpdateNoticeKind;
 import com.majstr.backend.entity.CatalogUpdateNoticeResolution;
+import com.majstr.backend.entity.EstimateItem;
 import com.majstr.backend.entity.ItemType;
 import com.majstr.backend.entity.Trade;
 import com.majstr.backend.entity.User;
@@ -18,6 +19,7 @@ import com.majstr.backend.exception.ResourceNotFoundException;
 import com.majstr.backend.repository.CatalogItemRepository;
 import com.majstr.backend.repository.CatalogTemplateRepository;
 import com.majstr.backend.repository.CatalogUpdateNoticeRepository;
+import com.majstr.backend.repository.EstimateItemRepository;
 import com.majstr.backend.repository.UserRepository;
 import com.majstr.backend.repository.UserTradeRepository;
 import com.majstr.backend.service.catalog.CatalogNameKey;
@@ -27,6 +29,7 @@ import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Comparator;
@@ -35,6 +38,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
@@ -61,6 +65,7 @@ public class CatalogService {
     private final UserRepository userRepository;
     private final UserTradeRepository userTradeRepository;
     private final CatalogUpdateNoticeRepository noticeRepository;
+    private final EstimateItemRepository estimateItemRepository;
 
     @Transactional
     public CatalogItemResponse create(CatalogItemRequest req, UUID ownerId) {
@@ -101,6 +106,7 @@ public class CatalogService {
                 .findFirst()
                 .orElse(null);
         if (existing != null) {
+            applyNote(existing, req.note(), List.of(existing.getName()), ownerId);
             existing.setCategory(normalizeCategory(req.category()));
             existing.setTrade(trade);
             existing.setCustomTrade(customTrade);
@@ -122,6 +128,7 @@ public class CatalogService {
                 .type(req.type())
                 .unit(req.unit())
                 .defaultPrice(req.defaultPrice())
+                .note(EstimateLineNote.clean(req.note()))
                 // The master typed this themselves — the only rows the admin insight screens
                 // treat as evidence about what our defaults are missing.
                 .source(CatalogItemSource.MANUAL)
@@ -277,6 +284,8 @@ public class CatalogService {
         UserTrade customTrade = resolveCustomTrade(req.customTradeId(), ownerId);
         String oldName = item.getName();
         boolean repriced = item.getDefaultPrice().compareTo(req.defaultPrice()) != 0;
+        // Before the rename and any change of type or unit: the lines still carry what the position was.
+        applyNote(item, req.note(), List.of(oldName, req.name()), ownerId);
         item.setName(req.name().trim());
         item.setCategory(normalizeCategory(req.category()));
         item.setTrade(customTrade != null ? Trade.OTHER
@@ -289,6 +298,33 @@ public class CatalogService {
             resolvePriceDrift(ownerId, List.of(oldName, item.getName()));
         }
         return CatalogItemResponse.from(item);
+    }
+
+    /**
+     * The catalog comment changed (V207): it reaches every line of this position in an estimate the client
+     * has not signed — unless the line's comment is the master's own (changed in that estimate), or is no
+     * longer the one the catalog had. Nothing he wrote is ever overwritten silently. The estimate is touched
+     * so a client holding the page signs only what he can now read (B-86).
+     */
+    private void applyNote(CatalogItem item, String requested, Collection<String> names, UUID ownerId) {
+        if (requested == null) {
+            return;
+        }
+        String previous = item.getNote();
+        String next = EstimateLineNote.clean(requested);
+        if (Objects.equals(previous, next)) {
+            return;
+        }
+        item.setNote(next);
+        Set<String> keys = names.stream().map(n -> n.trim().toLowerCase(Locale.ROOT))
+                .collect(Collectors.toSet());
+        for (EstimateItem line : estimateItemRepository.findCatalogNoteTargets(ownerId, item.getType(),
+                item.getUnit(), keys)) {
+            if (Objects.equals(line.getNote(), previous)) {
+                line.setNote(next);
+                line.getEstimate().setUpdatedAt(Instant.now());
+            }
+        }
     }
 
     /**

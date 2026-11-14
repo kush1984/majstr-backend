@@ -32,5 +32,7 @@ public record PublicEstimateItemView(
          * subtotal" treatment as a TOTAL-kind line, mirroring {@code TypeBreakdown}'s {@code
          * frozenMarkup}/{@code frozenDiscount}.
          */
-        String baseOriginLabel
+        String baseOriginLabel,
+        /** The master's comment on this line (V206) — present only when he lets the client see it. */
+        String note
 ) {}

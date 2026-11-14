@@ -80,7 +80,11 @@ public record EstimateItemResponse(
          * their own line record, and {@code PublicEstimateIsolationTest} fails the build if one of
          * them ever grows this name.</p>
          */
-        BigDecimal sourceUnitPrice
+        BigDecimal sourceUnitPrice,
+        /** The master's own comment (V206); null = none. */
+        String note,
+        /** Whether the client sees {@link #note}. */
+        boolean noteVisible
 ) {
     public static EstimateItemResponse from(EstimateItem item) {
         return from(item, null);
@@ -112,7 +116,9 @@ public record EstimateItemResponse(
                 item.isBaseDetached(),
                 item.getBaseOriginLabel(),
                 closedByActs,
-                item.getSourceUnitPrice()
+                item.getSourceUnitPrice(),
+                item.getNote(),
+                item.isNoteVisible()
         );
     }
 }

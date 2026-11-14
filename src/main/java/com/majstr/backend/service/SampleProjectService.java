@@ -122,6 +122,7 @@ public class SampleProjectService {
                     .category(filing.category())
                     .trade(filing.trade())
                     .description(match != null ? match.getDescription() : shipped.getDescription())
+                    .note(match != null ? match.getNote() : null)
                     .unit(line.unit())
                     .quantity(line.quantity())
                     .unitPrice(match != null ? match.getDefaultPrice() : shipped.getSuggestedPrice())

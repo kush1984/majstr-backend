@@ -8,16 +8,23 @@
 
 ## What the master does
 
-1. Catalog → **📤 Поділитися прайсом** (the fourth door, so the doors are now a 2×2 grid), or the
-   profile row of the same name (`/catalog?priceList=1`).
-2. The catalog tree switches to ticking, works only, the same tree he already knows — no chips:
-   - the first time, every priced work he put his own price on is ticked for him;
-   - a work still at **the library's price** is marked «ціна з бібліотеки — перевірте» and is not
-     suggested (a price he never looked at should not reach a client by default);
-   - a work at **0 ₴** is marked «без ціни — не піде в прайс» and cannot be ticked; a whole-category
-     or whole-trade tick passes over it (`CatalogSelection.noteOf`, `tickableIds`).
-3. «Далі» → the sheet: share (phones) / copy the link, save the PDF, «Подивитися, як побачить
-   клієнт», and «Закрити посилання» while a link is live. Every way out saves the ticks first.
+**Reworked 2026-11-14 after the owner tried it on a phone** («що це таке взагалі за убожество… позиції
+вибрані автоматично, по якому розрахунку?»). The first cut was a ticking MODE of the catalog with 127
+works pre-ticked by a rule the master could not see, and a bar sized for the delete selection.
+
+1. Catalog → **📤 Поділитися прайсом**, or the profile row → its own screen, **«Прайс для клієнта»**
+   (`/price-list`, `PriceListPage`): a back link, the title and one sentence — tick what the client
+   sees, prices come from the catalog and stay live.
+2. The same tree as the catalog (trade → category → work) with checkboxes, works only.
+   - **Nothing is ticked for him.** The first visit is empty; after that, what he ticked last time.
+   - A work at **0 ₴** reads «без ціни — не піде в прайс» and cannot be ticked; a whole-category or
+     whole-trade tick passes over it (`CatalogSelection.noteOf`, `tickableIds`). A tick kept on a work
+     since priced at 0 or no longer on screen is neither counted nor sent.
+   - The «ціна з бібліотеки — перевірте» mark is gone (it was a guess).
+3. A full-width panel above the bottom menu: the count, **Поділитися** (phones) / **Копіювати
+   посилання**, **👁 Переглянути** (a ten-minute pass before anything is sent, no link minted) and
+   **PDF**. A live link shows a green line with «Закрити посилання». The name gate (V190) runs before
+   any way out.
 
 ## What the client sees (`/portal/index.html?l=<token>`)
 

@@ -533,6 +533,7 @@ public class EstimateTemplateService {
                         // The explanation rides along with the price it was joined to (V119) — a
                         // bundle carries no description of its own, the catalog position does.
                         .description(match != null ? match.getDescription() : null)
+                        .note(match != null ? match.getNote() : null)
                         .unit(unit)
                         // Ordinary line: empty, the master fills it per object. PERCENT line: the
                         // percent comes from the catalog, because a template carries NO price at

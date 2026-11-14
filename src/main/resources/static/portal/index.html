@@ -390,6 +390,8 @@
             gap: 12px;
             margin-top: 4px;
         }
+        /* The master's own comment under a line's name (V206). */
+        .item-note { display: block; font-size: 0.8rem; color: var(--muted); margin-top: 2px; white-space: pre-line; }
         /* Price list (?l=, V205): name left, price right, the price never wraps. */
         .price-list h2 { margin: 0 0 8px; }
         .pl-category { font-size: 0.85rem; color: var(--muted); margin: 14px 0 4px; font-weight: 700; }
@@ -977,7 +979,7 @@
             </tr>` : '';
             const bodyRows = section.items.map(i => `
             <tr class="section-body">
-                <td>${escapeHtml(i.name)}</td>
+                <td>${escapeHtml(i.name)}${i.note ? `<span class="item-note">${escapeHtml(i.note)}</span>` : ''}</td>
                 <td class="center">${escapeHtml(unit(i.unit))}</td>
                 <td class="num">${escapeHtml(i.quantity)}</td>
                 <td class="num">${amount(i.unitPrice)}</td>

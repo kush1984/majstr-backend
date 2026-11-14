@@ -828,7 +828,8 @@ public class PublicEstimateService {
                 item.getSortOrder(),
                 item.getCategory(),
                 item.getUnit() == Unit.PERCENT ? item.getPercentBaseKind() : null,
-                item.getBaseOriginLabel()
+                item.getBaseOriginLabel(),
+                EstimateLineNote.forClient(item)
         );
     }
 

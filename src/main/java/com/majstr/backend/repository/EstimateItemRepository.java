@@ -23,6 +23,21 @@ public interface EstimateItemRepository extends JpaRepository<EstimateItem, UUID
     List<EstimateItem> findByEstimateIdInOrderBySortOrderAscIdAsc(Collection<UUID> estimateIds);
 
     /**
+     * The lines a catalog comment reaches (V207): this master's, in estimates the client has not signed,
+     * the same position by type + unit + folded name, and never one whose comment he changed in place.
+     */
+    @Query("""
+            SELECT i FROM EstimateItem i JOIN FETCH i.estimate e
+            WHERE e.project.owner.id = :ownerId
+              AND e.status <> com.majstr.backend.entity.EstimateStatus.SIGNED
+              AND i.type = :type AND i.unit = :unit
+              AND lower(trim(i.name)) IN :nameKeys
+              AND i.noteOwn = false
+            """)
+    List<EstimateItem> findCatalogNoteTargets(UUID ownerId, com.majstr.backend.entity.ItemType type,
+                                              com.majstr.backend.entity.Unit unit, Collection<String> nameKeys);
+
+    /**
      * Every distinct line name that has ever been written into an estimate, with how often.
      * Feeds the admin's "which of our default positions does nobody use" screen.
      *

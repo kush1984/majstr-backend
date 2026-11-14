@@ -63,6 +63,7 @@ import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.Locale;
 import java.util.Set;
@@ -292,6 +293,9 @@ public class EstimateService {
                     .category(item.getCategory())
                     .trade(item.getTrade())
                     .description(item.getDescription())
+                    .note(item.getNote())
+                    .noteVisible(item.isNoteVisible())
+                    .noteOwn(item.isNoteOwn())
                     .unit(item.getUnit())
                     .quantity(percent && marked
                             ? markedUpPercent(item, sourceById, toMarkUp, factor)
@@ -466,6 +470,9 @@ public class EstimateService {
                 .category(item.getCategory())
                 .trade(item.getTrade())
                 .description(item.getDescription())
+                .note(item.getNote())
+                .noteVisible(item.isNoteVisible())
+                .noteOwn(item.isNoteOwn())
                 .unit(item.getUnit())
                 .quantity(item.getQuantity())
                 .unitPrice(item.getUnitPrice())
@@ -887,6 +894,8 @@ public class EstimateService {
                 .measurementRefs(r.refs())
                 .quantityManual(r.manual())
                 .sortOrder(req.sortOrder() == null ? 0 : req.sortOrder())
+                .note(EstimateLineNote.clean(req.note()))
+                .noteVisible(req.noteVisible() == null || req.noteVisible())
                 .build();
         return savedItemResponse(estimate, item);
     }
@@ -972,6 +981,7 @@ public class EstimateService {
                 .category(filing.category())
                 .trade(filing.trade())
                 .description(source.getDescription())
+                .note(source.getNote())
                 .unit(source.getUnit())
                 .quantity(percent ? source.getDefaultPrice() : req.quantity())
                 .unitPrice(percent ? BigDecimal.ZERO : source.getDefaultPrice())
@@ -1029,6 +1039,7 @@ public class EstimateService {
                     .category(filing.category())
                     .trade(filing.trade())
                     .description(source.getDescription())
+                    .note(source.getNote())
                     .unit(source.getUnit())
                     .quantity(e.quantity())
                     .unitPrice(source.getDefaultPrice())
@@ -1132,6 +1143,19 @@ public class EstimateService {
         item.setQuantityManual(r.manual());
         if (req.sortOrder() != null) {
             item.setSortOrder(req.sortOrder());
+        }
+        // Three-valued, like the estimate's own meta: an absent note leaves it alone — an inline price
+        // edit, or an older build replaying from its queue, must never wipe the master's comment.
+        if (req.note() != null) {
+            String note = EstimateLineNote.clean(req.note());
+            // Changed here, it is his for this estimate: a later catalog edit leaves it alone (V207).
+            if (!Objects.equals(note, item.getNote())) {
+                item.setNote(note);
+                item.setNoteOwn(true);
+            }
+        }
+        if (req.noteVisible() != null) {
+            item.setNoteVisible(req.noteVisible());
         }
         // The edited row is included explicitly for the same reason the added one is: the query
         // need not see pending changes, and an update that answered with a stale amount would be
