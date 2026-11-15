@@ -1,12 +1,14 @@
 package com.majstr.backend.service;
 
 import com.majstr.backend.dto.AuthResponse;
+import com.majstr.backend.dto.GoogleSignInRequest;
 import com.majstr.backend.dto.LoginRequest;
 import com.majstr.backend.dto.RegisterRequest;
 import com.majstr.backend.dto.UserResponse;
 import com.majstr.backend.entity.User;
 import com.majstr.backend.entity.UserTrade;
 import com.majstr.backend.exception.EmailAlreadyExistsException;
+import com.majstr.backend.exception.ResourceNotFoundException;
 import com.majstr.backend.repository.UserRepository;
 import com.majstr.backend.repository.UserTradeRepository;
 import com.majstr.backend.security.JwtService;
@@ -40,6 +42,7 @@ public class AuthService {
     private final ProfileService profileService;
     private final PlatformTransactionManager transactionManager;
     private final AbuseLimits abuseLimits;
+    private final GoogleIdTokens googleIdTokens;
     private volatile String dummyHash;
 
     /**
@@ -106,6 +109,71 @@ public class AuthService {
         // Issue a verification token and email it (async, fail-soft — a mail
         // problem must not break registration; the user can resend later).
         emailVerificationService.issueAndSend(user);
+        return issueTokens(user);
+    }
+
+    /**
+     * «Увійти через Google» — one door for signing in AND registering. The Google account is found by its
+     * id, else by its (Google-verified) email — then it is linked — else a new account is created with a
+     * verified email and a random password he never needs (he can still set one through «Забули пароль»).
+     */
+    public AuthResponse signInWithGoogle(GoogleSignInRequest req) {
+        if (!googleIdTokens.enabled()) {
+            throw new ResourceNotFoundException("Google sign-in is not configured");
+        }
+        GoogleIdTokens.Identity id = googleIdTokens.verify(req.credential());
+        // bcrypt outside the transaction (review B-121), used only if the account is new.
+        String unusablePassword = passwordEncoder.encode(UUID.randomUUID().toString());
+        return Transactions.write(transactionManager, () -> {
+            User user = userRepository.findByGoogleSub(id.sub()).orElse(null);
+            if (user == null) {
+                user = userRepository.findByEmailIgnoreCase(id.email()).orElse(null);
+                if (user != null) {
+                    if (user.getGoogleSub() != null) {
+                        // His email, but bound to ANOTHER Google account: never swap it silently.
+                        throw new BadCredentialsException("Email is linked to another Google account");
+                    }
+                    user.setGoogleSub(id.sub());
+                    // Google has just proved he owns this mailbox.
+                    user.setEmailVerified(true);
+                }
+            }
+            if (user == null) {
+                emailPolicyService.assertAcceptable(id.email());
+                return createGoogleAccount(req, id, unusablePassword);
+            }
+            return issueTokens(user);
+        });
+    }
+
+    private AuthResponse createGoogleAccount(GoogleSignInRequest req, GoogleIdTokens.Identity id,
+                                             String passwordHash) {
+        String canonical = emailPolicyService.canonicalize(id.email());
+        userRepository.lockCanonicalEmail(canonical);
+        if (userRepository.existsByEmailCanonical(canonical)) {
+            // A gmail alias of an account that registered with a password: same rule as registration.
+            throw new EmailAlreadyExistsException(id.email());
+        }
+        ReferralService.Attribution attribution = referralService.resolve(req.ref(), req.promoCode());
+        User user = userRepository.save(User.builder()
+                .email(id.email())
+                .emailCanonical(canonical)
+                .passwordHash(passwordHash)
+                .googleSub(id.sub())
+                .emailVerified(true)
+                .fullName(trimToNull(id.name()))
+                .trades(new LinkedHashSet<>())
+                .consentedToPrivacyAt(Instant.now())
+                .referralSource(attribution.source())
+                .referredByUserId(attribution.referredByUserId())
+                .utmSource(trimToNull(req.utmSource()))
+                .utmMedium(trimToNull(req.utmMedium()))
+                .utmCampaign(trimToNull(req.utmCampaign()))
+                .firstReferrerHost(FirstTouch.host(req.referrerHost()))
+                .firstEntryPath(FirstTouch.path(req.entryPath()))
+                .referralCode(referralService.generateUniqueCode())
+                .build());
+        catalogTemplateService.seedForUser(user);
         return issueTokens(user);
     }
 

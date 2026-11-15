@@ -256,6 +256,10 @@ public class User {
     @Column(name = "referral_code", nullable = false, unique = true, length = 16)
     private String referralCode;
 
+    /** The Google account id this master signs in with (V210); null = he never used Google. */
+    @Column(name = "google_sub", length = 255)
+    private String googleSub;
+
     /** The master who invited this one (first-touch via their {@code m-<code>} link
      *  or promo code). Set once at registration, never auto-changed. NULL = not
      *  referred by another master. Drives the referral reward on this user's first

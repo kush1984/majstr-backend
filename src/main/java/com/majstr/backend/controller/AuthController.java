@@ -2,6 +2,7 @@ package com.majstr.backend.controller;
 
 import com.majstr.backend.dto.AuthResponse;
 import com.majstr.backend.dto.ForgotPasswordRequest;
+import com.majstr.backend.dto.GoogleSignInRequest;
 import com.majstr.backend.dto.LoginRequest;
 import com.majstr.backend.dto.RefreshTokenRequest;
 import com.majstr.backend.dto.RegisterRequest;
@@ -65,6 +66,12 @@ public class AuthController {
     }
 
     @Operation(summary = "Exchange a refresh token for a new access + refresh pair")
+    /** «Увійти через Google» — signs in, linking a same-email account, or registers (404 while not configured). */
+    @PostMapping("/google")
+    public ResponseEntity<AuthResponse> google(@Valid @RequestBody GoogleSignInRequest request) {
+        return ResponseEntity.ok(authService.signInWithGoogle(request));
+    }
+
     @PostMapping("/refresh")
     public ResponseEntity<AuthResponse> refresh(@Valid @RequestBody RefreshTokenRequest request) {
         return ResponseEntity.ok(authService.refresh(request.refreshToken()));

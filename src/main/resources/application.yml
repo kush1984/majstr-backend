@@ -135,6 +135,11 @@ app:
     batch-size: 200
     warn-cron: "0 30 3 * * *"
     delete-cron: "0 45 3 * * *"
+  auth:
+    google:
+      # The OAuth «Web client ID» from Google Cloud Console. Empty = «Увійти через Google» is off and
+      # POST /api/auth/google answers 404. The PWA carries the same id as VITE_GOOGLE_CLIENT_ID.
+      client-id: ${GOOGLE_CLIENT_ID:}
   jwt:
     # HS256 requires >= 32 bytes (256 bits). Set via env in all environments.
     secret: ${JWT_SECRET}

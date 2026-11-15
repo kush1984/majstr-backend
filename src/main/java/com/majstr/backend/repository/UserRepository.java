@@ -26,6 +26,8 @@ public interface UserRepository extends JpaRepository<User, UUID> {
 
     Optional<User> findByEmailIgnoreCase(String email);
 
+    Optional<User> findByGoogleSub(String googleSub);
+
     /** The admin's setup-call list (V191): open calls first, then newest first. */
     @Query("""
             SELECT u FROM User u WHERE u.helpRequestedAt IS NOT NULL
