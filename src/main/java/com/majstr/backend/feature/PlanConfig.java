@@ -90,7 +90,8 @@ public final class PlanConfig {
                         Feature.RECEIPT_IMPORT,
                         Feature.SKETCH_IMPORT,
                         Feature.PROJECT_IMPORT,
-                        Feature.WORK_ACTS
+                        Feature.WORK_ACTS,
+                        Feature.VOICE_NOTES
                 )
         ));
 
@@ -113,7 +114,8 @@ public final class PlanConfig {
                         Feature.RECEIPT_IMPORT,
                         Feature.SKETCH_IMPORT,
                         Feature.PROJECT_IMPORT,
-                        Feature.WORK_ACTS
+                        Feature.WORK_ACTS,
+                        Feature.VOICE_NOTES
                 )
         ));
     }

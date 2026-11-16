@@ -836,6 +836,8 @@ one-line summary — keep the item in the file as a record.
   already aligned; this is wording/coverage validation.
 - **Update (2026-10-30):** admin broadcasts (V180) now send re-engagement letters to FREE masters, with an
   unsubscribe link in each. The policy does not mention them yet — add a line (what, how often, how to opt out).
+- **Update (2026-10-31):** the Telegram bot (majster-bot, V211) — messages to it are stored by Telegram on its
+  servers and by us as `inbox_entry.raw_text`; the policy needs a line on both, and on deleting them.
 
 ### English translation of the privacy policy texts
 - **Status:** OPEN
@@ -906,6 +908,34 @@ one-line summary — keep the item in the file as a record.
 ---
 
 ## Business logic
+
+### Voice notes in the Telegram bot (server speech-to-text)
+- **Status:** IN_PROGRESS — built 2026-11-16 (V213, PRO + 10-note FREE trial, OpenAI `gpt-4o-mini-transcribe`),
+  not shipped yet; the 20–30 real voice-note quality check is the owner's, before launch.
+- **Since:** 2026-10-31, majster-bot
+- **Context:** the bot reads TEXT; a voice note gets a hint to use the keyboard microphone. Anthropic has no
+  speech-to-text, so voice needs a second provider.
+- **Notes / options:** OpenAI `gpt-4o-transcribe`/`-mini` is the shortest path (key + client exist; takes
+  Telegram's ogg as is; a `prompt` with object names helps). Max 60 s, a per-day minutes budget, audio discarded
+  after transcription, a privacy line, and a 20–30 real voice-note quality check first. Full analysis:
+  docs/iteration-majster-bot.md «Voice later».
+
+### «Виправ…» — correcting the last bot entry by text or voice
+- **Status:** OPEN
+- **Since:** 2026-11-16, majster-bot voice (owner's local test)
+- **Context:** a master said «виправ клей Резіт на Церезіт CM 11» after a misheard voice note. Every message is a
+  NEW entry, so the bot found nothing to file and the misheard row stayed. Today the fix is «↩️ Скасувати» and
+  saying it again, or renaming the row in the app (a MANUAL shopping row is renamable since 1.83.1).
+- **Notes / options:** the parse could return a CORRECT kind («replace X with Y» on the latest entry), applied
+  through the record's own service like undo/move. About half a day with tests. Wait to see whether masters
+  actually talk to it this way before building.
+
+### Inbox parse budget and the bot's evening reminder
+- **Status:** OPEN
+- **Since:** 2026-10-31, majster-bot
+- **Context:** `INBOX_PARSES_PER_DAY` = 60 per master is a guess, same for every plan. Nothing reminds a master
+  of what waits in «Вхідні» except the home strip.
+- **Notes / options:** retune from real use; an evening Telegram nudge («3 записи чекають») is ROADMAP-IDEAS §2.
 
 ### Version 1.0.0 — ships with the first paying user
 - **Status:** RESOLVED (2026-07-31) — the first subscription was bought (299 ₴, monobank, CHECKOUT),

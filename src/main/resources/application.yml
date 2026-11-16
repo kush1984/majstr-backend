@@ -268,6 +268,22 @@ app:
     from-name: ${BROADCAST_FROM_NAME:Андрій з Майстра}
     reply-to: ${BROADCAST_REPLY_TO:majstr.app@ukr.net}
     send-interval-ms: ${BROADCAST_SEND_INTERVAL_MS:600}
+  # majster-bot (docs/iteration-majster-bot.md). No token = no Telegram traffic, whatever the mode.
+  bot:
+    telegram-token: ${TELEGRAM_BOT_TOKEN:}
+    telegram-username: ${TELEGRAM_BOT_USERNAME:}
+    webhook-secret: ${TELEGRAM_WEBHOOK_SECRET:}
+    # off | polling (local dev, no public URL) | webhook (prod)
+    mode: ${TELEGRAM_MODE:webhook}
+    parses-per-day: ${INBOX_PARSES_PER_DAY:60}
+    app-url: ${APP_URL:https://majstr.pro}
+  # Voice notes in the bot: OpenAI transcription (needs OPENAI_API_KEY; without it voice stays off).
+  # PRO; a FREE account with a verified email may try `free-trial` notes first.
+  voice:
+    model: ${VOICE_MODEL:gpt-4o-mini-transcribe}
+    max-seconds: ${VOICE_MAX_SECONDS:60}
+    free-trial: ${VOICE_FREE_TRIAL:10}
+    seconds-per-day: ${VOICE_SECONDS_PER_DAY:900}
   push:
     # Web Push (VAPID). Keys are env only and blank in local dev (then a push is
     # logged & skipped). Generate a stable keypair once for production — rotating
@@ -313,6 +329,9 @@ app:
       # sentence. PINNED rather than left blank: blank follows `model`/ANTHROPIC_MODEL, so raising
       # the default for the drawing flows would silently raise this one too.
       dictation: ${AI_FLOW_DICTATION:anthropic:claude-sonnet-5-5}
+      # A bot / quick-add message → kinds + the object it names (majster-bot). Pinned for the same
+      # reason as dictation.
+      inbox: ${AI_FLOW_INBOX:anthropic:claude-sonnet-5-5}
   openai:
     # Inert unless `provider` above selects it. Key is env only, same rule as the Anthropic one.
     api-key: ${OPENAI_API_KEY:}

@@ -14,6 +14,11 @@ import java.math.BigDecimal;
 public record ShoppingListItemUpdateRequest(
         @DecimalMin(value = "0.001") @Digits(integer = 12, fraction = 3) BigDecimal quantity,
         @Size(max = 500) String note,
+        /**
+         * A new name — only for a row the master added himself (MANUAL: by hand or from the bot). A row the
+         * calculator wrote names its material, and a receipt row names the paper; there it is ignored.
+         */
+        @Size(max = 255) String name,
         Boolean bought,
         Suggestion suggestion
 ) {

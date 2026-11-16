@@ -41,7 +41,13 @@ public enum AiFlow {
      * Sorting a whole set's sheets by their titles, from text alone — the cheapest job here and the
      * one most worth putting on a small model: it reads no drawing, it only answers "what is this".
      */
-    TRIAGE;
+    TRIAGE,
+    /**
+     * A message to the Telegram bot or the PWA's quick add → what it asks for (a purchase, a task, a
+     * note, an estimate line, money) and which of the master's objects it names. Text only, short,
+     * but it decides where money is filed, so it is not put on the smallest model.
+     */
+    INBOX;
 
     /** The config key for this flow: {@code app.ai.flows.project-docs}. */
     public String key() {

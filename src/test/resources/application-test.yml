@@ -27,6 +27,11 @@ app:
   # The addresses here are made up (@majstr.test, @t.ua): a test must not depend on what DNS says.
   email-policy:
     dns-check: false
+  bot:
+    # Literal blanks: a TELEGRAM_BOT_TOKEN in somebody's shell must never make a test talk to Telegram.
+    telegram-token: ""
+    webhook-secret: "test-webhook-secret"
+    mode: "off"
   email:
     # Literal blank: a RESEND_API_KEY in somebody's shell must never turn a test into real mail.
     resend-api-key: ""

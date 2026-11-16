@@ -167,6 +167,9 @@ public class ShoppingListService {
         if (req.note() != null) {
             item.setNote(trimToNull(req.note()));
         }
+        if (req.name() != null && !req.name().isBlank() && item.getSource() == ShoppingListItemSource.MANUAL) {
+            item.setName(req.name().trim());
+        }
         if (req.bought() != null) {
             applyBought(item, req.bought());
         }

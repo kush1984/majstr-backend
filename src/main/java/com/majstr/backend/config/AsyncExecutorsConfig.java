@@ -48,6 +48,21 @@ public class AsyncExecutorsConfig {
         return executor("metrics-", 1, 1000, true);
     }
 
+    /**
+     * Telegram parses: each one is a model call. Two at a time is plenty for the masters we have. The message
+     * is stored before this pool sees it, so a dropped parse is swept to FAILED, never lost.
+     */
+    @Bean
+    ThreadPoolTaskExecutor botExecutor() {
+        return executor("bot-", 2, 200, true);
+    }
+
+    /** Button taps in the bot: database work only, so they never wait behind a parse (review S-12). */
+    @Bean
+    ThreadPoolTaskExecutor botTapExecutor() {
+        return executor("bot-tap-", 2, 200, true);
+    }
+
     private static ThreadPoolTaskExecutor executor(String prefix, int threads, int queue, boolean drain) {
         ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
         executor.setThreadNamePrefix(prefix);

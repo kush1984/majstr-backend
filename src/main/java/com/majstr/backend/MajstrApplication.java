@@ -1,6 +1,7 @@
 package com.majstr.backend;
 
 import com.majstr.backend.config.AdminSeedProperties;
+import com.majstr.backend.config.BotProperties;
 import com.majstr.backend.config.AiFlowsProperties;
 import com.majstr.backend.config.AnthropicProperties;
 import com.majstr.backend.config.OpenAiProperties;
@@ -17,6 +18,7 @@ import com.majstr.backend.config.VapidProperties;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import com.majstr.backend.config.FiscalQrProperties;
+import com.majstr.backend.config.VoiceProperties;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.scheduling.annotation.EnableAsync;
 import org.springframework.scheduling.annotation.EnableScheduling;
@@ -39,7 +41,9 @@ import org.springframework.scheduling.annotation.EnableScheduling;
         AnthropicProperties.class,
         OpenAiProperties.class,
         FiscalQrProperties.class,
-        BroadcastProperties.class
+        BroadcastProperties.class,
+        BotProperties.class,
+        VoiceProperties.class
 })
 public class MajstrApplication {
 

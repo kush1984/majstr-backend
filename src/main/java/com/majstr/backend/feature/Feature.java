@@ -36,5 +36,7 @@ public enum Feature {
     /** Work acts (Акти виконаних робіт): a document built from a signed estimate's positions,
      *  signed separately by the client (acts iteration). Temporarily on FREE alongside
      *  {@link #OBJECT_ECONOMY}/{@link #MEASUREMENTS} — see {@code PlanConfig}. No LLM involved. */
-    WORK_ACTS
+    WORK_ACTS,
+    /** Voice notes in the Telegram bot (OpenAI transcription). FREE gets a short trial instead. */
+    VOICE_NOTES
 }

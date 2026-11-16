@@ -123,6 +123,8 @@ class IdorMatrixIntegrationTest extends IntegrationTestBase {
     private static final String B_PAYMENT_RECEIPT = "{\"amount\":100,\"receivedAt\":\"2026-01-01\"}";
     private static final String B_CUSTOM_TRADE = "{\"name\":\"Свій трейд\"}";
     private static final String B_NOTE = "{\"body\":\"Нотатка\"}";
+    private static final String B_TASK = "{\"body\":\"Задача\"}";
+    private static final String B_INBOX_ITEM = "{\"text\":\"Задача\"}";
     private static final String B_PHOTO_FOLDER = "{\"folder\":\"Тека\"}";
     private static final String B_PHOTO_VISIBILITY = "{\"visibility\":\"SHARED\"}";
     private static final String B_PORTAL = "{\"estimateIds\":[]}";
@@ -319,6 +321,15 @@ class IdorMatrixIntegrationTest extends IntegrationTestBase {
         c.add(get("/api/cash/{id}/photo", a.cash));
         c.add(watching(del("/api/cash/{id}/photo", a.cash), "cash_entry", a.cash));
         c.add(get("/api/projects/{id}/money", a.project));
+
+        // --- the bot's inbox (majster-bot): every lookup is (id, owner), so a foreign id is a 404
+        c.add(post("/api/inbox/{entryId}/retry", a.inboxEntry));
+        c.add(post("/api/inbox/{entryId}/undo", a.inboxEntry));
+        c.add(post("/api/inbox/{entryId}/estimate", a.inboxEntry));
+        c.add(watching(del("/api/inbox/{entryId}", a.inboxEntry), "inbox_entry", a.inboxEntry));
+        c.add(json("PATCH", "/api/inbox/items/{itemId}", B_INBOX_ITEM, a.inboxItem));
+        c.add(post("/api/inbox/items/{itemId}/apply", a.inboxItem));
+        c.add(watching(del("/api/inbox/items/{itemId}", a.inboxItem), "inbox_item", a.inboxItem));
         c.add(json("PATCH", "/api/profile/custom-trades/{id}", B_CUSTOM_TRADE, a.customTrade));
         c.add(watching(del("/api/profile/custom-trades/{id}", a.customTrade),
                 "user_trade", a.customTrade));
@@ -439,6 +450,12 @@ class IdorMatrixIntegrationTest extends IntegrationTestBase {
         c.add(json("POST", "/api/projects/{id}/notes", B_NOTE, a.project));
         c.add(json("PATCH", "/api/projects/{id}/notes/{noteId}", B_NOTE, a.project, a.note));
         c.add(del("/api/projects/{id}/notes/{noteId}", a.project, a.note));
+
+        // --- tasks (majster-bot) ------------------------------------------------
+        c.add(get("/api/projects/{id}/tasks", a.project));
+        c.add(json("POST", "/api/projects/{id}/tasks", B_TASK, a.project));
+        c.add(json("PATCH", "/api/projects/{id}/tasks/{taskId}", B_TASK, a.project, a.task));
+        c.add(del("/api/projects/{id}/tasks/{taskId}", a.project, a.task));
 
         // --- photos -------------------------------------------------------------
         c.add(get("/api/projects/{projectId}/photos", a.project));
@@ -582,6 +599,9 @@ class IdorMatrixIntegrationTest extends IntegrationTestBase {
         c.add(json("PATCH", "/api/projects/{id}/notes/{noteId}", B_NOTE, b.project, a.note));
         c.add(watching(del("/api/projects/{id}/notes/{noteId}", b.project, a.note),
                 "project_note", a.note));
+        c.add(json("PATCH", "/api/projects/{id}/tasks/{taskId}", B_TASK, b.project, a.task));
+        c.add(watching(del("/api/projects/{id}/tasks/{taskId}", b.project, a.task),
+                "project_task", a.task));
         c.add(json("PATCH", "/api/projects/{projectId}/photos/{photoId}",
                 B_PHOTO_VISIBILITY, b.project, a.photo));
         c.add(json("PATCH", "/api/projects/{projectId}/photos/{photoId}/folder",
@@ -703,6 +723,16 @@ class IdorMatrixIntegrationTest extends IntegrationTestBase {
                                 + a.client + "\"}", b.project),
                 "objects pointing at A's client", PROJECTS_OF_CLIENT_SQL, a.client));
 
+        // B's own inbox item re-filed under A's object.
+        c.add(new BodyCase(
+                json("PATCH", "/api/inbox/items/{itemId}",
+                        "{\"projectId\":\"" + a.project + "\"}", b.inboxItem),
+                "inbox items pointing at A's object", INBOX_ITEMS_OF_PROJECT_SQL, a.project));
+        c.add(new BodyCase(
+                json("PATCH", "/api/inbox/items/{itemId}",
+                        "{\"estimateId\":\"" + a.estimate + "\"}", b.inboxItem),
+                "inbox items pointing at A's estimate", INBOX_ITEMS_OF_ESTIMATE_SQL, a.estimate));
+
         return c;
     }
 
@@ -722,6 +752,10 @@ class IdorMatrixIntegrationTest extends IntegrationTestBase {
             "select count(*)::text from payment_receipt where plan_payment_id = ?";
     private static final String TEMPLATES_OF_TRADE_SQL =
             "select count(*)::text from estimate_templates where custom_trade_id = ?";
+    private static final String INBOX_ITEMS_OF_ESTIMATE_SQL =
+            "select count(*)::text from inbox_item where estimate_id = ?";
+    private static final String INBOX_ITEMS_OF_PROJECT_SQL =
+            "select count(*)::text from inbox_item where project_id = ?";
     private static final String PROJECTS_OF_CLIENT_SQL =
             "select count(*)::text from projects where client_id = ?";
 
@@ -955,6 +989,9 @@ class IdorMatrixIntegrationTest extends IntegrationTestBase {
         UUID payment;
         UUID paymentReceipt;
         UUID note;
+        UUID task;
+        UUID inboxEntry;
+        UUID inboxItem;
         UUID photo;
         UUID photoFolder;
         UUID message;
@@ -967,7 +1004,8 @@ class IdorMatrixIntegrationTest extends IntegrationTestBase {
         List<UUID> all() {
             return Arrays.asList(client, project, estimate, estimateItem, estimateShareLink, catalogItem,
                     notice, cash, customTrade, norm, material, template, templateItem, room,
-                    measurementItem, expense, payment, paymentReceipt, note, photo, photoFolder,
+                    measurementItem, expense, payment, paymentReceipt, note, task, inboxEntry, inboxItem,
+                    photo, photoFolder,
                     message, messageFile, projectReceipt, shoppingItem, act, actReceipt);
         }
     }
@@ -1077,6 +1115,17 @@ class IdorMatrixIntegrationTest extends IntegrationTestBase {
         id.note = insert("""
                 insert into project_note (id, project_id, body, sort_order, created_at, updated_at)
                 values (?, ?, ?, 0, now(), now())""", id.project, "Нотатка " + tag);
+        id.task = insert("""
+                insert into project_task (id, project_id, body, sort_order, created_at, updated_at)
+                values (?, ?, ?, 0, now(), now())""", id.project, "Задача " + tag);
+        id.inboxEntry = insert("""
+                insert into inbox_entry (id, owner_id, source, raw_text, status, created_at, updated_at)
+                values (?, ?, 'PWA', ?, 'NEW', now(), now())""", owner, "Запис " + tag);
+        id.inboxItem = insert("""
+                insert into inbox_item (id, entry_id, kind, status, project_id, text, issue, sort_order,
+                        created_at, updated_at)
+                values (?, ?, 'TASK', 'PENDING', ?, ?, 'OBJECT', 0, now(), now())""",
+                id.inboxEntry, id.project, "Задача " + tag);
         id.photoFolder = insert("""
                 insert into project_photo_folder (id, project_id, name, created_at)
                 values (?, ?, ?, now())""", id.project, "Тека " + tag);

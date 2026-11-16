@@ -29,6 +29,8 @@ public class PublicPortalRateLimitFilter extends OncePerRequestFilter {
     private static final String CALC_PREFIX = "/api/public/materials/";
     /** The visit beacon too — see {@code VisitRateLimiter}. */
     private static final String VISIT_PATH = "/api/public/visit";
+    /** Telegram's webhook: authenticated by its secret header, and every master's messages share its IPs. */
+    private static final String TELEGRAM_PREFIX = "/api/public/telegram/";
 
     private final PortalRateLimiter rateLimiter;
     private final ObjectMapper objectMapper;
@@ -37,7 +39,8 @@ public class PublicPortalRateLimitFilter extends OncePerRequestFilter {
     @Override
     protected boolean shouldNotFilter(HttpServletRequest request) {
         String uri = request.getRequestURI();
-        return !uri.startsWith(PATH_PREFIX) || uri.startsWith(CALC_PREFIX) || uri.equals(VISIT_PATH);
+        return !uri.startsWith(PATH_PREFIX) || uri.startsWith(CALC_PREFIX) || uri.equals(VISIT_PATH)
+                || uri.startsWith(TELEGRAM_PREFIX);
     }
 
     @Override

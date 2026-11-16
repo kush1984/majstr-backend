@@ -177,7 +177,7 @@ class ShoppingListIntegrationTest extends IntegrationTestBase {
         ShoppingListResponse first = shoppingListService
                 .applyCalculated(projectId, ownerId, estimateA, List.of(row(PUTTY, "12")));
         shoppingListService.update(projectId, ownerId, only(first, PUTTY).id(),
-                new ShoppingListItemUpdateRequest(new BigDecimal("9"), null, null, null));
+                new ShoppingListItemUpdateRequest(new BigDecimal("9"), null, null, null, null));
 
         ShoppingListResponse after = shoppingListService
                 .applyCalculated(projectId, ownerId, estimateA, List.of(row(PUTTY, "20")));
@@ -192,7 +192,7 @@ class ShoppingListIntegrationTest extends IntegrationTestBase {
                 .applyCalculated(projectId, ownerId, estimateA, List.of(row(PUTTY, "12")));
         UUID itemId = only(first, PUTTY).id();
         shoppingListService.update(projectId, ownerId, itemId,
-                new ShoppingListItemUpdateRequest(new BigDecimal("9"), null, null, null));
+                new ShoppingListItemUpdateRequest(new BigDecimal("9"), null, null, null, null));
 
         ShoppingListResponse after = shoppingListService
                 .applyCalculated(projectId, ownerId, estimateA, List.of(row(PUTTY, "20")));
@@ -202,7 +202,7 @@ class ShoppingListIntegrationTest extends IntegrationTestBase {
         assertThat(only(after, PUTTY).suggestedQuantity()).isEqualByComparingTo("20");
 
         ShoppingListItemResponse taken = shoppingListService.update(projectId, ownerId, itemId,
-                new ShoppingListItemUpdateRequest(null, null, null,
+                new ShoppingListItemUpdateRequest(null, null, null, null,
                         ShoppingListItemUpdateRequest.Suggestion.ACCEPT));
 
         assertThat(taken.quantity()).isEqualByComparingTo("20");
@@ -223,11 +223,11 @@ class ShoppingListIntegrationTest extends IntegrationTestBase {
                 .applyCalculated(projectId, ownerId, estimateA, List.of(row(PUTTY, "12")));
         UUID itemId = only(first, PUTTY).id();
         shoppingListService.update(projectId, ownerId, itemId,
-                new ShoppingListItemUpdateRequest(new BigDecimal("9"), null, null, null));
+                new ShoppingListItemUpdateRequest(new BigDecimal("9"), null, null, null, null));
         shoppingListService.applyCalculated(projectId, ownerId, estimateA, List.of(row(PUTTY, "20")));
 
         ShoppingListItemResponse kept = shoppingListService.update(projectId, ownerId, itemId,
-                new ShoppingListItemUpdateRequest(null, null, null,
+                new ShoppingListItemUpdateRequest(null, null, null, null,
                         ShoppingListItemUpdateRequest.Suggestion.KEEP_MINE));
 
         assertThat(kept.quantity()).isEqualByComparingTo("9");
@@ -237,7 +237,7 @@ class ShoppingListIntegrationTest extends IntegrationTestBase {
         // Answering an offer that is already gone is a no-op, not a failure: the tap may have been
         // queued offline at the merchant and replayed long after the question was settled.
         assertThat(shoppingListService.update(projectId, ownerId, itemId,
-                new ShoppingListItemUpdateRequest(null, null, null,
+                new ShoppingListItemUpdateRequest(null, null, null, null,
                         ShoppingListItemUpdateRequest.Suggestion.ACCEPT)).quantity())
                 .isEqualByComparingTo("9");
     }
@@ -247,7 +247,7 @@ class ShoppingListIntegrationTest extends IntegrationTestBase {
         ShoppingListResponse first = shoppingListService
                 .applyCalculated(projectId, ownerId, estimateA, List.of(row(PUTTY, "12")));
         shoppingListService.update(projectId, ownerId, only(first, PUTTY).id(),
-                new ShoppingListItemUpdateRequest(new BigDecimal("9"), null, null, null));
+                new ShoppingListItemUpdateRequest(new BigDecimal("9"), null, null, null, null));
         shoppingListService.applyCalculated(projectId, ownerId, estimateA, List.of(row(PUTTY, "20")));
 
         // The position left the estimate: his row stays (it is his), the stale 20 does not.
@@ -340,7 +340,7 @@ class ShoppingListIntegrationTest extends IntegrationTestBase {
         ShoppingListResponse first = shoppingListService
                 .applyCalculated(projectId, ownerId, estimateA, List.of(row(PUTTY, "12")));
         shoppingListService.update(projectId, ownerId, only(first, PUTTY).id(),
-                new ShoppingListItemUpdateRequest(new BigDecimal("9"), null, null, null));
+                new ShoppingListItemUpdateRequest(new BigDecimal("9"), null, null, null, null));
 
         estimateService.delete(estimateA, ownerId);
 
@@ -361,7 +361,7 @@ class ShoppingListIntegrationTest extends IntegrationTestBase {
         ShoppingListResponse first = shoppingListService
                 .applyCalculated(projectId, ownerId, estimateA, List.of(row(PUTTY, "12"), row("Профіль CD", "40")));
         shoppingListService.update(projectId, ownerId, only(first, PUTTY).id(),
-                new ShoppingListItemUpdateRequest(null, "взяти в Епіцентрі, спитати Сергія", null, null));
+                new ShoppingListItemUpdateRequest(null, "взяти в Епіцентрі, спитати Сергія", null, null, null));
 
         estimateService.delete(estimateA, ownerId);
 
@@ -407,6 +407,23 @@ class ShoppingListIntegrationTest extends IntegrationTestBase {
         jdbc.update("UPDATE estimates SET status = 'SIGNED' WHERE id = ?", estimateA);
 
         assertThat(shoppingListService.get(projectId, ownerId).sourceEstimateUnsigned()).isFalse();
+    }
+
+    /** His own row he may rename (a misheard voice note); a calculated row names its material and keeps it. */
+    @Test
+    void aHandWrittenRowIsRenamed_aCalculatedOneIsNot() {
+        ShoppingListItemResponse mine = shoppingListService.addManual(projectId, ownerId,
+                new ShoppingListItemRequest(null, "клей Резіт 111", Unit.PIECE, new BigDecimal("3"), null), null);
+        ShoppingListResponse calc = shoppingListService.applyCalculated(projectId, ownerId, estimateA,
+                List.of(row(PUTTY, "12")));
+
+        shoppingListService.update(projectId, ownerId, mine.id(),
+                new ShoppingListItemUpdateRequest(null, null, "  Клей Церезіт CM 11 ", null, null));
+        shoppingListService.update(projectId, ownerId, only(calc, PUTTY).id(),
+                new ShoppingListItemUpdateRequest(null, null, "Щось інше", null, null));
+
+        assertThat(shoppingListService.get(projectId, ownerId).items()).extracting(ShoppingListItemResponse::name)
+                .contains("Клей Церезіт CM 11", PUTTY).doesNotContain("Щось інше", "клей Резіт 111");
     }
 
     /** A hand-written row is nobody's calculation, so it never raises the hint. */
@@ -605,7 +622,7 @@ class ShoppingListIntegrationTest extends IntegrationTestBase {
         ShoppingListResponse first = shoppingListService
                 .applyCalculated(projectId, ownerId, estimateA, List.of(row(PUTTY, "12")));
         shoppingListService.update(projectId, ownerId, only(first, PUTTY).id(),
-                new ShoppingListItemUpdateRequest(null, "взяти в Епіцентрі, спитати Сергія", null, null));
+                new ShoppingListItemUpdateRequest(null, "взяти в Епіцентрі, спитати Сергія", null, null, null));
 
         ShoppingListResponse after = shoppingListService
                 .applyCalculated(projectId, ownerId, estimateA, List.of());
@@ -632,7 +649,7 @@ class ShoppingListIntegrationTest extends IntegrationTestBase {
         ShoppingListItemResponse topUp = withTopUp.items().stream()
                 .filter(i -> i.name().equals(PUTTY) && !i.bought()).findFirst().orElseThrow();
         shoppingListService.update(projectId, ownerId, topUp.id(),
-                new ShoppingListItemUpdateRequest(null, "спитати Сергія", null, null));
+                new ShoppingListItemUpdateRequest(null, "спитати Сергія", null, null, null));
 
         ShoppingListResponse after = shoppingListService
                 .applyCalculated(projectId, ownerId, estimateA, List.of(row(PUTTY, "12")));
@@ -768,7 +785,7 @@ class ShoppingListIntegrationTest extends IntegrationTestBase {
                 List.of(packaged("Лист ГКЛ", "30", "3", "лист")));
         UUID id = only(first, "Лист ГКЛ").id();
         shoppingListService.update(projectId, ownerId, id,
-                new ShoppingListItemUpdateRequest(new BigDecimal("33"), null, null, null));
+                new ShoppingListItemUpdateRequest(new BigDecimal("33"), null, null, null, null));
 
         // He switched to 1200×3000 sheets: the package is not his number, so it follows the run.
         ShoppingListResponse after = shoppingListService.applyCalculated(projectId, ownerId, estimateA,
