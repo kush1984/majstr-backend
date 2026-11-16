@@ -28,14 +28,18 @@
 - `AuthService.signInWithGoogle` — one door for sign-in AND registration:
   1. found by `google_sub` → sign in;
   2. else found by email → **link** (`google_sub` set, `email_verified = true`) and sign in; an email
-     already bound to ANOTHER Google account is refused (401), never swapped;
+     already bound to ANOTHER Google account is refused (401), never swapped. **Linking an account whose
+     email was never confirmed drops its password and every session** (`tokens_valid_after`, refresh
+     tokens revoked): whoever registered that address first may not be its owner;
   3. else a new account: verified email, Google name as `fullName`, a random bcrypt password he never
      needs («Забули пароль» sets one), consent stamped (the button's own line), first-touch attribution
-     like registration, starter catalog seeded. A gmail alias of an existing password account is 409
+     like registration, starter catalog seeded. The MX/disposable check and bcrypt run before the
+     write transaction (B-121); the MX check only for an address no account has. A gmail alias of an existing password account is 409
      (`existsByEmailCanonical`), the same rule as registration. Disposable-domain policy applies.
 - Tests: `GoogleIdTokensTest` (audience, forged signature, unverified email, foreign issuer, junk, the
   refetch floor), `GoogleSignInIntegrationTest` (new → verified + attributed; second time same account;
-  same-email linking; another Google account refused; off without a client id). Contract snapshot has
+  same-email linking keeps a verified account's password, drops an unverified one's password and
+  sessions; another Google account refused; off without a client id). Contract snapshot has
   `GoogleSignInRequest`.
 
 ## PWA

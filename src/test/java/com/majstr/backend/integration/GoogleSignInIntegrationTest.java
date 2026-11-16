@@ -9,6 +9,7 @@ import com.majstr.backend.exception.ResourceNotFoundException;
 import com.majstr.backend.repository.UserRepository;
 import com.majstr.backend.service.AuthService;
 import com.majstr.backend.service.GoogleIdTokens;
+import com.majstr.backend.service.RefreshTokenService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -30,6 +31,7 @@ class GoogleSignInIntegrationTest extends IntegrationTestBase {
     @MockitoBean GoogleIdTokens googleIdTokens;
     @Autowired AuthService authService;
     @Autowired UserRepository userRepository;
+    @Autowired RefreshTokenService refreshTokenService;
 
     private String sub;
     private String email;
@@ -57,10 +59,26 @@ class GoogleSignInIntegrationTest extends IntegrationTestBase {
     }
 
     @Test
-    void anAccountWithTheSameEmailIsLinked_andItsEmailCountsAsVerified() {
+    void aVerifiedAccountWithTheSameEmailIsLinked_andKeepsItsPasswordAndSessions() {
+        User existing = userRepository.save(User.builder()
+                .email(email).emailCanonical(email).passwordHash("x").emailVerified(true).plan(Plan.FREE)
+                .role(Role.USER).referralCode(UUID.randomUUID().toString().substring(0, 10)).build());
+
+        AuthResponse response = authService.signInWithGoogle(request());
+
+        assertThat(response.user().id()).isEqualTo(existing.getId());
+        User linked = userRepository.findById(existing.getId()).orElseThrow();
+        assertThat(linked.getGoogleSub()).isEqualTo(sub);
+        assertThat(linked.getPasswordHash()).isEqualTo("x");
+        assertThat(linked.getTokensValidAfter()).isNull();
+    }
+
+    @Test
+    void anUnverifiedAccountWithTheSameEmail_losesThePasswordAndSessionsSomeoneElseMayHold() {
         User existing = userRepository.save(User.builder()
                 .email(email).emailCanonical(email).passwordHash("x").plan(Plan.FREE).role(Role.USER)
                 .referralCode(UUID.randomUUID().toString().substring(0, 10)).build());
+        String squatterSession = refreshTokenService.issue(existing);
 
         AuthResponse response = authService.signInWithGoogle(request());
 
@@ -68,6 +86,9 @@ class GoogleSignInIntegrationTest extends IntegrationTestBase {
         User linked = userRepository.findById(existing.getId()).orElseThrow();
         assertThat(linked.getGoogleSub()).isEqualTo(sub);
         assertThat(linked.isEmailVerified()).isTrue();
+        assertThat(linked.getPasswordHash()).isNotEqualTo("x");
+        assertThat(linked.getTokensValidAfter()).isNotNull();
+        assertThatThrownBy(() -> authService.refresh(squatterSession)).isInstanceOf(RuntimeException.class);
     }
 
     @Test

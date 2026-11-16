@@ -9,6 +9,7 @@ import com.majstr.backend.entity.User;
 import com.majstr.backend.entity.UserTrade;
 import com.majstr.backend.exception.EmailAlreadyExistsException;
 import com.majstr.backend.exception.ResourceNotFoundException;
+import com.majstr.backend.repository.RefreshTokenRepository;
 import com.majstr.backend.repository.UserRepository;
 import com.majstr.backend.repository.UserTradeRepository;
 import com.majstr.backend.security.JwtService;
@@ -20,6 +21,7 @@ import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.TreeSet;
@@ -43,6 +45,7 @@ public class AuthService {
     private final PlatformTransactionManager transactionManager;
     private final AbuseLimits abuseLimits;
     private final GoogleIdTokens googleIdTokens;
+    private final RefreshTokenRepository refreshTokenRepository;
     private volatile String dummyHash;
 
     /**
@@ -122,28 +125,49 @@ public class AuthService {
             throw new ResourceNotFoundException("Google sign-in is not configured");
         }
         GoogleIdTokens.Identity id = googleIdTokens.verify(req.credential());
-        // bcrypt outside the transaction (review B-121), used only if the account is new.
+        // DNS and bcrypt stay outside the transaction (review B-121); the mail check only for a new address.
+        boolean known = Transactions.read(transactionManager, () ->
+                userRepository.findByGoogleSub(id.sub()).isPresent()
+                        || userRepository.findByEmailIgnoreCase(id.email()).isPresent());
+        if (!known) {
+            emailPolicyService.assertAcceptable(id.email());
+        }
+        // An account linked while unverified gets an unusable password too, so this one hash serves both.
         String unusablePassword = passwordEncoder.encode(UUID.randomUUID().toString());
         return Transactions.write(transactionManager, () -> {
             User user = userRepository.findByGoogleSub(id.sub()).orElse(null);
             if (user == null) {
                 user = userRepository.findByEmailIgnoreCase(id.email()).orElse(null);
                 if (user != null) {
-                    if (user.getGoogleSub() != null) {
-                        // His email, but bound to ANOTHER Google account: never swap it silently.
-                        throw new BadCredentialsException("Email is linked to another Google account");
-                    }
-                    user.setGoogleSub(id.sub());
-                    // Google has just proved he owns this mailbox.
-                    user.setEmailVerified(true);
+                    link(user, id.sub(), unusablePassword);
                 }
             }
             if (user == null) {
-                emailPolicyService.assertAcceptable(id.email());
                 return createGoogleAccount(req, id, unusablePassword);
             }
             return issueTokens(user);
         });
+    }
+
+    /**
+     * Binds a Google account to the account with its email. An address nobody had confirmed may have been
+     * registered by someone else before its owner arrived: then the password and every session are his,
+     * not the owner's, so both are dropped and the owner — proven by Google — is the only one left signed in.
+     */
+    private void link(User user, String sub, String unusablePassword) {
+        if (user.getGoogleSub() != null) {
+            // His email, but bound to ANOTHER Google account: never swap it silently.
+            throw new BadCredentialsException("Email is linked to another Google account");
+        }
+        if (!user.isEmailVerified()) {
+            user.setPasswordHash(unusablePassword);
+            // Whole seconds, as a JWT's iat is: the token issued right after this must pass.
+            user.setTokensValidAfter(Instant.now().truncatedTo(ChronoUnit.SECONDS));
+            refreshTokenRepository.revokeAllForUser(user.getId());
+        }
+        user.setGoogleSub(sub);
+        // Google has just proved he owns this mailbox.
+        user.setEmailVerified(true);
     }
 
     private AuthResponse createGoogleAccount(GoogleSignInRequest req, GoogleIdTokens.Identity id,

@@ -10,7 +10,7 @@ Architecture index has an unabridged twin in
 reasoning THERE and the invariant here. Per-area narrative lives in
 **[docs/architecture.md](docs/architecture.md)** — read the relevant section before working in that
 area. History: `docs/iteration-*.md`; deferred decisions: [docs/open-questions.md](docs/open-questions.md).
-Pre-compression index (for a name only an old commit mentions):
+Pre-compression index (names only old commits use):
 [docs/architecture-index-2026-10-04.md](docs/architecture-index-2026-10-04.md).
 
 ## Stack (pinned)
@@ -23,7 +23,7 @@ Pre-compression index (for a name only an old commit mentions):
 - **Jackson 3** — package is `tools.jackson.*`, not `com.fasterxml.jackson.*` (see index → Gotchas)
 - **Lombok**, **springdoc-openapi 2.8.x**, **JUnit 5 + MockMvc**
 
-Don't bump these without a clear reason — they are chosen to fit together. (Java 21 over 25: Java 25 had no reliable build image on Railway.)
+Don't bump these without a clear reason — they fit together. (Java 21 over 25: Java 25 had no reliable build image on Railway.)
 
 ## Common commands
 
@@ -63,7 +63,7 @@ controllers return DTOs. `passwordHash` never appears in any response (`UserResp
 
 `hibernate.ddl-auto: validate` — never express schema changes in entity annotations. Add a new
 `V<N>__<desc>.sql` under `src/main/resources/db/migration/`; **check the highest number first**
-(latest is **V208**; V183, V185 skipped — the unmerged bot takes the next free number). **Never edit an applied migration** — Flyway checksums it and a changed file
+(latest is **V210**; V183, V185 skipped — the unmerged bot takes the next free number). **Never edit an applied migration** — Flyway checksums it and a changed file
 fails startup (a COMMENT fix goes in the next migration's header, B-53). **A self-check may `RAISE EXCEPTION` only about the migration's OWN
 work** (review B-50): an assertion about data an admin can rename between deploys is a `RAISE
 WARNING`, and the integration tests keep it honest.
@@ -137,6 +137,7 @@ paired by title; **when you are about to change something a bullet warns about, 
 there first**, then the doc it names.
 
 - **Auth flow** — register/login/refresh/logout/me; `LoginRateLimitFilter` precedes `JwtAuthenticationFilter`.
+- **Google sign-in (V210)** — `google_sub`, else LINKS the email (unverified ⇒ password+sessions dropped).
 - **FREE object cap counts LIFETIME creations (V107)** — `users.lifetime_project_count` is the basis; `LimitService.reserveProjectSlot` locks + increments in one tx, a delete never decrements, idempotency check first. `PlanLimitsResponse.projectsUsed` = lifetime, NOT the live list length.
 - **Refresh tokens** — hashed at rest (SHA-256), rotated, swept daily; **the PWA must single-flight `/refresh`** or a burst of 401s self-logs-out.
 - **Email verification is soft** — `@Async` fail-soft; email editable only while unverified. **`SendReadiness` has two doors:** the MASTER's own send (links, PDFs) needs only a NAME (`masterSendsItself`); OUR letter (every `send-email`; `signOffline` withholds its copy) also a verified email (`weSendTheLetter`). [docs/iteration-share-without-verification.md](docs/iteration-share-without-verification.md).
@@ -161,7 +162,7 @@ there first**, then the doc it names.
 - **By-source funnel + first-touch UTM (V114)** — the funnel per source, whose `shared` is **the same computation as the aggregate, not a copy** (`sharedOwnerSources()` once; the funnel takes `.size()`). **Invariant pinned by `SourceBreakdownIntegrationTest`: for every step, Σ over sources == the `ActivationFunnelResponse` field.** Below `SIGNIFICANT_SOURCE_MIN_REGISTRATIONS` (5) a row is grouped under «замало даних»; the SERVER owns row order. **UTM is the CHANNEL dimension, `referral_source` the PARTNER one** — `users.utm_*` stamped ONCE at registration, never overwritten, and **NULL is a legitimate value** («без UTM», hence the deliberate `HashMap`). **Search traffic carries no UTM**, so V178 adds `users.first_referrer_host` (HOST only) + `first_entry_path` (PATH only, no query), normalised by `FirstTouch`, stamped once, reported as `referrers`/`entryPages` beside `utm` (one `channelStats` fold). [docs/iteration-analytics.md](docs/iteration-analytics.md).
 - **The training sample «Приклад: …» (V197)** — `projects.sample`, one live per owner (409 `SAMPLE_PROJECT_EXISTS`); `SampleProjectService` fills it outside the cap; deleted at any stage (no B-70 guard); **read by no figure** — every owner-wide count filters `sample`; its acts are «П-N». «Навчальний приклад Majstr» on the portal, previews and both PDFs (`SampleMark`); the snapshot's `ProjectPart.sample` is written only when TRUE. [docs/iteration-sample-object.md](docs/iteration-sample-object.md).
 - **Anonymous visit statistics (V187, iteration-visit-stats)** — a cookieless beacon on the public and SEO pages (never for a signed-in master or under GPC/DNT) → `POST /api/public/visit`, always 204. **No IP is stored**: `visitor` hashes IP + User-Agent under a salt per Kyiv day that `purge()` deletes. The report takes each visitor-day ONCE, by its first row, and keys sources on the same first touch registration stores. **V188:** LEAVE/CLICK/REGISTER_* events (labels, never values); `navigator.webdriver` sends nothing; UTC = `likelyBots`. [docs/iteration-visit-stats.md](docs/iteration-visit-stats.md).
-- **PostHog is PWA-only, and the boundary is a rule (iteration-posthog)** — **money and state belong to the backend; PostHog only gets what the backend does not already write** (which killed `checkout_started`/`estimate_signed`, and is why the two **dictation** events are legitimate — never the spoken text, only counts). The **privacy policy is part of the feature**; **no personal data leaves the device** (`autocapture:false`, a fixed five-property set); consent is one door, `applyAnalyticsIdentity(me)`; **`reset()` on logout is mandatory** (a crew shares one phone). **The one BACKEND consequence is the replay→person join** — `UserRepository.idOrNull` ORs `u.id = :id` into **both** ordering queries by **equality, never LIKE**, and requires the canonical 36-char form (`UUID.fromString` is LENIENT below it). [docs/iteration-posthog.md](docs/iteration-posthog.md).
+- **PostHog is PWA-only, and the boundary is a rule (iteration-posthog)** — **money, state belong to the backend; PostHog only gets what the backend does not already write**. The **privacy policy is part of the feature**; **no personal data leaves the device** (`autocapture:false`, a fixed five-property set); consent is one door, `applyAnalyticsIdentity(me)`; **`reset()` on logout is mandatory** (a crew shares one phone). **The one BACKEND consequence is the replay→person join** — `UserRepository.idOrNull` ORs `u.id = :id` into **both** ordering queries by **equality, never LIKE**, and requires the canonical 36-char form (`UUID.fromString` is LENIENT below it). [docs/iteration-posthog.md](docs/iteration-posthog.md).
 - **Admin broadcasts — fixed segments, never a query (V180)** — the «✉️ Розсилки» tab sends a re-engagement letter to ONE of six segments; `AudienceRules.segmentOf` puts a master in AT MOST ONE (the earliest step he is stuck on: UNVERIFIED → NO_OBJECT → NO_ESTIMATE → EMPTY_ESTIMATE (< 5 lines) → NOT_HANDED_OVER → INACTIVE (30 days)). **Only `role = USER ∧ plan = FREE ∧ broadcast_opt_out_at IS NULL`** (`findBroadcastAudience`). The send recomputes the segment and takes the INTERSECTION with the ticked ids; one `broadcast_recipient` row per letter, committed per letter, resumed on startup. **The unsubscribe footer is appended by `BroadcastLetter`, never the text**, its token is the row's own; **GET never unsubscribes**, POST does. `EmailService.sendBroadcast` is the one NON-fail-soft method. [docs/iteration-broadcasts.md](docs/iteration-broadcasts.md).
 - **The PWA update banner needs THREE things, any one silently kills it (iteration-sw-update-banner)** — `registerType: 'prompt'` + a `SKIP_WAITING` handler in `src/sw.ts` (`injectManifest`) + `clients.claim()` on activate. `src/lib/swUpdate.test.ts` asserts all three by **READING `vite.config.ts` and `src/sw.ts` as text** — every mocked test stayed green through a year of it being broken.
 - **An act receipt authors offline (offline-act-receipts, PWA-only)** — the op carries the photo as **bytes, not a `Blob`** (`QueuedFile`), downscaled before queueing. Outbox entity `actReceipt`, **create only**, replayed under the same `X-Entity-Uuid`. **Editing or deleting a queued receipt is not a second op** — the pending create is rewritten in place. Queued rows merge into the server list at ONE point (`ActEditorPage`), **never into the query cache**. Trap: `initOutbox` also subscribes to reconnects — call it ONCE.

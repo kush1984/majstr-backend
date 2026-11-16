@@ -65,13 +65,13 @@ public class AuthController {
         return ResponseEntity.ok(authService.login(request));
     }
 
-    @Operation(summary = "Exchange a refresh token for a new access + refresh pair")
-    /** «Увійти через Google» — signs in, linking a same-email account, or registers (404 while not configured). */
+    @Operation(summary = "Sign in with Google: signs in, links a same-email account, or registers (404 while not configured)")
     @PostMapping("/google")
     public ResponseEntity<AuthResponse> google(@Valid @RequestBody GoogleSignInRequest request) {
         return ResponseEntity.ok(authService.signInWithGoogle(request));
     }
 
+    @Operation(summary = "Exchange a refresh token for a new access + refresh pair")
     @PostMapping("/refresh")
     public ResponseEntity<AuthResponse> refresh(@Valid @RequestBody RefreshTokenRequest request) {
         return ResponseEntity.ok(authService.refresh(request.refreshToken()));
