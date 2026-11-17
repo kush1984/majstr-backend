@@ -1,6 +1,6 @@
 # One object without a subscription — 149 ₴
 
-- **Status:** 🔨 BUILT 2026-11-17, not pushed (waiting for the owner's OK).
+- **Status:** ✅ SHIPPED 2026-11-17 — backend `a3d2e5d`, PWA `82d9091` (1.84.0).
 - **Migrations:** V214 (`users.object_credits`, `projects.paid_at`), V215 (`payments_kind_check` admits `OBJECT`).
 - **PWA:** 1.84.0.
 - **Goal (webinar, 2026-11-11):** «Є можливість користуватися разово, без підписки?» (Сергій). A master

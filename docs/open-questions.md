@@ -1340,9 +1340,10 @@ one-line summary — keep the item in the file as a record.
 - **Notes / options:** Add `trial_ends_at` to user; `FeatureGuard` / `LimitService` reads it before checking plan.
 
 ### One-off paid object (no subscription) — 149 ₴
-- **Status:** IN_PROGRESS — built 2026-11-17 in the agreed shape (V214, PWA 1.84.0), not pushed yet;
-  see [iteration-one-off-object.md](iteration-one-off-object.md). The owner chose to build it straight
-  away instead of first offering it to the closed group.
+- **Status:** RESOLVED — shipped 2026-11-17 in the agreed shape (V214–V215, backend `a3d2e5d`, PWA
+  1.84.0 `82d9091`); see [iteration-one-off-object.md](iteration-one-off-object.md). The owner chose to
+  build it straight away instead of first offering it to the closed group. Still open: no public offer
+  (оферта) page states the one-off purchase and its refund rule.
 - **Since:** 2026-11-17 (asked at the 2026-11-11 webinar: «Є можливість користуватися разово, без підписки?»)
 - **Context:** FREE hits its paywall at the THIRD object (`MAX_PROJECTS` 2, lifetime, `PlanConfig`); almost
   every other feature is already FREE. A master who needs one estimate for one client has no way to pay
