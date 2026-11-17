@@ -290,6 +290,12 @@ public interface UserRepository extends JpaRepository<User, UUID> {
                                     @Param("recentSince") Instant recentSince,
                                     Pageable pageable);
 
+    /** One bought object (V214), added in the database so two payments landing together both count.
+     *  Flushes first and does not touch the caller's copy: nothing it holds writes the column back. */
+    @Modifying(flushAutomatically = true)
+    @Query("UPDATE User u SET u.objectCredits = u.objectCredits + 1 WHERE u.id = :id")
+    int addObjectCredit(@Param("id") UUID id);
+
     @Modifying
     @Query("UPDATE User u SET u.lastActiveAt = :now WHERE u.id = :id")
     int touchLastActive(@Param("id") UUID id, @Param("now") Instant now);

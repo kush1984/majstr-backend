@@ -1,6 +1,6 @@
 # Iteration — tile layout in the materials calculator
 
-**Status:** DONE (code) 2026-11-12 — stages 0–4: herringbone, engine, storage + calculator, the screens, sizes into the measurements on a yes. Not committed; PWA version to bump to 1.78.0 at the commit.
+**Status:** SHIPPED 2026-11-13 — stages 0–4 (herringbone, engine, storage + calculator, the screens, sizes into the measurements on a yes); backend `d0e022e` + `d73e358`, PWA 1.78.0–1.79.0.
 **Plan and mockups:** https://claude.ai/artifact/SyQS96Cm2zqrFGxcWG1pNL · analysis with sources and the
 owner's rulings: `C:\Work\prompts\majstr-rozkladka-plytky-analiz.md` (outside the repos).
 **Migrations:** V203, V204. **PWA:** engine, the layout screen, the calculator card, the line entry, «Як ми рахуємо ваші позиції».
@@ -278,3 +278,8 @@ PWA: `PositionMatchCard`. Tests: `MaterialAliasIntegrationTest`, `TileLayoutInte
 
 - `PublicMaterialCalcRequest.TileLayout` already exists — the calculator's enum is `CourseLayout` so the
   two are never confused.
+
+## The public page opens on the layout (2026-11-15, owner's ask, PWA `c3d025c`)
+
+- /kalkulyator-plytky checks «По розкладці на стінах» by default instead of «За площею + запас»;
+  `#layout-section` links and the switch work as before. `seoPages.test` / `calcPage.test` pin the default.

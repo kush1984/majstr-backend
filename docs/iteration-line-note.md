@@ -1,6 +1,6 @@
 # The master's own comment on an estimate line
 
-- **Status:** ✅ Backend + PWA, not pushed yet (owner tests first).
+- **Status:** ✅ SHIPPED 2026-11-14 — backend `cf2dd92`, `2969413`, `5f48e3b`; PWA 1.80.0–1.80.1.
 - **Migrations:** V206 (`estimate_items.note`, `estimate_items.note_visible`), V207 (`catalog_items.note`,
   `estimate_items.note_own`).
 - **PWA:** 1.80.0.

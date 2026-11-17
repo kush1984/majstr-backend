@@ -44,6 +44,14 @@ public class BillingController {
         return billingService.checkout(principal.id(), autoRenew, period);
     }
 
+    @Operation(summary = "Buy ONE object without a subscription — returns the monobank payment page URL; "
+            + "the webhook adds an object credit that the next object created at the FREE cap spends")
+    @SecurityRequirement(name = "bearer-jwt")
+    @PostMapping("/checkout-object")
+    public CheckoutResponse checkoutObject(@AuthenticationPrincipal UserPrincipal principal) {
+        return billingService.checkoutObject(principal.id());
+    }
+
     @Operation(summary = "Start the one-time self-serve 5-day PRO trial (FREE only, no card) — returns the updated profile")
     @SecurityRequirement(name = "bearer-jwt")
     @PostMapping("/trial")

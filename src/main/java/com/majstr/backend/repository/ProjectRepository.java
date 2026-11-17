@@ -40,6 +40,10 @@ public interface ProjectRepository extends JpaRepository<Project, UUID> {
     @Query("SELECT p FROM Project p WHERE p.id = :id")
     java.util.Optional<Project> findByIdForUpdate(@Param("id") UUID id);
 
+    /** Whether the object was created on a one-off object credit (V214) — the limit checks read only this. */
+    @Query("SELECT COUNT(p) > 0 FROM Project p WHERE p.id = :id AND p.paidAt IS NOT NULL")
+    boolean isPaid(@Param("id") UUID id);
+
     // ---- dashboard metrics (aggregate, no entity loading) -----------------
 
     long countByOwnerIdAndStatus(UUID ownerId, ProjectStatus status);

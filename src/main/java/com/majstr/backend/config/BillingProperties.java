@@ -45,7 +45,9 @@ public record BillingProperties(
         // How many days before a trial ends the daily reminder starts. One per day from here on,
         // deliberately unlike the auto-renew reminder's single T-N mail: a trial ending is the
         // master losing features he is using, and that is worth saying more than once.
-        int trialReminderDays
+        int trialReminderDays,
+        // One-off object without a subscription (V214): the price of one object credit.
+        BigDecimal objectPrice
 ) {
     public boolean isConfigured() {
         return monobankToken != null && !monobankToken.isBlank();

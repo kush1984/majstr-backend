@@ -89,6 +89,11 @@ public class Project {
     @Column(name = "transferred_at", updatable = false)
     private Instant transferredAt;
 
+    /** Created by spending a one-off object credit (V214): PRO's per-object limits and the logo on its
+     *  PDFs, never the AI features. Set once, at creation. */
+    @Column(name = "paid_at", updatable = false)
+    private Instant paidAt;
+
     @Column(name = "updated_at", nullable = false)
     private Instant updatedAt;
 

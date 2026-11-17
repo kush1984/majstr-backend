@@ -11,8 +11,8 @@ import com.majstr.backend.entity.WorkAct;
 import com.majstr.backend.entity.WorkActItem;
 import com.majstr.backend.entity.WorkActReceipt;
 import com.majstr.backend.entity.WorkActStatus;
-import com.majstr.backend.feature.Feature;
 import com.majstr.backend.feature.FeatureGuard;
+import com.majstr.backend.feature.PaidObject;
 import com.majstr.backend.repository.SignedDocumentRepository;
 import com.majstr.backend.service.SignedSnapshot.ActDoc;
 import com.majstr.backend.service.SignedSnapshot.EstimateDoc;
@@ -103,7 +103,7 @@ public class SignedDocumentService {
                             WorkActPdfService.CumulativeReference cumulative) {
         Project project = act.getProject();
         User owner = project.getOwner();
-        boolean branded = featureGuard.isEnabled(owner, Feature.BRANDED_PDF);
+        boolean branded = PaidObject.branded(featureGuard, owner, project);
         LogoCopy logo = copyLogo(owner);
         Map<UUID, String> names = new LinkedHashMap<>();
         estimateNames.forEach((id, name) -> names.put(id, ClientSafeName.of(name)));
@@ -151,7 +151,7 @@ public class SignedDocumentService {
     public Frozen freezeEstimate(Estimate estimate, List<EstimateItem> items) {
         Project project = estimate.getProject();
         User owner = project.getOwner();
-        boolean branded = featureGuard.isEnabled(owner, Feature.BRANDED_PDF);
+        boolean branded = PaidObject.branded(featureGuard, owner, project);
         LogoCopy logo = copyLogo(owner);
         EstimateDoc doc = new EstimateDoc(
                 SignedSnapshot.SCHEMA,

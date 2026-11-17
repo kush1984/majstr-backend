@@ -78,5 +78,10 @@ billing plumbing so nothing new has to expire it.
   (`ResendEmailService.verificationHtml(..., trialOffered)`), the unverified banner and the verify modal
   (PWA 1.76.3, `email.bannerTextNoTrial` / `modalTextNoTrial`) drop the PRO-trial clause when
   `trialDays` is 0; the trial wording stays in place for when it comes back. The landing FAQ, the
-  `index.html` FAQ JSON-LD and `llms.txt` (public marketing, mirrored word-for-word) still mention it.
+  `index.html` FAQ JSON-LD and `llms.txt` stopped mentioning it on 2026-11-15/17 (below).
 - **To bring it back:** `BILLING_TRIAL_DAYS=30` on Railway — no code, no deploy.
+
+- **Public pages caught up** (2026-11-15, PWA 1.80.3, `bcd4e07`): the landing FAQ and the `index.html` FAQ
+  JSON-LD no longer promise a trial, and the profile's «Спочатку підтвердіть email» text drops «і безкоштовний
+  тріал». `public/llms.txt` was missed then and fixed on 2026-11-17 (PWA 1.83.2). Bring the sentence back with
+  the trial, in all three.

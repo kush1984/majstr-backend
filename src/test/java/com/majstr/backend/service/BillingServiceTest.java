@@ -6,6 +6,7 @@ import com.majstr.backend.config.BillingProperties;
 import com.majstr.backend.dto.CheckoutResponse;
 import com.majstr.backend.entity.BillingPeriod;
 import com.majstr.backend.entity.Payment;
+import com.majstr.backend.entity.PaymentKind;
 import com.majstr.backend.entity.PaymentStatus;
 import com.majstr.backend.entity.Plan;
 import com.majstr.backend.entity.ReferralReward;
@@ -68,7 +69,7 @@ class BillingServiceTest {
     private BillingProperties props(String token, boolean allowDevSim) {
         return new BillingProperties(token, "https://api.monobank.ua",
                 new BigDecimal("299"), 30, new BigDecimal("1494"), new BigDecimal("2748"), 3,
-                "http://ret", "http://hook", allowDevSim, 3, 30, 15, 3);
+                "http://ret", "http://hook", allowDevSim, 3, 30, 15, 3, new BigDecimal("149"));
     }
 
     private BillingService service(BillingProperties props) {
@@ -603,7 +604,7 @@ class BillingServiceTest {
         given(userRepository.findWithTradesById(uid)).willReturn(Optional.of(user));
         BillingProperties off = new BillingProperties("tok", "https://api.monobank.ua",
                 new BigDecimal("299"), 30, new BigDecimal("1494"), new BigDecimal("2748"), 3,
-                "http://ret", "http://hook", true, 3, 30, 0, 3);
+                "http://ret", "http://hook", true, 3, 30, 0, 3, new BigDecimal("149"));
 
         assertThatThrownBy(() -> service(off).startTrial(uid))
                 .isInstanceOf(com.majstr.backend.exception.TrialNotAvailableException.class);
@@ -633,6 +634,95 @@ class BillingServiceTest {
         assertThatThrownBy(() -> service(props("tok")).startTrial(uid))
                 .isInstanceOf(com.majstr.backend.exception.TrialNotAvailableException.class);
         assertThat(user.getTrialStartedAt()).isNull();
+    }
+
+    // ---- one-off object (V214) ----------------------------------------------
+
+    @Test
+    void checkoutObject_devMode_addsACreditAtTheObjectPriceAndNoPro() {
+        UUID uid = UUID.randomUUID();
+        User user = verifiedFreeUser(uid);
+        given(userRepository.findById(uid)).willReturn(Optional.of(user));
+        ArgumentCaptor<Payment> saved = ArgumentCaptor.forClass(Payment.class);
+        given(paymentRepository.save(saved.capture())).willAnswer(i -> i.getArgument(0));
+
+        CheckoutResponse resp = service(props("")).checkoutObject(uid);
+
+        assertThat(resp.pageUrl()).isEqualTo("http://ret?for=object");
+        assertThat(saved.getValue().getKind()).isEqualTo(PaymentKind.OBJECT);
+        assertThat(saved.getValue().getAmount()).isEqualByComparingTo("149");
+        assertThat(saved.getValue().getDays()).isZero();
+        verify(userRepository).addObjectCredit(uid);
+        assertThat(user.getPlan()).isEqualTo(Plan.FREE);
+    }
+
+    @Test
+    void checkoutObject_unverifiedEmail_throwsAndSavesNothing() {
+        UUID uid = UUID.randomUUID();
+        given(userRepository.findById(uid)).willReturn(Optional.of(freeUser(uid)));
+
+        assertThatThrownBy(() -> service(props("")).checkoutObject(uid))
+                .isInstanceOf(com.majstr.backend.exception.EmailNotVerifiedException.class);
+        verify(paymentRepository, never()).save(any());
+    }
+
+    @Test
+    void checkoutObject_configured_sendsThePayerBackToTheObjectReturnAndCreditsNothingYet() {
+        UUID uid = UUID.randomUUID();
+        given(userRepository.findById(uid)).willReturn(Optional.of(verifiedFreeUser(uid)));
+        given(paymentRepository.save(any(Payment.class))).willAnswer(i -> withId(i.getArgument(0)));
+        given(monobankClient.createInvoice(eq(14900L), eq(980), anyString(), anyString(), any(), eq("http://ret?for=object")))
+                .willReturn(new MonobankClient.InvoiceCreated("inv-obj", "http://pay"));
+
+        CheckoutResponse resp = service(props("tok")).checkoutObject(uid);
+
+        assertThat(resp.pageUrl()).isEqualTo("http://pay");
+        verify(userRepository, never()).addObjectCredit(any());
+        verify(paymentRepository).attachInvoice(any(), eq("inv-obj"));
+    }
+
+    @Test
+    void webhook_successForAnObject_addsACreditAndGrantsNoPro() {
+        UUID uid = UUID.randomUUID();
+        User user = freeUser(uid);
+        user.setWalletId("left-by-an-earlier-pro-checkout");
+        Payment payment = Payment.builder()
+                .id(UUID.randomUUID()).userId(uid).invoiceId("inv-obj")
+                .amount(new BigDecimal("149")).ccy(980)
+                .status(PaymentStatus.PENDING).plan(Plan.FREE).days(0).kind(PaymentKind.OBJECT)
+                .build();
+        given(signatureVerifier.verify(any(), any(), any())).willReturn(true);
+        given(monobankClient.publicKey()).willReturn("pk");
+        given(paymentRepository.findByInvoiceId("inv-obj")).willReturn(Optional.of(payment));
+        given(paymentRepository.claimForGrant(any(), any())).willReturn(1);
+        given(userRepository.findById(uid)).willReturn(Optional.of(user));
+
+        service(props("tok")).handleWebhook(body("inv-obj", "success", 14900), "sig");
+
+        assertThat(payment.getStatus()).isEqualTo(PaymentStatus.SUCCESS);
+        verify(userRepository).addObjectCredit(uid);
+        assertThat(user.getPlan()).isEqualTo(Plan.FREE);
+        assertThat(user.getPlanExpiresAt()).isNull();
+        verify(monobankClient, never()).firstWalletCard(any());
+        verify(referralRewardRepository, never()).save(any());
+    }
+
+    @Test
+    void webhook_objectAmountMismatch_creditsNothing() {
+        UUID uid = UUID.randomUUID();
+        Payment payment = Payment.builder()
+                .id(UUID.randomUUID()).userId(uid).invoiceId("inv-obj")
+                .amount(new BigDecimal("149")).ccy(980)
+                .status(PaymentStatus.PENDING).plan(Plan.FREE).days(0).kind(PaymentKind.OBJECT)
+                .build();
+        given(signatureVerifier.verify(any(), any(), any())).willReturn(true);
+        given(monobankClient.publicKey()).willReturn("pk");
+        given(paymentRepository.findByInvoiceId("inv-obj")).willReturn(Optional.of(payment));
+
+        service(props("tok")).handleWebhook(body("inv-obj", "success", 100), "sig");
+
+        verify(userRepository, never()).addObjectCredit(any());
+        assertThat(payment.getStatus()).isEqualTo(PaymentStatus.PENDING);
     }
 
     private static Payment pending(UUID uid, String invoiceId) {

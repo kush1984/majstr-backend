@@ -320,3 +320,16 @@ PDF and the portal never printed the client's phone. PWA: `clientDraftError` nee
 (`estimate.enterClientName`), the picker and the edit dialog label the field «Телефон (необов'язково)»,
 a client row shows a phone only when there is one, `ClientResponse.phone` is `?: string | null`.
 Tests: `ClientServiceTest`, `EstimatePdfServiceTest`, `ClientPicker.test`, `ClientEditModal.test`.
+
+## No consent checkbox (2026-11-15, PWA 1.80.2, `8b16c18`)
+
+- Owner's call after the webinar's registrations: the checkbox goes. The consent is the press of «Створити
+  акаунт»: a small line under the button names the policy and links to it. The PWA always sends
+  `consent: true`; the backend still requires it (`@AssertTrue`), so no backend change and no migration.
+  Consent still switches PostHog on for the new master, as the ticked box did.
+- The «what is missing» line names Email and Password only. Every e2e spec (and the offline ones) stopped
+  ticking `input[name="consent"]` in 1.80.3 — the first push reddened CI's offline shell job without them.
+- Same release: the landing's first screen says «Безкоштовно: 2 об'єкти, без картки. Без ліміту — PRO за
+  299 ₴/міс.» under the hero button (inside 360×640), and every SEO calculator answer ends with «Ви майстер?»
+  and a button to /register (see iteration-seo-calculators.md).
+- «Consent stays a checkbox (owner, 2026-11-07)» above is superseded by this.

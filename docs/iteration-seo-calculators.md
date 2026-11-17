@@ -147,3 +147,10 @@ new landing pages).
   here; a new calculator DOMAIN (flooring, paint, profiles) needs an enum value, a position mapping,
   bounds and `PublicMaterialCalculatorIntegrationTest` coverage first — it cannot ship from the PWA
   repo alone.
+
+
+## Addendum 2026-11-15: a call to the master under every answer (PWA 1.80.2)
+
+- The single «Порахувати весь ремонт…» button under a result became a framed block: «Ви майстер? Додайте цей
+  розрахунок у кошторис — клієнт отримає посилання й підпише з телефона», a button «Зробити кошторис для клієнта →»
+  to /register and «Безкоштовно: 2 об'єкти, без картки.» (`masterCta()` in `src/seo/calcPage.ts`, `.seo-master-cta`).

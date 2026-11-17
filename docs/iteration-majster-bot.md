@@ -1,7 +1,8 @@
 # Iteration — majster-bot (Telegram bot + inbox + object tasks)
 
-**Status:** built on branch `majster-bot` (2026-10-31), merged onto master after the Google sign-in shipped
-(2026-11-16) with the review fixes below. **Migrations:** V211 `majster_bot` (written as V181, renumbered at
+**Status:** SHIPPED 2026-11-16 — backend `cb54357`, PWA 1.83.1 `7c3e61f`, with the review fixes and voice
+notes below. Live once Railway has the PROD bot's `TELEGRAM_BOT_TOKEN`/`TELEGRAM_BOT_USERNAME`,
+`TELEGRAM_WEBHOOK_SECRET` and a valid `OPENAI_API_KEY`. **Migrations:** V211 `majster_bot` (written as V181, renumbered at
 each merge — master had taken up to V210), V212 `inbox_entry.forwarded`.
 
 ## Goal
@@ -210,3 +211,18 @@ object deleted mid-parse keeps its number. Also: with only a SENT estimate open 
 Left for later: retention for `inbox_entry.raw_text`, the privacy-policy line about client names sent to the
 model, the unused columns (`telegram_message_id`, `telegram_chat_id` reads, `project_task.sort_order`), and
 `Outcome`/`Status` moving to `dto/`.
+
+
+## From the owner's local test (2026-11-16, before the push)
+
+- **A reply hung on «Записую…»:** the «Відкрити «Вхідні»» button carried `http://localhost:5173`; Telegram refuses a
+  non-https link button and with it the whole edit. A link button is now made for an `https://` APP_URL only, and
+  a refused edit is re-sent as a plain new message (`TelegramClient.editMessage` returns whether it landed).
+- **Silence came back as the object list:** OpenAI echoes the PROMPT on a silent note. `SpeechToText.heard` turns
+  an answer starting with the prompt's lead into «not heard» → «🎙 Не розчув…».
+- **«Церезіт CM 11» heard as «це резіт, це 111»:** the prompt now also carries common brands (Церезіт, Кнауф,
+  Ротбанд, Атлас, Крайзель, …) — an ear hint only; nothing reaches the catalog, which names no brand.
+- **Rows started lowercase** («клей для плитки»): `InboxService.capitalized` on every filed text.
+- **A misheard row could not be fixed:** `ShoppingListItemUpdateRequest.name` renames a MANUAL row (by hand or
+  from the bot); a calculated or receipt row keeps its name. PWA: «Назва» in the row's editor, MANUAL only.
+- «Виправ …» by voice is an open question (not built).

@@ -21,8 +21,8 @@ import com.majstr.backend.entity.Unit;
 import com.majstr.backend.entity.PercentBaseKind;
 import com.majstr.backend.entity.Project;
 import com.majstr.backend.entity.User;
-import com.majstr.backend.feature.Feature;
 import com.majstr.backend.feature.FeatureGuard;
+import com.majstr.backend.feature.PaidObject;
 import com.majstr.backend.storage.StorageService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -119,7 +119,7 @@ public class EstimatePdfService {
         // on a plan without it, render the rest of the PDF normally and
         // skip the logo. Throws are intentionally NOT used here.
         if (model.branded() != null ? model.branded()
-                : featureGuard.isEnabled(model.contractor(), Feature.BRANDED_PDF)) {
+                : PaidObject.branded(featureGuard, model.contractor(), model.project())) {
             tryLoadLogo(model.contractor().getLogoUrl()).ifPresent(image -> {
                 image.scaleToFit(80, 60);
                 logoCell.addElement(image);

@@ -165,6 +165,75 @@ public class BillingService {
     }
 
     /**
+     * Starts the purchase of ONE object without a subscription (V214). Same trust model as a PRO
+     * checkout: the row commits PENDING, and only the verified webhook adds the credit. The payer comes
+     * back to the return page with {@code ?for=object}, which waits for the credit, not for PRO.
+     */
+    public CheckoutResponse checkoutObject(UUID userId) {
+        PendingCharge charge = inTransaction(() -> prepareObjectCheckout(userId));
+        String returnUrl = objectReturnUrl(props.returnUrl());
+        if (charge == null) {
+            return new CheckoutResponse(returnUrl); // dev simulation: already credited
+        }
+        MonobankClient.InvoiceCreated invoice;
+        try {
+            invoice = monobankClient.createInvoice(
+                    toKopiykas(charge.amount()), UAH, charge.paymentId().toString(),
+                    "Majstr — один обʼєкт без підписки", null, returnUrl);
+        } catch (RuntimeException e) {
+            settleAsFailed(charge.paymentId());
+            throw e;
+        }
+        attachInvoice(charge.paymentId(), invoice.invoiceId());
+        log.info("Created monobank invoice {} for one object, user {} (payment {})",
+                invoice.invoiceId(), userId, charge.paymentId());
+        return new CheckoutResponse(invoice.pageUrl());
+    }
+
+    /** The object checkout's first transaction. Null when dev simulation already added the credit. */
+    private PendingCharge prepareObjectCheckout(UUID userId) {
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new ResourceNotFoundException("User not found: " + userId));
+        // Same rule as PRO: whoever pays must be reachable (receipts, recovery).
+        if (!user.isEmailVerified()) {
+            throw new EmailNotVerifiedException("error.email-not-verified");
+        }
+        BigDecimal price = props.objectPrice();
+        Payment payment = paymentRepository.save(Payment.builder()
+                .userId(userId)
+                .provider(PaymentProvider.MONOBANK)
+                .amount(price)
+                .ccy(UAH)
+                .status(PaymentStatus.PENDING)
+                // The plan column means «what this payment grants»: an object grants no plan.
+                .plan(Plan.FREE)
+                .days(0)
+                .kind(PaymentKind.OBJECT)
+                .build());
+
+        if (!props.isConfigured()) {
+            if (!props.allowDevSimulation()) {
+                throw new IllegalStateException(
+                        "Billing is not configured (MONOBANK_TOKEN missing) and dev-simulation is disabled");
+            }
+            payment.setStatus(PaymentStatus.SUCCESS);
+            payment.setPaidAt(Instant.now());
+            addObjectCredit(user);
+            log.warn("[DEV] MONOBANK_TOKEN not set — simulated one-object purchase for {}", user.getEmail());
+            return null;
+        }
+        return new PendingCharge(payment.getId(), price, 0, null, null);
+    }
+
+    static String objectReturnUrl(String returnUrl) {
+        return returnUrl + (returnUrl.contains("?") ? "&" : "?") + "for=object";
+    }
+
+    private void addObjectCredit(User user) {
+        userRepository.addObjectCredit(user.getId());
+    }
+
+    /**
      * Activates the one-time self-serve PRO trial: grants {@code trialDays} of PRO
      * with no payment and no card. Allowed only for a master currently on FREE who
      * has never taken the trial ({@code trialStartedAt == null}); otherwise 409
@@ -408,6 +477,13 @@ public class BillingService {
         // copy would otherwise write paidAt back to null and undo the claim's timestamp.
         payment.setStatus(PaymentStatus.SUCCESS);
         payment.setPaidAt(paidAt);
+        if (payment.getKind() == PaymentKind.OBJECT) {
+            // One object, nothing else: no PRO, no referral reward (that pays out on a subscription),
+            // and no card fetch — a wallet id left by an earlier PRO checkout is not this payment's.
+            addObjectCredit(user);
+            log.info("One-object credit granted to {} via invoice {}", user.getEmail(), payment.getInvoiceId());
+            return;
+        }
         extendPro(user, payment.getDays());
         grantReferralReward(user, payment);
 

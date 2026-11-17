@@ -910,8 +910,9 @@ one-line summary — keep the item in the file as a record.
 ## Business logic
 
 ### Voice notes in the Telegram bot (server speech-to-text)
-- **Status:** IN_PROGRESS — built 2026-11-16 (V213, PRO + 10-note FREE trial, OpenAI `gpt-4o-mini-transcribe`),
-  not shipped yet; the 20–30 real voice-note quality check is the owner's, before launch.
+- **Status:** RESOLVED — shipped 2026-11-16 (V213, backend `cb54357`): PRO + a 10-note FREE trial, OpenAI
+  `gpt-4o-mini-transcribe`, audio never kept. Still the owner's: a valid `OPENAI_API_KEY` on Railway and the
+  20–30 real voice-note quality check (`VOICE_MODEL=gpt-4o-transcribe` if it mishears).
 - **Since:** 2026-10-31, majster-bot
 - **Context:** the bot reads TEXT; a voice note gets a hint to use the keyboard microphone. Anthropic has no
   speech-to-text, so voice needs a second provider.
@@ -1337,6 +1338,29 @@ one-line summary — keep the item in the file as a record.
 - **Since:** step 4
 - **Context:** No trial concept. New user is FREE forever until manual upgrade.
 - **Notes / options:** Add `trial_ends_at` to user; `FeatureGuard` / `LimitService` reads it before checking plan.
+
+### One-off paid object (no subscription) — 149 ₴
+- **Status:** IN_PROGRESS — built 2026-11-17 in the agreed shape (V214, PWA 1.84.0), not pushed yet;
+  see [iteration-one-off-object.md](iteration-one-off-object.md). The owner chose to build it straight
+  away instead of first offering it to the closed group.
+- **Since:** 2026-11-17 (asked at the 2026-11-11 webinar: «Є можливість користуватися разово, без підписки?»)
+- **Context:** FREE hits its paywall at the THIRD object (`MAX_PROJECTS` 2, lifetime, `PlanConfig`); almost
+  every other feature is already FREE. A master who needs one estimate for one client has no way to pay
+  except a monthly subscription.
+- **Agreed shape (owner):**
+  - At the object cap the PWA offers two doors: «Оформити PRO — 299 ₴/міс» and «Тільки цей обʼєкт — 149 ₴».
+  - A paid object is permanent and gets PRO limits EXCEPT AI: estimates per object unlimited, 50 photos +
+    50 receipt photos, logo on this object's PDFs (`BRANDED_PDF` scoped to the object). No sketch
+    recognition, no bot voice (project import is hidden in the PWA anyway, `PROJECT_IMPORT_ENABLED=false`).
+    Everything FREE has stays as on FREE.
+  - After a second one-off payment in a month, suggest PRO (2 × 149 ≈ one month of PRO).
+- **Notes / build sketch (~1–2 days + tests):** V214 — a paid flag on `projects` + a purpose on `payment`
+  (`PRO` / `OBJECT_PASS`); reuse the monobank checkout and webhook checks (signature, exact kopiyka amount),
+  only the grant differs; `LimitService.reserveProjectSlot` counts bought slots; estimate/photo limits read
+  the object, `BRANDED_PDF` checks object or plan; PWA second button + billing return into the new object;
+  offer wording (one-off purchase, refunds), FAQ, llms.txt, landing prices. Offline object create stays
+  behind the over-limit gate (paying is online).
+- **Next:** offer it to 2–3 masters of the closed PRO group before building.
 
 ### Team plan: actual multi-user workspaces
 - **Status:** OPEN

@@ -33,7 +33,9 @@ public record ProjectResponse(
         Instant updatedAt,
         boolean sample,
         /** The client's page shows «Зведення» after the positions (V202); false = at the top. */
-        boolean portalSummaryAtBottom
+        boolean portalSummaryAtBottom,
+        /** A one-off paid object (V214): PRO's per-object limits and the logo on its PDFs. */
+        boolean paid
 ) {
     /** Use when neither the latest-estimate summary nor the stage flags are loaded (e.g. a
      *  freshly created project, which by definition has no estimates yet). */
@@ -62,7 +64,8 @@ public record ProjectResponse(
                 project.getCreatedAt(),
                 project.getUpdatedAt(),
                 project.isSample(),
-                project.isPortalSummaryAtBottom()
+                project.isPortalSummaryAtBottom(),
+                project.getPaidAt() != null
         );
     }
 }

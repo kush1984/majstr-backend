@@ -85,7 +85,7 @@ public class ProjectService {
                 return ProjectResponse.from(p); // idempotent replay
             }
         }
-        limitService.reserveProjectSlot(ownerId);
+        boolean paid = limitService.reserveProjectSlot(ownerId);
         User owner = userRepository.getReferenceById(ownerId);
         Client client = req.clientId() == null ? null : clientService.loadOwned(req.clientId(), ownerId);
         Project project = Project.builder()
@@ -96,6 +96,7 @@ public class ProjectService {
                 .address(normalize(req.address()))
                 .description(normalize(req.description()))
                 .status(ProjectStatus.DRAFT)
+                .paidAt(paid ? Instant.now() : null)
                 .build();
         // A brand-new project has no estimate yet, so the card summary is null.
         return ProjectResponse.from(projectRepository.save(project));

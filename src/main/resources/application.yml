@@ -387,6 +387,8 @@ app:
     pro-half-year-price: ${BILLING_PRO_HALF_YEAR_PRICE:1494}
     # Year tariff (12 months, deepest discount): 2748 = 229/mo — saves 840 ₴ vs monthly.
     pro-year-price: ${BILLING_PRO_YEAR_PRICE:2748}
+    # One-off object without a subscription (V214, owner 2026-11-17): PRO limits on that one object, no AI.
+    object-price: ${BILLING_OBJECT_PRICE:149}
     # PRO days awarded to a referrer when their invited master first pays.
     referral-reward-days: ${BILLING_REFERRAL_REWARD_DAYS:30}
     # Days after expiry before the daily job downgrades PRO → FREE (late-renew window).

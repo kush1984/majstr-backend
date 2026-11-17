@@ -144,6 +144,11 @@ public class User {
     @Column(name = "lifetime_project_count", nullable = false)
     private int lifetimeProjectCount;
 
+    /** One-off objects bought and not created yet (V214). The next create at the FREE object cap
+     *  spends one and is stamped {@code Project.paidAt}; a plan that has no cap never spends it. */
+    @Column(name = "object_credits", nullable = false)
+    private int objectCredits;
+
     @Enumerated(EnumType.STRING)
     @Column(name = "role", nullable = false, length = 20)
     @Builder.Default

@@ -1,9 +1,9 @@
 # «Увійти через Google» (branch `google_signup` in both repos)
 
-- **Status:** code done on the branch, NOT merged, NOT pushed to master. Needs the Google Cloud setup
-  below and a test on real phones before merging.
-- **Migration:** V210 (`users.google_sub` + partial unique index). V210, not V209: the majster-bot work
-  holds V209. If master's highest number moves before this merges, renumber.
+- **Status:** SHIPPED 2026-11-16 — backend `7dc28fc` + review fixes `b5a5c17`, PWA `ab2a28f` + `1b145cb` (1.81.0).
+  Google Cloud project «Majstr» is In production; `GOOGLE_CLIENT_ID` on Railway, `VITE_GOOGLE_CLIENT_ID` in
+  Cloudflare Pages. Brand verification (the dialog naming «Majstr») is optional and not done.
+- **Migration:** V210 (`users.google_sub` + partial unique index). The bot, merged after, took V211.
 - **Why:** 48 % of visitors are on Android; the registration form loses people at email/password.
   Google sign-in is one tap, no password, the email is verified by Google.
 

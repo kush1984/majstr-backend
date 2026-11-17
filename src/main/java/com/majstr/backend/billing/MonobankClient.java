@@ -39,14 +39,20 @@ public class MonobankClient {
      * tokenized on payment (saveCardData) into that wallet, so it can later be
      * charged merchant-initiated for auto-renewal.
      */
-    @SuppressWarnings("unchecked")
     public InvoiceCreated createInvoice(long amountKopiykas, int ccy, String reference,
                                         String destination, String saveToWalletId) {
+        return createInvoice(amountKopiykas, ccy, reference, destination, saveToWalletId, props.returnUrl());
+    }
+
+    /** As above, returning the payer to {@code redirectUrl} instead of the configured return URL. */
+    @SuppressWarnings("unchecked")
+    public InvoiceCreated createInvoice(long amountKopiykas, int ccy, String reference,
+                                        String destination, String saveToWalletId, String redirectUrl) {
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("amount", amountKopiykas);
         body.put("ccy", ccy);
         body.put("merchantPaymInfo", Map.of("reference", reference, "destination", destination));
-        body.put("redirectUrl", props.returnUrl());
+        body.put("redirectUrl", redirectUrl);
         body.put("webHookUrl", props.webhookUrl());
         body.put("validity", 3600); // seconds the payment page stays valid
         body.put("paymentType", "debit");

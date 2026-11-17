@@ -34,6 +34,14 @@ public interface PaymentRepository extends JpaRepository<Payment, UUID> {
             """)
     List<Payment> findAutoRenewSince(@Param("userId") UUID userId, @Param("after") Instant after);
 
+    /** One-off objects (V214) this master paid for since {@code after} — the «PRO is cheaper» hint. */
+    @Query("""
+            SELECT COUNT(p) FROM Payment p
+            WHERE p.userId = :userId AND p.kind = com.majstr.backend.entity.PaymentKind.OBJECT
+              AND p.status = com.majstr.backend.entity.PaymentStatus.SUCCESS AND p.paidAt >= :after
+            """)
+    long countPaidObjectsSince(@Param("userId") UUID userId, @Param("after") Instant after);
+
     /** The most recent payment of a kind for a user — the admin's "last auto-charge". */
     Optional<Payment> findFirstByUserIdAndKindOrderByCreatedAtDesc(UUID userId, PaymentKind kind);
 

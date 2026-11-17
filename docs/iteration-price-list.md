@@ -1,6 +1,6 @@
 # «Поділитися прайсом» — the master's prices for a client
 
-- **Status:** ✅ Backend + PWA, not pushed yet (owner tests first).
+- **Status:** ✅ SHIPPED 2026-11-14 — backend `0ff7c5a`, `2969413`; PWA 1.79.0–1.80.1.
 - **Migration:** V205 (`catalog_items.in_price_list`, `price_list_link`).
 - **PWA:** 1.79.0.
 - **Goal (webinar, 2026-11-11):** «Чи можна скинути повністю кошторис клієнту, бо деколи питають а які у

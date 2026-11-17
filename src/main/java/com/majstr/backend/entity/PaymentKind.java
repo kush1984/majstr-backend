@@ -8,5 +8,7 @@ package com.majstr.backend.entity;
  */
 public enum PaymentKind {
     CHECKOUT,
-    AUTO_RENEW
+    AUTO_RENEW,
+    /** A one-off object (V214): buys one object credit, no plan and no days. */
+    OBJECT
 }

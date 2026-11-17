@@ -18,8 +18,8 @@ import com.majstr.backend.entity.WorkAct;
 import com.majstr.backend.entity.WorkActItem;
 import com.majstr.backend.entity.WorkActLineKind;
 import com.majstr.backend.entity.WorkActKind;
-import com.majstr.backend.feature.Feature;
 import com.majstr.backend.feature.FeatureGuard;
+import com.majstr.backend.feature.PaidObject;
 import com.majstr.backend.storage.StorageService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -141,7 +141,7 @@ public class WorkActPdfService {
         logoCell.setBorder(0);
         logoCell.setHorizontalAlignment(Element.ALIGN_RIGHT);
         if (model.branded() != null ? model.branded()
-                : featureGuard.isEnabled(model.contractor(), Feature.BRANDED_PDF)) {
+                : PaidObject.branded(featureGuard, model.contractor(), model.project())) {
             tryLoadLogo(model.contractor().getLogoUrl()).ifPresent(image -> {
                 image.scaleToFit(80, 60);
                 logoCell.addElement(image);

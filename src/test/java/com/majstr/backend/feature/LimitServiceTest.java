@@ -7,7 +7,9 @@ import com.majstr.backend.entity.Plan;
 import com.majstr.backend.entity.User;
 import com.majstr.backend.exception.LimitExceededException;
 import com.majstr.backend.repository.EstimateRepository;
+import com.majstr.backend.repository.PaymentRepository;
 import com.majstr.backend.repository.ProjectPhotoRepository;
+import com.majstr.backend.repository.ProjectRepository;
 import com.majstr.backend.repository.UserRepository;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -29,6 +31,8 @@ class LimitServiceTest {
     @Mock UserRepository userRepository;
     @Mock EstimateRepository estimateRepository;
     @Mock ProjectPhotoRepository projectPhotoRepository;
+    @Mock ProjectRepository projectRepository;
+    @Mock PaymentRepository paymentRepository;
     @Mock BillingProperties billingProperties;
     @InjectMocks LimitService limitService;
 
@@ -130,6 +134,76 @@ class LimitServiceTest {
 
         assertThatCode(() -> limitService.requireCanAddPhoto(userId, projectId, PhotoSource.RECEIPT))
                 .doesNotThrowAnyException();
+    }
+
+    // ---- one-off paid object (V214) ----------------------------------------
+
+    @Test
+    void reserveProjectSlot_atCapSpendsABoughtObject() {
+        User user = givenUserWithLifetime(Plan.FREE, 2);
+        user.setObjectCredits(1);
+
+        boolean paid = limitService.reserveProjectSlot(userId);
+
+        assertThat(paid).isTrue();
+        assertThat(user.getObjectCredits()).isZero();
+        assertThat(user.getLifetimeProjectCount()).isEqualTo(3);
+    }
+
+    @Test
+    void reserveProjectSlot_belowCapKeepsTheBoughtObject() {
+        // The two free objects are free: a credit bought early waits for the cap.
+        User user = givenUserWithLifetime(Plan.FREE, 1);
+        user.setObjectCredits(1);
+
+        assertThat(limitService.reserveProjectSlot(userId)).isFalse();
+        assertThat(user.getObjectCredits()).isEqualTo(1);
+    }
+
+    @Test
+    void reserveProjectSlot_proNeverSpendsABoughtObject() {
+        User user = givenUserWithLifetime(Plan.PRO, 10);
+        user.setObjectCredits(1);
+
+        assertThat(limitService.reserveProjectSlot(userId)).isFalse();
+        assertThat(user.getObjectCredits()).isEqualTo(1);
+    }
+
+    @Test
+    void requireCanAddEstimate_paidObjectHasNoEstimateCap() {
+        givenUserOnPlan(Plan.FREE);
+        given(projectRepository.isPaid(projectId)).willReturn(true);
+
+        // PRO's cap is unlimited: no count is even read.
+        assertThatCode(() -> limitService.requireCanAddEstimate(userId, projectId)).doesNotThrowAnyException();
+    }
+
+    @Test
+    void requireCanAddPhoto_paidObjectTakesProsCap() {
+        givenUserOnPlan(Plan.FREE);
+        given(projectRepository.isPaid(projectId)).willReturn(true);
+        given(projectPhotoRepository.countByProjectIdAndSource(projectId, PhotoSource.MANUAL)).willReturn(50L);
+
+        assertThatThrownBy(() -> limitService.requireCanAddPhoto(userId, projectId, PhotoSource.MANUAL))
+                .isInstanceOfSatisfying(LimitExceededException.class,
+                        ex -> assertThat(ex.getMaxAllowed()).isEqualTo(50));
+    }
+
+    @Test
+    void limitsFor_reportsBoughtObjectsAndThePaidObjectCaps() {
+        User user = User.builder().id(userId).plan(Plan.FREE).objectCredits(1).build();
+        given(userRepository.findById(userId)).willReturn(Optional.of(user));
+        given(billingProperties.objectPrice()).willReturn(new java.math.BigDecimal("149"));
+        given(paymentRepository.countPaidObjectsSince(org.mockito.ArgumentMatchers.eq(userId),
+                org.mockito.ArgumentMatchers.any())).willReturn(2L);
+
+        PlanLimitsResponse limits = limitService.limitsFor(userId);
+
+        assertThat(limits.objectCredits()).isEqualTo(1);
+        assertThat(limits.objectPrice()).isEqualByComparingTo("149");
+        assertThat(limits.objectsBoughtLastMonth()).isEqualTo(2);
+        assertThat(limits.paidObject().maxEstimatesPerProject()).isNull();
+        assertThat(limits.paidObject().maxPhotosPerObject()).isEqualTo(50);
     }
 
     // ---- limits-for-UI -----------------------------------------------------
