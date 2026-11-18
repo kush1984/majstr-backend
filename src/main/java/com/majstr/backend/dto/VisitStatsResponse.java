@@ -62,7 +62,12 @@ public record VisitStatsResponse(
 
     public record Slot(int slot, long visitors) {}
 
-    public record Day(LocalDate day, long pageviews, long visitors, long registered) {}
+    /** {@code signups} are that day's {@code registered}, oldest first, for the chart's tooltip. */
+    public record Day(LocalDate day, long pageviews, long visitors, long registered, List<Signup> signups) {}
+
+    /** One master who signed up, with the first touch he registered with (null = not recorded). */
+    public record Signup(String email, String utmSource, String utmCampaign, String referrerHost,
+                         String entryPath, boolean google) {}
 
     public record Channel(String source, long visitors, long registered) {}
 

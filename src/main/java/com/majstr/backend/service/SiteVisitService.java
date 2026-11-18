@@ -271,17 +271,26 @@ public class SiteVisitService {
                 row[1] = rs.getLong("visitors");
             }
         }, from, to);
+        // One row per master rather than a count, so the chart can say WHO signed up and from where.
+        Map<LocalDate, List<VisitStatsResponse.Signup>> signups = new HashMap<>();
         jdbc.query("""
-                SELECT (created_at AT TIME ZONE 'Europe/Kyiv')::date AS day, count(*) AS registered
-                FROM users WHERE role = 'USER' AND created_at >= ? AND created_at < ? GROUP BY 1
+                SELECT (created_at AT TIME ZONE 'Europe/Kyiv')::date AS day, email, utm_source, utm_campaign,
+                       first_referrer_host, first_entry_path, google_sub IS NOT NULL AS google
+                FROM users WHERE role = 'USER' AND created_at >= ? AND created_at < ? ORDER BY created_at
                 """, rs -> {
-            long[] row = byDay.get(rs.getObject("day", LocalDate.class));
+            LocalDate day = rs.getObject("day", LocalDate.class);
+            long[] row = byDay.get(day);
             if (row != null) {
-                row[2] = rs.getLong("registered");
+                row[2]++;
+                signups.computeIfAbsent(day, d -> new ArrayList<>()).add(new VisitStatsResponse.Signup(
+                        rs.getString("email"), rs.getString("utm_source"), rs.getString("utm_campaign"),
+                        rs.getString("first_referrer_host"), rs.getString("first_entry_path"),
+                        rs.getBoolean("google")));
             }
         }, regFrom, regTo);
         List<VisitStatsResponse.Day> out = new ArrayList<>(byDay.size());
-        byDay.forEach((day, row) -> out.add(new VisitStatsResponse.Day(day, row[0], row[1], row[2])));
+        byDay.forEach((day, row) -> out.add(new VisitStatsResponse.Day(day, row[0], row[1], row[2],
+                signups.getOrDefault(day, List.of()))));
         return out;
     }
 

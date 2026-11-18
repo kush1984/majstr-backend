@@ -135,3 +135,12 @@ LEAVE that measured nothing. The SEO pages call `trackPage(path)`; the SPA keeps
   tab registrations can outnumber the step before them. `visitRatio` shows «—» there instead of «450 %»;
   the shared `ratio` the other tabs use is untouched.
 
+
+## Who signed up, on the daily chart (2026-11-18)
+
+«Реєстрації: 4» on the chart said nothing about who. Each `VisitStatsResponse.Day` now carries `signups`
+(email, UTM source/campaign, referrer host, entry page, `google`), oldest first; `registered` is counted
+from the same rows, so the tooltip and the bar never disagree (`SiteVisitIntegrationTest`). The tooltip
+(Chart.js `afterBody`, `interaction: index`) lists up to 12 per day as «email — source», where source is
+the first touch in the source tables' order: UTM, then referrer, then «прямо на <page>», with «· Google»
+for a Google sign-up. Admin-only; the visit rows themselves still hold no personal data.

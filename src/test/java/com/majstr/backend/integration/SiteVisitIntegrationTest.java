@@ -132,7 +132,7 @@ class SiteVisitIntegrationTest extends IntegrationTestBase {
                 {"kind":"REGISTER_STARTED","path":"/register","referrerHost":"%s"}""".formatted(host));
         post(nextIp(), IPHONE, sourced("/", host));
         post(nextIp(), ANDROID, sourced("/", host));
-        registeredMaster(host);
+        String email = registeredMaster(host);
 
         VisitStatsResponse stats = visits.stats(1);
 
@@ -142,6 +142,9 @@ class SiteVisitIntegrationTest extends IntegrationTestBase {
         assertThat(stats.days()).singleElement().satisfies(d -> {
             assertThat(d.visitors()).isGreaterThanOrEqualTo(3);
             assertThat(d.registered()).isGreaterThanOrEqualTo(1);
+            // The chart's tooltip names who signed up that day and where he came from.
+            assertThat(d.signups()).hasSize((int) d.registered());
+            assertThat(d.signups()).contains(new VisitStatsResponse.Signup(email, null, null, host, null, false));
         });
         assertThat(stats.sawRegister()).isGreaterThanOrEqualTo(1);
         assertThat(stats.startedRegister()).isGreaterThanOrEqualTo(1);
@@ -262,7 +265,7 @@ class SiteVisitIntegrationTest extends IntegrationTestBase {
         return "{\"kind\":\"" + kind + "\",\"path\":\"" + path + "\"" + (extra.isEmpty() ? "" : "," + extra) + "}";
     }
 
-    private void registeredMaster(String referrerHost) {
+    private String registeredMaster(String referrerHost) {
         UUID id = UUID.randomUUID();
         Timestamp now = Timestamp.from(Instant.now());
         jdbc.update("""
@@ -271,6 +274,7 @@ class SiteVisitIntegrationTest extends IntegrationTestBase {
                                    first_referrer_host)
                 VALUES (?, ?, ?, 'x', 'Петро', '+380', 'ФОП', ?, false, 'FREE', 'USER', ?, ?, ?)
                 """, id, id + "@t.ua", id + "@t.ua", id.toString().substring(0, 10), now, now, referrerHost);
+        return id + "@t.ua";
     }
 
     private static String page(String path) {

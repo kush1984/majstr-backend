@@ -1199,7 +1199,13 @@
                     { label: 'Реєстрації', data: days.map(d => d.registered), backgroundColor: '#1f6feb' }
                 ]
             },
-            options: { responsive: true, scales: { y: { beginAtZero: true, ticks: { precision: 0 } } } }
+            options: {
+                responsive: true,
+                interaction: { mode: 'index', intersect: false },
+                scales: { y: { beginAtZero: true, ticks: { precision: 0 } } },
+                // A bare «Реєстрації: 4» says nothing: the tooltip lists who signed up and where from.
+                plugins: { tooltip: { callbacks: { afterBody: items => signupLines(days[items[0].dataIndex]) } } }
+            }
         });
 
         document.getElementById('visitsSources').innerHTML =
@@ -1230,6 +1236,22 @@
             + visitShares('Браузер або застосунок', v.browsers || [], v.visitors)
             + visitShares('Часовий пояс — замість міста', v.timeZones || [], v.visitors)
             + visitShares('Мова браузера', v.languages || [], v.visitors);
+    }
+
+    // The same first touch the source tables read: UTM first, then the referring site, then the entry page.
+    function signupSource(s) {
+        const touch = s.utmSource
+            ? s.utmSource + (s.utmCampaign ? ' / ' + s.utmCampaign : '')
+            : s.referrerHost || (s.entryPath ? 'прямо на ' + s.entryPath : 'джерело невідоме');
+        return touch + (s.google ? ' · Google' : '');
+    }
+
+    function signupLines(day) {
+        const list = (day && day.signups) || [];
+        if (list.length === 0) return [];
+        const shown = list.slice(0, 12).map(s => '• ' + s.email + ' — ' + signupSource(s));
+        if (list.length > shown.length) shown.push(`…і ще ${list.length - shown.length}`);
+        return [''].concat(shown);
     }
 
     function visitChannels(title, column, nullLabel, rows) {
