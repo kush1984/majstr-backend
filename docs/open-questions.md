@@ -4290,6 +4290,10 @@ one-line summary — keep the item in the file as a record.
   untouched and still to discuss.
 - **Notes / options:** a norm pass trade by trade, with
   a before→after preview for the owner first.
+- **Update (2026-11-19, V216 — status unchanged, still OPEN):** 19 more un-normed ELECTRICAL
+  additions in V176's shape ([iteration-electrical-lviv-positions.md](iteration-electrical-lviv-positions.md)).
+  The cable-by-section rows (16–35 / від 50 мм²), the earthing strip and the tray parts are the ones a
+  norm would answer (a metre of cable, of strip, of lid); the rest are client-chosen devices or labour.
 
 ---
 

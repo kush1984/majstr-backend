@@ -13,7 +13,7 @@ title — read the twin before changing what a bullet guards); per-area narrativ
 - **Stack pinned:** Spring Boot 4 / Java 21 / PostgreSQL 17 + Flyway / Jackson 3 (`tools.jackson.*`). Don't bump without reason.
 - **Secrets from env only** (`JWT_SECRET` has no default). **English only** in code, comments, SQL, docs.
 - **Layering** `controller → service → repository`; controllers return DTOs; `passwordHash` never leaves.
-- **Schema = Flyway only** (`ddl-auto: validate`). New `V<N>__…sql`, **latest is V215** (V183, V185 skipped);
+- **Schema = Flyway only** (`ddl-auto: validate`). New `V<N>__…sql`, **latest is V216** (V183, V185 skipped);
   never edit an applied migration; a self-check `RAISE EXCEPTION`s only about its own work, else `WARNING`.
 - **Tests + green `./gradlew build` before any push** (Claude runs it; Docker must be up). Controller tests =
   Mockito standalone; DB/filters = `…IntegrationTest` on Testcontainers.

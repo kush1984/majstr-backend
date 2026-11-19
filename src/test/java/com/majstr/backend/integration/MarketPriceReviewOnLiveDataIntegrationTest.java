@@ -247,7 +247,10 @@ class MarketPriceReviewOnLiveDataIntegrationTest extends IntegrationTestBase {
     @Test
     void aSyncedMasterSeesTheNewPositionsAsNewFromTheLibrary() {
         UUID id = UUID.randomUUID();
-        int version = jdbc.queryForObject("SELECT max(added_in_version) FROM catalog_templates", Integer.class);
+        // V176's own version, not the head's: a later migration adding positions bumps the head.
+        int version = jdbc.queryForObject(
+                "SELECT max(added_in_version) FROM catalog_templates WHERE category = 'Зовнішні роботи'",
+                Integer.class);
         jdbc.update("""
                 INSERT INTO users (id, email, email_canonical, password_hash, full_name, phone,
                                    company_name, referral_code, last_synced_catalog_version)
