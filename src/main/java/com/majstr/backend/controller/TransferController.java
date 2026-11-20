@@ -1,5 +1,6 @@
 package com.majstr.backend.controller;
 
+import com.majstr.backend.dto.CatalogImportParseResponse;
 import com.majstr.backend.dto.TransferCommitRequest;
 import com.majstr.backend.dto.TransferCommitResponse;
 import com.majstr.backend.dto.TransferParseResponse;
@@ -39,13 +40,19 @@ public class TransferController {
     @Operation(summary = "Read one file (PDF, Excel, CSV or a photo): estimate or price list, its object and positions")
     @PostMapping(value = "/parse", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public TransferParseResponse parse(@RequestParam("file") MultipartFile file,
+                                       // A table's columns the master re-picked; all absent = guess.
+                                       @RequestParam(value = "nameCol", required = false) Integer nameCol,
+                                       @RequestParam(value = "priceCol", required = false) Integer priceCol,
+                                       @RequestParam(value = "unitCol", required = false) Integer unitCol,
                                        @AuthenticationPrincipal UserPrincipal principal) {
         if (file == null || file.isEmpty()) {
             throw new CatalogImportException("error.import.empty");
         }
+        CatalogImportParseResponse.Mapping chosen = nameCol == null && priceCol == null && unitCol == null
+                ? null : new CatalogImportParseResponse.Mapping(nameCol, priceCol, unitCol);
         try {
             return transferService.parse(principal.id(), file.getOriginalFilename(), file.getContentType(),
-                    file.getBytes());
+                    file.getBytes(), chosen);
         } catch (IOException e) {
             throw new CatalogImportException("error.import.unreadable");
         }

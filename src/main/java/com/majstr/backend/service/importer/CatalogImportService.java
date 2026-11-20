@@ -59,8 +59,14 @@ public class CatalogImportService {
     public CatalogImportCommitResponse commitFiled(UUID ownerId, List<FiledItem> items, DedupPolicy defaultPolicy) {
         // Existing catalog keyed by (lower(trim(name)) | type) — the dedup index.
         Map<String, CatalogItem> existing = new HashMap<>();
+        // His folders per trade, by a spelling-blind key: a section «ПІДЛОГА» in the file lands in the
+        // «Підлога» he already has, never in a twin beside it.
+        Map<String, String> folders = new HashMap<>();
         for (CatalogItem item : catalogRepository.findByOwnerIdOrderByNameAsc(ownerId)) {
             existing.putIfAbsent(key(item.getName(), item.getType().name()), item);
+            if (item.getCategory() != null && !item.getCategory().isBlank()) {
+                folders.putIfAbsent(folderKey(item.getTrade(), item.getCategory()), item.getCategory());
+            }
         }
 
         User owner = userRepository.getReferenceById(ownerId);
@@ -77,14 +83,18 @@ public class CatalogImportService {
                 }
                 continue;
             }
+            Trade trade = in.trade() != null ? in.trade() : Trade.OTHER;
+            String named = com.majstr.backend.service.CatalogService.normalizeCategory(in.category());
+            // The first spelling wins: his own, else the first row of this import that named it.
+            String category = named == null ? null : folders.computeIfAbsent(folderKey(trade, named), k -> named);
             CatalogItem fresh = CatalogItem.builder()
                     .owner(owner)
                     .name(in.name().trim())
                     .type(in.type())
                     .unit(in.unit())
                     .defaultPrice(in.price())
-                    .trade(in.trade() != null ? in.trade() : Trade.OTHER)
-                    .category(com.majstr.backend.service.CatalogService.normalizeCategory(in.category()))
+                    .trade(trade)
+                    .category(category)
                     .source(CatalogItemSource.IMPORT)
                     .build();
             catalogRepository.save(fresh);
@@ -99,4 +109,13 @@ public class CatalogImportService {
     private static String key(String name, String type) {
         return name.trim().toLowerCase(Locale.ROOT) + "|" + type;
     }
+
+    /** A folder under a trade, blind to case, spacing and the apostrophe's spelling. */
+    static String folderKey(Trade trade, String category) {
+        String folded = category.toLowerCase(java.util.Locale.ROOT)
+                .replace('ʼ', '\'').replace('’', '\'').replace('`', '\'')
+                .replaceAll("\\s+", " ").trim();
+        return (trade == null ? Trade.OTHER : trade).name() + "|" + folded;
+    }
+
 }

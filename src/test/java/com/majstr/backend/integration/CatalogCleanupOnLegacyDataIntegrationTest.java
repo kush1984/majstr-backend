@@ -150,14 +150,21 @@ class CatalogCleanupOnLegacyDataIntegrationTest extends IntegrationTestBase {
                         '%s', 'M2', 42, 950)
                 """.formatted(NEW_TILE));
 
-        // (2) an admin deleted a default position that a bundle names, and nothing re-pointed it
+        // (2) an admin deleted a default position that a bundle names, and nothing re-pointed it.
+        //     Named by EXACTLY ONE bundle line, and the first such by name: a bare LIMIT 1 let
+        //     Postgres pick any match, and one named by two bundles orphaned 2 lines, not the 1
+        //     asserted — the test failed in some full runs and passed alone.
         legacy.execute("""
                 DELETE FROM catalog_templates WHERE id = (
                   SELECT c.id FROM catalog_templates c
                   JOIN estimate_templates et ON et.trade = c.trade AND et.is_default
                   JOIN estimate_template_items i ON i.template_id = et.id
                                                 AND lower(i.name) = lower(c.name)
-                  WHERE c.trade = 'DEMOLITION' LIMIT 1)
+                  WHERE c.trade = 'DEMOLITION'
+                  GROUP BY c.id, c.name
+                  HAVING count(*) = 1
+                  ORDER BY c.name, c.id
+                  LIMIT 1)
                 """);
     }
 

@@ -57,6 +57,77 @@ class CatalogImportParserTest {
         assertThat(paint.issues()).contains("unit");
     }
 
+    /**
+     * A company price list: a title block, a «№» column and some «від 250» prices. The most numeric
+     * column used to win, which was «№» — every price came in as 1, 2, 3…
+     */
+    @Test
+    void theColumnHeadedPriceWins_overARowNumberColumn_andAStartingPriceIsRead() throws Exception {
+        byte[] xlsx = xlsx(new String[][]{
+                {"ФОП Коваль — електромонтаж", "", "", "", ""},
+                {"", "", "", "", ""},
+                {"№", "Вид робіт", "Од.", "Ціна, грн", "Примітка"},
+                {"1", "Штробління стін", "м.п.", "120", ""},
+                {"2", "Монтаж світильника", "шт", "від 250", "залежить від типу"},
+                {"3", "Заземлення контуру", "компл.", "від 4500", ""},
+        });
+
+        CatalogImportParseResponse r = parser.parseFile("p.xlsx", xlsx);
+
+        assertThat(r.guessedMapping().priceCol()).isEqualTo(3);
+        assertThat(r.rows()).extracting(row -> row.price().toPlainString())
+                .containsExactly("120.00", "250.00", "4500.00");
+    }
+
+    /**
+     * The master's own grouping comes along: a row with nothing but a name, right above priced rows,
+     * is the section of the rows under it. A title above the header and a note under the list are not.
+     */
+    @Test
+    void aNameOnlyRowAbovePricedRowsIsTheirSection_aTitleOrANoteIsNot() throws Exception {
+        byte[] xlsx = xlsx(new String[][]{
+                {"Прайс плиточника 2026", "", ""},
+                {"Найменування", "Од.", "Ціна"},
+                {"Підготовка", "", ""},
+                {"Демонтаж плитки", "м2", "180"},
+                {"Ґрунтування", "м2", "25"},
+                {"Підлога", "", ""},
+                {"Укладання плитки 60х60", "м2", "700"},
+                {"Ціни без матеріалів", "", ""},
+        });
+
+        CatalogImportParseResponse r = parser.parseFile("p.xlsx", xlsx);
+
+        assertThat(r.rows()).extracting(CatalogImportParseResponse.ParsedRow::section)
+                .containsExactly("Підготовка", "Підготовка", "Підлога");
+    }
+
+    @Test
+    void aListWithNoSectionsHasNone() {
+        String csv = "Назва;Од.;Ціна\nШтроба;пог.м;120\nДемонтаж;кв.м;150";
+
+        CatalogImportParseResponse r = parser.parseFile("p.csv", csv.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+
+        assertThat(r.rows()).extracting(CatalogImportParseResponse.ParsedRow::section).containsOnlyNulls();
+    }
+
+    @Test
+    void withNoPriceHeader_aRowNumberColumnIsStillNeverThePrice() {
+        String csv = "1;Штроба;пог.м;від 120\n2;Демонтаж;кв.м;150\n3;Розетка;шт;від 90";
+
+        CatalogImportParseResponse r = parser.parseFile("p.csv", csv.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+
+        assertThat(r.guessedMapping().priceCol()).isEqualTo(3);
+    }
+
+    @Test
+    void aTableWithAQuantityColumnReadsAsAnEstimate() {
+        assertThat(CatalogImportParser.hasQuantityColumn(java.util.List.of(
+                java.util.List.of("№", "Найменування", "Од.", "Кількість", "Ціна")))).isTrue();
+        assertThat(CatalogImportParser.hasQuantityColumn(java.util.List.of(
+                java.util.List.of("Назва", "Од.", "Ціна")))).isFalse();
+    }
+
     @Test
     void refusesACsvOverTheSpreadsheetLimit() {
         byte[] huge = new byte[SafeWorkbook.MAX_BYTES + 1];

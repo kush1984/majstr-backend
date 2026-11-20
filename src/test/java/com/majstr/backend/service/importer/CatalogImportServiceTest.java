@@ -96,4 +96,39 @@ class CatalogImportServiceTest {
         verify(catalogRepository).save(saved.capture());
         assertThat(saved.getValue().getTrade()).isEqualTo(Trade.OTHER);
     }
+
+    /**
+     * A price list's own sections become folders — and a section he already has under that trade is
+     * that folder, whatever the spelling, never a twin beside it. A folder of another trade is not his
+     * folder here.
+     */
+    @Test
+    void aSectionLandsInTheFolderHeAlreadyHas_spellingBlind_andANewOneIsCreatedOnce() {
+        UUID owner = UUID.randomUUID();
+        CatalogItem floor = existing("Укладання плитки 60х60", ItemType.WORK, "700");
+        floor.setTrade(Trade.TILING);
+        floor.setCategory("Підлога");
+        CatalogItem paint = existing("Шпаклювання", ItemType.WORK, "150");
+        paint.setTrade(Trade.PAINTER);
+        paint.setCategory("Підготовка");
+        given(catalogRepository.findByOwnerIdOrderByNameAsc(owner)).willReturn(List.of(floor, paint));
+        given(userRepository.getReferenceById(owner)).willReturn(new User());
+        given(catalogRepository.save(org.mockito.ArgumentMatchers.any(CatalogItem.class)))
+                .willAnswer(i -> i.getArgument(0));
+
+        service().commitFiled(owner, List.of(
+                new CatalogImportService.FiledItem("Затирка швів", Unit.M2, new BigDecimal("280"), ItemType.WORK,
+                        Trade.TILING, "  ПІДЛОГА ", null),
+                new CatalogImportService.FiledItem("Демонтаж плитки", Unit.M2, new BigDecimal("180"), ItemType.WORK,
+                        Trade.TILING, "Підготовка", null),
+                new CatalogImportService.FiledItem("Ґрунтування", Unit.M2, new BigDecimal("25"), ItemType.WORK,
+                        Trade.TILING, "підготовка", null)), DedupPolicy.SKIP);
+
+        ArgumentCaptor<CatalogItem> saved = ArgumentCaptor.forClass(CatalogItem.class);
+        verify(catalogRepository, org.mockito.Mockito.times(3)).save(saved.capture());
+        assertThat(saved.getAllValues()).extracting(CatalogItem::getCategory)
+                .as("his «Підлога»; a NEW tiling «Підготовка» (the painter one is another trade's), named once")
+                .containsExactly("Підлога", "Підготовка", "Підготовка");
+    }
+
 }

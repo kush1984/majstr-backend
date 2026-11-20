@@ -22,8 +22,17 @@ public record TransferParseResponse(
         String clientName,
         String title,
         BigDecimal depositAmount,
-        List<Line> items
+        List<Line> items,
+        /**
+         * Set when the file was a TABLE read without AI (a price list in Excel/CSV): its columns and
+         * which of them were taken as name / price / unit, so the master can re-pick them and the
+         * file is read again with his choice. Null for anything the AI read.
+         */
+        Table table
 ) {
+    /** {@code columns} are labels for the pickers — the header text, else «Колонка N». */
+    public record Table(List<String> columns, Integer nameCol, Integer priceCol, Integer unitCol) {}
+
     /** {@code section} is the room/part the DOCUMENT puts it under; {@code trade}+{@code category}
      *  are where the CATALOG files it (null = not recognised → «Інше»). */
     public record Line(

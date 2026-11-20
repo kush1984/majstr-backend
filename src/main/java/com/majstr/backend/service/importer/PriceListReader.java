@@ -56,7 +56,8 @@ public class PriceListReader {
             if (price == null) issues.add("price");
             grid.add(List.of(line.name(), price == null ? "" : price.toPlainString(),
                     line.unit() == null ? "" : line.unit()));
-            rows.add(new ParsedRow(grid.size() - 1, line.name().trim(), unit, price, type(line.type()), issues));
+            rows.add(new ParsedRow(grid.size() - 1, line.name().trim(), unit, price, type(line.type()), issues,
+                    line.category() == null || line.category().isBlank() ? null : line.category().trim()));
         }
         return new CatalogImportParseResponse(grid, rows, 0, new Mapping(0, 1, 2));
     }

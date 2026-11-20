@@ -58,12 +58,41 @@ public class CatalogImportParser {
 
     /** Parse an uploaded spreadsheet/CSV file (chosen by extension, sniffed by POI). */
     public CatalogImportParseResponse parseFile(String filename, byte[] bytes) {
+        return parseFile(filename, bytes, null);
+    }
+
+    /**
+     * The same, with the columns the master chose instead of the guessed ones («Перенести в Majstr»
+     * lets him re-pick them on a table it read). Null = guess.
+     */
+    public CatalogImportParseResponse parseFile(String filename, byte[] bytes, Mapping chosen) {
+        return build(grid(filename, bytes), chosen);
+    }
+
+    /** The cells of a spreadsheet/CSV file, before any column is given a meaning. */
+    public List<List<String>> grid(String filename, byte[] bytes) {
         SafeWorkbook.requireSize(bytes);
         String lower = filename == null ? "" : filename.toLowerCase(Locale.ROOT);
-        List<List<String>> grid = lower.endsWith(".csv")
-                ? readCsv(bytes)
-                : readWorkbook(bytes);
-        return build(grid);
+        return lower.endsWith(".csv") ? readCsv(bytes) : readWorkbook(bytes);
+    }
+
+    /**
+     * Does this table have a QUANTITY column — is it an estimate rather than a price list? A price
+     * list names a work, a unit and a price; an estimate also says how much («Кількість», «К-сть»,
+     * «Обсяг»). Read off the header words in the first rows, since a quantity column is just numbers.
+     */
+    public static boolean hasQuantityColumn(List<List<String>> grid) {
+        for (int r = 0; r < Math.min(grid.size(), 15); r++) {
+            for (String cell : grid.get(r)) {
+                String v = cell == null ? "" : cell.toLowerCase(Locale.ROOT).replace('’', '\'').replace('ʼ', '\'');
+                if (v.length() <= 20 && (v.startsWith("кільк") || v.startsWith("к-сть") || v.startsWith("к-ть")
+                        || v.startsWith("обсяг") || v.startsWith("об'єм") || v.startsWith("обьем")
+                        || v.startsWith("кол-во") || v.startsWith("количество"))) {
+                    return true;
+                }
+            }
+        }
+        return false;
     }
 
     /** Parse pasted text (tab-separated, as copied from Excel/Sheets; CSV as fallback). */
@@ -152,18 +181,28 @@ public class CatalogImportParser {
     // ---- heuristics + hygiene --------------------------------------------
 
     private CatalogImportParseResponse build(List<List<String>> grid) {
+        return build(grid, null);
+    }
+
+    private CatalogImportParseResponse build(List<List<String>> grid, Mapping chosen) {
         int cols = grid.stream().mapToInt(List::size).max().orElse(0);
         if (cols == 0) {
             return new CatalogImportParseResponse(grid, List.of(), 0, new Mapping(null, null, null));
         }
-        Mapping mapping = guessMapping(grid, cols);
+        Mapping mapping = chosen != null ? chosen : guessMapping(grid, cols);
         List<ParsedRow> rows = new ArrayList<>();
         int skipped = 0;
+        // The master's own grouping: a row holding nothing but a name, directly followed by priced rows
+        // («Підготовка», «Підлога»), names the section of the rows under it. A title or a note at the
+        // top or bottom is not followed by a priced row, and a header row has other cells filled.
+        String section = null;
+        String candidate = null;
         for (int r = 0; r < grid.size(); r++) {
             List<String> row = grid.get(r);
             String name = cell(row, mapping.nameCol());
             if (isServiceRow(name)) {
                 skipped++;
+                if (!name.isBlank()) candidate = null;
                 continue;
             }
             BigDecimal price = parsePrice(cell(row, mapping.priceCol()));
@@ -171,17 +210,30 @@ public class CatalogImportParser {
             // A row with a name but neither price nor unit reads as a section header.
             if (price == null && unit == null) {
                 skipped++;
+                candidate = onlyCellFilled(row, mapping.nameCol()) && name.length() <= 100 ? name : null;
                 continue;
+            }
+            if (candidate != null) {
+                section = candidate;
+                candidate = null;
             }
             List<String> issues = new ArrayList<>();
             if (price == null) issues.add("price");
             if (unit == null) issues.add("unit");
-            rows.add(new ParsedRow(r, name, unit, price, guessType(name), issues));
+            rows.add(new ParsedRow(r, name, unit, price, guessType(name), issues, section));
         }
         if (rows.size() > MAX_ROWS) {
             throw new CatalogImportException("error.import.too-many-rows");
         }
         return new CatalogImportParseResponse(capGrid(grid), rows, skipped, mapping);
+    }
+
+    /** Whether {@code col} is the only non-blank cell of the row. */
+    private static boolean onlyCellFilled(List<String> row, Integer col) {
+        for (int c = 0; c < row.size(); c++) {
+            if ((col == null || c != col) && !cell(row, c).isEmpty()) return false;
+        }
+        return true;
     }
 
     /** Score every column; pick the name / price / unit columns independently. */
@@ -205,9 +257,56 @@ public class CatalogImportParser {
             }
         }
         Integer nameCol = argmax(textScore);
-        Integer priceCol = argmaxInt(numeric, nameCol);
+        // A column HEADED «Ціна» is the price, whatever is more numeric. Without this a company
+        // price list with a «№» column and «від 250» prices took the row numbers as prices.
+        Integer priceCol = headedPriceColumn(grid, cols, nameCol);
+        if (priceCol == null) {
+            Integer indexCol = rowNumberColumn(grid, cols);
+            priceCol = argmaxInt(numeric, nameCol, indexCol);
+        }
         Integer unitCol = argmaxInt(unitHits, nameCol, priceCol);
         return new Mapping(nameCol, priceCol, unitCol);
+    }
+
+    /** Header words that name the price column, strongest first («Сума» is NOT one: in an estimate
+     *  it is quantity × price). */
+    private static final List<String> PRICE_HEADERS = List.of("ціна", "вартість", "price", "грн");
+
+    /** The first column, in the top rows, whose header names a price — by the strongest word. */
+    private Integer headedPriceColumn(List<List<String>> grid, int cols, Integer nameCol) {
+        for (String word : PRICE_HEADERS) {
+            for (int r = 0; r < Math.min(grid.size(), 15); r++) {
+                for (int c = 0; c < cols; c++) {
+                    if (nameCol != null && c == nameCol) continue;
+                    String v = cell(grid.get(r), c).toLowerCase(Locale.ROOT);
+                    if (v.length() <= 40 && parsePrice(v) == null && v.contains(word)
+                            && !v.contains("сума") && !v.contains("разом")) {
+                        return c;
+                    }
+                }
+            }
+        }
+        return null;
+    }
+
+    /** A «№» column: whole numbers going 1, 2, 3… down the rows. Never the price. */
+    private Integer rowNumberColumn(List<List<String>> grid, int cols) {
+        for (int c = 0; c < cols; c++) {
+            int run = 0;
+            BigDecimal previous = null;
+            for (List<String> row : grid) {
+                BigDecimal v = parsePrice(cell(row, c));
+                if (v == null) continue;
+                if (v.stripTrailingZeros().scale() > 0) {
+                    run = 0;
+                    break;
+                }
+                run = previous != null && v.subtract(previous).compareTo(BigDecimal.ONE) == 0 ? run + 1 : 0;
+                previous = v;
+            }
+            if (run >= 2) return c;
+        }
+        return null;
     }
 
     private boolean isServiceRow(String name) {
@@ -232,6 +331,9 @@ public class CatalogImportParser {
         String s = raw.toLowerCase(Locale.ROOT)
                 .replace("грн", "").replace("₴", "").replace("uah", "").replace("руб", "")
                 .replace(" ", "").replace(" ", "").trim();
+        // «від 250» — a starting price is still the price a master quotes; the AI path reads it so too.
+        if (s.startsWith("від")) s = s.substring(3);
+        else if (s.startsWith("от")) s = s.substring(2);
         if (s.isEmpty()) return null;
         // A value with letters left after stripping the currency is text, not a price —
         // so a NAME like "Позиція 1" is never mistaken for a number.

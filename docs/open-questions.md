@@ -4267,6 +4267,15 @@ one-line summary — keep the item in the file as a record.
   name+type+unit key, unambiguous matches only. The card would then prefer the id and fall back to
   the key.
 
+### `/api/catalog/import/*` has no caller in the current PWA (2026-11-20)
+
+- **Status:** OPEN
+- **Since:** 2026-11-20 (PWA 1.86.0 folded «Імпортувати прайс» into «Перенести в Majstr»)
+- **Context:** the PWA no longer calls `/api/catalog/import/parse|commit`; `TransferService` reuses
+  `CatalogImportParser` directly. The endpoints stay for installed apps that have not updated yet.
+- **Notes / options:** delete `CatalogImportController` (and `PriceListReader` if nothing else reads it) once
+  1.86.0 has been out a few weeks; the pasted-rows parse (`text/plain`) went with the page.
+
 ### Client pays from the portal (V217): what was left open
 
 - **Status:** OPEN

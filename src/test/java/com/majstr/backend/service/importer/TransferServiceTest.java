@@ -40,6 +40,7 @@ class TransferServiceTest {
     @Mock EstimateExtractor extractor;
     @Mock TradeFiler tradeFiler;
     @Spy DocumentReader documentReader = new DocumentReader();
+    @Spy CatalogImportParser tableParser = new CatalogImportParser();
     @InjectMocks TransferService service;
 
     private final UUID owner = UUID.randomUUID();
@@ -91,4 +92,81 @@ class TransferServiceTest {
         assertThat(res.items().getFirst().quantity()).isEqualByComparingTo("0");
         assertThat(res.items().getFirst().issues()).isEmpty();
     }
+
+    // ---- a TABLE is read without the AI (one «Перенести» door, 2026-11-20) -----------------------
+
+    private static final byte[] PRICE_CSV = ("Найменування;Од.;Ціна\n"
+            + "Штукатурка стін;м2;250\n"
+            + "Монтаж розетки;шт;180\n").getBytes(java.nio.charset.StandardCharsets.UTF_8);
+
+    @Test
+    void aPriceListTableIsReadWithoutTheAi_onAnyPlan_withItsColumns() {
+        given(userRepository.findById(owner)).willReturn(Optional.of(User.builder().id(owner).plan(Plan.FREE).build()));
+        given(tradeFiler.file(eq(owner), anyList())).willReturn(List.of(
+                new TradeFiler.Filing(Trade.PAINTER, "Штукатурка"), new TradeFiler.Filing(Trade.ELECTRICAL, null)));
+
+        TransferParseResponse res = service.parse(owner, "prais.csv", "text/csv", PRICE_CSV);
+
+        org.mockito.Mockito.verifyNoInteractions(extractor);
+        verify(featureGuard, org.mockito.Mockito.never()).requireFeature(any(User.class), any());
+        assertThat(res.kind()).isEqualTo(DocumentKind.PRICE_LIST);
+        assertThat(res.items()).extracting(TransferParseResponse.Line::name)
+                .containsExactly("Штукатурка стін", "Монтаж розетки");
+        assertThat(res.items().getFirst().unitPrice()).isEqualByComparingTo("250");
+        assertThat(res.items().getFirst().unit()).isEqualTo(Unit.M2);
+        assertThat(res.items().getFirst().trade()).isEqualTo(Trade.PAINTER);
+        assertThat(res.table()).isNotNull();
+        assertThat(res.table().columns()).hasSize(3).first().asString().contains("Найменування");
+        assertThat(res.table().nameCol()).isZero();
+        assertThat(res.table().priceCol()).isEqualTo(2);
+    }
+
+    @Test
+    void theColumnsTheMasterPickedWin() {
+        given(userRepository.findById(owner)).willReturn(Optional.of(User.builder().id(owner).plan(Plan.FREE).build()));
+        given(tradeFiler.file(eq(owner), anyList())).willAnswer(inv -> ((List<?>) inv.getArgument(1)).stream()
+                .map(p -> new TradeFiler.Filing(null, null)).toList());
+
+        // Name read from the UNIT column, deliberately: what he picked is what is read.
+        TransferParseResponse res = service.parse(owner, "prais.csv", "text/csv", PRICE_CSV,
+                new com.majstr.backend.dto.CatalogImportParseResponse.Mapping(1, 2, null));
+
+        assertThat(res.table().nameCol()).isEqualTo(1);
+        assertThat(res.table().unitCol()).isNull();
+        assertThat(res.items()).extracting(TransferParseResponse.Line::name).contains("м2", "шт");
+    }
+
+    @Test
+    void aTableWithAQuantityColumnIsAnEstimate_andGoesToTheAiWhenAllowed() {
+        byte[] estimate = ("Робота;Од.;Кількість;Ціна\nШтукатурка стін;м2;40;250\n")
+                .getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        given(userRepository.findById(owner)).willReturn(Optional.of(User.builder().id(owner).plan(Plan.PRO).build()));
+        given(featureGuard.isEnabled(any(User.class), eq(Feature.ESTIMATE_IMPORT))).willReturn(true);
+        given(extractor.extractDocument(anyList())).willReturn(new Document(DocumentKind.ESTIMATE,
+                null, null, null, null, new Extracted(List.of(
+                        new Extracted.Line("Штукатурка стін", "м2", new BigDecimal("40"), new BigDecimal("250"), "WORK", null)),
+                null)));
+        given(tradeFiler.file(eq(owner), anyList())).willReturn(List.of(new TradeFiler.Filing(null, null)));
+
+        TransferParseResponse res = service.parse(owner, "koshtorys.csv", "text/csv", estimate);
+
+        assertThat(res.kind()).isEqualTo(DocumentKind.ESTIMATE);
+        assertThat(res.table()).isNull();
+    }
+
+    @Test
+    void anEstimateTableAMasterMayNotSendToTheAiIsStillReadAsAPriceList() {
+        byte[] estimate = ("Робота;Од.;Кількість;Ціна\nШтукатурка стін;м2;40;250\n")
+                .getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        given(userRepository.findById(owner)).willReturn(Optional.of(User.builder().id(owner).plan(Plan.FREE).build()));
+        given(featureGuard.isEnabled(any(User.class), eq(Feature.ESTIMATE_IMPORT))).willReturn(false);
+        given(tradeFiler.file(eq(owner), anyList())).willAnswer(inv -> ((List<?>) inv.getArgument(1)).stream()
+                .map(p -> new TradeFiler.Filing(null, null)).toList());
+
+        TransferParseResponse res = service.parse(owner, "koshtorys.csv", "text/csv", estimate);
+
+        org.mockito.Mockito.verifyNoInteractions(extractor);
+        assertThat(res.kind()).isEqualTo(DocumentKind.PRICE_LIST);
+    }
+
 }

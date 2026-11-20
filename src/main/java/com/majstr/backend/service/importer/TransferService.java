@@ -2,6 +2,7 @@ package com.majstr.backend.service.importer;
 
 import com.majstr.backend.config.LocalizationConfig;
 import com.majstr.backend.dto.CatalogImportCommitResponse;
+import com.majstr.backend.dto.CatalogImportParseResponse;
 import com.majstr.backend.dto.ClientRequest;
 import com.majstr.backend.dto.ClientResponse;
 import com.majstr.backend.dto.PaymentReceiptRequest;
@@ -69,6 +70,7 @@ public class TransferService {
     private final ProjectRepository projectRepository;
     private final DocumentReader documentReader;
     private final EstimateExtractor extractor;
+    private final CatalogImportParser tableParser;
     private final TradeFiler tradeFiler;
     private final CatalogImportService catalogImportService;
     private final ProjectService projectService;
@@ -77,7 +79,28 @@ public class TransferService {
     private final PaymentService paymentService;
 
     public TransferParseResponse parse(UUID ownerId, String filename, String contentType, byte[] bytes) {
-        featureGuard.requireFeature(loadUser(ownerId), Feature.ESTIMATE_IMPORT);
+        return parse(ownerId, filename, contentType, bytes, null);
+    }
+
+    /**
+     * A TABLE (Excel/CSV) that is a price list is read WITHOUT AI — the old «Імпортувати прайс»
+     * engine ({@link CatalogImportParser}), exact, free, open to every plan — and comes back with its
+     * columns so the master can re-pick them ({@code chosen}). Everything else (a PDF, a photo, a
+     * table with a quantity column, i.e. an estimate) goes to the AI, which needs
+     * {@link Feature#ESTIMATE_IMPORT}; a table the master may not send to the AI is still read as a
+     * price list rather than refused.
+     */
+    public TransferParseResponse parse(UUID ownerId, String filename, String contentType, byte[] bytes,
+                                       CatalogImportParseResponse.Mapping chosen) {
+        User user = loadUser(ownerId);
+        if (!PriceListReader.needsReading(filename, contentType, bytes)) {
+            List<List<String>> grid = tableParser.grid(filename, bytes);
+            boolean mayUseAi = featureGuard.isEnabled(user, Feature.ESTIMATE_IMPORT);
+            if (chosen != null || !CatalogImportParser.hasQuantityColumn(grid) || !mayUseAi) {
+                return priceListTable(ownerId, filename, bytes, chosen, grid);
+            }
+        }
+        featureGuard.requireFeature(user, Feature.ESTIMATE_IMPORT);
         EstimateExtractor.Document doc = extractor.extractDocument(documentReader.read(filename, contentType, bytes,
                 "Read this document: say whether it is an estimate or a price list, and extract its positions."));
         boolean priceList = doc.kind() == EstimateExtractor.DocumentKind.PRICE_LIST;
@@ -99,14 +122,57 @@ public class TransferService {
                     blankToNull(l.category()), filing.trade(), filing.category(), issues));
         }
         return new TransferParseResponse(filename, doc.kind(), doc.objectName(), doc.address(), doc.clientName(),
-                doc.title(), priceList ? null : doc.extracted().depositAmount(), out);
+                doc.title(), priceList ? null : doc.extracted().depositAmount(), out, null);
+    }
+
+    /** A price-list table, read by its columns: each row filed under a trade, as the AI path does. */
+    private TransferParseResponse priceListTable(UUID ownerId, String filename, byte[] bytes,
+                                                 CatalogImportParseResponse.Mapping chosen,
+                                                 List<List<String>> grid) {
+        CatalogImportParseResponse parsed = tableParser.parseFile(filename, bytes, chosen);
+        List<CatalogImportParseResponse.ParsedRow> rows = parsed.rows();
+        List<TradeFiler.Filing> filings = tradeFiler.file(ownerId, rows.stream()
+                .map(r -> new TradeFiler.Position(r.name(), r.type())).toList());
+        List<TransferParseResponse.Line> out = new ArrayList<>(rows.size());
+        for (int i = 0; i < rows.size(); i++) {
+            CatalogImportParseResponse.ParsedRow r = rows.get(i);
+            TradeFiler.Filing filing = filings.get(i);
+            out.add(new TransferParseResponse.Line(r.name().trim(), r.unit(), BigDecimal.ZERO, r.price(), r.type(),
+                    r.section(), filing.trade(), filing.category(), r.issues()));
+        }
+        CatalogImportParseResponse.Mapping m = parsed.guessedMapping();
+        return new TransferParseResponse(filename, EstimateExtractor.DocumentKind.PRICE_LIST, null, null, null,
+                null, null, out, new TransferParseResponse.Table(columnLabels(grid), m.nameCol(), m.priceCol(),
+                m.unitCol()));
+    }
+
+    /** One label per column for the pickers: the first non-empty text in it among the top rows. */
+    private static List<String> columnLabels(List<List<String>> grid) {
+        int cols = grid.stream().mapToInt(List::size).max().orElse(0);
+        List<String> labels = new ArrayList<>(cols);
+        for (int c = 0; c < cols; c++) {
+            String label = null;
+            for (int r = 0; r < Math.min(grid.size(), 5) && label == null; r++) {
+                List<String> row = grid.get(r);
+                String v = c < row.size() && row.get(c) != null ? row.get(c).trim() : "";
+                if (!v.isEmpty()) {
+                    label = v.length() > 30 ? v.substring(0, 30) + "…" : v;
+                }
+            }
+            labels.add("Колонка " + (c + 1) + (label == null ? "" : " · " + label));
+        }
+        return labels;
     }
 
     @Transactional
     public TransferCommitResponse commit(UUID ownerId, TransferCommitRequest req) {
         User user = userRepository.findWithTradesById(ownerId)
                 .orElseThrow(() -> new ResourceNotFoundException("User not found: " + ownerId));
-        featureGuard.requireFeature(user, Feature.ESTIMATE_IMPORT);
+        // Price lists only write the catalog, as «Імпортувати прайс» always could on every plan. An
+        // estimate brings an object in OUTSIDE the FREE cap, and that stays the feature's.
+        if (!req.estimates().isEmpty()) {
+            featureGuard.requireFeature(user, Feature.ESTIMATE_IMPORT);
+        }
         for (EstimateDoc doc : req.estimates()) {
             if (doc.projectId() == null && (doc.objectName() == null || doc.objectName().isBlank())) {
                 throw new TransferValidationException("error.transfer.no-object");

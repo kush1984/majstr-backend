@@ -29,7 +29,9 @@ public record CatalogImportParseResponse(
             Unit unit,
             BigDecimal price,
             ItemType type,
-            List<String> issues
+            List<String> issues,
+            /** The document's own section above this row («Підготовка», «Підлога»), or null. */
+            String section
     ) {}
 
     /** Zero-based column indices the heuristic chose (any may be null if not found). */
