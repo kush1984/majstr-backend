@@ -50,6 +50,20 @@ class CatalogServiceTest {
 
     private final UUID ownerId = UUID.randomUUID();
 
+    /** A «%» position holds no figure — what it is a share of exists only in an estimate. */
+    @Test
+    void aPercentPositionIsStoredWithoutAFigure() {
+        given(userRepository.getReferenceById(ownerId)).willReturn(User.builder().id(ownerId).build());
+        given(catalogRepository.save(any(CatalogItem.class))).willAnswer(inv -> inv.getArgument(0));
+
+        CatalogItemResponse resp = catalogService.create(
+                new CatalogItemRequest("Вивіз сміття", null, null, null,
+                        ItemType.WORK, Unit.PERCENT, new BigDecimal("1000")),
+                ownerId);
+
+        assertThat(resp.defaultPrice()).isEqualByComparingTo("0");
+    }
+
     @Test
     void create_trimsAndCollapsesCategory() {
         given(userRepository.getReferenceById(ownerId)).willReturn(User.builder().id(ownerId).build());

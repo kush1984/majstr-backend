@@ -13,6 +13,7 @@ import com.majstr.backend.entity.CatalogUpdateNoticeResolution;
 import com.majstr.backend.entity.EstimateItem;
 import com.majstr.backend.entity.ItemType;
 import com.majstr.backend.entity.Trade;
+import com.majstr.backend.entity.Unit;
 import com.majstr.backend.entity.User;
 import com.majstr.backend.entity.UserTrade;
 import com.majstr.backend.exception.ResourceNotFoundException;
@@ -29,6 +30,7 @@ import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Collection;
@@ -110,7 +112,7 @@ public class CatalogService {
             existing.setCategory(normalizeCategory(req.category()));
             existing.setTrade(trade);
             existing.setCustomTrade(customTrade);
-            existing.setDefaultPrice(req.defaultPrice());
+            existing.setDefaultPrice(priceOf(req));
             // He typed a position he could not see (its trade is off his profile): it is his now,
             // or it would vanish from the screen he just saved it on.
             if (visibility(ownerId).hides(existing)) {
@@ -127,7 +129,7 @@ public class CatalogService {
                 .customTrade(customTrade)
                 .type(req.type())
                 .unit(req.unit())
-                .defaultPrice(req.defaultPrice())
+                .defaultPrice(priceOf(req))
                 .note(EstimateLineNote.clean(req.note()))
                 // The master typed this themselves — the only rows the admin insight screens
                 // treat as evidence about what our defaults are missing.
@@ -283,7 +285,7 @@ public class CatalogService {
         CatalogItem item = loadOwned(id, ownerId);
         UserTrade customTrade = resolveCustomTrade(req.customTradeId(), ownerId);
         String oldName = item.getName();
-        boolean repriced = item.getDefaultPrice().compareTo(req.defaultPrice()) != 0;
+        boolean repriced = item.getDefaultPrice().compareTo(priceOf(req)) != 0;
         // Before the rename and any change of type or unit: the lines still carry what the position was.
         applyNote(item, req.note(), List.of(oldName, req.name()), ownerId);
         item.setName(req.name().trim());
@@ -293,7 +295,7 @@ public class CatalogService {
         item.setCustomTrade(customTrade);
         item.setType(req.type());
         item.setUnit(req.unit());
-        item.setDefaultPrice(req.defaultPrice());
+        item.setDefaultPrice(priceOf(req));
         if (repriced) {
             resolvePriceDrift(ownerId, List.of(oldName, item.getName()));
         }
@@ -478,4 +480,10 @@ public class CatalogService {
         String collapsed = raw.trim().replaceAll("\\s+", " ");
         return collapsed.isEmpty() ? null : collapsed;
     }
+
+    /** A «%» position holds no figure: what it is a share of exists only in an estimate. */
+    private static BigDecimal priceOf(CatalogItemRequest req) {
+        return req.unit() == Unit.PERCENT ? BigDecimal.ZERO : req.defaultPrice();
+    }
+
 }

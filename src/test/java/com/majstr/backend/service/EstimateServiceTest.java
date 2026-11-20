@@ -746,6 +746,42 @@ class EstimateServiceTest {
         assertThat(saved.get(1).getUnit()).isEqualTo(Unit.M);
     }
 
+    /**
+     * A «%» position comes in EMPTY, single or batch (owner ruling 2026-11-20): no percentage, no
+     * base — the estimate is where he says what it is a share of. The batch used to copy the
+     * catalog figure in as a MANUAL base and showed «1 % · 1 000 ₴ — база».
+     */
+    @Test
+    @SuppressWarnings("unchecked")
+    void aPercentPositionFromTheCatalogComesInEmpty_singleAndBatch() {
+        Estimate estimate = ownedEstimate(ownerId);
+        UUID catalogId = UUID.randomUUID();
+        given(estimateRepository.findById(estimateId)).willReturn(Optional.of(estimate));
+        given(catalogService.loadOwned(catalogId, ownerId))
+                .willReturn(catalogItem("Вивіз сміття", ItemType.WORK, Unit.PERCENT, "1000.00", null));
+        given(itemRepository.findByEstimateIdOrderBySortOrderAscIdAsc(estimateId)).willReturn(List.of());
+        given(itemRepository.save(any(EstimateItem.class))).willAnswer(inv -> inv.getArgument(0));
+
+        var single = estimateService.addItemFromCatalog(estimateId, catalogId,
+                new EstimateItemFromCatalogRequest(new BigDecimal("1"), 0), ownerId, null);
+
+        assertThat(single.quantity()).isEqualByComparingTo("0");
+        assertThat(single.unitPrice()).isEqualByComparingTo("0");
+        assertThat(single.percentBaseKind()).isEqualTo(PercentBaseKind.POSITION);
+        assertThat(single.percentBaseItemId()).isNull();
+        assertThat(single.lineTotal()).isEqualByComparingTo("0");
+
+        estimateService.addItemsFromCatalogBatch(estimateId, List.of(
+                new AddCatalogItemsBatchRequest.Entry(catalogId, new BigDecimal("1"), 0)), ownerId);
+
+        ArgumentCaptor<List<EstimateItem>> captor = ArgumentCaptor.forClass(List.class);
+        verify(itemRepository).saveAll(captor.capture());
+        EstimateItem batched = captor.getValue().getFirst();
+        assertThat(batched.getQuantity()).isEqualByComparingTo("0");
+        assertThat(batched.getUnitPrice()).isEqualByComparingTo("0");
+        assertThat(batched.getPercentBaseKind()).isEqualTo(PercentBaseKind.POSITION);
+    }
+
     @Test
     void addingFromTheCatalog_bringsTheExplanationOntoTheLine() {
         // «оце що ми додали Q3, Q4 — якщо таке попаде в кошторис, звідки клієнт має знати що це

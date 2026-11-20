@@ -956,14 +956,10 @@ public class EstimateService {
         }
         requireNotSigned(estimate);
         CatalogItem source = catalogService.loadOwned(catalogItemId, ownerId);
-        // A PERCENT position carries its PERCENT in the catalog's price column, not a price. Our
-        // own seed data says so out loud — «Укладання плитки по діагоналі (плюс % до м.кв.)» with
-        // default_price 33 means 33 %, and V82 shipped nine of these into the live tiling catalog.
-        // Copying that into unitPrice would produce «база 33 ₴», which is nonsense.
-        //
-        // The base is left EMPTY on purpose: only the master knows which line this надбавка is a
-        // percentage of. POSITION is the right default because the wording («плюс % до м.кв.»)
-        // means "of the m² work this is an extra on".
+        // A «%» position comes in EMPTY — no percentage, no base (owner ruling 2026-11-20): the
+        // catalog cannot know what it is a share of, only the estimate can. The master types the
+        // percentage and picks «від позиції» / «від суми кошторису»; until then the line is 0 ₴ and
+        // the send asks about it. POSITION with no base is that «not chosen yet» state.
         boolean percent = source.getUnit() == Unit.PERCENT;
         // The folder the estimate groups this line under. It follows the branch of the picker tree
         // the master tapped in, not the row's own storage trade — a position two trades both ship
@@ -983,7 +979,7 @@ public class EstimateService {
                 .description(source.getDescription())
                 .note(source.getNote())
                 .unit(source.getUnit())
-                .quantity(percent ? source.getDefaultPrice() : req.quantity())
+                .quantity(percent ? BigDecimal.ZERO : req.quantity())
                 .unitPrice(percent ? BigDecimal.ZERO : source.getDefaultPrice())
                 .percentBaseKind(percent ? PercentBaseKind.POSITION : null)
                 .sortOrder(req.sortOrder() == null ? 0 : req.sortOrder())
@@ -1041,8 +1037,11 @@ public class EstimateService {
                     .description(source.getDescription())
                     .note(source.getNote())
                     .unit(source.getUnit())
-                    .quantity(e.quantity())
-                    .unitPrice(source.getDefaultPrice())
+                    .quantity(source.getUnit() == Unit.PERCENT ? BigDecimal.ZERO : e.quantity())
+                    .unitPrice(source.getUnit() == Unit.PERCENT ? BigDecimal.ZERO : source.getDefaultPrice())
+                    // Same «%» shape as the single add — the batch used to copy the catalog price in as
+                    // a MANUAL base and showed «1 % · 1 000 ₴ — база».
+                    .percentBaseKind(source.getUnit() == Unit.PERCENT ? PercentBaseKind.POSITION : null)
                     .sortOrder(e.sortOrder() == null ? 0 : e.sortOrder())
                     .build());
         }

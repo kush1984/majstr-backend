@@ -464,8 +464,11 @@ public class EstimatePdfService {
             case MANUAL -> "від " + formatMoney(item.getUnitPrice());
             case TOTAL -> "від суми кошторису";
             case POSITION -> {
-                EstimateItem base = item.getPercentBaseItemId() == null
-                        ? null : byId.get(item.getPercentBaseItemId());
+                if (item.getPercentBaseItemId() == null && item.getLineTotal() != null
+                        && item.getLineTotal().signum() == 0) {
+                    yield ""; // not chosen yet: the line is 0 ₴, nothing to explain to the client
+                }
+                EstimateItem base = byId.get(item.getPercentBaseItemId());
                 yield base == null ? "база видалена" : "від «" + base.getName() + "»";
             }
         };
