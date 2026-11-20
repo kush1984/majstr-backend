@@ -1,6 +1,6 @@
 # The client pays from the portal, and tells the master — V217
 
-**Status:** built (receipt check added 2026-11-20), not pushed.
+**Status:** shipped 2026-11-20 — backend `b66207b`, PWA `3f043d4`.
 **Migration:** `V217__client_payment_details_and_notice.sql`. **PWA:** 1.85.0.
 
 ## Why
