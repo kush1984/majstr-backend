@@ -28,7 +28,10 @@ public record PublicPortalView(
         /** Null unless the master turned the object-level payments toggle on
          *  ({@code project_share_links.payments_visible}) — off by default, and never
          *  populated for {@code SIGNATURE} (the signing portal has no payments card at all). */
-        PaymentsCard payments
+        PaymentsCard payments,
+        /** Where the client pays the master (V217) — null when the master filled none. Unlike
+         *  {@code payments} it is on every portal: a deposit is paid off the signing page. */
+        PayTo payTo
 ) {
     public enum Mode { SIGNATURE, ECONOMY }
 

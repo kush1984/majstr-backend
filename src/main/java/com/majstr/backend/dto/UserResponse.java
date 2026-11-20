@@ -58,6 +58,9 @@ public record UserResponse(
         BigDecimal taxRate,
         String docCity,
         ActNumberFormat actNumberFormat,
+        // Where a client pays (V217) — «Налаштування», behind the portal's «Оплатити».
+        String payoutCard,
+        String payoutLink,
         // When he asked for a setup call (V191) — the PWA stops offering it once set.
         Instant helpRequestedAt,
         // When he answered «Чим займаєтесь?» (V193) — null means the PWA still asks it.
@@ -100,6 +103,8 @@ public record UserResponse(
                 user.getTaxRate(),
                 user.getDocCity(),
                 user.getActNumberFormat(),
+                user.getPayoutCard(),
+                user.getPayoutLink(),
                 user.getHelpRequestedAt(),
                 user.getTradesOnboardedAt()
         );

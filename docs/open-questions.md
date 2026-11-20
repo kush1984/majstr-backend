@@ -4267,6 +4267,37 @@ one-line summary — keep the item in the file as a record.
   name+type+unit key, unambiguous matches only. The card would then prefer the id and fall back to
   the key.
 
+### Client pays from the portal (V217): what was left open
+
+- **Status:** OPEN
+- **Since:** 2026-11-19, V217 ([iteration-client-pay.md](iteration-client-pay.md))
+- **Context:** «Оплатити» (card / IBAN + NBU QR / payment link) and «Я оплатив» with a receipt shipped.
+  Left deliberately:
+  1. **The QR was not scanned with a real bank app yet.** Format 002 was built from the published field
+     rules and a 003 library's layout. The owner should scan it from Приват24 and monobank (screen and a
+     saved photo) before masters are told — if a bank refuses it, try encoding 1 (UTF-8) or CRLF first.
+  2. ~~A notice is not linked to the payment recorded from it~~ — RESOLVED before shipping: the notice
+     carries `payment_receipt_id` and a `payment_status`, and «Кошти прийшли» is idempotent under a row lock.
+  3. **No amount in the QR.** The act's «До сплати» or the economy «Залишок» could prefill it per page.
+  4. **No bank-confirmed «оплачено»** — the receipt check proves the client SENT the money to the
+     master's details, not that it ARRIVED; only the master's own acquiring (LiqPay / WayForPay / mono,
+     keys stored encrypted) could. Wait until ФОП masters ask for exactly that.
+  5. The card number is visible to anyone holding a portal link (it has to be, to pay); a revoke of the
+     link is the only way to take it back. Worth one line in the settings hint if masters ask.
+  6. **A forged receipt is recorded.** An edited screenshot with the right sum, the card's last four and
+     a fresh date passes the check; the master's only defence is deleting the payment. Card matching is
+     by the LAST FOUR digits (banks mask the rest), so a transfer to a different card ending the same
+     also passes — with the same sum and date, an unlikely coincidence, accepted.
+  7. **The receipt check is AI we pay for, FREE masters included** (owner ruling 2026-11-19), on the
+     small model, behind the portal's write limiter and the flow's hourly budget (200/h, then every
+     notice is PENDING «не вдалося прочитати»). Watch its spend; a per-master daily cap is the next
+     lever. Real receipts from Приват24 / mono / Ощад / ПУМБ have not been run through it yet —
+     collect a few and check what it reads before telling masters.
+  8. **The client waits for the check** (a few seconds, «Перевіряємо квитанцію…») because it runs in
+     the request, so the notice and the payment land together and the IT can see them; move it to a
+     pool if it ever times out.
+- **Notes / options:** each item is small and independent; take them as masters report.
+
 ### «New in the library» notice for pull-only additions
 
 - **Status:** OPEN

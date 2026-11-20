@@ -42,7 +42,10 @@ public record PublicEstimateView(
         List<SharedPhoto> sharedPhotos,
         /** The estimate's {@code @Version} at render time, echoed back with the signature so a
          *  document edited while the client was reading it cannot be signed unseen (B-61). */
-        long version
+        long version,
+        /** Where the client pays the master (V217) — null when the master filled none. Always the
+         *  master's CURRENT details, even on a signed page: a payout is not a printed value. */
+        PayTo payTo
 ) {
     public record Contractor(
             String companyName,

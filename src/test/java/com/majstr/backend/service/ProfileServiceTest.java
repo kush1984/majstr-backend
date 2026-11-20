@@ -3,6 +3,7 @@ package com.majstr.backend.service;
 import com.majstr.backend.dto.HelpRequest;
 import com.majstr.backend.dto.ProfileTradesRequest;
 import com.majstr.backend.dto.ProfileUpdateRequest;
+import com.majstr.backend.dto.RequisitesRequest;
 import com.majstr.backend.dto.SenderProfileRequest;
 import com.majstr.backend.dto.UserResponse;
 import com.majstr.backend.entity.Trade;
@@ -62,9 +63,7 @@ class ProfileServiceTest {
 
     private ProfileUpdateRequest req(String email) {
         return new ProfileUpdateRequest("Іван Новий", "+380671112233", "Нова Компанія",
-                Set.of(Trade.TILING, Trade.PLUMBING), email,
-                // No document requisites in the basic request.
-                null, null, null, null, null, null, null, null, null, null, null);
+                Set.of(Trade.TILING, Trade.PLUMBING), email);
     }
 
     @Test
@@ -90,8 +89,7 @@ class ProfileServiceTest {
         given(userRepository.findById(userId)).willReturn(Optional.of(u));
 
         profileService.updateProfile(userId, new ProfileUpdateRequest("Іван", null, null,
-                Set.of(Trade.ELECTRICAL, Trade.TILING), "ivan@example.com",
-                null, null, null, null, null, null, null, null, null, null, null));
+                Set.of(Trade.ELECTRICAL, Trade.TILING), "ivan@example.com"));
 
         verify(catalogTemplateService).addTemplatesForTrades(u, Set.of(Trade.TILING));
     }
@@ -102,8 +100,7 @@ class ProfileServiceTest {
         given(userRepository.findById(userId)).willReturn(Optional.of(u));
 
         profileService.updateProfile(userId, new ProfileUpdateRequest("Іван", null, null,
-                Set.of(), "ivan@example.com",
-                null, null, null, null, null, null, null, null, null, null, null));
+                Set.of(), "ivan@example.com"));
 
         assertThat(u.getTrades()).isEmpty();
         verify(catalogTemplateService, never()).addTemplatesForTrades(any(), any());
@@ -118,8 +115,7 @@ class ProfileServiceTest {
         given(userRepository.findById(userId)).willReturn(Optional.of(u));
 
         profileService.updateProfile(userId, new ProfileUpdateRequest(" ", null, "",
-                Set.of(Trade.ELECTRICAL), "ivan@example.com",
-                null, null, null, null, null, null, null, null, null, null, null));
+                Set.of(Trade.ELECTRICAL), "ivan@example.com"));
 
         assertThat(u.getFullName()).isNull();
         assertThat(u.getPhone()).isNull();
@@ -133,8 +129,7 @@ class ProfileServiceTest {
         given(userRepository.findById(userId)).willReturn(Optional.of(u));
 
         assertThatThrownBy(() -> profileService.updateProfile(userId, new ProfileUpdateRequest("  ", null, null,
-                Set.of(Trade.ELECTRICAL), "ivan@example.com",
-                null, null, null, null, null, null, null, null, null, null, null)))
+                Set.of(Trade.ELECTRICAL), "ivan@example.com")))
                 .isInstanceOf(com.majstr.backend.exception.ProfileNameRequiredException.class);
         assertThat(u.getFullName()).isEqualTo("Старе Ім'я");
     }
@@ -219,20 +214,21 @@ class ProfileServiceTest {
         assertThat(u.getHelpHandledAt()).isNull();
     }
 
-    @Test
-    void update_savesDocumentRequisites_andTrimsBlanksToNull() {
-        User u = user(true, "ivan@example.com");
-        given(userRepository.findById(userId)).willReturn(Optional.of(u));
-
-        ProfileUpdateRequest req = new ProfileUpdateRequest(
-                "Іван Новий", "+380671112233", "Нова Компанія",
-                Set.of(Trade.TILING), "ivan@example.com",
+    private static RequisitesRequest requisites(String card, String link) {
+        return new RequisitesRequest(
                 "ФОП Іваненко Іван", "  1234567890  ", "Київ, вул. Хрещатик 1",
                 "UA123456789012345678901234567", "ПриватБанк",
                 true, "123456789012", (short) 3, new java.math.BigDecimal("5.00"),
-                "  ", com.majstr.backend.entity.ActNumberFormat.WITH_YEAR);
+                "  ", com.majstr.backend.entity.ActNumberFormat.WITH_YEAR, card, link);
+    }
 
-        UserResponse resp = profileService.updateProfile(userId, req);
+    @Test
+    void requisites_saveDocumentFieldsAndPayout_trimmingBlanksToNull() {
+        User u = user(true, "ivan@example.com");
+        given(userRepository.findById(userId)).willReturn(Optional.of(u));
+
+        UserResponse resp = profileService.updateRequisites(userId,
+                requisites("4111 1111 1111 1111", " https://www.liqpay.ua/pay/abc "));
 
         assertThat(u.getLegalName()).isEqualTo("ФОП Іваненко Іван");
         assertThat(u.getTaxId()).isEqualTo("1234567890");      // trimmed
@@ -243,22 +239,55 @@ class ProfileServiceTest {
         assertThat(u.getTaxRate()).isEqualByComparingTo("5.00");
         assertThat(u.getDocCity()).isNull();                   // blank → null
         assertThat(u.getActNumberFormat()).isEqualTo(com.majstr.backend.entity.ActNumberFormat.WITH_YEAR);
+        assertThat(u.getPayoutCard()).isEqualTo("4111111111111111");
+        assertThat(u.getPayoutLink()).isEqualTo("https://www.liqpay.ua/pay/abc");
         assertThat(resp.legalName()).isEqualTo("ФОП Іваненко Іван");
-        assertThat(resp.actNumberFormat()).isEqualTo(com.majstr.backend.entity.ActNumberFormat.WITH_YEAR);
+        assertThat(resp.payoutCard()).isEqualTo("4111111111111111");
+    }
+
+    /** A client sends money to these two, so a typo is refused, not stored — and nothing else is saved. */
+    @Test
+    void requisites_refuseACardFailingLuhn_andALinkThatIsNotHttps() {
+        // Checked before the user is even loaded: a refusal touches nothing.
+        User u = user(true, "ivan@example.com");
+
+        assertThatThrownBy(() -> profileService.updateRequisites(userId, requisites("4111 1111 1111 1112", null)))
+                .isInstanceOf(com.majstr.backend.exception.PaymentValidationException.class)
+                .hasMessage("error.payout.card-invalid");
+        assertThatThrownBy(() -> profileService.updateRequisites(userId, requisites(null, "javascript:alert(1)")))
+                .hasMessage("error.payout.link-invalid");
+        assertThatThrownBy(() -> profileService.updateRequisites(userId, requisites(null, "http://pay.example.ua")))
+                .hasMessage("error.payout.link-invalid");
+        assertThat(u.getLegalName()).isNull();
     }
 
     @Test
-    void update_nullVatPayerAndFormat_leaveExistingValuesUntouched() {
-        // An older client that doesn't send the flags must not reset them.
+    void requisites_nullVatPayerAndFormat_leaveExistingValuesUntouched() {
+        // A caller that doesn't send the flags must not reset them.
         User u = user(true, "ivan@example.com");
         u.setVatPayer(true);
         u.setActNumberFormat(com.majstr.backend.entity.ActNumberFormat.WITH_YEAR);
         given(userRepository.findById(userId)).willReturn(Optional.of(u));
 
-        profileService.updateProfile(userId, req("ivan@example.com")); // both flags null
+        profileService.updateRequisites(userId, new RequisitesRequest(
+                null, null, null, null, null, null, null, null, null, null, null, null, null));
 
         assertThat(u.isVatPayer()).isTrue();
         assertThat(u.getActNumberFormat()).isEqualTo(com.majstr.backend.entity.ActNumberFormat.WITH_YEAR);
+    }
+
+    /** The profile form no longer carries the requisites, so saving it cannot blank them. */
+    @Test
+    void update_leavesTheRequisitesAlone() {
+        User u = user(true, "ivan@example.com");
+        u.setIban("UA123456789012345678901234567");
+        u.setPayoutCard("4111111111111111");
+        given(userRepository.findById(userId)).willReturn(Optional.of(u));
+
+        profileService.updateProfile(userId, req("ivan@example.com"));
+
+        assertThat(u.getIban()).isEqualTo("UA123456789012345678901234567");
+        assertThat(u.getPayoutCard()).isEqualTo("4111111111111111");
     }
 
     @Test

@@ -1,12 +1,10 @@
 package com.majstr.backend.dto;
 
-import com.majstr.backend.entity.ActNumberFormat;
 import com.majstr.backend.entity.Trade;
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
 
-import java.math.BigDecimal;
 import java.util.Set;
 
 /**
@@ -28,19 +26,8 @@ public record ProfileUpdateRequest(
         @Size(max = 50) String phone,
         @Size(max = 255) String companyName,
         @NotNull Set<@NotNull Trade> trades,
-        @Email @Size(max = 255) String email,
-        // Document requisites (acts iteration) — all OPTIONAL. The number formats (РНОКПП length,
-        // etc.) are validated only as a WARNING in the PWA, never blocked here: a master can save a
-        // half-filled profile and finish it later. Sizes mirror the columns as the one hard cap.
-        @Size(max = 255) String legalName,
-        @Size(max = 20) String taxId,
-        @Size(max = 512) String legalAddress,
-        @Size(max = 64) String iban,
-        @Size(max = 255) String bankName,
-        Boolean vatPayer,
-        @Size(max = 20) String vatId,
-        Short taxGroup,
-        BigDecimal taxRate,
-        @Size(max = 120) String docCity,
-        ActNumberFormat actNumberFormat
+        @Email @Size(max = 255) String email
+        // The document requisites moved to «Налаштування» (V217): RequisitesRequest, PUT
+        // /api/profile/requisites. Two forms sharing one full PUT would let either one blank the
+        // other's fields.
 ) {}

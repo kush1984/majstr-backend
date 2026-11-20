@@ -23,6 +23,10 @@ public enum AiFlow {
      *  When the master also wants the positions carried into the act, the {@link #RECEIPT} flow's
      *  model is used instead — that is a full table read. */
     ACT_RECEIPT,
+    /** A client's bank receipt for a transfer to the master («Я оплатив», V217) → amount, recipient,
+     *  date, status. A handful of fields off a bank app's screen or PDF, on every notice the client
+     *  sends, so the small model; the DECISION is ours ({@code PaymentReceiptCheck}), never the model's. */
+    PAYMENT_RECEIPT,
     /** A hand-drawn room sketch photo → measurement rooms. */
     SKETCH,
     /** Electrical points counted off a plan against its legend. */

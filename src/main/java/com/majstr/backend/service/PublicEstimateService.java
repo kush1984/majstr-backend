@@ -290,7 +290,8 @@ public class PublicEstimateService {
                         project.isPortalSummaryAtBottom()),
                 sections,
                 sharedPhotos,
-                null);
+                null,
+                PayoutDetails.of(contractor, project));
     }
 
     @Transactional
@@ -344,7 +345,8 @@ public class PublicEstimateService {
                         project.isPortalSummaryAtBottom()),
                 sections,
                 sharedPhotos,
-                paymentsCard);
+                paymentsCard,
+                PayoutDetails.of(contractor, project));
     }
 
     /**
@@ -790,7 +792,8 @@ public class PublicEstimateService {
                 t.discountPercent(),
                 signatureOf(estimate),
                 sharedPhotos,
-                estimate.getVersion()
+                estimate.getVersion(),
+                PayoutDetails.of(live.getProject().getOwner(), live.getProject())
         );
     }
 

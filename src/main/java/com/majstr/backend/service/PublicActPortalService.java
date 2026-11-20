@@ -291,7 +291,8 @@ public class PublicActPortalService {
                 contractorName(owner), clientName(client),
                 itemViews, receiptViews, total, receiptsTotal, act.getAdvanceOffset(), payable,
                 HryvniaInWords.format(payable),
-                act.getSignedAt(), act.getSignerName(), act.getVersion(), project.isSample());
+                act.getSignedAt(), act.getSignerName(), act.getVersion(), project.isSample(),
+                PayoutDetails.of(owner, project));
     }
 
     private Map<UUID, String> estimateNames(List<WorkActItem> items) {

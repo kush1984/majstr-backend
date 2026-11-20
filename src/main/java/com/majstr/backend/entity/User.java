@@ -104,6 +104,17 @@ public class User {
     @Column(name = "bank_name", length = 255)
     private String bankName;
 
+    // ---- Where a client pays (V217, iteration-client-pay) — optional, shown on the portal behind
+    //      «Оплатити». Bank-neutral; the IBAN above (with taxId) becomes the NBU payment QR. ------
+
+    /** A card number of any bank, digits only, Luhn-checked on save. */
+    @Column(name = "payout_card", length = 19)
+    private String payoutCard;
+
+    /** Any https payment page the master has (his bank's, LiqPay, WayForPay, ...). */
+    @Column(name = "payout_link", length = 500)
+    private String payoutLink;
+
     /** Whether the master is a VAT payer. When true the PDF prints the VAT block
      *  ({@link #vatId} + «Разом без ПДВ / ПДВ 20% / Разом з ПДВ»); when false, «Не є платником ПДВ»
      *  + the simplified-tax line. */

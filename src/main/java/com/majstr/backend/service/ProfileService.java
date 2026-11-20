@@ -3,6 +3,7 @@ package com.majstr.backend.service;
 import com.majstr.backend.dto.HelpRequest;
 import com.majstr.backend.dto.ProfileTradesRequest;
 import com.majstr.backend.dto.ProfileUpdateRequest;
+import com.majstr.backend.dto.RequisitesRequest;
 import com.majstr.backend.dto.SenderProfileRequest;
 import com.majstr.backend.dto.UserResponse;
 import com.majstr.backend.entity.Trade;
@@ -127,7 +128,6 @@ public class ProfileService {
         user.setCompanyName(trimToNull(req.companyName()));
         replaceTrades(user, req.trades());
         applyEmailChange(user, req.email());
-        applyRequisites(user, req);
         return response(user);
     }
 
@@ -188,13 +188,23 @@ public class ProfileService {
     }
 
     /**
-     * Document requisites (acts iteration) — all optional. The profile form is a full PUT, so a
-     * blank field genuinely means "clear this". The two flag fields are the exception: they are
-     * only overwritten when the request actually carries a value, so a caller that omits them (an
-     * older client, a partial update) never accidentally resets the master's VAT status or act
-     * number format.
+     * «Налаштування» (V217): document requisites plus where a client pays. A full PUT, so a blank
+     * field genuinely means "clear this". The two flag fields are the exception: they are only
+     * overwritten when the request actually carries a value, so a caller that omits them never
+     * accidentally resets the master's VAT status or act number format.
      */
-    private void applyRequisites(User user, ProfileUpdateRequest req) {
+    @Transactional
+    public UserResponse updateRequisites(UUID userId, RequisitesRequest req) {
+        String card = PayoutDetails.normalizeCard(req.payoutCard());
+        String link = PayoutDetails.normalizeLink(req.payoutLink());
+        User user = loadUser(userId);
+        applyRequisites(user, req);
+        user.setPayoutCard(card);
+        user.setPayoutLink(link);
+        return response(user);
+    }
+
+    private void applyRequisites(User user, RequisitesRequest req) {
         user.setLegalName(trimToNull(req.legalName()));
         user.setTaxId(trimToNull(req.taxId()));
         user.setLegalAddress(trimToNull(req.legalAddress()));

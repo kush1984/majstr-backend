@@ -85,6 +85,10 @@ dependencies {
     // PDF generation. OpenPDF is LGPL fork of iText 4, actively maintained.
     implementation("com.github.librepdf:openpdf:2.0.3")
 
+    // The NBU payment QR on the client portal (V217), rendered here as a PNG so a client can save it
+    // to the gallery and scan it from his bank app. One small MIT class set, no dependencies.
+    implementation("io.nayuki:qrcodegen:1.8.0")
+
     // Spreadsheet parsing for the "import my price list" flow (.xlsx via XSSF,
     // legacy .xls via HSSF). Deterministic parsing only — no AI. POI's log4j2-api
     // logging routes to logback via spring-boot-starter-logging's log4j-to-slf4j.

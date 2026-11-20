@@ -13,7 +13,7 @@ title — read the twin before changing what a bullet guards); per-area narrativ
 - **Stack pinned:** Spring Boot 4 / Java 21 / PostgreSQL 17 + Flyway / Jackson 3 (`tools.jackson.*`). Don't bump without reason.
 - **Secrets from env only** (`JWT_SECRET` has no default). **English only** in code, comments, SQL, docs.
 - **Layering** `controller → service → repository`; controllers return DTOs; `passwordHash` never leaves.
-- **Schema = Flyway only** (`ddl-auto: validate`). New `V<N>__…sql`, **latest is V216** (V183, V185 skipped);
+- **Schema = Flyway only** (`ddl-auto: validate`). New `V<N>__…sql`, **latest is V217** (V183, V185 skipped);
   never edit an applied migration; a self-check `RAISE EXCEPTION`s only about its own work, else `WARNING`.
 - **Tests + green `./gradlew build` before any push** (Claude runs it; Docker must be up). Controller tests =
   Mockito standalone; DB/filters = `…IntegrationTest` on Testcontainers.
@@ -63,6 +63,7 @@ One line per invariant; the reasoning is in the twin in docs/architecture-index-
 - **Admin broadcasts — fixed segments, never a query (V180)** — one of six segments per master (`AudienceRules.segmentOf`); FREE + USER + not opted out; the send recomputes and intersects; unsubscribe footer by `BroadcastLetter`, GET never unsubscribes.
 - **The bot never decides money, an object or an estimate (majster-bot, V211)** — stored first, filed through each record's own service under the item's lock; money and forwarded messages wait for «Записати»; a line only into the one DRAFT; voice (V213) PRO + 10 FREE.
 - **One object without a subscription (V214, iteration-one-off-object)** — a 149 ₴ payment (`kind = OBJECT`) adds a credit via the webhook only; `reserveProjectSlot` spends it AT the FREE cap and the object is stamped `paid_at`; PRO's per-object caps + logo (`PaidObject.branded`), never AI.
+- **The client pays the master from the portal, never through us (V217, iteration-client-pay)** — `payTo` (card / IBAN + NBU QR format 002 / payment link) on every client page, from «Налаштування» (`PUT /api/profile/requisites`, Luhn + https refused hard); «Я оплатив» = a `PAYMENT` project message; its receipt is READ by AI but MATCHED in code (`PaymentReceiptCheck`) — a match is recorded via `addReceipt`, anything else waits `PENDING` for «Кошти прийшли».
 - **The PWA update banner needs THREE things, any one silently kills it (iteration-sw-update-banner)** — `registerType: 'prompt'` + `SKIP_WAITING` in `src/sw.ts` + `clients.claim()`; `swUpdate.test.ts` reads the files as text.
 - **An act receipt authors offline (offline-act-receipts, PWA-only)** — outbox `actReceipt`, create only, photo as bytes; edits rewrite the pending create; queued rows merge at `ActEditorPage`, never into the cache; call `initOutbox` ONCE.
 - **Dictation is text, never audio** — `AiFlow.DICTATION` parse/commit; an unmatched position comes back flagged, never 0 ₴; `CatalogMatcher` decides (Dice, `MIN_SCORE` 0.6 + `MIN_MARGIN` 0.1, ties refused); FREE needs a verified email.

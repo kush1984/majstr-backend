@@ -42,7 +42,9 @@ public record PublicActView(
          *  moves it (B-60's {@code touch}), so it says «this is the document you were reading». */
         long version,
         /** The training sample (V197): the page shows «Навчальний приклад Majstr». */
-        boolean sample
+        boolean sample,
+        /** Where the client pays the master (V217) — null when the master filled none. */
+        PayTo payTo
 ) {
     public record Item(
             String name,

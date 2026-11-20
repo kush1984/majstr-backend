@@ -1,7 +1,10 @@
 package com.majstr.backend.dto;
 
+import com.majstr.backend.entity.MessageKind;
+import com.majstr.backend.entity.PaymentNoticeStatus;
 import com.majstr.backend.entity.ProjectMessage;
 
+import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
@@ -25,7 +28,17 @@ public record MessageView(
         boolean isRead,
         Instant createdAt,
         /** Photos and PDFs left with the message, oldest first. Empty, never null. */
-        List<MessageFileView> files
+        List<MessageFileView> files,
+        /** PAYMENT = the client's «Я оплатив» (V217); MESSAGE otherwise. */
+        MessageKind kind,
+        /** PAYMENT only: what the client says he sent. */
+        BigDecimal paymentAmount,
+        /** PAYMENT only: RECORDED (in the object's money), PENDING (the master confirms) or DISMISSED. */
+        PaymentNoticeStatus paymentStatus,
+        /** PAYMENT only: what the receipt check found — why it waits, or what matched. */
+        String paymentNote,
+        /** PAYMENT only: the payment it wrote still exists (false once the master deleted it). */
+        boolean paymentRecorded
 ) {
     /**
      * @param graceDays how long a warned attachment survives — needed to turn the warning timestamp
@@ -46,6 +59,11 @@ public record MessageView(
                 // Read off the entity rather than passed in: a caller that forgot to supply the list
                 // would quietly render a message as having no attachments.
                 q.getFiles() == null ? List.of()
-                        : q.getFiles().stream().map(f -> MessageFileView.from(f, graceDays)).toList());
+                        : q.getFiles().stream().map(f -> MessageFileView.from(f, graceDays)).toList(),
+                q.getKind(),
+                q.getPaymentAmount(),
+                q.getPaymentStatus(),
+                q.getPaymentNote(),
+                q.getPaymentReceiptId() != null);
     }
 }

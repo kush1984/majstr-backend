@@ -490,6 +490,8 @@ class IdorMatrixIntegrationTest extends IntegrationTestBase {
             c.add(patchNoBody(base + "/{questionId}/read", a.project, a.message));
             c.add(del(base + "/{messageId}", a.project, a.message));
             c.add(get(base + "/{messageId}/files/{fileId}", a.project, a.message, a.messageFile));
+            c.add(post(base + "/{messageId}/payment/confirm", a.project, a.message));
+            c.add(post(base + "/{messageId}/payment/dismiss", a.project, a.message));
         }
 
         // --- object receipts («Чеки обʼєкта») -----------------------------------
@@ -616,6 +618,10 @@ class IdorMatrixIntegrationTest extends IntegrationTestBase {
             c.add(watching(del(base + "/{messageId}", b.project, a.message),
                     "project_messages", a.message));
             c.add(get(base + "/{messageId}/files/{fileId}", b.project, b.message, a.messageFile));
+            c.add(watching(post(base + "/{messageId}/payment/confirm", b.project, a.message),
+                    "project_messages", a.message));
+            c.add(watching(post(base + "/{messageId}/payment/dismiss", b.project, a.message),
+                    "project_messages", a.message));
         }
 
         // --- object receipts, the shopping list ---------------------------------
@@ -1135,9 +1141,12 @@ class IdorMatrixIntegrationTest extends IntegrationTestBase {
                 values (?, ?, ?, 'MANUAL', 'PRIVATE', now())""",
                 id.project, "photos/" + unique + ".png");
 
+        // A client's «Я оплатив» still waiting (V217), so its confirm/dismiss have a row to protect;
+        // every other inbox route treats it as the message it also is.
         id.message = insert("""
-                insert into project_messages (id, project_id, message, is_read, created_at)
-                values (?, ?, ?, false, now())""", id.project, "Питання клієнта " + tag);
+                insert into project_messages (id, project_id, message, is_read, created_at,
+                        kind, payment_amount, payment_status)
+                values (?, ?, ?, false, now(), 'PAYMENT', 100, 'PENDING')""", id.project, "Питання клієнта " + tag);
         id.messageFile = insert("""
                 insert into project_message_files (id, message_id, storage_key, content_type,
                         size_bytes, created_at)

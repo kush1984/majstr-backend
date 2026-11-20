@@ -2,6 +2,8 @@ package com.majstr.backend.entity;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
 import jakarta.persistence.FetchType;
 import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
@@ -17,6 +19,7 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
 
+import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
@@ -60,6 +63,29 @@ public class ProjectMessage {
 
     @Column(name = "author_ip", length = 64)
     private String authorIp;
+
+    /** PAYMENT = the client's «Я оплатив» (V217); everything else is an ordinary message. */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "kind", nullable = false, length = 20)
+    @Builder.Default
+    private MessageKind kind = MessageKind.MESSAGE;
+
+    /** What the client says he sent — PAYMENT only. */
+    @Column(name = "payment_amount", precision = 15, scale = 2)
+    private BigDecimal paymentAmount;
+
+    /** PAYMENT only: recorded, waiting for the master, or dismissed by him. Null on a MESSAGE. */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "payment_status", length = 20)
+    private PaymentNoticeStatus paymentStatus;
+
+    /** PAYMENT only: what the receipt check found, in the master's language. */
+    @Column(name = "payment_note", length = 300)
+    private String paymentNote;
+
+    /** The payment this notice wrote into the object; cleared by the FK when the master deletes it. */
+    @Column(name = "payment_receipt_id")
+    private UUID paymentReceiptId;
 
     /** Whether the contractor has seen this question. New questions start unread. */
     @Column(name = "is_read", nullable = false)

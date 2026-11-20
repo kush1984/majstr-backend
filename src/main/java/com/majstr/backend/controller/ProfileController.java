@@ -4,6 +4,7 @@ import com.majstr.backend.dto.CustomTradeRequest;
 import com.majstr.backend.dto.HelpRequest;
 import com.majstr.backend.dto.ProfileTradesRequest;
 import com.majstr.backend.dto.ProfileUpdateRequest;
+import com.majstr.backend.dto.RequisitesRequest;
 import com.majstr.backend.dto.SenderProfileRequest;
 import com.majstr.backend.dto.UserResponse;
 import com.majstr.backend.repository.UserRepository;
@@ -47,6 +48,13 @@ public class ProfileController {
     public UserResponse update(@Valid @RequestBody ProfileUpdateRequest req,
                                @AuthenticationPrincipal UserPrincipal principal) {
         return profileService.updateProfile(principal.id(), req);
+    }
+
+    @Operation(summary = "«Налаштування»: document requisites and where a client pays")
+    @PutMapping("/requisites")
+    public UserResponse updateRequisites(@Valid @RequestBody RequisitesRequest req,
+                                         @AuthenticationPrincipal UserPrincipal principal) {
+        return profileService.updateRequisites(principal.id(), req);
     }
 
     @Operation(summary = "Set the master's system trades (the screen after registration); "

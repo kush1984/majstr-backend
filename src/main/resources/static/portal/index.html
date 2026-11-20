@@ -604,6 +604,24 @@
         }
         .field-error { margin: 6px 0 0; font-size: 0.85rem; font-weight: 600; color: #b42318; }
         .act-sign-label { display: block; margin: 4px 0 5px; font-size: 0.85rem; font-weight: 600; color: var(--muted); }
+        /* «Оплатити» (V217). One card with one button; the dialog lists only what the master filled. */
+        .pay-card { text-align: center; }
+        .pay-card button.primary { width: 100%; font-size: 1.05rem; padding: 14px; }
+        .pay-recipient { margin: 0 0 12px; color: var(--muted); }
+        .pay-method {
+            display: block; width: 100%; box-sizing: border-box; text-align: left; margin: 0 0 10px;
+            padding: 12px 14px; border: 1px solid var(--border, #e5ddd2); border-radius: 12px;
+            background: var(--white); color: var(--ink); text-decoration: none;
+        }
+        .pay-method-title { display: block; font-weight: 700; }
+        .pay-method-sub { display: block; margin-top: 2px; font-size: 0.85rem; color: var(--muted); overflow-wrap: anywhere; }
+        .pay-details { margin: -4px 0 12px; padding: 10px 12px; border-radius: 12px; background: var(--paper-2, #f6f1ea); }
+        .pay-details img { display: block; width: 200px; max-width: 100%; height: auto; margin: 0 auto 10px; image-rendering: pixelated; }
+        .pay-field { margin: 0 0 8px; font-size: 0.85rem; color: var(--muted); }
+        .pay-field b { display: block; color: var(--ink); font-weight: 600; overflow-wrap: anywhere; }
+        .pay-row-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+        .pay-row-actions > * { flex: 1 1 auto; text-align: center; text-decoration: none; }
+        .pay-note, .pay-hint { margin: 8px 0 0; font-size: 0.8rem; color: var(--muted); }
         dialog .dialog-actions {
             display: flex;
             gap: 10px;
@@ -719,6 +737,36 @@
     </div>
 </dialog>
 
+<!-- «Оплатити» (V217): the master's own ways to pay — only what he filled, bank-neutral, the money
+     never passes through Majstr. Filled by openPay() from the page's payTo. -->
+<dialog id="payDialog">
+    <h3 style="margin-top:0">Оплата майстру</h3>
+    <p id="payRecipient" class="pay-recipient"></p>
+    <div id="payMethods"></div>
+    <button type="button" id="payPaid" class="primary" style="width:100%;margin-top:14px">Я оплатив ✓</button>
+    <p class="pay-note">Натискаючи, ви повідомите майстра, що оплату здійснено. Можна додати квитанцію.</p>
+    <div class="dialog-actions">
+        <button type="button" data-close="payDialog">Закрити</button>
+    </div>
+</dialog>
+
+<!-- «Я оплатив»: an amount and, usually, the bank's receipt — a transfer can take a day to land. -->
+<dialog id="paidDialog">
+    <h3 style="margin-top:0">Повідомити про оплату</h3>
+    <label for="paidAmount">Сума, грн <span class="req" aria-hidden="true">*</span></label>
+    <input id="paidAmount" type="text" inputmode="decimal" autocomplete="off" required aria-required="true">
+    <label for="paidFiles">Квитанція (необов'язково)</label>
+    <input id="paidFiles" type="file" multiple accept="image/png,image/jpeg,application/pdf">
+    <p class="pay-hint">З квитанцією майстер побачить оплату одразу. У застосунку банку: «Поділитися» → «Зберегти», або зробіть скріншот. Фото чи PDF, до 3 файлів.</p>
+    <label for="paidComment">Коментар (необов'язково)</label>
+    <textarea id="paidComment" maxlength="2000" rows="2"></textarea>
+    <p id="paidError" class="field-error" hidden></p>
+    <div class="dialog-actions">
+        <button type="button" data-close="paidDialog">Скасувати</button>
+        <button type="button" id="paidSubmit" class="primary">Повідомити майстра</button>
+    </div>
+</dialog>
+
 <script>
 (function () {
     // Error reports to Sentry (the server's SENTRY_BROWSER_DSN; off when blank). No SDK: the page
@@ -731,7 +779,7 @@
         let sent = 0;
         const scrub = (s) => String(s == null ? '' : s)
             .replace(/([?&](?:p|e|a|t|m|l)=)[^&#\s"']*/g, '$1[token]')
-            .replace(/(\/api\/public\/(?:portal|estimates|economy|act|messages?|price-list)\/)[^/?#\s"']+/g, '$1[token]');
+            .replace(/(\/api\/public\/(?:portal|estimates|economy|act|messages?|price-list|payment-notice)\/)[^/?#\s"']+/g, '$1[token]');
 
         async function endpoint() {
             if (config === undefined) {
@@ -1412,8 +1460,11 @@
 
             ${summaryAtBottom ? renderSummary(data.estimates) : ''}
 
+            ${renderPayCard(data.payTo)}
+
             ${renderPhotos(data.sharedPhotos)}
         `;
+        bindPay(data.payTo);
 
         // Delegated per-section actions — ids can repeat across sections, so
         // the buttons carry their estimate id in data attributes instead.
@@ -1540,6 +1591,208 @@
             return null;
         }
     }
+
+    // ---- «Оплатити» and «Я оплатив» (V217) ------------------------------------------------------
+    // The master's own ways to pay, bank-neutral: his payment link, his IBAN with the NBU payment QR
+    // (every bank app reads it), his card. Only what he filled is listed; the money never passes
+    // through Majstr. «Я оплатив» tells him, with the bank's receipt, because a transfer can take a
+    // day to land. A preview has no link of its own, so it shows the ways but cannot notify.
+    const payToken = portalToken || economyToken || actToken || legacyToken || null;
+    const payApi = payToken ? '/api/public/payment-notice/' + encodeURIComponent(payToken) : null;
+    const PAID_MAX_FILES = 3;
+    const PAID_MAX_BYTES = 10 * 1024 * 1024;
+    const PAID_TYPES = ['image/png', 'image/jpeg', 'application/pdf'];
+
+    function renderPayCard(payTo) {
+        if (!payTo) return '';
+        return `<section class="card pay-card">
+                <h2>Оплата</h2>
+                <button type="button" id="payOpen" class="primary">Оплатити</button>
+            </section>`;
+    }
+
+    function bindPay(payTo) {
+        const btn = document.getElementById('payOpen');
+        if (btn && payTo) btn.addEventListener('click', () => openPay(payTo));
+    }
+
+    function groupedCard(card) {
+        return String(card).replace(/(.{4})(?=.)/g, '$1 ');
+    }
+
+    async function copyText(text) {
+        try {
+            await navigator.clipboard.writeText(text);
+            return true;
+        } catch (e) {
+            // An older browser, or no permission: the selection trick still works there.
+            const area = document.createElement('textarea');
+            area.value = text;
+            area.setAttribute('readonly', '');
+            area.style.position = 'fixed';
+            area.style.opacity = '0';
+            document.body.appendChild(area);
+            area.select();
+            let ok = false;
+            try { ok = document.execCommand('copy'); } catch (err) { ok = false; }
+            area.remove();
+            return ok;
+        }
+    }
+
+    function flashCopied(button, done) {
+        const label = button.getAttribute('data-label') || button.textContent;
+        button.setAttribute('data-label', label);
+        button.textContent = done ? 'Скопійовано ✓' : 'Не вдалося скопіювати';
+        setTimeout(() => { button.textContent = label; }, 1800);
+    }
+
+    function openPay(payTo) {
+        document.getElementById('payRecipient').textContent = payTo.recipientName
+            ? 'Отримувач: ' + payTo.recipientName : '';
+        const rows = [];
+        if (payTo.link) {
+            rows.push(`<a class="pay-method" href="${escapeHtml(payTo.link)}" target="_blank" rel="noopener noreferrer">
+                    <span class="pay-method-title">💳 Оплатити онлайн ›</span>
+                    <span class="pay-method-sub">Відкриється: ${escapeHtml(payTo.linkHost || '')}</span>
+                </a>`);
+        }
+        if (payTo.iban) {
+            const qr = payTo.qrUrl && payApi
+                ? `<img src="${payApi}/qr.png" alt="QR-код для оплати" width="200" height="200">`
+                : '';
+            rows.push(`<button type="button" class="pay-method" id="payIbanToggle" aria-expanded="false">
+                    <span class="pay-method-title">🏦 За реквізитами (IBAN) ›</span>
+                    <span class="pay-method-sub">${payTo.qrUrl ? 'QR-код, IBAN, призначення' : 'IBAN і призначення платежу'}</span>
+                </button>
+                <div class="pay-details" id="payIbanDetails" hidden>
+                    ${qr}
+                    ${qr ? '<p class="pay-hint" style="margin:0 0 10px;text-align:center">Відскануйте в застосунку свого банку</p>' : ''}
+                    <p class="pay-field">IBAN<b>${escapeHtml(payTo.iban)}</b></p>
+                    ${payTo.purpose ? `<p class="pay-field">Призначення платежу<b>${escapeHtml(payTo.purpose)}</b></p>` : ''}
+                    <div class="pay-row-actions">
+                        <button type="button" data-copy="${escapeHtml(payTo.iban)}">Копіювати IBAN</button>
+                        ${payTo.purpose ? `<button type="button" data-copy="${escapeHtml(payTo.purpose)}">Копіювати призначення</button>` : ''}
+                        ${qr ? `<a class="btn" href="${payApi}/qr.png" download="oplata-qr.png">Зберегти QR</a>` : ''}
+                    </div>
+                </div>`);
+        }
+        if (payTo.card) {
+            rows.push(`<button type="button" class="pay-method" data-copy="${escapeHtml(payTo.card)}" data-copy-card>
+                    <span class="pay-method-title">🔢 На картку · ${escapeHtml(groupedCard(payTo.card))}</span>
+                    <span class="pay-method-sub">Натисніть, щоб скопіювати номер. Суму вкажіть у своєму банку.</span>
+                </button>`);
+        }
+        const methods = document.getElementById('payMethods');
+        methods.innerHTML = rows.join('');
+        methods.querySelectorAll('[data-copy]').forEach(b => {
+            b.addEventListener('click', async () => {
+                const ok = await copyText(b.getAttribute('data-copy'));
+                const target = b.hasAttribute('data-copy-card') ? b.querySelector('.pay-method-sub') : b;
+                if (b.hasAttribute('data-copy-card')) {
+                    const before = target.textContent;
+                    target.textContent = ok ? 'Номер скопійовано ✓ Суму вкажіть у своєму банку.' : 'Не вдалося скопіювати';
+                    setTimeout(() => { target.textContent = before; }, 2200);
+                } else {
+                    flashCopied(b, ok);
+                }
+            });
+        });
+        const toggle = document.getElementById('payIbanToggle');
+        if (toggle) {
+            toggle.addEventListener('click', () => {
+                const details = document.getElementById('payIbanDetails');
+                details.hidden = !details.hidden;
+                toggle.setAttribute('aria-expanded', String(!details.hidden));
+            });
+        }
+        const paid = document.getElementById('payPaid');
+        paid.hidden = !payApi;
+        paid.nextElementSibling.hidden = !payApi;
+        paid.onclick = () => {
+            closeDialog('payDialog');
+            openPaid();
+        };
+        openDialog('payDialog');
+    }
+
+    function openPaid() {
+        document.getElementById('paidError').hidden = true;
+        openDialog('paidDialog');
+        document.getElementById('paidAmount').focus();
+    }
+
+    function paidProblem(files) {
+        if (files.length > PAID_MAX_FILES) return 'Не більше ' + PAID_MAX_FILES + ' файлів.';
+        for (const f of files) {
+            if (f.size > PAID_MAX_BYTES) return 'Файл «' + f.name + '» більший за 10 МБ.';
+            // The browser's type can be empty or wrong; the server sniffs the bytes.
+            if (f.type && !PAID_TYPES.includes(f.type)) return 'Файл «' + f.name + '» не фото і не PDF.';
+        }
+        return '';
+    }
+
+    function paidFail(text) {
+        const box = document.getElementById('paidError');
+        box.textContent = text;
+        box.hidden = false;
+    }
+
+    document.getElementById('paidSubmit').addEventListener('click', async () => {
+        const amountInput = document.getElementById('paidAmount');
+        const raw = amountInput.value.replace(/[\s ]/g, '').replace(',', '.');
+        if (!/^\d{1,9}(\.\d{1,2})?$/.test(raw) || Number(raw) <= 0) {
+            setFieldError(amountInput, 'Вкажіть суму, яку ви переказали.');
+            amountInput.focus();
+            return;
+        }
+        const files = [...document.getElementById('paidFiles').files];
+        const problem = paidProblem(files);
+        if (problem) return paidFail(problem);
+
+        const btn = document.getElementById('paidSubmit');
+        btn.disabled = true;
+        // The server reads the receipt before it answers (V217): a few seconds, so say what is happening.
+        btn.textContent = files.length ? 'Перевіряємо квитанцію…' : 'Надсилаємо…';
+        try {
+            const form = new FormData();
+            form.append('data', new Blob([JSON.stringify({
+                amount: raw,
+                comment: document.getElementById('paidComment').value.trim() || null
+            })], { type: 'application/json' }));
+            for (const f of files) form.append('files', f, f.name);
+            // No Content-Type on purpose — the browser sets it with the boundary.
+            const resp = await fetch(payApi, { method: 'POST', body: form });
+            if (resp.ok) {
+                closeDialog('paidDialog');
+                amountInput.value = '';
+                document.getElementById('paidFiles').value = '';
+                document.getElementById('paidComment').value = '';
+                alert('Дякуємо! Майстер отримав повідомлення про оплату.');
+            } else if (resp.status === 429) {
+                // The limiter's own window (minutes), not retryAfter(), which caps a page reload at 60 s.
+                let mins = 10;
+                try {
+                    const body = await resp.json();
+                    if (body && body.retryAfterSeconds) mins = Math.ceil(body.retryAfterSeconds / 60);
+                } catch (err) { /* keep the default */ }
+                paidFail('Занадто багато спроб. Спробуйте за ' + mins + ' хв.');
+            } else if (resp.status === 413) {
+                paidFail('Файли завеликі. Приберіть частину і спробуйте ще раз.');
+            } else if (resp.status === 404) {
+                paidFail('Посилання недійсне. Зверніться до майстра.');
+            } else {
+                if (resp.status >= 500) monitoring.failed('payment-notice', resp.status);
+                paidFail(await apiMessage(resp) || 'Не вдалося надіслати. Спробуйте ще раз.');
+            }
+        } catch (e) {
+            monitoring.unreachable('payment-notice');
+            paidFail('Не вдалося надіслати. ' + networkFailure());
+        } finally {
+            btn.disabled = false;
+            btn.textContent = 'Повідомити майстра';
+        }
+    });
 
     // The work-act (?a=) page: one signed-or-signable document. A different shape from the estimate
     // portal, so its own renderer. Honest wording — «Підтвердити приймання робіт», never «юридично
@@ -1690,10 +1943,12 @@
             </div>
             ${receiptsBlock}
             ${signBlock}
+            ${renderPayCard(a.payTo)}
             <div class="actions" style="justify-content:center;margin-top:8px">
                 <a href="${apiBase}/pdf" target="_blank" rel="noopener" class="secondary" style="text-decoration:none">Завантажити PDF</a>
             </div>
         `;
+        bindPay(a.payTo);
         if (!signed) {
             document.getElementById('actSignBtn').addEventListener('click', async () => {
                 if (!requireFields([
@@ -1887,7 +2142,8 @@
                 discountPercent: data.discountPercent,
                 signature: data.signature,
                 version: data.version
-            }]
+            }],
+            payTo: data.payTo
         };
     }
 
