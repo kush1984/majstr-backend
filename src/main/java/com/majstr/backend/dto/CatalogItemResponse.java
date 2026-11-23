@@ -7,7 +7,6 @@ import com.majstr.backend.entity.Unit;
 
 import java.math.BigDecimal;
 import java.time.Instant;
-import java.util.List;
 import java.util.UUID;
 
 public record CatalogItemResponse(
@@ -35,38 +34,21 @@ public record CatalogItemResponse(
          *  ({@code min(catalog_templates.sort_order)} over that trade + category — V118's ranking,
          *  which for DRYWALL is the order the work is actually done in). Null for a category the
          *  library ships nothing for, i.e. a folder the master invented; the client sorts those
-         *  last. The client needs this because {@link #sortOrder} is ONE global rank while a row
-         *  re-filed by {@link #sharedTrades} carries the rank of the trade it is STORED under:
-         *  without it the drywall chip opened on «Каркас і обшивка», because a single plumbing row
-         *  re-filed into that phase outranked every drywall row on the board. */
+         *  last. The client needs this because {@link #sortOrder} is ONE global rank across all his
+         *  trades: without it the drywall chip opened on «Каркас і обшивка», because a single
+         *  plumbing row filed into that phase outranked every drywall row on the board. */
         Integer categoryOrder,
         Instant createdAt,
-        /** Other trades that ALSO recognize this exact (name, type, unit) per {@code
-         *  catalog_templates}, each with the category IT files the position under — never includes
-         *  {@link #trade} itself. {@code catalog_items} has one row per (owner, name, type, unit);
-         *  a master running two trades that happen to share identical wording (V99: PAINTER's
-         *  organizational services duplicate several of TILING's) only ever owns ONE row, tagged
-         *  whichever trade claimed it first. The client's trade filter chips use this so that row
-         *  still shows up under the OTHER trade's chip too — see {@code
-         *  TradeFilterChips.tradeMatches} — and group it under that trade's category while its
-         *  chip is the one selected. Empty for anything not (also) shipped under a second trade. */
-        List<SharedTrade> sharedTrades,
         /** A position we shipped for a trade the master has since taken off his profile: kept with
          *  his price (a trade put back shows it again), priced from on every apply, but left off the
          *  catalog screen and the pickers. Never true for a position he typed or imported. */
         boolean hidden
 ) {
-    /** One foreign trade that ships this exact position, where that trade keeps it, and where that
-     *  category sits in that trade's sequence — see {@link #categoryOrder}. */
-    public record SharedTrade(Trade trade, String category, Integer categoryOrder) {
-    }
-
     public static CatalogItemResponse from(CatalogItem item) {
-        return from(item, List.of(), null, false);
+        return from(item, null, false);
     }
 
-    public static CatalogItemResponse from(CatalogItem item, List<SharedTrade> sharedTrades,
-                                           Integer categoryOrder, boolean hidden) {
+    public static CatalogItemResponse from(CatalogItem item, Integer categoryOrder, boolean hidden) {
         var customTrade = item.getCustomTrade();
         return new CatalogItemResponse(
                 item.getId(),
@@ -83,7 +65,6 @@ public record CatalogItemResponse(
                 item.getSortOrder(),
                 categoryOrder,
                 item.getCreatedAt(),
-                sharedTrades,
                 hidden
         );
     }

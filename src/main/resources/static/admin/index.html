@@ -187,6 +187,7 @@
             <button class="navlink" data-view="insights">💡 Від майстрів</button>
             <button class="navlink" data-view="broadcasts">✉️ Розсилки</button>
             <button class="navlink" data-view="visits">👀 Відвідування</button>
+            <button class="navlink" data-view="reviews">⭐ Відгуки <span id="reviewsUnread" class="badge PRO" hidden></span></button>
             <button class="navlink logout" id="logoutBtn">Вийти</button>
         </aside>
 
@@ -281,6 +282,19 @@
                         <span id="pageInfo" style="align-self:center">сторінка 1 / 1</span>
                         <button id="nextPage">→</button>
                     </div>
+                </section>
+            </section>
+
+            <!-- ===== REVIEWS OF MAJSTR (V218) ===== -->
+            <section id="view-reviews" class="view" hidden>
+                <h1>Відгуки майстрів про Majstr</h1>
+                <p class="hint">
+                    Низькі оцінки — що поправити; напишіть майстрові, він це цінує. «Опублікувати» можна лише
+                    відгук 4–5 зірок, на який майстер дав згоду: він з'явиться на majstr.pro з іменем (Олена К.),
+                    напрямом і цифрами з його акаунта.
+                </p>
+                <section class="card">
+                    <div id="reviewsBox"><p class="muted">Завантаження…</p></div>
                 </section>
             </section>
 
@@ -717,6 +731,47 @@
         if (name === 'insights' && !insightsLoaded) { insightsLoaded = true; loadInsights(); }
         if (name === 'broadcasts' && !broadcastsLoaded) { broadcastsLoaded = true; loadBroadcasts(); }
         if (name === 'visits' && !visitsLoaded) { visitsLoaded = true; loadVisits(); }
+        if (name === 'reviews') loadReviews();
+    }
+
+    // ================= REVIEWS OF MAJSTR (V218) =================
+    const REVIEW_STATUS = { NEW: 'Нове', PUBLISHED: 'На сайті', HIDDEN: 'Приховано' };
+    async function loadReviews() {
+        const resp = await api('/admin/app-reviews');
+        if (!resp.ok) return;
+        const rows = await resp.json();
+        const unread = rows.filter(r => r.status === 'NEW').length;
+        const badge = document.getElementById('reviewsUnread');
+        badge.hidden = unread === 0;
+        badge.textContent = unread;
+        const box = document.getElementById('reviewsBox');
+        if (!box) return;
+        if (rows.length === 0) { box.innerHTML = '<p class="muted">Ще ніхто не оцінив.</p>'; return; }
+        const avg = rows.reduce((s, r) => s + r.rating, 0) / rows.length;
+        const fmt = iso => iso ? dateFormat.format(new Date(iso)) : '—';
+        const stars = n => '★'.repeat(n) + '<span class="muted">' + '★'.repeat(5 - n) + '</span>';
+        box.innerHTML = `<p class="muted" style="margin:0 0 8px">Середня оцінка: <b>${avg.toFixed(1)}</b> з ${rows.length} · нових: <b>${unread}</b></p>
+            <table><thead><tr><th>Оцінка</th><th>Відгук</th><th class="hide-mobile">Майстер</th><th>Коли</th><th>Статус</th><th></th></tr></thead><tbody>`
+            + rows.map(r => {
+                const actions = [];
+                if (r.status !== 'PUBLISHED' && r.publishConsent) actions.push(`<button type="button" class="rv-act primary" data-id="${r.id}" data-value="PUBLISHED">Опублікувати</button>`);
+                if (r.status !== 'HIDDEN') actions.push(`<button type="button" class="rv-act" data-id="${r.id}" data-value="HIDDEN">${r.status === 'PUBLISHED' ? 'Зняти з сайту' : 'Прочитано'}</button>`);
+                if (r.status === 'HIDDEN') actions.push(`<button type="button" class="rv-act" data-id="${r.id}" data-value="NEW">Нове</button>`);
+                const who = [r.fullName, r.email, r.phone].filter(Boolean).map(escapeHtml).join('<br>');
+                return `<tr${r.status === 'NEW' ? ' style="font-weight:600"' : ''}>
+                    <td style="white-space:nowrap; color:#d97706">${stars(r.rating)}</td>
+                    <td>${r.text ? escapeHtml(r.text) : '<span class="muted">без тексту</span>'}${r.publishConsent ? '<br><span class="muted">✓ можна показати</span>' : ''}${r.source === 'PROMPT' ? ' <span class="muted">· з підказки</span>' : ''}</td>
+                    <td class="hide-mobile">${who}</td>
+                    <td class="muted">${fmt(r.createdAt)}</td>
+                    <td>${REVIEW_STATUS[r.status] || r.status}</td>
+                    <td style="white-space:nowrap">${actions.join(' ')}</td></tr>`;
+            }).join('') + `</tbody></table>`;
+        box.querySelectorAll('.rv-act').forEach(btn => btn.addEventListener('click', async () => {
+            btn.disabled = true;
+            const r = await api(`/admin/app-reviews/${btn.dataset.id}/status?value=${btn.dataset.value}`, { method: 'POST' });
+            if (!r.ok) alert('Не вдалося змінити статус');
+            await loadReviews();
+        }));
     }
     document.querySelectorAll('.navlink[data-view]').forEach(a =>
         a.addEventListener('click', () => showView(a.dataset.view)));
@@ -2272,6 +2327,7 @@
             await loadFunnel();
             await loadBySource();
             await loadHelpRequests();
+            await loadReviews(); // the unread count on the «Відгуки» menu item
             await loadUpgradeInterest();
             await loadGrowth();
             await loadUsers();

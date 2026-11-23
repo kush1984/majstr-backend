@@ -60,6 +60,14 @@ class GlobalExceptionHandlerTest {
                             "ux_work_act_one_open_per_project"));
         }
 
+        @GetMapping("/catalog-duplicate")
+        String catalogDuplicate() {
+            // A position moved into a trade that already holds its name (V220's per-trade index).
+            throw new org.springframework.dao.DataIntegrityViolationException("could not execute statement",
+                    new org.hibernate.exception.ConstraintViolationException("duplicate key", null,
+                            "ux_catalog_items_owner_trade_name_type_unit"));
+        }
+
         @GetMapping("/limit")
         String limit() {
             throw new LimitExceededException(Limit.MAX_PROJECTS, 2, Plan.FREE);
@@ -150,6 +158,13 @@ class GlobalExceptionHandlerTest {
         mockMvc.perform(get("/second-open-act").header("Accept-Language", "uk"))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.code", is("WORK_ACT_OPEN")));
+    }
+
+    @Test
+    void aCatalogDuplicateInOneTrade_is409_not500() throws Exception {
+        mockMvc.perform(get("/catalog-duplicate").header("Accept-Language", "uk"))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code", is("CATALOG_ITEM_DUPLICATE")));
     }
 
     @Test

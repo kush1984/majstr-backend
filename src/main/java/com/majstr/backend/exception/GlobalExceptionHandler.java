@@ -141,7 +141,7 @@ public class GlobalExceptionHandler {
     /** Unique email constraint, checked in the DB. Used by both the fast pre-check
      *  ({@link EmailAlreadyExistsException}) and the fallback constraint catch below. */
     private static final String EMAIL_UNIQUE_CONSTRAINT = "users_email_unique";
-    private static final String CATALOG_UNIQUE_INDEX = "ux_catalog_items_owner_name_type_unit";
+    private static final String CATALOG_UNIQUE_INDEX = "ux_catalog_items_owner_trade_name_type_unit";
     /** {index, message key, code} — the act invariants V144 put into the schema. */
     private static final String[][] ACT_UNIQUE_INDEXES = {
             {"ux_work_act_one_open_per_project", "error.work-act.open-exists", "WORK_ACT_OPEN"},
@@ -202,7 +202,7 @@ public class GlobalExceptionHandler {
             }
         }
         if (isConstraintViolation(ex, CATALOG_UNIQUE_INDEX)) {
-            // A catalog item with the same name+type+unit already exists — a friendly 409,
+            // A catalog item with the same trade+name+type+unit already exists — a friendly 409,
             // not a 500. The normal paths de-dup; this is a safety net (e.g. a rename clash).
             ErrorResponse body = ErrorResponse.coded(HttpStatus.CONFLICT.value(),
                     HttpStatus.CONFLICT.getReasonPhrase(), msg("error.catalog.duplicate"),
@@ -468,6 +468,13 @@ public class GlobalExceptionHandler {
         ErrorResponse body = ErrorResponse.coded(HttpStatus.BAD_REQUEST.value(),
                 HttpStatus.BAD_REQUEST.getReasonPhrase(), msg(ex.getMessage()), req.getRequestURI(), "TRANSFER_INVALID");
         return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(body);
+    }
+
+    @ExceptionHandler(AppReviewNotPublishableException.class)
+    public ResponseEntity<ErrorResponse> handleAppReview(AppReviewNotPublishableException ex, HttpServletRequest req) {
+        ErrorResponse body = ErrorResponse.coded(HttpStatus.CONFLICT.value(),
+                HttpStatus.CONFLICT.getReasonPhrase(), msg(ex.getMessage()), req.getRequestURI(), "APP_REVIEW_NO_CONSENT");
+        return ResponseEntity.status(HttpStatus.CONFLICT).body(body);
     }
 
     @ExceptionHandler(PlanTermValidationException.class)

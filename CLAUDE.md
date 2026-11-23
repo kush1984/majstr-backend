@@ -13,7 +13,7 @@ title — read the twin before changing what a bullet guards); per-area narrativ
 - **Stack pinned:** Spring Boot 4 / Java 21 / PostgreSQL 17 + Flyway / Jackson 3 (`tools.jackson.*`). Don't bump without reason.
 - **Secrets from env only** (`JWT_SECRET` has no default). **English only** in code, comments, SQL, docs.
 - **Layering** `controller → service → repository`; controllers return DTOs; `passwordHash` never leaves.
-- **Schema = Flyway only** (`ddl-auto: validate`). New `V<N>__…sql`, **latest is V217** (V183, V185 skipped);
+- **Schema = Flyway only** (`ddl-auto: validate`). New `V<N>__…sql`, **latest is V220** (V183, V185 skipped);
   never edit an applied migration; a self-check `RAISE EXCEPTION`s only about its own work, else `WARNING`.
 - **Tests + green `./gradlew build` before any push** (Claude runs it; Docker must be up). Controller tests =
   Mockito standalone; DB/filters = `…IntegrationTest` on Testcontainers.
@@ -58,6 +58,8 @@ One line per invariant; the reasoning is in the twin in docs/architecture-index-
 - **Admin funnel: «Віддали клієнту» = `shared` ∪ `pdfMade` (V196)** — `ClientHandoffs` is the one computation; every step filters `role = USER`.
 - **By-source funnel + first-touch UTM (V114)** — Σ over sources == the aggregate (`SourceBreakdownIntegrationTest`); UTM stamped once, NULL is a value; search traffic reads `first_referrer_host`/`first_entry_path`.
 - **The training sample «Приклад: …» (V197)** — `projects.sample`, one per owner, outside the cap, read by no figure; acts «П-N»; marked «Навчальний приклад Majstr» on client surfaces.
+- **Where a master works (V219, iteration-regions)** — `users.region` (24 oblasts + Kyiv city, CHECK-listed); its own `PUT /api/profile/region`, so no profile form blanks it; nothing reads it yet — collected now so prices can split by oblast later.
+- **Masters rate Majstr itself (V218, iteration-app-reviews)** — `app_review` (1–5, text, `publish_consent`, NEW/PUBLISHED/HIDDEN); a CHECK refuses PUBLISHED without consent, and the service never keeps consent below 4 stars; the home card asks only via `GET /api/app-reviews/prompt` (success first, not week one, 90-day pause); majstr.pro shows «Олена К.» + figures read live.
 - **Anonymous visit statistics (V187, iteration-visit-stats)** — cookieless beacon → `POST /api/public/visit` (204); no IP stored (daily-salted hash); each visitor-day counted once.
 - **PostHog is PWA-only, and the boundary is a rule (iteration-posthog)** — money and state are the backend's; PostHog gets only what it doesn't write; no personal data; `reset()` on logout; replay→person join by id equality.
 - **Admin broadcasts — fixed segments, never a query (V180)** — one of six segments per master (`AudienceRules.segmentOf`); FREE + USER + not opted out; the send recomputes and intersects; unsubscribe footer by `BroadcastLetter`, GET never unsubscribes.
@@ -106,7 +108,7 @@ One line per invariant; the reasoning is in the twin in docs/architecture-index-
 - **A default bundle is a SEQUENCE, not a set (V112)** — `sort_order` is the content; template items carry no price (resolved by name at apply — a miss is 0 ₴, so names are copied exactly and checked).
 - **A default bundle is a JOB (V148)** — protection first, cleanup last, ≥ 6 lines; rewritten in place; a catalog RENAME rewrites bundle lines, forks and norms in the same migration (V158 shape).
 - **DRYWALL is filed by PHASE, and a refresh guard must be TRADE-AWARE (V116)** — phase categories; a price migration queues PRICE_DRIFT, never writes a master's price; a migration inserting a template re-runs V118's ranking.
-- **A foreign category on a trade chip is a READ-path fact, not misfiled data (V118)** — one catalog row per (owner, name, type, unit); `sharedTrades` re-files for display; an estimate line is a write — `CatalogFiling` is the one rule.
+- **Every trade holds its own positions (V220, iteration-trade-catalogs)** — `catalog_items` is unique per (owner, TRADE, name, type, unit): a shared library position is a row in each trade, own folder, own price; seeding copies per trade; nothing re-files (`sharedTrades` gone); a line arriving by NAME goes through `CatalogFiling` (one trade → it, several → the estimate's, else none); `TradeCatalogsIntegrationTest` holds every trade to it.
 - **An estimate line explains itself, by COPY (V119)** — `estimate_items.description` is a snapshot copied at catalog add, duplicate, consolidation and `applyTemplates`; not on `EstimateItemRequest`.
 - **A finish level is a BUNDLE, and it explains itself (V121)** — Q1/Q2/Q4 are bundles; `estimates.quality_note` is a snapshot at apply time that nothing renders yet.
 - **Templates are fully editable, and a system default FORKS ON WRITE (V113 `template_default_override`)** — `resolveWritable` forks a default on first write and answers with the written id; delete on a default is a hide; the PWA editor saves explicitly, order last.

@@ -29,6 +29,7 @@ import java.util.Optional;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.tuple;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
@@ -78,11 +79,11 @@ class CatalogServiceTest {
     }
 
     @Test
-    void create_whenSameNameTypeUnitExists_updatesInsteadOfDuplicating() {
+    void create_whenSameTradeNameTypeUnitExists_updatesInsteadOfDuplicating() {
         CatalogItem existing = CatalogItem.builder()
                 .id(UUID.randomUUID())
                 .owner(User.builder().id(ownerId).build())
-                .name("Кабель ВВГнг").category("Старе").trade(Trade.OTHER)
+                .name("Кабель ВВГнг").category("Старе").trade(Trade.ELECTRICAL)
                 .type(ItemType.MATERIAL).unit(Unit.M).defaultPrice(new BigDecimal("10.00"))
                 .build();
         given(catalogRepository.findByOwnerIdOrderByNameAsc(ownerId)).willReturn(List.of(existing));
@@ -92,13 +93,36 @@ class CatalogServiceTest {
                         ItemType.MATERIAL, Unit.M, new BigDecimal("42.00")),
                 ownerId);
 
-        // Matched by (name trimmed/case-insensitive, type, unit) → updated in place, no new row.
+        // Matched by (trade, name trimmed/case-insensitive, type, unit) → updated in place, no new row.
         assertThat(existing.getDefaultPrice()).isEqualByComparingTo("42.00");
         assertThat(existing.getCategory()).isEqualTo("Електрика");
-        assertThat(existing.getTrade()).isEqualTo(Trade.ELECTRICAL);
         assertThat(resp.defaultPrice()).isEqualByComparingTo("42.00");
         verify(catalogRepository, never()).save(any());
         verify(userRepository, never()).getReferenceById(any());
+    }
+
+    /** V220: the same name under another trade is that trade's own position, not a duplicate. */
+    @Test
+    void create_sameNameUnderAnotherTrade_isANewRow_andLeavesTheOtherAlone() {
+        CatalogItem tiling = CatalogItem.builder()
+                .id(UUID.randomUUID())
+                .owner(User.builder().id(ownerId).build())
+                .name("Прибирання приміщення після робіт").category("Організаційні послуги").trade(Trade.TILING)
+                .type(ItemType.WORK).unit(Unit.M2).defaultPrice(new BigDecimal("40.00"))
+                .build();
+        given(catalogRepository.findByOwnerIdOrderByNameAsc(ownerId)).willReturn(List.of(tiling));
+        given(userRepository.getReferenceById(ownerId)).willReturn(User.builder().id(ownerId).build());
+        given(catalogRepository.save(any(CatalogItem.class))).willAnswer(inv -> inv.getArgument(0));
+
+        CatalogItemResponse resp = catalogService.create(
+                new CatalogItemRequest("Прибирання приміщення після робіт", "Організаційні послуги",
+                        Trade.ELECTRICAL, null, ItemType.WORK, Unit.M2, new BigDecimal("55.00")),
+                ownerId);
+
+        assertThat(resp.trade()).isEqualTo(Trade.ELECTRICAL);
+        assertThat(resp.defaultPrice()).isEqualByComparingTo("55.00");
+        assertThat(tiling.getDefaultPrice()).isEqualByComparingTo("40.00");
+        assertThat(tiling.getTrade()).isEqualTo(Trade.TILING);
     }
 
     @Test
@@ -242,7 +266,6 @@ class CatalogServiceTest {
                 ordered("Кабель", "Електрика", 2),
                 ordered("Автомат", "Електрика", 1)
         ));
-        given(catalogTemplateRepository.findNameKeysSharedAcrossTrades()).willReturn(List.of());
 
         List<CatalogItemResponse> list = catalogService.listForOwner(ownerId, null);
 
@@ -251,47 +274,17 @@ class CatalogServiceTest {
     }
 
     @Test
-    void listForOwner_marksAPositionSharedWithAnotherTrade_excludingItsOwnTrade() {
-        // The row itself is filed under PAINTER (the trade that happened to claim the unique
-        // (owner, name, type, unit) slot first — see the catalog_items unique index), but
-        // catalog_templates ships the same name under both PAINTER and TILING. The trade filter
-        // needs to know that, or this row is invisible the moment a master who runs both trades
-        // selects the TILING chip.
-        CatalogItem shared = item("Організаційні послуги", "Транспортні витрати за містом");
-        shared.setTrade(Trade.PAINTER);
-        shared.setType(ItemType.WORK);
-        shared.setUnit(Unit.KM);
-        given(catalogRepository.findByOwnerIdOrderByNameAsc(ownerId)).willReturn(List.of(shared));
-        given(catalogTemplateRepository.findNameKeysSharedAcrossTrades()).willReturn(List.<Object[]>of(
-                new Object[] {"транспортні витрати за містом", "WORK", "KM", "PAINTER",
-                        "Організаційні послуги"},
-                new Object[] {"транспортні витрати за містом", "WORK", "KM", "TILING",
-                        "Організаційні послуги"}
-        ));
-
-        List<CatalogItemResponse> list = catalogService.listForOwner(ownerId, null);
-
-        assertThat(list).hasSize(1);
-        assertThat(list.get(0).trade()).isEqualTo(Trade.PAINTER);
-        assertThat(list.get(0).sharedTrades()).containsExactly(
-                new CatalogItemResponse.SharedTrade(Trade.TILING, "Організаційні послуги", null));
-    }
-
-    @Test
-    void listForOwner_carriesTheCategoryEachSharingTradeFilesThePositionUnder() {
-        // V116 copied ten PAINTER positions verbatim into DRYWALL phases, so one row is
-        // «Шпалери» to a painter and «Оздоблення під фарбування» to a drywaller at the same time.
-        // Sending only the trade is what put a Шпалери folder on the drywall screen.
-        CatalogItem shared = item("Шпалери", "Поклейка склополотна");
-        shared.setTrade(Trade.PAINTER);
-        shared.setType(ItemType.WORK);
-        shared.setUnit(Unit.M2);
-        given(catalogRepository.findByOwnerIdOrderByNameAsc(ownerId)).willReturn(List.of(shared));
-        given(catalogTemplateRepository.findNameKeysSharedAcrossTrades()).willReturn(List.<Object[]>of(
-                new Object[] {"поклейка склополотна", "WORK", "M2", "DRYWALL",
-                        "Оздоблення під фарбування"},
-                new Object[] {"поклейка склополотна", "WORK", "M2", "PAINTER", "Шпалери"}
-        ));
+    void listForOwner_aNameTwoTradesShipIsARowInEach_inItsOwnFolder() {
+        // V220: every trade holds its own positions. «Поклейка склополотна» is PAINTER's «Шпалери»
+        // and DRYWALL's «Оздоблення під фарбування» — two rows, each answered as stored, with the
+        // rank of its own trade's folder. Nothing is re-filed on the way out.
+        CatalogItem painter = item("Шпалери", "Поклейка склополотна");
+        painter.setTrade(Trade.PAINTER);
+        painter.setUnit(Unit.M2);
+        CatalogItem drywall = item("Оздоблення під фарбування", "Поклейка склополотна");
+        drywall.setTrade(Trade.DRYWALL);
+        drywall.setUnit(Unit.M2);
+        given(catalogRepository.findByOwnerIdOrderByNameAsc(ownerId)).willReturn(List.of(painter, drywall));
         given(catalogTemplateRepository.findCategoryRanks()).willReturn(List.<Object[]>of(
                 new Object[] {"PAINTER", "Шпалери", 500},
                 new Object[] {"DRYWALL", "Оздоблення під фарбування", 943}
@@ -299,9 +292,11 @@ class CatalogServiceTest {
 
         List<CatalogItemResponse> list = catalogService.listForOwner(ownerId, null);
 
-        assertThat(list.get(0).category()).isEqualTo("Шпалери");
-        assertThat(list.get(0).sharedTrades()).containsExactly(
-                new CatalogItemResponse.SharedTrade(Trade.DRYWALL, "Оздоблення під фарбування", 943));
+        assertThat(list).extracting(CatalogItemResponse::trade, CatalogItemResponse::category,
+                        CatalogItemResponse::categoryOrder)
+                .containsExactlyInAnyOrder(
+                        tuple(Trade.PAINTER, "Шпалери", 500),
+                        tuple(Trade.DRYWALL, "Оздоблення під фарбування", 943));
     }
 
     @Test
@@ -318,7 +313,6 @@ class CatalogServiceTest {
         frame.setTrade(Trade.DRYWALL);
         frame.setSortOrder(1);
         given(catalogRepository.findByOwnerIdOrderByNameAsc(ownerId)).willReturn(List.of(frame, prep));
-        given(catalogTemplateRepository.findNameKeysSharedAcrossTrades()).willReturn(List.of());
         given(catalogTemplateRepository.findCategoryRanks()).willReturn(List.<Object[]>of(
                 new Object[] {"DRYWALL", "Підготовка та захист", 903},
                 new Object[] {"DRYWALL", "Каркас і обшивка", 907}
@@ -400,7 +394,6 @@ class CatalogServiceTest {
     @Test
     void listForOwner_queriesOnlyTheGivenOwnersItems() {
         given(catalogRepository.findByOwnerIdOrderByNameAsc(ownerId)).willReturn(List.of());
-        given(catalogTemplateRepository.findNameKeysSharedAcrossTrades()).willReturn(List.of());
 
         catalogService.listForOwner(ownerId, null);
 

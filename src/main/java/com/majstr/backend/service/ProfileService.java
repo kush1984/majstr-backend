@@ -3,6 +3,7 @@ package com.majstr.backend.service;
 import com.majstr.backend.dto.HelpRequest;
 import com.majstr.backend.dto.ProfileTradesRequest;
 import com.majstr.backend.dto.ProfileUpdateRequest;
+import com.majstr.backend.dto.RegionRequest;
 import com.majstr.backend.dto.RequisitesRequest;
 import com.majstr.backend.dto.SenderProfileRequest;
 import com.majstr.backend.dto.UserResponse;
@@ -146,6 +147,14 @@ public class ProfileService {
         user.setFullName(req.fullName().trim());
         user.setPhone(trimToNull(req.phone()));
         user.setCompanyName(trimToNull(req.companyName()));
+        return response(user);
+    }
+
+    /** Where he works (V219) — its own write, so neither profile form can blank it. */
+    @Transactional
+    public UserResponse updateRegion(UUID userId, RegionRequest req) {
+        User user = loadUser(userId);
+        user.setRegion(req.region());
         return response(user);
     }
 

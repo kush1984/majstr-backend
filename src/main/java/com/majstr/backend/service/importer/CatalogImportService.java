@@ -57,13 +57,14 @@ public class CatalogImportService {
     /** The import itself; must run inside a caller's transaction (both callers are {@code @Transactional}). */
     @Transactional
     public CatalogImportCommitResponse commitFiled(UUID ownerId, List<FiledItem> items, DedupPolicy defaultPolicy) {
-        // Existing catalog keyed by (lower(trim(name)) | type) — the dedup index.
+        // Existing catalog keyed by (trade | lower(trim(name)) | type) — the dedup index. The same
+        // name under another trade is that trade's own position (V220), not a duplicate.
         Map<String, CatalogItem> existing = new HashMap<>();
         // His folders per trade, by a spelling-blind key: a section «ПІДЛОГА» in the file lands in the
         // «Підлога» he already has, never in a twin beside it.
         Map<String, String> folders = new HashMap<>();
         for (CatalogItem item : catalogRepository.findByOwnerIdOrderByNameAsc(ownerId)) {
-            existing.putIfAbsent(key(item.getName(), item.getType().name()), item);
+            existing.putIfAbsent(key(item.getTrade(), item.getName(), item.getType().name()), item);
             if (item.getCategory() != null && !item.getCategory().isBlank()) {
                 folders.putIfAbsent(folderKey(item.getTrade(), item.getCategory()), item.getCategory());
             }
@@ -72,7 +73,8 @@ public class CatalogImportService {
         User owner = userRepository.getReferenceById(ownerId);
         int created = 0, updated = 0, skipped = 0;
         for (FiledItem in : items) {
-            CatalogItem match = existing.get(key(in.name(), in.type().name()));
+            Trade trade = in.trade() != null ? in.trade() : Trade.OTHER;
+            CatalogItem match = existing.get(key(trade, in.name(), in.type().name()));
             if (match != null) {
                 DedupPolicy policy = in.policy() != null ? in.policy() : defaultPolicy;
                 if (policy == DedupPolicy.UPDATE_PRICE) {
@@ -83,7 +85,6 @@ public class CatalogImportService {
                 }
                 continue;
             }
-            Trade trade = in.trade() != null ? in.trade() : Trade.OTHER;
             String named = com.majstr.backend.service.CatalogService.normalizeCategory(in.category());
             // The first spelling wins: his own, else the first row of this import that named it.
             String category = named == null ? null : folders.computeIfAbsent(folderKey(trade, named), k -> named);
@@ -99,15 +100,15 @@ public class CatalogImportService {
                     .build();
             catalogRepository.save(fresh);
             // A newly created item can be a dup target for a later row with the same name.
-            existing.put(key(fresh.getName(), fresh.getType().name()), fresh);
+            existing.put(key(trade, fresh.getName(), fresh.getType().name()), fresh);
             created++;
         }
         log.info("Catalog import for {}: created={}, updated={}, skipped={}", ownerId, created, updated, skipped);
         return new CatalogImportCommitResponse(created, updated, skipped);
     }
 
-    private static String key(String name, String type) {
-        return name.trim().toLowerCase(Locale.ROOT) + "|" + type;
+    private static String key(Trade trade, String name, String type) {
+        return trade + "|" + name.trim().toLowerCase(Locale.ROOT) + "|" + type;
     }
 
     /** A folder under a trade, blind to case, spacing and the apostrophe's spelling. */

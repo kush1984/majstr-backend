@@ -15,6 +15,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.jdbc.core.JdbcTemplate;
 
 import java.math.BigDecimal;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
@@ -131,14 +132,27 @@ class CatalogTradeVisibilityIntegrationTest extends IntegrationTestBase {
         assertThat(listed(imported).hidden()).isFalse();
     }
 
+    /** V220: every trade holds its own rows. A position two trades ship, held under the trade he
+     *  took off, hides — and the trade he does have brings its OWN row of it, in its own folder. */
     @Test
-    void oneRowServesTwoTrades_soItStaysWhileEitherIsHis() {
+    void aPositionTwoTradesShip_isARowPerTrade_andTheOtherTradesRowHides() {
         Map<String, Object> p = twoTradesShip();
-        UUID id = item((String) p.get("name"), p.get("type"), p.get("unit"), p.get("a"), "LIBRARY", "50.00");
+        String a = (String) p.get("a");
+        String b = (String) p.get("b");
+        UUID id = item((String) p.get("name"), p.get("type"), p.get("unit"), a, "LIBRARY", "50.00");
+        trades(a);
 
-        trades((String) p.get("b"));
+        profileService.updateTrades(master, new ProfileTradesRequest(Set.of(Trade.valueOf(b))));
 
-        assertThat(listed(id).hidden()).isFalse();
+        assertThat(listed(id).hidden()).isTrue();
+        List<CatalogItemResponse> same = catalogService.listForOwner(master, null).stream()
+                .filter(r -> r.name().trim().equalsIgnoreCase(((String) p.get("name")).trim())
+                        && r.type().name().equals(p.get("type")) && r.unit().name().equals(p.get("unit")))
+                .toList();
+        assertThat(same).extracting(CatalogItemResponse::trade)
+                .containsExactlyInAnyOrder(Trade.valueOf(a), Trade.valueOf(b));
+        assertThat(same).filteredOn(r -> !r.hidden()).extracting(CatalogItemResponse::trade)
+                .containsExactly(Trade.valueOf(b));
     }
 
     @Test
@@ -159,7 +173,7 @@ class CatalogTradeVisibilityIntegrationTest extends IntegrationTestBase {
         trades();
 
         CatalogItemResponse saved = catalogService.create(new CatalogItemRequest((String) p.get("name"), "Кат",
-                null, null, ItemType.valueOf((String) p.get("type")), Unit.valueOf((String) p.get("unit")),
+                Trade.valueOf((String) p.get("trade")), null, ItemType.valueOf((String) p.get("type")), Unit.valueOf((String) p.get("unit")),
                 new BigDecimal("25.00")), master);
 
         assertThat(saved.id()).isEqualTo(id);

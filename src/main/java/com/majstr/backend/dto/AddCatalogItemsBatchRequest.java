@@ -1,6 +1,5 @@
 package com.majstr.backend.dto;
 
-import com.majstr.backend.entity.Trade;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.DecimalMin;
 import jakarta.validation.constraints.Digits;
@@ -32,21 +31,11 @@ public record AddCatalogItemsBatchRequest(
              * Makes a replayed offline batch idempotent per line instead of duplicating the
              * whole selection. Null for an ordinary online add.
              */
-            UUID id,
-            /**
-             * The trade whose FOLDER this position was tapped in — see
-             * {@link EstimateItemFromCatalogRequest#trade()}. Per entry, not per request: one
-             * multi-select can span several branches of the picker tree.
-             */
-            Trade trade
+            UUID id
     ) {
         /** Online callers that don't author offline. */
         public Entry(UUID catalogItemId, BigDecimal quantity, Integer sortOrder) {
-            this(catalogItemId, quantity, sortOrder, null, null);
-        }
-
-        public Entry(UUID catalogItemId, BigDecimal quantity, Integer sortOrder, UUID id) {
-            this(catalogItemId, quantity, sortOrder, id, null);
+            this(catalogItemId, quantity, sortOrder, null);
         }
     }
 }

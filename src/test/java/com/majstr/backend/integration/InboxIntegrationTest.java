@@ -599,7 +599,7 @@ class InboxIntegrationTest extends IntegrationTestBase {
         return new InboxService(entryRepository, itemRepository, projectRepository, estimateRepository,
                 catalogItemRepository, synonymRepository, model, limiter, projectService, shoppingListService,
                 taskService, noteService, estimateService, expenseService, paymentService, cashFlowService,
-                transactionManager, aiAccess, speechToText, voiceAudio);
+                transactionManager, aiAccess, speechToText, voiceAudio, userRepository);
     }
 
     private static int n(List<ObjectRef> objects, String name) {

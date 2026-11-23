@@ -229,6 +229,15 @@ public class User {
     @Column(name = "help_handled_at")
     private Instant helpHandledAt;
 
+    /** Where he works (V219) — the oblast prices will be split by. NULL = not answered yet. */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "region", length = 30)
+    private Region region;
+
+    /** When the home screen last asked him to rate Majstr — answered or «Не зараз» (V218). */
+    @Column(name = "review_prompt_at")
+    private Instant reviewPromptAt;
+
     /** When he answered «Чим займаєтесь?» — picked trades or skipped (V193). NULL = not yet asked. */
     @Column(name = "trades_onboarded_at")
     private Instant tradesOnboardedAt;

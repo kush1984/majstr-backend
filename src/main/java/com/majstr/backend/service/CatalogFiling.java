@@ -1,7 +1,9 @@
 package com.majstr.backend.service;
 
 import com.majstr.backend.entity.CatalogItem;
+import com.majstr.backend.entity.CatalogItemSource;
 import com.majstr.backend.entity.CatalogTemplate;
+import com.majstr.backend.entity.EstimateItem;
 import com.majstr.backend.entity.ItemType;
 import com.majstr.backend.entity.Trade;
 import com.majstr.backend.entity.Unit;
@@ -10,37 +12,29 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.ArrayList;
+import java.util.Collection;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 /**
  * Which trade an estimate line belongs to, and what that trade calls the folder it sits in.
  *
- * <p><b>The problem this exists for.</b> {@code catalog_items} holds ONE row per (owner, name,
- * type, unit) — V118's rule — so a position two of the master's trades both ship is stored once,
- * under whichever trade claimed it first. Every door that builds an estimate line used to copy
- * that row's {@code trade} and {@code category} verbatim, which is right only when the master was
- * working in the trade that happened to claim it. Applying a PAINTER bundle produced «Шпаклювання
- * фінішне» filed under DRYWALL / «Оздоблення під фарбування» and «Прибирання приміщення» under
- * TILING, so a painting estimate grew category headers from two other trades — «якісь не зрозумілі
- * категорії з плитки, гіпсокартону».</p>
+ * <p><b>Every trade holds its own positions (V220).</b> {@code catalog_items} is keyed by
+ * (owner, trade, name, type, unit): a position two of the master's trades both ship is a row in
+ * each, in that trade's folder, at that trade's price. A line built from a catalog row therefore
+ * takes the row's own trade and folder — no re-filing. What is left for this class is the lines
+ * that arrive by NAME rather than by row: a bundle line, a typed line, an imported or dictated one.
+ * For those the rules below say which of the master's rows the name means, and they never pick
+ * between two trades on a hunch.</p>
  *
- * <p><b>Why it is not only cosmetic.</b> The same stamp is what
- * {@code MaterialCalculatorService#normsFor} filters consumption norms by, and what
- * {@link com.majstr.backend.dto.MaterialCoverage} names the answered trades from. A line stamped
- * with a foreign trade reaches that trade's norms and not its own — on the master's live catalog
- * eight positions were unanswerable this way, «Фарбування фасаду» and «Декоративна штукатурка
- * фасаду короїд/баранець» among them, whose norms V138 had just shipped under PAINTER.</p>
- *
- * <p><b>The rule.</b> The caller says which trade the master was working in — the bundle's own
- * trade, or the branch of the picker tree he tapped in. If the shipped library files that exact
- * name+type+unit under that trade, the line takes THAT trade and THAT trade's category. Otherwise
- * nothing is assumed and the matched row's own filing stands: an answer we cannot source from the
- * library is a guess, and a guess here moves a position into a folder the master never chose.</p>
- *
- * <p>Only the filing moves. Price, unit, type, name and description still come from the master's
- * own catalog row — his money and his wording.</p>
+ * <p>Only the filing is decided here. Price, unit, type, name and description still come from the
+ * master's own catalog row — his money and his wording.</p>
  */
 @Service
 @RequiredArgsConstructor
@@ -55,8 +49,8 @@ public class CatalogFiling {
      * {@code nameKey|TYPE|UNIT → the folder this trade files that position in}, for one trade.
      *
      * <p>Read per call rather than cached: {@code catalog_templates} is edited at runtime through
-     * the admin screens as well as by migration, and a filing index that goes stale re-files a
-     * master's line into a folder that no longer exists. One trade is ~50-230 rows.</p>
+     * the admin screens as well as by migration, and a filing index that goes stale files a line
+     * into a folder that no longer exists. One trade is ~50-230 rows.</p>
      *
      * <p>A trade the library ships nothing for — a custom trade, or OTHER — answers with an empty
      * map, which makes every lookup below fall through to the matched row's own filing.</p>
@@ -69,16 +63,25 @@ public class CatalogFiling {
         Map<String, String> byKey = new HashMap<>();
         for (CatalogTemplate t : templateRepository.findByTradeInOrderBySortOrderAsc(List.of(trade))) {
             // First wins: the library's own order, so a name it ships twice keeps the earlier
-            // folder — the same one the catalog board shows.
+            // folder — the same one V220 filed the master's copy under.
             byKey.putIfAbsent(key(t.getName(), t.getType(), t.getUnit()), t.getCategory());
         }
         return byKey;
     }
 
     /**
-     * The filing a new line should carry, given the trade the master was working in and the
-     * catalog row that priced it (nullable — a bundle line whose name this master does not stock
-     * applies at 0 ₴ and still deserves to land in the right folder).
+     * The filing of a line a BUNDLE (or the training sample) names, in the trade it belongs to.
+     *
+     * <ol>
+     *   <li>{@code match} is the master's own row of that trade → its folder: his arrangement.</li>
+     *   <li>The library ships the name under that trade → that trade, the library's folder.</li>
+     *   <li>Otherwise the name is not this trade's work at all (a master's own bundle may carry a
+     *       line of another trade) → the matched row's own trade and folder, a fact and not a
+     *       guess; with no row at all, nothing.</li>
+     * </ol>
+     *
+     * <p>{@code match} is nullable — a bundle line whose name this master does not stock applies at
+     * 0 ₴ and still deserves to land in the right folder.</p>
      */
     public static Filing fileUnder(Trade workingIn,
                                    Map<String, String> categoriesUnderWorkingTrade,
@@ -86,17 +89,111 @@ public class CatalogFiling {
                                    ItemType type,
                                    Unit unit,
                                    CatalogItem match) {
+        if (workingIn != null && match != null && match.getTrade() == workingIn) {
+            return new Filing(workingIn, match.getCategory());
+        }
         Trade fallbackTrade = match == null ? null : match.getTrade();
         String fallbackCategory = match == null ? null : match.getCategory();
         String key = key(name, type, unit);
         if (workingIn == null || !categoriesUnderWorkingTrade.containsKey(key)) {
             return new Filing(fallbackTrade, fallbackCategory); // the library does not ship it here
         }
-        // A library row with no folder of its own files the position «nowhere in particular», so
-        // the stored folder is kept rather than «Без категорії» invented — the same rule the PWA's
-        // catalog tree follows when it shows a shared position under a second trade.
-        String category = categoriesUnderWorkingTrade.get(key);
-        return new Filing(workingIn, category != null ? category : fallbackCategory);
+        return new Filing(workingIn, categoriesUnderWorkingTrade.get(key));
+    }
+
+    /**
+     * Of the master's rows sharing one name, the one that prices a line in {@code workingIn}: that
+     * trade's own row, else one of a trade on his profile, else any. The list is in his catalog's
+     * order, so «any» is always the same row. Null for an empty list.
+     */
+    public static CatalogItem rowFor(List<CatalogItem> sameName, Trade workingIn, Set<Trade> profile) {
+        CatalogItem visible = null;
+        for (CatalogItem row : sameName) {
+            if (workingIn != null && row.getTrade() == workingIn) {
+                return row;
+            }
+            if (visible == null && isVisible(row, profile)) {
+                visible = row;
+            }
+        }
+        return visible != null ? visible : sameName.isEmpty() ? null : sameName.getFirst();
+    }
+
+    /**
+     * The one trade an estimate is in: the trade every line that carries one shares. Lines of two
+     * trades, or none, answer null.
+     */
+    public static Trade estimateTrade(Collection<EstimateItem> lines) {
+        Set<Trade> trades = lines.stream().map(EstimateItem::getTrade).filter(Objects::nonNull)
+                .collect(Collectors.toSet());
+        return trades.size() == 1 ? trades.iterator().next() : null;
+    }
+
+    /**
+     * The trade of a line that names a position instead of picking a row (typed, imported,
+     * dictated): the trades the master files that name under — his visible rows, else all of
+     * them. One trade → that one. Several → the estimate's own trade when it is one of them
+     * (owner ruling 2026-11-23); otherwise none, and the line sits outside any group, like any
+     * typed line. Nothing is chosen on a hunch.
+     */
+    public static Trade typedLineTrade(Set<Trade> fileTrades, Trade estimateTrade) {
+        if (fileTrades.size() == 1) {
+            return fileTrades.iterator().next();
+        }
+        return estimateTrade != null && fileTrades.contains(estimateTrade) ? estimateTrade : null;
+    }
+
+    /**
+     * {@code key → the trades the master files that name under}: his visible rows' trades when he
+     * has any of that name, else every row's. The input to {@link #typedLineTrade}.
+     */
+    public static Map<String, Set<Trade>> fileTradesByKey(List<CatalogItem> catalog, Set<Trade> profile) {
+        Map<String, List<CatalogItem>> byKey = new HashMap<>();
+        for (CatalogItem c : catalog) {
+            byKey.computeIfAbsent(key(c.getName(), c.getType(), c.getUnit()), k -> new ArrayList<>()).add(c);
+        }
+        Map<String, Set<Trade>> out = new HashMap<>(byKey.size());
+        byKey.forEach((k, rows) -> {
+            List<CatalogItem> visible = rows.stream().filter(r -> isVisible(r, profile)).toList();
+            out.put(k, (visible.isEmpty() ? rows : visible).stream().map(CatalogItem::getTrade)
+                    .collect(Collectors.toSet()));
+        });
+        return out;
+    }
+
+    /**
+     * The catalog a name is MATCHED against (dictation, the bot): one row per name. Hidden rows
+     * are left out; of several rows of one name the {@code context} trade's wins; rows that would
+     * all answer alike (same price) collapse to the first. Rows of one name at DIFFERENT prices
+     * with no context to choose stay — and {@code CatalogMatcher} refuses the tie, so the line
+     * comes back unmatched instead of priced from the wrong trade.
+     */
+    public static List<CatalogItem> forMatching(List<CatalogItem> catalog, Set<Trade> profile, Trade context) {
+        Map<String, List<CatalogItem>> byKey = new LinkedHashMap<>();
+        for (CatalogItem c : catalog) {
+            if (isVisible(c, profile)) {
+                byKey.computeIfAbsent(key(c.getName(), c.getType(), c.getUnit()), k -> new ArrayList<>()).add(c);
+            }
+        }
+        List<CatalogItem> out = new ArrayList<>(byKey.size());
+        for (List<CatalogItem> rows : byKey.values()) {
+            CatalogItem inContext = context == null ? null
+                    : rows.stream().filter(r -> r.getTrade() == context).findFirst().orElse(null);
+            if (inContext != null) {
+                out.add(inContext);
+            } else if (rows.stream().map(CatalogItem::getDefaultPrice).map(p -> p.stripTrailingZeros())
+                    .distinct().count() == 1) {
+                out.add(rows.getFirst());
+            } else {
+                out.addAll(rows);
+            }
+        }
+        return out;
+    }
+
+    /** The catalog screen's rule (CatalogService): a library row of a trade off his profile is hidden. */
+    static boolean isVisible(CatalogItem row, Set<Trade> profile) {
+        return row.getSource() != CatalogItemSource.LIBRARY || profile.contains(row.getTrade());
     }
 
     /**

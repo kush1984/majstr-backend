@@ -4,17 +4,20 @@ import com.majstr.backend.dto.DictationCommitRequest;
 import com.majstr.backend.dto.DictationParseResponse;
 import com.majstr.backend.dto.DictationParseResponse.DictationItem;
 import com.majstr.backend.dto.DictationSynonymRequest;
+import com.majstr.backend.dto.EstimateItemResponse;
 import com.majstr.backend.dto.EstimateResponse;
 import com.majstr.backend.entity.CatalogItem;
 import com.majstr.backend.entity.CatalogItemSynonym;
 import com.majstr.backend.entity.EstimateStatus;
 import com.majstr.backend.entity.ItemType;
+import com.majstr.backend.entity.Trade;
 import com.majstr.backend.entity.Unit;
 import com.majstr.backend.exception.EstimateSignedException;
 import com.majstr.backend.exception.ResourceNotFoundException;
 import com.majstr.backend.repository.CatalogItemRepository;
 import com.majstr.backend.repository.CatalogItemSynonymRepository;
 import com.majstr.backend.repository.UserRepository;
+import com.majstr.backend.service.CatalogFiling;
 import com.majstr.backend.service.EstimateService;
 import com.majstr.backend.service.EstimateService.ImportEstimateData.ImportItem;
 import lombok.RequiredArgsConstructor;
@@ -28,8 +31,11 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 /**
  * Dictated (or typed) free text → estimate positions, reviewed by the master, then appended to an
@@ -65,7 +71,8 @@ public class DictationService {
 
     public DictationParseResponse parse(UUID ownerId, UUID estimateId, String text) {
         // Ownership + not-signed checked up front so a signed/foreign estimate never spends a call.
-        if (estimateService.get(estimateId, ownerId).status() == EstimateStatus.SIGNED) {
+        EstimateResponse estimate = estimateService.get(estimateId, ownerId);
+        if (estimate.status() == EstimateStatus.SIGNED) {
             throw new EstimateSignedException();
         }
 
@@ -73,7 +80,14 @@ public class DictationService {
         if (spoken.isEmpty()) {
             return new DictationParseResponse(List.of());
         }
-        List<CatalogItem> catalog = catalogItemRepository.findByOwnerIdOrderByNameAsc(ownerId);
+        // One row per name, the estimate's own trade's first (V220): a name two of his trades hold
+        // at two prices, in an estimate of neither, is refused as a tie rather than priced at random.
+        Set<Trade> lineTrades = estimate.items().stream().map(EstimateItemResponse::trade)
+                .filter(Objects::nonNull).collect(Collectors.toSet());
+        Set<Trade> profile = userRepository.findWithTradesById(ownerId).map(u -> Set.copyOf(u.getTrades()))
+                .orElse(Set.of());
+        List<CatalogItem> catalog = CatalogFiling.forMatching(catalogItemRepository.findByOwnerIdOrderByNameAsc(ownerId),
+                profile, lineTrades.size() == 1 ? lineTrades.iterator().next() : null);
         Map<String, UUID> synonyms = loadSynonyms(ownerId);
 
         List<DictationItem> items = new ArrayList<>(spoken.size());

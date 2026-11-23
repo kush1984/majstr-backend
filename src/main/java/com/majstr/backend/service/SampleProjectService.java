@@ -26,6 +26,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 
 /**
@@ -91,9 +92,10 @@ public class SampleProjectService {
 
     private List<EstimateItem> lines(Estimate estimate, SampleObjects.Sample sample, UUID ownerId) {
         Trade trade = sample.trade();
-        Map<String, CatalogItem> catalog = new HashMap<>();
+        // Every row of a name, one per trade (V220); the sample's own trade's row wins below.
+        Map<String, List<CatalogItem>> catalog = new HashMap<>();
         for (CatalogItem item : catalogRepository.findByOwnerIdOrderByNameAsc(ownerId)) {
-            catalog.putIfAbsent(NameKeys.of(item.getName()), item);
+            catalog.computeIfAbsent(NameKeys.of(item.getName()), k -> new ArrayList<>()).add(item);
         }
         Map<String, CatalogTemplate> library = new HashMap<>();
         for (CatalogTemplate row : libraryRepository.findByTradeInOrderBySortOrderAsc(List.of(trade))) {
@@ -103,7 +105,8 @@ public class SampleProjectService {
 
         List<EstimateItem> items = new ArrayList<>();
         for (SampleObjects.Line line : sample.lines()) {
-            CatalogItem own = catalog.get(NameKeys.of(line.name()));
+            CatalogItem own = CatalogFiling.rowFor(catalog.getOrDefault(NameKeys.of(line.name()), List.of()),
+                    trade, Set.of());
             // His row counts only in the sample's own unit: an m² price on a running-metre line is a
             // different job, and the quantity was written for this unit.
             CatalogItem match = own != null && own.getUnit() == line.unit() ? own : null;

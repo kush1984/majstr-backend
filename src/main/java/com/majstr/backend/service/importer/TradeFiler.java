@@ -6,6 +6,8 @@ import com.majstr.backend.entity.ItemType;
 import com.majstr.backend.entity.Trade;
 import com.majstr.backend.repository.CatalogItemRepository;
 import com.majstr.backend.repository.CatalogTemplateRepository;
+import com.majstr.backend.repository.UserRepository;
+import com.majstr.backend.service.CatalogFiling;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
@@ -15,6 +17,7 @@ import java.util.EnumMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 
 /**
@@ -36,11 +39,16 @@ public class TradeFiler {
 
     private final CatalogItemRepository catalogItemRepository;
     private final CatalogTemplateRepository catalogTemplateRepository;
+    private final UserRepository userRepository;
 
     /** One filing per {@code (name, type)}, in order; {@link Filing#NONE} where nothing matched. */
     @Transactional(readOnly = true)
     public List<Filing> file(UUID ownerId, List<Position> positions) {
-        Map<ItemType, List<CatalogItem>> own = byType(catalogItemRepository.findByOwnerIdOrderByNameAsc(ownerId).stream()
+        // What his catalog screen shows, one row per name: a position hidden with a trade he took off
+        // is not «where he files it», and two trades holding one name at one price are one answer.
+        Set<Trade> profile = userRepository.findById(ownerId).map(u -> Set.copyOf(u.getTrades())).orElse(Set.of());
+        Map<ItemType, List<CatalogItem>> own = byType(CatalogFiling.forMatching(
+                        catalogItemRepository.findByOwnerIdOrderByNameAsc(ownerId), profile, null).stream()
                 .filter(i -> i.getTrade() != null && i.getTrade() != Trade.OTHER).toList());
         Map<ItemType, List<CatalogItem>> library = byType(catalogTemplateRepository.findAll().stream()
                 .map(TradeFiler::asItem).toList());

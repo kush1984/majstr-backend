@@ -38,43 +38,6 @@ public interface CatalogTemplateRepository extends JpaRepository<CatalogTemplate
     int currentVersion();
 
     /**
-     * Every (normalized name, type, unit) key more than one trade recognizes — one row per sharing
-     * trade, carrying THAT trade's category. {@code catalog_items} has one row per (owner, name,
-     * type, unit) — the unique index has no room for a second row under the same name — so a master
-     * running two trades that happen to share identical wording (V99: PAINTER's
-     * organizational-services category duplicates several of TILING's) only ever owns ONE row,
-     * tagged whichever trade claimed it first. {@link com.majstr.backend.service.CatalogService}
-     * uses this to tell the client's trade filter that such a row is legitimately shared, not just
-     * filed wrong.
-     *
-     * <p>The category travels with the trade because the two can legitimately disagree: V116 copied
-     * ten PAINTER/DEMOLITION positions VERBATIM into DRYWALL phases, so «Поклейка склополотна» is
-     * PAINTER's «Шпалери» and DRYWALL's «Оздоблення під фарбування» at the same time. Showing the
-     * stored one under the other trade's chip is what put a Шпалери folder on a drywall screen.</p>
-     */
-    @Query(value = """
-            SELECT lower(trim(name)) AS name_key, type, unit, trade, min(category) AS category
-            FROM catalog_templates
-            WHERE (lower(trim(name)), type, unit) IN (
-                SELECT lower(trim(name)), type, unit
-                FROM catalog_templates
-                GROUP BY lower(trim(name)), type, unit
-                HAVING count(DISTINCT trade) > 1)
-            GROUP BY lower(trim(name)), type, unit, trade
-            ORDER BY 1, 2, 3, 4
-            """, nativeQuery = true)
-    List<Object[]> findNameKeysSharedAcrossTrades();
-
-    /** {@code "name_key|TYPE|UNIT"} of every position the library ships under one of {@code trades}
-     *  — what keeps a copied position visible once the trade it is STORED under is gone. */
-    @Query(value = """
-            SELECT DISTINCT lower(trim(name)) || '|' || type || '|' || unit
-            FROM catalog_templates
-            WHERE trade IN (:trades)
-            """, nativeQuery = true)
-    List<String> findNameKeysForTrades(@Param("trades") Collection<String> trades);
-
-    /**
      * Where each (trade, category) sits in that trade's own sequence — {@code min(sort_order)} over
      * V118's global ranking, which for DRYWALL is the order the work is actually done in
      * (Підготовка та захист → Каркас і обшивка → Звукоізоляція та утеплення → Оздоблення під

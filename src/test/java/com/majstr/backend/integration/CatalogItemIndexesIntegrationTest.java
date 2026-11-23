@@ -29,7 +29,7 @@ class CatalogItemIndexesIntegrationTest extends IntegrationTestBase {
     @Test
     void ownerScopedAccessKeepsAnIndexLeadingWithTheOwner() {
         assertThat(indexes()).contains("idx_catalog_items_owner_category", "idx_catalog_items_owner_sort",
-                "ux_catalog_items_owner_name_type_unit");
+                "ux_catalog_items_owner_trade_name_type_unit");
         assertThat(jdbc.queryForList("""
                 SELECT indexname FROM pg_indexes WHERE tablename = 'catalog_items'
                    AND indexdef LIKE '%USING btree (owner_id,%'""", String.class))

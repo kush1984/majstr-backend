@@ -24,6 +24,7 @@ import com.majstr.backend.entity.PercentBaseKind;
 import com.majstr.backend.entity.Project;
 import com.majstr.backend.entity.Trade;
 import com.majstr.backend.entity.Unit;
+import com.majstr.backend.entity.User;
 import com.majstr.backend.service.measurement.MeasurementService;
 import com.majstr.backend.exception.EstimateSignedException;
 import com.majstr.backend.exception.InvalidEstimateStatusException;
@@ -96,7 +97,6 @@ public class EstimateService {
     private final ProjectService projectService;
     private final ProjectRepository projectRepository;
     private final CatalogService catalogService;
-    private final CatalogFiling catalogFiling;
     private final CatalogItemRepository catalogItemRepository;
     private final EstimatePdfService pdfService;
     private final SignedDocumentService signedDocuments;
@@ -180,7 +180,6 @@ public class EstimateService {
         Estimate saved = estimateRepository.save(estimate);
         projectRepository.incrementEstimatesCreated(projectId); // lifetime churn counter
 
-        Map<String, Trade> tradeIdx = tradeIndex(ownerId);
         List<EstimateItem> items = new ArrayList<>();
         int sortOrder = 0;
         for (ImportEstimateData.ImportItem in : data.items()) {
@@ -189,13 +188,13 @@ public class EstimateService {
                     .type(in.type())
                     .name(in.name().trim())
                     .category(CatalogService.normalizeCategory(in.category()))
-                    .trade(resolveTrade(in.name(), in.type(), in.unit(), tradeIdx))
                     .unit(in.unit())
                     .quantity(in.quantity().setScale(QUANTITY_SCALE, MONEY_ROUNDING))
                     .unitPrice(in.unitPrice().setScale(MONEY_SCALE, MONEY_ROUNDING))
                     .sortOrder(sortOrder++)
                     .build());
         }
+        fileTypedLines(items, List.of(), project.getOwner());
         itemRepository.saveAll(items);
         return recalculatedResponse(saved);
     }
@@ -877,8 +876,8 @@ public class EstimateService {
         requireNotSigned(estimate);
         Resolved r = resolveQuantity(estimate, req);
         // A typed line that happens to name a real catalog row picks up its trade — same rule as
-        // the import paths. A name that matches nothing stays NULL, honest.
-        Trade trade = resolveTrade(req.name(), req.type(), req.unit(), tradeIndex(ownerId));
+        // the import paths (CatalogFiling.typedLineTrade). A name that matches nothing stays NULL.
+        Trade trade = typedLineTrade(req.name(), req.type(), req.unit(), estimate, null);
         EstimateItem item = EstimateItem.builder()
                 .id(requestedId)
                 .estimate(estimate)
@@ -961,21 +960,15 @@ public class EstimateService {
         // percentage and picks «від позиції» / «від суми кошторису»; until then the line is 0 ₴ and
         // the send asks about it. POSITION with no base is that «not chosen yet» state.
         boolean percent = source.getUnit() == Unit.PERCENT;
-        // The folder the estimate groups this line under. It follows the branch of the picker tree
-        // the master tapped in, not the row's own storage trade — a position two trades both ship
-        // is stored once, under whichever claimed it first (V118), and is offered under both. See
-        // CatalogFiling; an unknown or unshipped trade leaves the row's own filing alone.
-        Map<String, String> folders = req.trade() == null ? Map.of()
-                : catalogFiling.categoriesUnder(req.trade());
-        CatalogFiling.Filing filing = CatalogFiling.fileUnder(req.trade(), folders,
-                source.getName(), source.getType(), source.getUnit(), source);
+        // The row's own trade and folder: every trade holds its own rows (V220), so the row the
+        // master tapped IS the trade he was working in.
         EstimateItem item = EstimateItem.builder()
                 .id(requestedId)
                 .estimate(estimate)
                 .type(source.getType())
                 .name(source.getName())
-                .category(filing.category())
-                .trade(filing.trade())
+                .category(source.getCategory())
+                .trade(source.getTrade())
                 .description(source.getDescription())
                 .note(source.getNote())
                 .unit(source.getUnit())
@@ -1019,21 +1012,15 @@ public class EstimateService {
         }
         requireNotSigned(estimate);
         List<EstimateItem> toSave = new ArrayList<>();
-        // One folder index per branch the selection spans, however many rows came from it.
-        Map<Trade, Map<String, String>> foldersByTrade = new HashMap<>();
         for (AddCatalogItemsBatchRequest.Entry e : fresh) {
             CatalogItem source = catalogService.loadOwned(e.catalogItemId(), ownerId);
-            Map<String, String> folders = e.trade() == null ? Map.<String, String>of()
-                    : foldersByTrade.computeIfAbsent(e.trade(), catalogFiling::categoriesUnder);
-            CatalogFiling.Filing filing = CatalogFiling.fileUnder(e.trade(), folders,
-                    source.getName(), source.getType(), source.getUnit(), source);
             toSave.add(EstimateItem.builder()
                     .id(e.id())
                     .estimate(estimate)
                     .type(source.getType())
                     .name(source.getName())
-                    .category(filing.category())
-                    .trade(filing.trade())
+                    .category(source.getCategory())
+                    .trade(source.getTrade())
                     .description(source.getDescription())
                     .note(source.getNote())
                     .unit(source.getUnit())
@@ -1064,7 +1051,6 @@ public class EstimateService {
         int sortOrder = existing.stream().mapToInt(EstimateItem::getSortOrder).max().orElse(-1) + 1;
         // One catalog scan per append batch; a receipt-import row that names a catalog position
         // gets the trade, a truly ad-hoc receipt line stays NULL. Same rule as `createFromImport`.
-        Map<String, Trade> tradeIdx = tradeIndex(ownerId);
         List<EstimateItem> toSave = new ArrayList<>();
         for (ImportEstimateData.ImportItem in : items) {
             toSave.add(EstimateItem.builder()
@@ -1072,13 +1058,13 @@ public class EstimateService {
                     .type(in.type())
                     .name(in.name().trim())
                     .category(CatalogService.normalizeCategory(in.category()))
-                    .trade(resolveTrade(in.name(), in.type(), in.unit(), tradeIdx))
                     .unit(in.unit())
                     .quantity(in.quantity().setScale(QUANTITY_SCALE, MONEY_ROUNDING))
                     .unitPrice(in.unitPrice().setScale(MONEY_SCALE, MONEY_ROUNDING))
                     .sortOrder(sortOrder++)
                     .build());
         }
+        fileTypedLines(toSave, existing, estimate.getProject().getOwner());
         itemRepository.saveAll(toSave);
         return recalculatedResponse(estimate);
     }
@@ -1120,14 +1106,11 @@ public class EstimateService {
             item.setSourceUnitPrice(null);
         }
         if (keyMoved) {
-            // The trade the master is WORKING IN wins, not the one the catalog row that happens to
-            // price this name carries (fix O / review B-41). `catalog_items` stores a shared
-            // position ONCE, under whichever trade claimed it first, so reading that row's stamp
-            // moved a renamed PAINTER line into DRYWALL and undid V140's re-filing on the next
-            // edit. The context here is the line's OWN current trade — the folder he is editing in.
-            // Only the trade is re-derived: the category is the master's explicit pick on this
-            // request, and overwriting it would move the row out of the folder he just chose.
-            item.setTrade(refiledTrade(item, ownerId));
+            // The trade the master is WORKING IN wins (fix O / review B-41): the line's OWN current
+            // trade, whenever he files the new name under it too. Only the trade is re-derived: the
+            // category is the master's explicit pick on this request, and overwriting it would move
+            // the row out of the folder he just chose.
+            item.setTrade(typedLineTrade(item.getName(), item.getType(), item.getUnit(), estimate, item));
         }
         Resolved r = resolveQuantity(estimate, req);
         item.setQuantity(r.quantity());
@@ -1556,51 +1539,52 @@ public class EstimateService {
     }
 
     /**
-     * Build a lookup «(normalized name | type | unit) → {@link Trade}» over the master's own
-     * catalog, so every import/append path can snapshot the trade the same way V125's backfill did
-     * — one query per commit, matched in Java. Manual and receipt-import lines that happen to
-     * name a real catalog row inherit the trade automatically; a genuinely typed name that
-     * matches nothing stays NULL, and the read side treats NULL as «no group» (see V125 header).
+     * The trade of a line that NAMES a position — typed, renamed — rather than picking a catalog
+     * row: {@link CatalogFiling#typedLineTrade} over the trades the master files that name under,
+     * with the estimate's own trade (its other lines') as the tie-break. A name he files under no
+     * trade stays NULL, and the read side treats NULL as «no group» (V125).
      *
-     * <p>The key itself is {@link NameKeys} through {@link CatalogFiling#key} — one notion of «the
-     * same name» for the whole product, {@code Locale.ROOT} folding included.
+     * <p>{@code self} is the line being renamed, left out of «the estimate's trade»; a rename keeps
+     * the line in its current trade whenever the master files the new name there too.</p>
      */
-    private Map<String, Trade> tradeIndex(UUID ownerId) {
-        List<CatalogItem> catalog = catalogItemRepository.findByOwnerIdOrderByNameAsc(ownerId);
-        Map<String, Trade> out = new HashMap<>(catalog.size());
-        for (CatalogItem c : catalog) {
-            out.put(tradeIndexKey(c.getName(), c.getType(), c.getUnit()), c.getTrade());
+    private Trade typedLineTrade(String name, ItemType type, Unit unit, Estimate estimate, EstimateItem self) {
+        User owner = estimate.getProject().getOwner();
+        Set<Trade> fileTrades = CatalogFiling.fileTradesByKey(
+                        catalogItemRepository.findByOwnerIdOrderByNameAsc(owner.getId()), Set.copyOf(owner.getTrades()))
+                .getOrDefault(CatalogFiling.key(name, type, unit), Set.of());
+        if (self != null && self.getTrade() != null && fileTrades.contains(self.getTrade())) {
+            return self.getTrade();
         }
-        return out;
-    }
-
-    /** {@link CatalogFiling#key} — the product's ONE notion of «the same name» (review B-41 kept a
-     *  third one here: a bare {@code trim().toLowerCase}, which disagreed with {@link NameKeys} on
-     *  double spaces and the two kinds of apostrophe). */
-    private static String tradeIndexKey(String name, ItemType type, Unit unit) {
-        return CatalogFiling.key(name, type, unit);
-    }
-
-    private static Trade resolveTrade(String name, ItemType type, Unit unit, Map<String, Trade> index) {
-        return index.get(tradeIndexKey(name, type, unit));
+        List<EstimateItem> others = itemRepository.findByEstimateIdOrderBySortOrderAscIdAsc(estimate.getId())
+                .stream().filter(i -> self == null || !i.getId().equals(self.getId())).toList();
+        return CatalogFiling.typedLineTrade(fileTrades, CatalogFiling.estimateTrade(others));
     }
 
     /**
-     * The trade a RENAMED (or retyped, or re-united) line belongs to — review B-41.
-     *
-     * <p>Keeps the line in the trade the master is working in whenever the shipped library files
-     * that exact name+type+unit there, and only otherwise falls back to the trade of his own
-     * catalog row. The import and append paths deliberately keep the plain fallback: a receipt or
-     * an Excel sheet carries no «which folder was he in», so the matched row's own stamp is all
-     * there is to go on.</p>
+     * Files a batch of typed/imported lines in two passes: first every name the master files under
+     * at most one trade, then the rest by the estimate's own trade — the trade its {@code existing}
+     * lines and the first pass agree on. One catalog scan per batch.
      */
-    private Trade refiledTrade(EstimateItem item, UUID ownerId) {
-        Trade context = item.getTrade();
-        if (context != null && catalogFiling.categoriesUnder(context)
-                .containsKey(CatalogFiling.key(item.getName(), item.getType(), item.getUnit()))) {
-            return context;
+    private void fileTypedLines(List<EstimateItem> fresh, List<EstimateItem> existing, User owner) {
+        Map<String, Set<Trade>> index = CatalogFiling.fileTradesByKey(
+                catalogItemRepository.findByOwnerIdOrderByNameAsc(owner.getId()), Set.copyOf(owner.getTrades()));
+        List<EstimateItem> undecided = new ArrayList<>();
+        List<EstimateItem> decided = new ArrayList<>(existing);
+        for (EstimateItem line : fresh) {
+            Set<Trade> fileTrades = index.getOrDefault(
+                    CatalogFiling.key(line.getName(), line.getType(), line.getUnit()), Set.of());
+            if (fileTrades.size() > 1) {
+                undecided.add(line);
+            } else {
+                line.setTrade(CatalogFiling.typedLineTrade(fileTrades, null));
+                decided.add(line);
+            }
         }
-        return resolveTrade(item.getName(), item.getType(), item.getUnit(), tradeIndex(ownerId));
+        Trade estimateTrade = CatalogFiling.estimateTrade(decided);
+        for (EstimateItem line : undecided) {
+            line.setTrade(CatalogFiling.typedLineTrade(index.get(
+                    CatalogFiling.key(line.getName(), line.getType(), line.getUnit())), estimateTrade));
+        }
     }
 
     private EstimateItemResponse savedItemResponse(Estimate estimate, EstimateItem item) {

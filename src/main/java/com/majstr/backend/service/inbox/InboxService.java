@@ -35,6 +35,7 @@ import com.majstr.backend.entity.InboxItem.Kind;
 import com.majstr.backend.entity.ItemType;
 import com.majstr.backend.entity.Project;
 import com.majstr.backend.entity.ProjectStatus;
+import com.majstr.backend.entity.Trade;
 import com.majstr.backend.entity.Unit;
 import com.majstr.backend.config.LocalizationConfig;
 import com.majstr.backend.exception.LimitExceededException;
@@ -45,6 +46,8 @@ import com.majstr.backend.repository.EstimateRepository;
 import com.majstr.backend.repository.InboxEntryRepository;
 import com.majstr.backend.repository.InboxItemRepository;
 import com.majstr.backend.repository.ProjectRepository;
+import com.majstr.backend.repository.UserRepository;
+import com.majstr.backend.service.CatalogFiling;
 import com.majstr.backend.service.CashFlowService;
 import com.majstr.backend.service.EstimateService;
 import com.majstr.backend.service.EstimateService.ImportEstimateData.ImportItem;
@@ -118,6 +121,7 @@ public class InboxService {
     private final AiAccess aiAccess;
     private final SpeechToText speechToText;
     private final VoiceAudio voiceAudio;
+    private final UserRepository userRepository;
 
     /** An object the master can file things under. */
     public record ObjectChoice(UUID id, String name) {}
@@ -841,7 +845,12 @@ public class InboxService {
         for (CatalogItemSynonym s : synonymRepository.findByOwnerId(ownerId)) {
             synonyms.put(s.getSpokenNormalized(), s.getCatalogItem().getId());
         }
-        return new Catalog(catalogItemRepository.findByOwnerIdOrderByNameAsc(ownerId), synonyms);
+        // One row per name of what his catalog shows (V220). No estimate is chosen yet, so a name
+        // two of his trades hold at two prices is refused as a tie rather than priced at random.
+        Set<Trade> profile = userRepository.findWithTradesById(ownerId).map(u -> Set.copyOf(u.getTrades()))
+                .orElse(Set.of());
+        return new Catalog(CatalogFiling.forMatching(catalogItemRepository.findByOwnerIdOrderByNameAsc(ownerId),
+                profile, null), synonyms);
     }
 
     private static Kind kindOf(String raw) {

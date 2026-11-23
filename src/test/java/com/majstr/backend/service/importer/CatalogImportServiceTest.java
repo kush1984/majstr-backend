@@ -42,9 +42,10 @@ class CatalogImportServiceTest {
     }
 
     @Test
-    void commit_dedupsByNameAndType_updatesSkipsAndCreates() {
+    void commit_dedupsByTradeNameAndType_updatesSkipsAndCreates() {
         UUID owner = UUID.randomUUID();
         CatalogItem demolition = existing("Демонтаж", ItemType.WORK, "100");
+        demolition.setTrade(Trade.ELECTRICAL); // the import's trade: same trade + name + type = the same position
         given(catalogRepository.findByOwnerIdOrderByNameAsc(owner)).willReturn(List.of(demolition));
         given(userRepository.getReferenceById(owner)).willReturn(new User());
         given(catalogRepository.save(org.mockito.ArgumentMatchers.any(CatalogItem.class)))
@@ -76,6 +77,26 @@ class CatalogImportServiceTest {
         assertThat(saved.getValue().getName()).isEqualTo("Фарба біла");
         assertThat(saved.getValue().getType()).isEqualTo(ItemType.MATERIAL);
         assertThat(saved.getValue().getTrade()).isEqualTo(Trade.ELECTRICAL);
+    }
+
+    /** V220: the same name under ANOTHER trade is that trade's own position — a new row, the other untouched. */
+    @Test
+    void commit_sameNameUnderAnotherTrade_isANewRow() {
+        UUID owner = UUID.randomUUID();
+        CatalogItem tiling = existing("Прибирання", ItemType.WORK, "40");
+        tiling.setTrade(Trade.TILING);
+        given(catalogRepository.findByOwnerIdOrderByNameAsc(owner)).willReturn(List.of(tiling));
+        given(userRepository.getReferenceById(owner)).willReturn(new User());
+        given(catalogRepository.save(org.mockito.ArgumentMatchers.any(CatalogItem.class)))
+                .willAnswer(i -> i.getArgument(0));
+
+        CatalogImportCommitResponse res = service().commit(owner, new CatalogImportCommitRequest(
+                List.of(new CommitItem("Прибирання", Unit.PIECE, new BigDecimal("55"), ItemType.WORK, null)),
+                Trade.ELECTRICAL, DedupPolicy.UPDATE_PRICE));
+
+        assertThat(res.created()).isEqualTo(1);
+        assertThat(res.updated()).isZero();
+        assertThat(tiling.getDefaultPrice()).isEqualByComparingTo("40");
     }
 
     @Test

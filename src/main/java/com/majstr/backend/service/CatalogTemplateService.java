@@ -134,7 +134,7 @@ public class CatalogTemplateService {
      * when a trade is added to the profile. Only the user's OWN trades are
      * honoured (never seed a set they don't have). This is a <b>merge</b>, not a
      * reset: {@code copyMissing} adds only template items the user doesn't
-     * already have (by name+type+unit) and never overwrites or deletes their
+     * already have (by trade+name+type+unit) and never overwrites or deletes their
      * own items. The {@code user} must be loaded with trades eager-fetched
      * (the caller uses {@code findWithTradesById}) so {@code getTrades()} is safe.
      */
@@ -169,8 +169,9 @@ public class CatalogTemplateService {
 
     /**
      * The CatalogItems that would be created for {@code owner} from {@code templates}
-     * — every template not already in the catalog by name+type+unit, de-duplicated
-     * across trades too. Never overwrites existing items (the copy is read-only for
+     * — every template not already in the catalog by trade+name+type+unit. A position two trades
+     * both ship becomes a row in each (V220): the same name under another trade is not «already
+     * there», it is that other trade's position. Never overwrites existing items (the copy is read-only for
      * the catalog). Pure (no writes), so it also backs the "how many new?" preview.
      */
     private List<CatalogItem> missingItems(User owner, List<CatalogTemplate> templates) {
@@ -205,14 +206,16 @@ public class CatalogTemplateService {
         return toCreate;
     }
 
-    /** Composite dedup key — same name (trimmed, case-insensitive) + type + unit are a
-     *  duplicate. Must match the {@code ux_catalog_items_owner_name_type_unit} index
+    /** Composite dedup key — same trade + name (trimmed, case-insensitive) + type + unit are a
+     *  duplicate. Must match the {@code ux_catalog_items_owner_trade_name_type_unit} index
      *  expression {@code lower(trim(name))} so a copy never inserts a row the DB rejects. */
     private static String key(CatalogItem item) {
-        return item.getName().trim().toLowerCase(Locale.ROOT) + "|" + item.getType() + "|" + item.getUnit();
+        return item.getTrade() + "|" + item.getName().trim().toLowerCase(Locale.ROOT)
+                + "|" + item.getType() + "|" + item.getUnit();
     }
 
     private static String key(CatalogTemplate template) {
-        return template.getName().trim().toLowerCase(Locale.ROOT) + "|" + template.getType() + "|" + template.getUnit();
+        return (template.getTrade() != null ? template.getTrade() : Trade.OTHER) + "|"
+                + template.getName().trim().toLowerCase(Locale.ROOT) + "|" + template.getType() + "|" + template.getUnit();
     }
 }

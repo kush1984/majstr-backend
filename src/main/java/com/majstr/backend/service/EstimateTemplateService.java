@@ -468,15 +468,18 @@ public class EstimateTemplateService {
         Project project = projectService.loadOwned(projectId, ownerId);
         limitService.requireCanAddEstimate(ownerId, projectId);
 
-        // Master's catalog by NORMALISED name → price/type/unit at apply-time.
+        // Master's catalog by NORMALISED name → every row of that name, one per trade (V220); the
+        // bundle's own trade picks among them below (CatalogFiling.rowFor).
         //
         // One key function for all three uses below (map, dedup, lookup). They used to disagree —
         // the map and the lookup lowercased without trimming while the dedup trimmed — so a name
         // differing by one space matched nothing and the line arrived priced at ZERO, silently.
         // Nothing is broken today (all 167 tiling names align on both sides), but a bundle line and
         // a catalog position are joined BY NAME and nothing enforces that they stay identical.
-        Map<String, CatalogItem> catalog = catalogRepository.findByOwnerIdOrderByNameAsc(ownerId).stream()
-                .collect(Collectors.toMap(c -> NameKeys.of(c.getName()), c -> c, (a, b) -> a));
+        Map<String, List<CatalogItem>> catalog = catalogRepository.findByOwnerIdOrderByNameAsc(ownerId).stream()
+                .collect(Collectors.groupingBy(c -> NameKeys.of(c.getName()), LinkedHashMap::new, Collectors.toList()));
+        Set<Trade> profile = userRepository.findWithTradesById(ownerId)
+                .map(u -> Set.copyOf(u.getTrades())).orElse(Set.of());
 
         Estimate estimate = estimateRepository.save(Estimate.builder()
                 .project(project)
@@ -489,9 +492,7 @@ public class EstimateTemplateService {
         Set<String> seen = new HashSet<>();
         List<EstimateItem> toSave = new ArrayList<>();
         // The folder index of each bundle's own trade, read once per trade however many bundles
-        // share it. See CatalogFiling: the catalog row is filed under whichever trade claimed the
-        // name first, and copying that verbatim is what put DRYWALL and TILING headers on a
-        // painting estimate.
+        // share it — for a line the master holds no row of under that trade (CatalogFiling).
         Map<Trade, Map<String, String>> foldersByTrade = new HashMap<>();
         for (EstimateTemplate template : templates) {
             Trade workingIn = workingTradeOf(template);
@@ -506,12 +507,13 @@ public class EstimateTemplateService {
                 if (!seen.add(NameKeys.of(ti.getName()))) {
                     continue; // already contributed by an earlier template
                 }
-                CatalogItem match = catalog.get(NameKeys.of(ti.getName()));
+                // The bundle's own trade's row prices the line: each trade keeps its own price.
+                CatalogItem match = CatalogFiling.rowFor(
+                        catalog.getOrDefault(NameKeys.of(ti.getName()), List.of()), workingIn, profile);
                 Unit unit = match != null ? match.getUnit() : ti.getUnit();
                 BigDecimal catalogPrice = match != null ? match.getDefaultPrice() : BigDecimal.ZERO;
-                // Where the line belongs: the BUNDLE's trade when the library ships this name
-                // under it, the matched row's own filing otherwise. Only the filing moves —
-                // price, unit, type and wording stay the master's.
+                // Where the line belongs: his own row of the BUNDLE's trade, else that trade's
+                // library folder, else the matched row's own filing (CatalogFiling.fileUnder).
                 ItemType type = match != null ? match.getType() : ti.getType();
                 CatalogFiling.Filing filing =
                         CatalogFiling.fileUnder(workingIn, folders, ti.getName(), type, unit, match);
@@ -521,13 +523,10 @@ public class EstimateTemplateService {
                         .estimate(estimate)
                         .type(type)
                         .name(ti.getName())
-                        // Filing follows the BUNDLE the master picked, not the row that priced the
-                        // line (CatalogFiling). Before that, a position two trades both ship
-                        // arrived under whichever claimed it in this master's catalog — so a
-                        // PAINTER bundle grew DRYWALL and TILING folders. A name the bundle's
-                        // trade does not ship keeps the matched row's filing, and a line that
-                        // matched nothing at all still lands in the right folder when the library
-                        // knows it: the 0 ₴ miss is about the PRICE, not about where it belongs.
+                        // Filing follows the BUNDLE the master picked: a PAINTER bundle never grows
+                        // DRYWALL or TILING folders. A line that matched nothing at all still lands
+                        // in the right folder when the library knows it: the 0 ₴ miss is about the
+                        // PRICE, not about where it belongs.
                         .category(filing.category())
                         .trade(filing.trade())
                         // The explanation rides along with the price it was joined to (V119) — a

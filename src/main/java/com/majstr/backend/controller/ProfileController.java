@@ -4,6 +4,7 @@ import com.majstr.backend.dto.CustomTradeRequest;
 import com.majstr.backend.dto.HelpRequest;
 import com.majstr.backend.dto.ProfileTradesRequest;
 import com.majstr.backend.dto.ProfileUpdateRequest;
+import com.majstr.backend.dto.RegionRequest;
 import com.majstr.backend.dto.RequisitesRequest;
 import com.majstr.backend.dto.SenderProfileRequest;
 import com.majstr.backend.dto.UserResponse;
@@ -63,6 +64,13 @@ public class ProfileController {
     public UserResponse updateTrades(@Valid @RequestBody ProfileTradesRequest req,
                                      @AuthenticationPrincipal UserPrincipal principal) {
         return profileService.updateTrades(principal.id(), req);
+    }
+
+    @Operation(summary = "Where he works (V219) — the oblast prices will be split by")
+    @PutMapping("/region")
+    public UserResponse updateRegion(@Valid @RequestBody RegionRequest req,
+                                     @AuthenticationPrincipal UserPrincipal principal) {
+        return profileService.updateRegion(principal.id(), req);
     }
 
     @Operation(summary = "Ask for a setup call: saves the phone and stamps the request for the admin")

@@ -2,7 +2,6 @@ package com.majstr.backend.service;
 
 import com.majstr.backend.dto.CatalogItemRequest;
 import com.majstr.backend.dto.CatalogItemResponse;
-import com.majstr.backend.dto.CatalogItemResponse.SharedTrade;
 import com.majstr.backend.dto.CatalogItemsOrderRequest;
 import com.majstr.backend.dto.CatalogSyncRequest;
 import com.majstr.backend.dto.CatalogSyncResponse;
@@ -98,11 +97,13 @@ public class CatalogService {
         // files as OTHER — trade/customTradeId keep the invariant the CHECK constraint also pins.
         Trade trade = customTrade != null ? Trade.OTHER
                 : req.trade() != null ? req.trade() : Trade.OTHER;
-        // The catalog is a reference library: one item per (name, type, unit) per owner
-        // (enforced by a unique index). Adding an item that already exists UPDATES it
-        // instead of creating a duplicate — idempotent, and it can never hit the constraint.
+        // The catalog is a reference library: one item per (trade, name, type, unit) per owner
+        // (enforced by a unique index, V220). Adding an item that already exists UPDATES it
+        // instead of creating a duplicate — idempotent, and it can never hit the constraint. The
+        // same name under ANOTHER trade is another position: that trade's own row, its own price.
         CatalogItem existing = catalogRepository.findByOwnerIdOrderByNameAsc(ownerId).stream()
-                .filter(i -> i.getType() == req.type()
+                .filter(i -> i.getTrade() == trade
+                        && i.getType() == req.type()
                         && i.getUnit() == req.unit()
                         && i.getName().trim().equalsIgnoreCase(name))
                 .findFirst()
@@ -110,7 +111,6 @@ public class CatalogService {
         if (existing != null) {
             applyNote(existing, req.note(), List.of(existing.getName()), ownerId);
             existing.setCategory(normalizeCategory(req.category()));
-            existing.setTrade(trade);
             existing.setCustomTrade(customTrade);
             existing.setDefaultPrice(priceOf(req));
             // He typed a position he could not see (its trade is off his profile): it is his now,
@@ -149,11 +149,10 @@ public class CatalogService {
                 ? catalogRepository.findByOwnerIdOrderByNameAsc(ownerId)
                 : catalogRepository.findByOwnerIdAndTypeOrderByNameAsc(ownerId, type);
         Map<String, Integer> categoryRanks = categoryRanks();
-        Map<String, List<SharedTrade>> sharedByKey = sharedTradesByNameKey(categoryRanks);
         Visibility visibility = visibility(ownerId);
         return items.stream()
                 .sorted(BY_MASTERS_ORDER)
-                .map(item -> CatalogItemResponse.from(item, sharedTradesFor(item, sharedByKey),
+                .map(item -> CatalogItemResponse.from(item,
                         categoryRanks.get(categoryKey(item.getTrade(), item.getCategory())),
                         visibility.hides(item)))
                 .toList();
@@ -162,27 +161,20 @@ public class CatalogService {
     /**
      * Which of the master's positions belong to a trade he has taken off his profile. A trade's
      * positions are COPIED into his catalog, and he prices them, so taking the trade off deletes
-     * nothing: the rows stay, every apply still prices from them, and putting the trade back shows
-     * them with his prices. Only the catalog screen and the pickers leave them out (the list marks
-     * them, the search drops them). A position he typed or imported is never hidden, and neither is
-     * one the library also ships under a trade he still has (one row serves both, V118).
+     * nothing: the rows stay, and putting the trade back shows them with his prices. Only the
+     * catalog screen, the pickers and the price list leave them out. A position he typed or
+     * imported is never hidden. Since V220 every trade holds its own rows, so a position the
+     * library ships under several trades is simply a row in each — nothing here looks at names.
      */
     private Visibility visibility(UUID ownerId) {
-        Set<Trade> trades = userRepository.findById(ownerId)
+        return new Visibility(userRepository.findById(ownerId)
                 .map(u -> Set.copyOf(u.getTrades()))
-                .orElse(Set.of());
-        Set<String> keptKeys = trades.isEmpty() ? Set.of()
-                : Set.copyOf(catalogTemplateRepository.findNameKeysForTrades(
-                        trades.stream().map(Trade::name).toList()));
-        return new Visibility(trades, keptKeys);
+                .orElse(Set.of()));
     }
 
-    private record Visibility(Set<Trade> trades, Set<String> keptKeys) {
+    private record Visibility(Set<Trade> trades) {
         boolean hides(CatalogItem item) {
-            return item.getSource() == CatalogItemSource.LIBRARY
-                    && !trades.contains(item.getTrade())
-                    && !keptKeys.contains(item.getName().trim().toLowerCase(Locale.ROOT)
-                            + "|" + item.getType() + "|" + item.getUnit());
+            return !CatalogFiling.isVisible(item, trades);
         }
     }
 
@@ -199,33 +191,6 @@ public class CatalogService {
 
     private static String categoryKey(Trade trade, String category) {
         return trade == null || category == null ? "" : trade + "|" + category;
-    }
-
-    /** {@code "name_key|TYPE|UNIT" -> every trade catalog_templates ships it under, with that
-     *  trade's category}, only for keys more than one trade recognizes — see
-     *  {@link CatalogTemplateRepository#findNameKeysSharedAcrossTrades}. */
-    private Map<String, List<SharedTrade>> sharedTradesByNameKey(Map<String, Integer> categoryRanks) {
-        Map<String, List<SharedTrade>> map = new HashMap<>();
-        for (Object[] row : catalogTemplateRepository.findNameKeysSharedAcrossTrades()) {
-            String key = row[0] + "|" + row[1] + "|" + row[2];
-            Trade trade = Trade.valueOf((String) row[3]);
-            String category = (String) row[4];
-            map.computeIfAbsent(key, k -> new ArrayList<>())
-                    .add(new SharedTrade(trade, category,
-                            categoryRanks.get(categoryKey(trade, category))));
-        }
-        return map;
-    }
-
-    private static List<SharedTrade> sharedTradesFor(CatalogItem item,
-                                                     Map<String, List<SharedTrade>> sharedByKey) {
-        String key = item.getName().trim().toLowerCase(Locale.ROOT)
-                + "|" + item.getType() + "|" + item.getUnit();
-        List<SharedTrade> all = sharedByKey.get(key);
-        if (all == null) {
-            return List.of();
-        }
-        return all.stream().filter(s -> s.trade() != item.getTrade()).toList();
     }
 
     /** Distinct categories the contractor has used — for the picker/autocomplete. */
@@ -325,7 +290,9 @@ public class CatalogService {
                 .collect(Collectors.toSet());
         for (EstimateItem line : estimateItemRepository.findCatalogNoteTargets(ownerId, item.getType(),
                 item.getUnit(), keys)) {
-            if (Objects.equals(line.getNote(), previous)) {
+            // The same name under another trade is another position with its own comment (V220).
+            boolean otherTrade = line.getTrade() != null && line.getTrade() != item.getTrade();
+            if (!otherTrade && Objects.equals(line.getNote(), previous)) {
                 line.setNote(next);
                 line.getEstimate().setUpdatedAt(Instant.now());
             }

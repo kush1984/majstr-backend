@@ -2,6 +2,7 @@ package com.majstr.backend.dto;
 
 import com.majstr.backend.entity.ActNumberFormat;
 import com.majstr.backend.entity.Plan;
+import com.majstr.backend.entity.Region;
 import com.majstr.backend.entity.Role;
 import com.majstr.backend.entity.Trade;
 import com.majstr.backend.entity.User;
@@ -64,7 +65,9 @@ public record UserResponse(
         // When he asked for a setup call (V191) — the PWA stops offering it once set.
         Instant helpRequestedAt,
         // When he answered «Чим займаєтесь?» (V193) — null means the PWA still asks it.
-        Instant tradesOnboardedAt
+        Instant tradesOnboardedAt,
+        // Where he works (V219) — null means the home screen still asks it.
+        Region region
 ) {
     /** {@code customTrades} is a separate explicit query, deliberately NOT a lazy collection on
      *  {@link User} — this factory is called from many places (auth, profile, billing), and riding
@@ -106,7 +109,8 @@ public record UserResponse(
                 user.getPayoutCard(),
                 user.getPayoutLink(),
                 user.getHelpRequestedAt(),
-                user.getTradesOnboardedAt()
+                user.getTradesOnboardedAt(),
+                user.getRegion()
         );
     }
 
