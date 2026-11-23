@@ -2521,7 +2521,11 @@ one-line summary — keep the item in the file as a record.
   if they were."
 
 ### Reopen: hide the UI vs. remove the flow entirely
-- **Status:** OPEN
+- **Status:** RESOLVED (2026-11-23) — back in the UI after two masters asked to fix or delete a signed
+  estimate. Owner ruling: allowed with payments on the object (they stay; «За договором» leaves the
+  estimate out until it is signed again, and the confirmation says so); any act not REJECTED refuses
+  it, a DRAFT one with «спершу видаліть чернетку акта». See
+  [iteration-percent-bases-crew-additions.md](iteration-percent-bases-crew-additions.md).
 - **Since:** Payments-economy-portal iteration (2026-08-07)
 - **Context:** Owner-only `reopen` (SIGNED → DRAFT) is now hidden from both UI locations (the
   editor's signed banner, the object row menu) behind `REOPEN_ENABLED = false` consts, while the

@@ -677,6 +677,13 @@ public class EstimateService {
         // актами» — and a reopened DRAFT becomes editable and deletable, making the drift permanent.
         // 409, same family as the delete-a-SIGNED-estimate refusal.
         requireNotAddendum(estimate);
+        // Only DRAFT acts in the way: the master can delete those himself, so the refusal says so
+        // (owner, 2026-11-23). A SENT or SIGNED act is the client's — a new estimate is the way.
+        if (workActItemRepository.existsActLineForEstimateInStatus(estimateId, List.of(WorkActStatus.DRAFT))
+                && !workActItemRepository.existsActLineForEstimateInStatus(estimateId,
+                        List.of(WorkActStatus.SENT, WorkActStatus.SIGNED))) {
+            throw new WorkActConflictException("error.estimate.reopen-has-draft-act", "ESTIMATE_HAS_DRAFT_ACT");
+        }
         requireNoActs(estimateId, "error.estimate.reopen-has-acts");
         applyReopen(estimate, ownerId);
         List<EstimateItem> items = itemRepository.findByEstimateIdOrderBySortOrderAscIdAsc(estimateId);

@@ -1,4 +1,4 @@
-# «% від кількох позицій» and a markup copy's additions — V221
+# «% від кількох позицій», a markup copy's additions, and reopening a signed estimate — V221
 
 **Status:** built, not pushed. **Migration:** `V221__percent_of_several_positions.sql`. **PWA:** on top of 1.87.0.
 
@@ -42,10 +42,30 @@ all the positions a percentage is measured against.
 - The note under the margin now reads «N позицій на X додано тобою, без бригади — уся сума у твоїй націнці».
 - If the crew does a new work, its price belongs in the crew's original sheet.
 
+### Reopening a signed estimate is back
+
+Two masters asked to fix or delete a signed estimate. The owner: allowed even with payments on the
+object, never with acts — «якщо є акти створені, то однозначно не дозволяємо».
+
+- «Перевідкрити для змін» is shown again (editor banner, object row menu). Confirmation: the client signs
+  again, the earlier signature stays in history, payments on the object stay, and «За договором» leaves
+  the estimate out until the new signature. A signed estimate is deleted by reopening it first.
+- Server rules unchanged: any act not REJECTED refuses it. A DRAFT act alone now answers
+  `ESTIMATE_HAS_DRAFT_ACT` — «спершу видаліть чернетку акта»; SENT / SIGNED stay
+  `ESTIMATE_HAS_SIGNED_ACTS`.
+- Money is the object's (V100), so nothing about payments moves: during the gap the economy panel reads
+  the deposit as an advance not yet earned.
+- The signed banner puts its button under the text (on a phone the label broke into four lines), and a
+  «%» row keeps «25 %» on one line beside a long list of bases.
+
 ## Tests
 
 - `PercentOfSeveralPositionsIntegrationTest` — sum and order, invalid bases dropped, the single id, a
   deleted base, a markup copy raising one of two bases.
 - `EstimateMathTest`, `CrewMarginIntegrationTest` (new rule: added line, «+10 %», parity fixture,
   accepted by an act); PWA `percentMath.test.ts`, `AddItemSheet.test.tsx`, `crewMargin.test.ts`.
-- 375 px screenshots: the row label with two bases, the form with three ticked.
+- `WorkActIntegrationTest`: a DRAFT act refuses with `ESTIMATE_HAS_DRAFT_ACT` and stops refusing once
+  deleted; a SENT act refuses; reopening with a deposit keeps the money, drops and restores «За
+  договором», and deleting afterwards keeps the money.
+- 375 px screenshots: the row label with two bases, the form with three ticked, the signed banner and
+  the reopen confirmation.

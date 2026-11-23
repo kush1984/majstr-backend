@@ -53,6 +53,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 class WorkActIntegrationTest extends IntegrationTestBase {
 
     @Autowired WorkActService workActService;
+    @Autowired org.springframework.jdbc.core.JdbcTemplate jdbc;
     @Autowired com.majstr.backend.service.ObjectExpenseService objectExpenseService;
     @Autowired com.majstr.backend.service.EstimateService estimateService;
     @Autowired UserRepository userRepository;
@@ -1000,11 +1001,81 @@ class WorkActIntegrationTest extends IntegrationTestBase {
         WorkActResponse act = createInterim(p.getId(), owner.getId());
         setSingleLine(act.id(), owner.getId(), est.getId(), lineId, "60.000", "145.00");
 
+        // A DRAFT act the master can delete himself — the refusal says so (owner, 2026-11-23).
         assertThatThrownBy(() -> estimateService.reopen(est.getId(), owner.getId()))
-                .isInstanceOf(WorkActConflictException.class);
-
+                .isInstanceOf(WorkActConflictException.class)
+                .extracting(e -> ((WorkActConflictException) e).getCode())
+                .isEqualTo("ESTIMATE_HAS_DRAFT_ACT");
         assertThat(estimateRepository.findById(est.getId()).orElseThrow().getStatus())
                 .isEqualTo(EstimateStatus.SIGNED);
+
+        // Deleted, the draft no longer stands in the way.
+        workActService.delete(act.id(), owner.getId());
+        estimateService.reopen(est.getId(), owner.getId());
+        assertThat(estimateRepository.findById(est.getId()).orElseThrow().getStatus())
+                .isEqualTo(EstimateStatus.DRAFT);
+    }
+
+    /** A SENT act is on the client's phone: reopening is refused as for a signed one. */
+    @Test
+    void reopeningWithASentAct_isRefusedAsForASignedOne() {
+        User owner = newOwner();
+        Project p = newProject(owner);
+        Estimate est = signedEstimateWithLine(p, "Робота", "100.000", "145.00");
+        UUID lineId = estimateItemRepository.findByEstimateIdOrderBySortOrderAscIdAsc(est.getId()).get(0).getId();
+        WorkActResponse act = createInterim(p.getId(), owner.getId());
+        setSingleLine(act.id(), owner.getId(), est.getId(), lineId, "60.000", "145.00");
+        markSent(act.id());
+
+        assertThatThrownBy(() -> estimateService.reopen(est.getId(), owner.getId()))
+                .isInstanceOf(WorkActConflictException.class)
+                .extracting(e -> ((WorkActConflictException) e).getCode())
+                .isEqualTo("ESTIMATE_HAS_SIGNED_ACTS");
+        assertThat(estimateRepository.findById(est.getId()).orElseThrow().getStatus())
+                .isEqualTo(EstimateStatus.SIGNED);
+    }
+
+    /**
+     * Reopening with a deposit already paid (owner, 2026-11-23: «якщо вже є якісь завдатки… а він
+     * перевідкритий, то що тоді?»). Money belongs to the object: it stays exactly as recorded. The
+     * estimate leaves «За договором» until the client signs again — the panel shows the deposit as
+     * an advance meanwhile — and comes back when he does. Deleting it instead keeps the money too.
+     */
+    @Test
+    void reopeningWithAPaymentKeepsTheMoney_andTheContractComesBackOnTheNewSignature() {
+        User owner = newOwner();
+        Project p = newProject(owner);
+        Estimate est = signedEstimateWithLine(p, "Робота", "100.000", "145.00");   // 14 500
+        jdbc.update("""
+                INSERT INTO payment_receipt (id, project_id, amount, received_at, label)
+                VALUES (?, ?, 5000.00, now(), 'Завдаток')
+                """, UUID.randomUUID(), p.getId());
+
+        var before = objectExpenseService.economy(p.getId(), owner.getId()).payments();
+        assertThat(before.contractedTotal()).isEqualByComparingTo("14500.00");
+        assertThat(before.received()).isEqualByComparingTo("5000.00");
+
+        estimateService.reopen(est.getId(), owner.getId());
+
+        var reopened = objectExpenseService.economy(p.getId(), owner.getId()).payments();
+        assertThat(reopened.received()).as("the deposit stays on the object").isEqualByComparingTo("5000.00");
+        assertThat(reopened.contractedTotal()).isEqualByComparingTo("0");
+
+        Estimate resigned = estimateRepository.findById(est.getId()).orElseThrow();
+        resigned.setStatus(EstimateStatus.SIGNED);
+        resigned.setSignedAt(java.time.Instant.now());
+        estimateRepository.saveAndFlush(resigned);
+
+        var after = objectExpenseService.economy(p.getId(), owner.getId()).payments();
+        assertThat(after.contractedTotal()).isEqualByComparingTo("14500.00");
+        assertThat(after.received()).isEqualByComparingTo("5000.00");
+
+        estimateService.reopen(est.getId(), owner.getId());
+        estimateService.delete(est.getId(), owner.getId());
+        assertThat(estimateRepository.findById(est.getId())).isEmpty();
+        assertThat(objectExpenseService.economy(p.getId(), owner.getId()).payments().received())
+                .as("deleting the estimate never deletes the money")
+                .isEqualByComparingTo("5000.00");
     }
 
     @Test

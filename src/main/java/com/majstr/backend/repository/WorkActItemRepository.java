@@ -1,5 +1,6 @@
 package com.majstr.backend.repository;
 
+import com.majstr.backend.entity.WorkActStatus;
 import com.majstr.backend.entity.WorkActItem;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
@@ -52,6 +53,17 @@ public interface WorkActItemRepository extends JpaRepository<WorkActItem, UUID> 
               AND wai.workAct.status <> com.majstr.backend.entity.WorkActStatus.REJECTED
             """)
     boolean existsLiveActLineForEstimate(@Param("estimateId") UUID estimateId);
+
+    /** Whether an act in one of {@code statuses} holds a line of this estimate — lets a refusal name
+     *  the act that stands in the way (a draft the master can delete himself, or one the client has). */
+    @Query("""
+            SELECT COUNT(wai) > 0
+            FROM WorkActItem wai
+            WHERE wai.estimateId = :estimateId
+              AND wai.workAct.status IN :statuses
+            """)
+    boolean existsActLineForEstimateInStatus(@Param("estimateId") UUID estimateId,
+                                             @Param("statuses") java.util.Collection<WorkActStatus> statuses);
 
     /**
      * How much of each estimate line has been closed by SIGNED acts of an object — the source of
