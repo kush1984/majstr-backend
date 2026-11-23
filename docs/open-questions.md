@@ -1474,6 +1474,9 @@ one-line summary — keep the item in the file as a record.
   If this becomes a real complaint, the natural axis is the master's own city/region (already
   captured nowhere — would need its own decision on where that data comes from). Low priority
   until masters actually push back on a proposed price as "wrong for my area."
+- **Update (2026-11-23, V219 — status unchanged):** the master's oblast is now collected
+  (`users.region`, [iteration-regions.md](iteration-regions.md)); nothing reads it yet. Next: answers per
+  oblast in the admin, then a per-region median with the national one as the fallback.
 
 ### Community prices: custom (master-invented) trades' positions
 - **Status:** OPEN
@@ -4260,6 +4263,8 @@ one-line summary — keep the item in the file as a record.
   The «Ціни відрізняються від каталогу» card therefore matches a line to the master's catalog by the
   exact key the template apply already prices by — `lower(trim(name))` + type + unit, unique per
   owner by `ux_catalog_items_owner_name_type_unit` — which is reliable (owner ruling: variant «а»).
+  Since V220 the index is per trade (`ux_catalog_items_owner_trade_name_type_unit`): a master of two
+  trades can hold the same name twice at two prices, and only the line's own trade tells them apart.
   What it cannot see is a RENAME: a line renamed in the estimate, or a catalog position renamed
   afterwards, falls into «Немає в каталозі», which is why that section's ticks are OFF by default.
 - **Notes / options:** a nullable `estimate_items.catalog_item_id` (`ON DELETE SET NULL`) stamped by
@@ -4306,6 +4311,20 @@ one-line summary — keep the item in the file as a record.
      the request, so the notice and the payment land together and the IT can see them; move it to a
      pool if it ever times out.
 - **Notes / options:** each item is small and independent; take them as masters report.
+
+### Every trade holds its own positions (V220): what was left open
+
+- **Status:** OPEN
+- **Since:** 2026-11-23, V220 ([iteration-trade-catalogs.md](iteration-trade-catalogs.md))
+- **Context:** a shared library position is now a row per trade, each priced on its own. Left:
+  1. **PRICE_DRIFT «Оновити мою ціну» updates every library row of that name** — the notice carries no
+     trade, so a master of two trades gets both rows moved. Give the notice a trade when one complains.
+  2. **The estimate's autocomplete can offer one name twice** to a master of two trades (one per trade,
+     maybe at two prices); the row he picks decides the trade. A trade chip on the suggestion if it confuses.
+  3. **A typed shared name with no estimate trade files under no group**, and dictation / the bot /
+     «Перенести в Majstr» leave a name with two prices and no context unmatched (owner ruling: no guessing).
+  4. Existing estimates, acts and signed documents keep the trade they were written with (snapshots).
+- **Notes / options:** take each when a master reports it; none changes a figure the client reads.
 
 ### «New in the library» notice for pull-only additions
 

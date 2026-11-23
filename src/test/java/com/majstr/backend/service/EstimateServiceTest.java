@@ -1217,12 +1217,12 @@ class EstimateServiceTest {
         EstimateItem markup = EstimateItem.builder()
                 .id(UUID.randomUUID()).type(ItemType.WORK).name("Націнка")
                 .unit(Unit.PERCENT).quantity(new BigDecimal("20.000")).unitPrice(BigDecimal.ZERO)
-                .percentBaseKind(PercentBaseKind.POSITION).percentBaseItemId(baseId)
+                .percentBaseKind(PercentBaseKind.POSITION).percentBaseItemIds(new java.util.ArrayList<>(List.of(baseId)))
                 .lineTotal(new BigDecimal("200.00")).sortOrder(0)
                 .estimate(source)
                 .build();
         given(itemRepository.findByEstimateIdOrderBySortOrderAscIdAsc(src)).willReturn(List.of(markup));
-        given(itemRepository.findById(baseId)).willReturn(Optional.of(
+        given(itemRepository.findAllById(List.of(baseId))).willReturn(List.of(
                 EstimateItem.builder().id(baseId).name("Шафа").build()));
         List<EstimateItem>[] saved = new List[1];
         given(itemRepository.saveAll(anyList())).willAnswer(inv -> {

@@ -36,7 +36,7 @@ class EstimateMathTest {
     private static EstimateItem percentOf(String name, String pct, EstimateItem base) {
         EstimateItem item = line(name, Unit.PERCENT, pct, "0");
         item.setPercentBaseKind(PercentBaseKind.POSITION);
-        item.setPercentBaseItemId(base.getId());
+        item.setPercentBaseItemIds(new java.util.ArrayList<>(List.of(base.getId())));
         return item;
     }
 
@@ -109,6 +109,22 @@ class EstimateMathTest {
         EstimateMath.recalculate(List.of(wardrobe, delivery));
 
         assertThat(delivery.getLineTotal()).isEqualByComparingTo("100.00");
+    }
+
+    /** V221 (owner, 2026-11-23): «25 % від» two tiling lines is 25 % of the two together. */
+    @Test
+    void aPercentOfSeveralLinesIsAShareOfTheirSum_andOneGoneKeepsTheLastAmount() {
+        EstimateItem small = line("Укладання плитки 100x100", Unit.M2, "10", "800");
+        EstimateItem large = line("Укладання плитки 60x60", Unit.M2, "20", "500");
+        EstimateItem complexity = line("Складність", Unit.PERCENT, "25", "0");
+        complexity.setPercentBaseKind(PercentBaseKind.POSITION);
+        complexity.setPercentBaseItemIds(new java.util.ArrayList<>(List.of(small.getId(), large.getId())));
+
+        EstimateMath.recalculate(List.of(small, large, complexity));
+        assertThat(complexity.getLineTotal()).isEqualByComparingTo("4500.00"); // 25 % of 18 000
+
+        EstimateMath.recalculate(List.of(small, complexity));   // one base gone: never a smaller base
+        assertThat(complexity.getLineTotal()).isEqualByComparingTo("4500.00");
     }
 
     @Test

@@ -140,13 +140,13 @@ class CrewMarginIntegrationTest extends IntegrationTestBase {
     }
 
     /**
-     * A line added to the copy afterwards has NO crew price, and the honest answer is that we do not
-     * know whether the crew is paid for it. It contributes zero and is reported separately —
-     * V85 used to call it «whole line margin», which is the flattering arithmetic that got the
-     * object's «Прибуток» hidden in the first place.
+     * A line the master added to the copy afterwards has NO crew price: the crew never sees it, so it
+     * is ALL his (owner ruling 2026-11-23, «все що іде нове … то все мій заробіток як прораба»). It
+     * adds nothing to «Бригаді», its whole amount to the margin, and an act accepting it accepts
+     * all of it.
      */
     @Test
-    void aLineAddedAfterwardsContributesNothingAndIsNamed() {
+    void aLineAddedAfterwardsIsAllTheMastersMargin() {
         addWork("Штукатурка", "100", "200");
         EstimateResponse copy = duplicateWith("20", false);
 
@@ -155,9 +155,16 @@ class CrewMarginIntegrationTest extends IntegrationTestBase {
                 new BigDecimal("500"), null, null, false, null, null), ownerId);
 
         EstimateResponse after = estimateService.get(copy.id(), ownerId);
-        assertThat(after.crewMargin().margin()).isEqualByComparingTo("4000"); // unchanged by the 5 000
+        assertThat(after.crewMargin().crewTotal()).isEqualByComparingTo("20000");
+        assertThat(after.crewMargin().margin()).isEqualByComparingTo("9000"); // 4 000 + the 5 000
         assertThat(after.crewMargin().unpricedCount()).isEqualTo(1);
         assertThat(after.crewMargin().unpricedTotal()).isEqualByComparingTo("5000");
+
+        sign(copy.id());
+        UUID added = after.items().stream()
+                .filter(i -> i.name().equals("Додаткова робота")).findFirst().orElseThrow().id();
+        actWith("SIGNED", copy.id(), added, "10", "500");
+        assertThat(panelMarginOf(copy.id()).marginAccepted()).isEqualByComparingTo("5000");
     }
 
     /**
@@ -165,10 +172,8 @@ class CrewMarginIntegrationTest extends IntegrationTestBase {
      * an m2 line, a «% від кошторису» surcharge, and a line added afterwards with no crew price.
      * The mirror must be changed in the same commit as this test.
      *
-     * <p>Note what the unpriced line does: it contributes nothing to the MARGIN, yet it sits inside
-     * the surcharge's base in both views — its own 5 000 and the 500 the percentage adds on top of
-     * it appear on both sides and cancel. «Contributes zero» is about the DIFFERENCE, not about the
-     * crew total.</p>
+     * <p>The added line is zero for the crew, so the crew's surcharge is 10 % of 20 000 alone; the
+     * client's is 10 % of 35 000. Everything above the crew's 22 000 is the master's.</p>
      */
     @Test
     void theParityFixtureAgreesWithThePwa() {
@@ -181,8 +186,8 @@ class CrewMarginIntegrationTest extends IntegrationTestBase {
 
         CrewMarginResponse margin = estimateService.get(copy.id(), ownerId).crewMargin();
 
-        assertThat(margin.crewTotal()).isEqualByComparingTo("27500");
-        assertThat(margin.margin()).isEqualByComparingTo("11000");
+        assertThat(margin.crewTotal()).isEqualByComparingTo("22000");
+        assertThat(margin.margin()).isEqualByComparingTo("16500");
         assertThat(margin.unpricedCount()).isEqualTo(1);
         assertThat(margin.unpricedTotal()).isEqualByComparingTo("5000");
     }
@@ -370,9 +375,8 @@ class CrewMarginIntegrationTest extends IntegrationTestBase {
     /**
      * B-72. A «Знижка −10 % від кошторису» typed on the copy AFTER it was made has no crew price,
      * and it used to be re-measured against the crew's smaller subtotal: −1 000 on the crew side
-     * against −1 200 on the client's, so the discount APPEARED to earn the master 1 800. The
-     * owner's rule freezes an unpriced line at its client amount and a negative one at zero — the
-     * discount comes out of his own margin, which is 800.
+     * against −1 200 on the client's, so the discount APPEARED to earn the master 1 800. A line he
+     * added is zero for the crew — the discount comes out of his own margin, which is 800.
      */
     @Test
     void aDiscountTypedOnTheCopyComesOutOfTheMastersOwnMargin() {
@@ -390,10 +394,10 @@ class CrewMarginIntegrationTest extends IntegrationTestBase {
         assertThat(after.crewMargin().unpricedCount()).isEqualTo(1);
     }
 
-    /** The mirror image: a surcharge typed afterwards is frozen at its client amount, so it passes
-     *  through both views and the margin does not move. */
+    /** The owner's case (2026-11-23): «+10 %» typed on the copy is his, not the crew's — «Бригаді»
+     *  stays at the crew's 10 000 and the whole surcharge is margin. */
     @Test
-    void aSurchargeTypedOnTheCopyPassesThroughBothViews() {
+    void aSurchargeTypedOnTheCopyIsAllTheMastersMargin() {
         addWork("Штукатурка", "100", "100");          // crew 10 000, client 12 000
         EstimateResponse copy = duplicateWith("20", false);
         estimateService.addItem(copy.id(), new EstimateItemRequest(
@@ -403,8 +407,8 @@ class CrewMarginIntegrationTest extends IntegrationTestBase {
         EstimateResponse after = estimateService.get(copy.id(), ownerId);
 
         assertThat(after.total()).isEqualByComparingTo("13200");
-        assertThat(after.crewMargin().crewTotal()).isEqualByComparingTo("11200");
-        assertThat(after.crewMargin().margin()).isEqualByComparingTo("2000");
+        assertThat(after.crewMargin().crewTotal()).isEqualByComparingTo("10000");
+        assertThat(after.crewMargin().margin()).isEqualByComparingTo("3200");
     }
 
     /**
@@ -439,7 +443,7 @@ class CrewMarginIntegrationTest extends IntegrationTestBase {
      * B-99. One ratio for every «%» line (Σ adjustments ÷ Σ client %) mixed a POSITION percentage
      * with an ESTIMATE-wide one. L1 and L2 are 100 m² each at crew 100 / client 120; +10 % follows
      * L1 (priced, so the crew has its own), −10 % of the estimate was typed afterwards (unpriced,
-     * frozen at 0 on the crew side). An act closing L2 alone earned (120 − 100) × 100 = 2 000 on the
+     * zero on the crew side). An act closing L2 alone earned (120 − 100) × 100 = 2 000 on the
      * line and carried L2's share of the discount, 12 000 / 25 200 × −2 520 = −1 200 — the master's
      * own, so 800 accepted. The single ratio reported −109.09.
      */

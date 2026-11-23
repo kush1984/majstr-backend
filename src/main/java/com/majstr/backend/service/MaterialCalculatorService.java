@@ -447,8 +447,8 @@ public class MaterialCalculatorService {
             if (layout == null) {
                 continue;
             }
-            if (item.getPercentBaseKind() == PercentBaseKind.POSITION && item.getPercentBaseItemId() != null) {
-                layouts.merge(item.getPercentBaseItemId(), layout, MaterialCalculatorService::wider);
+            if (item.getPercentBaseKind() == PercentBaseKind.POSITION && !item.getPercentBaseItemIds().isEmpty()) {
+                item.getPercentBaseItemIds().forEach(id -> layouts.merge(id, layout, MaterialCalculatorService::wider));
             } else if (item.getPercentBaseKind() == PercentBaseKind.TOTAL) {
                 items.forEach(i -> layouts.merge(i.getId(), layout, MaterialCalculatorService::wider));
             }

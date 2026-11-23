@@ -47,8 +47,13 @@ public record EstimateItemResponse(
          * preselect the right base in the editor.
          */
         PercentBaseKind percentBaseKind,
-        /** The line this percentage is measured against ({@code POSITION}); null otherwise. */
+        /**
+         * The first base line, for an installed app that has not updated yet (it reads one base);
+         * a current build reads {@link #percentBaseItemIds}.
+         */
         UUID percentBaseItemId,
+        /** The lines this percentage is measured against ({@code POSITION}, V221); empty otherwise. */
+        List<UUID> percentBaseItemIds,
         /**
          * The live link is off — the master typed the amount himself, or the base was deleted. The
          * row keeps its last computed amount and the screen offers to re-attach it.
@@ -112,7 +117,8 @@ public record EstimateItemResponse(
                 MeasurementRefs.parse(item.getMeasurementRefs()),
                 item.isQuantityManual(),
                 item.getPercentBaseKind(),
-                item.getPercentBaseItemId(),
+                item.getPercentBaseItemIds().isEmpty() ? null : item.getPercentBaseItemIds().get(0),
+                List.copyOf(item.getPercentBaseItemIds()),
                 item.isBaseDetached(),
                 item.getBaseOriginLabel(),
                 closedByActs,

@@ -8,6 +8,7 @@ import com.majstr.backend.entity.Trade;
 import com.majstr.backend.entity.Unit;
 import com.majstr.backend.entity.WorkActKind;
 import com.majstr.backend.entity.WorkActLineKind;
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import tools.jackson.core.StreamWriteFeature;
 import tools.jackson.databind.MapperFeature;
@@ -105,11 +106,24 @@ public final class SignedSnapshot {
     public record EstimatePart(UUID id, String name, EstimateKind kind, LocalDate validUntil,
                                String notes, BigDecimal depositAmount, Instant createdAt) { }
 
+    /**
+     * {@code percentBaseItemId} is what a snapshot signed before V221 holds (one base); a newer one
+     * holds {@code percentBaseItemIds} and leaves it null. {@link #baseItemIds()} reads either.
+     */
     public record EstimateLine(UUID id, ItemType type, String name, String category, Trade trade,
                                Unit unit, BigDecimal quantity, BigDecimal unitPrice,
                                BigDecimal lineTotal, PercentBaseKind percentBaseKind,
                                UUID percentBaseItemId, String baseOriginLabel, int sortOrder,
-                               String note) { }
+                               String note, List<UUID> percentBaseItemIds) {
+
+        @JsonIgnore
+        public List<UUID> baseItemIds() {
+            if (percentBaseItemIds != null) {
+                return percentBaseItemIds;
+            }
+            return percentBaseItemId == null ? List.of() : List.of(percentBaseItemId);
+        }
+    }
 
     public record EstimateDoc(int schema, Contractor contractor, ProjectPart project, ClientPart client,
                               EstimatePart estimate, Signer signer, List<EstimateLine> lines) { }

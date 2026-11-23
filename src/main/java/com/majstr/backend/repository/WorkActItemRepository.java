@@ -152,9 +152,9 @@ public interface WorkActItemRepository extends JpaRepository<WorkActItem, UUID> 
      * ({@link #sumSignedActLineTotals}), and the difference is not an oversight — it is forced.
      * That query counts an off-estimate ADDITIONAL line ({@code estimate_id IS NULL}) because its
      * rolled-up ADDENDUM is part of «За договором»; here such a line cannot be counted at all,
-     * because it was never a copy line and no crew price for it exists anywhere. Same for a line
-     * whose {@code source_unit_price} is NULL — added to the copy afterwards, and we do not know
-     * whether the crew is paid for it, so it contributes zero rather than the whole amount.</p>
+     * because it was never a copy line and no crew price for it exists anywhere. A copy line whose
+     * {@code source_unit_price} is NULL was added by the master afterwards and is ALL margin (owner
+     * ruling 2026-11-23), so its crew price reads as zero.</p>
      *
      * <p>PERCENT lines need no exclusion clause: the progress picker skips them («a «%» line has no
      * quantity to close») and, since B-57, {@code ActLineBinder} refuses one outright — no act line
@@ -166,13 +166,12 @@ public interface WorkActItemRepository extends JpaRepository<WorkActItem, UUID> 
      * agreeing after the estimate is edited. The margin follows the money actually accepted.</p>
      */
     @Query(value = """
-            SELECT COALESCE(ROUND(SUM((wai.unit_price - ei.source_unit_price) * wai.quantity), 2), 0)
+            SELECT COALESCE(ROUND(SUM((wai.unit_price - COALESCE(ei.source_unit_price, 0)) * wai.quantity), 2), 0)
             FROM work_act_item wai
             JOIN work_act wa ON wa.id = wai.work_act_id
             JOIN estimate_items ei ON ei.id = wai.estimate_item_id
             WHERE wa.status = 'SIGNED'
               AND ei.estimate_id = :estimateId
-              AND ei.source_unit_price IS NOT NULL
             """, nativeQuery = true)
     BigDecimal sumSignedActMargin(@Param("estimateId") UUID estimateId);
 

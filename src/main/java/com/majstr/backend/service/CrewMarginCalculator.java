@@ -36,26 +36,18 @@ import java.util.UUID;
  * builds DETACHED copies — and they keep their ids, because {@code recalculate} resolves a
  * percentage's base through {@code percentBaseItemId} against exactly those ids.</p>
  *
- * <h2>A line with no crew price contributes NOTHING — and «%» is where that gets interesting</h2>
- * V85's javadoc used to say the opposite — that a line added to the copy afterwards is «whole line
- * margin». That is the same mistake that got «Прибуток» hidden: work the crew may well be doing and
- * being paid for, counted as the master's earning because the data does not say otherwise. Such
- * lines are reported separately ({@link CrewMarginResponse#unpricedCount()}) so the screen can name
- * them instead of quietly inflating a figure.
+ * <h2>A line added to the copy afterwards is ALL the master's (owner ruling 2026-11-23)</h2>
+ * A line with no crew price ({@code source_unit_price} null) was added by the master to the
+ * client's copy — a «+10 %» surcharge, an extra work — and the crew never sees it: «все що іде нове
+ * в тому новому кошторисі і до клієнта, то все мій заробіток як прораба». In the crew view such a
+ * line is therefore ZERO, so its whole client amount is margin; a discount he added comes out of
+ * his margin the same way. This reverses the crew-margin iteration's «contributes nothing» rule,
+ * under which «+10 %» raised «Бригаді» by the same amount and left the margin where it was. If the
+ * crew does the new work, its price belongs in the crew's original sheet.
  *
- * <p>For an ordinary line «contributes nothing» is free: the crew view keeps the client's own price,
- * so the two sides agree and the difference is zero. A <b>«%» line added after the copy</b> was not
- * (review B-72): it was re-measured against the crew's SMALLER base, so «Знижка −10 %» came out
- * −1 000 in the crew view against −1 200 in the client's and the master was shown 1 800 of margin on
- * a discount he had just given away. The owner's rule: <b>an unpriced line is FROZEN at its client
- * amount in the crew view, and a negative one is frozen at ZERO</b> — a discount the master decided
- * to give comes out of his own margin, not the crew's pay. On that same sheet the figure is 800.</p>
- *
- * <p>The freeze uses the mechanism that already exists for it: the crew's copy of such a line is
- * marked {@code baseDetached} and carries the client's amount, and {@link EstimateMath} leaves a
- * detached line at what it last computed. Its KIND is untouched, which is what keeps its place in
- * the subtotals identical to the client view — a «% від кошторису» line is in no base on either
- * side, a «% від позиції» is in both.</p>
+ * <p>A «%» line is zeroed through the freeze mechanism that already exists: the crew's copy is
+ * marked {@code baseDetached} with a zero amount, and {@link EstimateMath} leaves a detached line
+ * at what it last computed. Its KIND is untouched, which keeps its place in the subtotals.</p>
  */
 final class CrewMarginCalculator {
 
@@ -117,9 +109,8 @@ final class CrewMarginCalculator {
      * A «%» line can never BE an act line (B-57 refuses the unit outright), so an estimate's
      * percentages reach the act as one prorated ADJUSTMENT line per type (B-55); the margin they
      * carry is the client's amount minus the crew's own, scaled by how much of them travelled.
-     * Under the freeze rule above an unpriced discount has no crew amount at all, so the whole of
-     * it lands on the master — which is what makes this sum meet the margin to the kopeck when the
-     * acts have closed everything.</p>
+     * A line the master added has no crew amount at all, so the whole of it lands on him — which is
+     * what makes this sum meet the margin to the kopeck when the acts have closed everything.</p>
      */
     private static BigDecimal accepted(BigDecimal acceptedLines, List<EstimateItem> clientLines,
                                        List<EstimateItem> crewLines, Map<UUID, BigDecimal> closedByItem) {
@@ -162,7 +153,7 @@ final class CrewMarginCalculator {
 
     /**
      * The crew's own view of the sheet: the same lines at the prices the crew charged, with every
-     * line the master added afterwards frozen where the client's sheet has it.
+     * line the master added afterwards at zero.
      */
     private static Crew crewView(List<EstimateItem> items) {
         List<EstimateItem> lines = detach(items, true);
@@ -178,8 +169,8 @@ final class CrewMarginCalculator {
      * {@code source_unit_price} for exactly this — so it goes back into the quantity, and its base
      * is then whatever the crew view makes of the line it points at.</p>
      *
-     * <p>In the CREW list an unpriced PERCENT line is FROZEN instead (B-72) — detached, carrying
-     * the client's own amount, zero if that amount is negative.</p>
+     * <p>In the CREW list a line with no crew price is ZERO — the master added it, so it is all
+     * margin (owner ruling 2026-11-23).</p>
      */
     private static List<EstimateItem> detach(List<EstimateItem> items, boolean crew) {
         List<EstimateItem> out = new ArrayList<>(items.size());
@@ -188,10 +179,8 @@ final class CrewMarginCalculator {
             boolean unpriced = item.getSourceUnitPrice() == null;
             boolean priced = crew && !unpriced;
             if (crew && percent && unpriced) {
-                // FROZEN: detached, carrying the client's own amount (a negative one at zero), so
-                // the pass leaves it exactly where the client's sheet has it. Its kind is kept, and
-                // that is what keeps its place in the subtotals identical to the client view: a
-                // «% від кошторису» line is in no base either way, a «% від позиції» is in both.
+                // ZERO for the crew: detached at nothing, so the pass leaves it there. Its kind is
+                // kept, which keeps its place in the subtotals.
                 out.add(EstimateItem.builder()
                         .id(item.getId())
                         .type(item.getType())
@@ -199,34 +188,30 @@ final class CrewMarginCalculator {
                         .quantity(item.getQuantity())
                         .unitPrice(item.getUnitPrice())
                         .percentBaseKind(item.getPercentBaseKind())
-                        .percentBaseItemId(item.getPercentBaseItemId())
+                        .percentBaseItemIds(item.getPercentBaseItemIds())
                         .baseDetached(true)
-                        .lineTotal(frozen(item))
+                        .lineTotal(BigDecimal.ZERO)
                         .build());
                 continue;
             }
+            boolean added = crew && unpriced;
             out.add(EstimateItem.builder()
-                    // The id is load-bearing: percentBaseItemId points at it.
+                    // The id is load-bearing: percentBaseItemIds point at it.
                     .id(item.getId())
                     .type(item.getType())
                     .unit(item.getUnit())
                     .quantity(priced && percent ? item.getSourceUnitPrice() : item.getQuantity())
-                    .unitPrice(priced && !percent ? item.getSourceUnitPrice() : item.getUnitPrice())
+                    .unitPrice(added ? BigDecimal.ZERO
+                            : priced && !percent ? item.getSourceUnitPrice() : item.getUnitPrice())
                     .percentBaseKind(item.getPercentBaseKind())
-                    .percentBaseItemId(item.getPercentBaseItemId())
+                    .percentBaseItemIds(item.getPercentBaseItemIds())
                     .baseDetached(item.isBaseDetached())
                     // A detached line keeps what it last computed, so the stored amount has to
                     // travel with it — see EstimateMath#baseFor.
-                    .lineTotal(item.getLineTotal())
+                    .lineTotal(added ? BigDecimal.ZERO : item.getLineTotal())
                     .build());
         }
         return out;
-    }
-
-    /** The client's amount, except that a line the master gave away is frozen at zero. */
-    private static BigDecimal frozen(EstimateItem item) {
-        BigDecimal amount = amountOf(item);
-        return amount.signum() < 0 ? BigDecimal.ZERO : amount;
     }
 
     private static BigDecimal amountOf(EstimateItem item) {

@@ -203,9 +203,9 @@ class PublicMaterialCalculatorIntegrationTest extends IntegrationTestBase {
         workLine(estimateId, laying, "Укладання плитки 300х600", "12.5", 1);
         jdbc.update("""
                 INSERT INTO estimate_items (id, estimate_id, type, name, unit, quantity, unit_price,
-                                            line_total, sort_order, trade, percent_base_kind, percent_base_item_id)
+                                            line_total, sort_order, trade, percent_base_kind, percent_base_item_ids)
                 VALUES (?, ?, 'WORK', 'Укладання плитки по діагоналі (плюс % до м.кв.)', 'PERCENT', 20, 0,
-                        0, 2, 'TILING', 'POSITION', ?)
+                        0, 2, 'TILING', 'POSITION', ARRAY[?]::uuid[])
                 """, UUID.randomUUID(), estimateId, laying);
 
         MaterialCalculationResponse app = calculatorService.calculate(estimateId, ownerId,

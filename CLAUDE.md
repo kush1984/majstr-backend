@@ -13,7 +13,7 @@ title — read the twin before changing what a bullet guards); per-area narrativ
 - **Stack pinned:** Spring Boot 4 / Java 21 / PostgreSQL 17 + Flyway / Jackson 3 (`tools.jackson.*`). Don't bump without reason.
 - **Secrets from env only** (`JWT_SECRET` has no default). **English only** in code, comments, SQL, docs.
 - **Layering** `controller → service → repository`; controllers return DTOs; `passwordHash` never leaves.
-- **Schema = Flyway only** (`ddl-auto: validate`). New `V<N>__…sql`, **latest is V220** (V183, V185 skipped);
+- **Schema = Flyway only** (`ddl-auto: validate`). New `V<N>__…sql`, **latest is V221** (V183, V185 skipped);
   never edit an applied migration; a self-check `RAISE EXCEPTION`s only about its own work, else `WARNING`.
 - **Tests + green `./gradlew build` before any push** (Claude runs it; Docker must be up). Controller tests =
   Mockito standalone; DB/filters = `…IntegrationTest` on Testcontainers.
@@ -98,7 +98,7 @@ One line per invariant; the reasoning is in the twin in docs/architecture-index-
 - **AI flows (`service/ai/`)** — per-flow provider+model; `AiExtractors.forFlow(...)` resolved at startup + logged; a typo disables ONE flow (503); empty config value = absent.
 - **Estimate import (Excel/photo)** — `import/parse|commit`, `Feature.ESTIMATE_IMPORT`; raw-HTTP extractor; failure → 503 `AI_UNAVAILABLE` (retries 429/5xx/529); file discarded.
 - **`sheetKind`** — `PRINTED_PLAN` vs `HAND_DRAWN`; **default leans PRINTED_PLAN** (incl. a missing field); passport rules need ≥2 evidence signals.
-- **Duplicate with markup, and «Твоя націнка» (crew-margin)** — `source_unit_price` per LINE; `CrewMarginCalculator` recalculates detached copies; crew prices never reach the client (`PublicEstimateIsolationTest`); mirrored with `crewMargin.ts`.
+- **Duplicate with markup, and «Твоя націнка» (crew-margin)** — `source_unit_price` per LINE; `CrewMarginCalculator` recalculates detached copies; crew prices never reach the client (`PublicEstimateIsolationTest`); a line added to the copy is all the master's margin (2026-11-23); mirrored with `crewMargin.ts`.
 - **Consolidation freezes «%» lines, and V92 makes that honest** — `copyForConsolidation` freezes the amount; `base_origin_label` is a snapshot.
 - **Consolidated / receipt import / object photos** — `consolidate` (new DRAFT); `RECEIPT_IMPORT` adds to an open estimate, no catalog upsert; photos stream only via authenticated owner/portal-token endpoints, never `/api/files/**`.
 - **Photo folders (V111)** — «Чеки»/«Інше» are virtual; other names persist; a non-empty folder can't be deleted; `folder` param has three states. New nullable backend fields are `?:` in `api/types.ts`.
@@ -115,7 +115,7 @@ One line per invariant; the reasoning is in the twin in docs/architecture-index-
 - **`catalog_update_notices` is a queue, not a slot (V94)** — one row per notice-worthy event, `kind` (`COUNT`/`PRICE_DRIFT`) discriminates the shape (CHECK-enforced); dismiss/accept are id-scoped.
 - **Community prices (`price_insight_candidate`, V94)** — weekly two-level median of masters' estimate lines, min 3 masters; admin apply queues notices.
 - **Custom trades (V91)** — `user_trade` has no reference catalog by design; `catalog_items`/`estimate_templates` (own only) get a nullable `custom_trade_id` FK, `ON DELETE SET NULL`; invariant on both: `custom_trade_id IS NULL OR trade = 'OTHER'`.
-- **«%» is a share OF something (V88)** — base `POSITION`/`TOTAL` (per-type: works vs materials), `MANUAL` retired; a catalog «%» position has NO figure and arrives empty (`POSITION`, no base, 0 %) — single AND batch add; **`line_total` is STORED** (server-authored, never from a request); only a `TOTAL` percent may be negative (V89).
+- **«%» is a share OF something (V88)** — base `POSITION`/`TOTAL` (per-type: works vs materials), `MANUAL` retired; a `POSITION` base may be several lines, summed (V221 `percent_base_item_ids`); a catalog «%» position has NO figure and arrives empty (`POSITION`, no base, 0 %) — single AND batch add; **`line_total` is STORED** (server-authored, never from a request); only a `TOTAL` percent may be negative (V89).
 - **Mirrored formulas — change BOTH sides together** — `EstimateMath.recalculate` ↔ `useEstimate.recomputeLines` (percent pass), `MeasurementCalc` ↔ `measurementCalc.ts`, `CrewMarginCalculator` ↔ `crewMargin.ts`, `HryvniaInWords` ↔ `src/seo/hryvniaInWords.ts`.
 - **A request DTO is a CONTRACT with the other repo** — `RequestContractSnapshotTest` freezes every `*Request` into `contract/request-dtos.json` (`-Dcontract.update=true`); copy it to `majstr-pwa/src/api/contract/` — mirrored pair.
 - **The public calculator IS `MaterialCalculatorService` (seo-calculators)** — `POST /api/public/materials/calc` builds lines from a white list and calls the same `compute`; tile is a material per format; no SEO figure typed by hand (`npm run seo:check`).

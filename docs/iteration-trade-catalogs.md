@@ -1,6 +1,6 @@
 # Every trade holds its own positions — V220
 
-**Status:** built, not pushed. **Migration:** `V220__catalog_positions_per_trade.sql`. **PWA:** on top of 1.87.0.
+**Status:** shipped 2026-11-23 (backend `1df6807`, PWA 1.87.0 `07a398c`). **Migration:** `V220__catalog_positions_per_trade.sql`.
 
 ## Why
 

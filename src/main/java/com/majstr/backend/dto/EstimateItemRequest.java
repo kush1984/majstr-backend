@@ -54,11 +54,9 @@ public record EstimateItemRequest(
          */
         PercentBaseKind percentBaseKind,
         /**
-         * The line this percentage is measured against ({@link PercentBaseKind#POSITION}).
-         *
-         * <p>The server checks it names an ORDINARY line of the same estimate. That check is the
-         * only cycle protection the feature needs: a percentage can never point at a percentage, so
-         * no cycle can be built in the first place.</p>
+         * The one line an older build measures a percentage against. Still read — an installed app
+         * that has not updated, or its offline queue, sends this — and folded into
+         * {@link #baseItemIds()}; a current build sends {@link #percentBaseItemIds} instead.
          */
         UUID percentBaseItemId,
         /**
@@ -69,7 +67,16 @@ public record EstimateItemRequest(
          */
         @Size(max = 500) String note,
         /** Whether the client sees {@link #note}; null leaves it as is (a new line: visible). */
-        Boolean noteVisible
+        Boolean noteVisible,
+        /**
+         * The lines this percentage is measured against ({@link PercentBaseKind#POSITION}), as the
+         * sum of their amounts (V221), in the order he ticked them.
+         *
+         * <p>The server keeps only ORDINARY lines of the same estimate. That check is the only cycle
+         * protection the feature needs: a percentage can never point at a percentage, so no cycle
+         * can be built in the first place.</p>
+         */
+        @Size(max = 200) List<UUID> percentBaseItemIds
 ) {
 
     /** Every caller that does not touch the comment — it stays as it is. */
@@ -78,6 +85,26 @@ public record EstimateItemRequest(
                                boolean quantityManual, PercentBaseKind percentBaseKind, UUID percentBaseItemId) {
         this(type, name, category, unit, quantity, unitPrice, sortOrder, measurementRefs, quantityManual,
                 percentBaseKind, percentBaseItemId, null, null);
+    }
+
+    /** A request naming at most one base line. */
+    public EstimateItemRequest(ItemType type, String name, String category, Unit unit, BigDecimal quantity,
+                               BigDecimal unitPrice, Integer sortOrder, List<UUID> measurementRefs,
+                               boolean quantityManual, PercentBaseKind percentBaseKind, UUID percentBaseItemId,
+                               String note, Boolean noteVisible) {
+        this(type, name, category, unit, quantity, unitPrice, sortOrder, measurementRefs, quantityManual,
+                percentBaseKind, percentBaseItemId, note, noteVisible, null);
+    }
+
+    /**
+     * The base lines named, whichever field named them: the list when it is sent, else the single
+     * id an older build sends. Duplicates dropped, order kept.
+     */
+    public List<UUID> baseItemIds() {
+        if (percentBaseItemIds != null) {
+            return percentBaseItemIds.stream().filter(java.util.Objects::nonNull).distinct().toList();
+        }
+        return percentBaseItemId == null ? List.of() : List.of(percentBaseItemId);
     }
 
     /**
@@ -101,9 +128,9 @@ public record EstimateItemRequest(
     }
 
     /** A base line may only be named when the base actually is a line. */
-    @AssertTrue(message = "percentBaseItemId is only valid with percentBaseKind = POSITION")
+    @AssertTrue(message = "percentBaseItemIds is only valid with percentBaseKind = POSITION")
     public boolean isBaseItemConsistent() {
-        return percentBaseItemId == null || percentBaseKind == PercentBaseKind.POSITION;
+        return baseItemIds().isEmpty() || percentBaseKind == PercentBaseKind.POSITION;
     }
 
     /**

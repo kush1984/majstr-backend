@@ -130,12 +130,30 @@ final class EstimateMath {
         }
         return switch (kindOf(item)) {
             case MANUAL -> item.getUnitPrice();
-            case POSITION -> item.getPercentBaseItemId() == null
-                    ? null
-                    : amountById.get(item.getPercentBaseItemId());
+            case POSITION -> sumOf(item.getPercentBaseItemIds(), amountById);
             // Handled in step 3; never reached here.
             case TOTAL -> null;
         };
+    }
+
+    /**
+     * The sum of several base lines (V221), or {@code null} — the line is left as it is — when none
+     * is named or one of them is missing: a base gone from under a percentage is a detach, never a
+     * quietly smaller base.
+     */
+    private static BigDecimal sumOf(List<UUID> ids, Map<UUID, BigDecimal> amountById) {
+        if (ids == null || ids.isEmpty()) {
+            return null;
+        }
+        BigDecimal sum = BigDecimal.ZERO;
+        for (UUID id : ids) {
+            BigDecimal amount = amountById.get(id);
+            if (amount == null) {
+                return null;
+            }
+            sum = sum.add(amount);
+        }
+        return sum;
     }
 
     private static BigDecimal percentAmount(EstimateItem item, BigDecimal base) {

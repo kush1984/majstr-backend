@@ -218,10 +218,17 @@ class ActAdjustmentCalculator {
                                             Map<UUID, BigDecimal> closedByItem,
                                             Map<ItemType, BigDecimal> ordinaryBase,
                                             Map<ItemType, BigDecimal> ordinaryClosed) {
-        UUID baseId = item.isBaseDetached() ? null : item.getPercentBaseItemId();
-        if (baseId != null && kindOf(item) == PercentBaseKind.POSITION
-                && baseByItem.containsKey(baseId)) {
-            return ratio(closedByItem.get(baseId), baseByItem.get(baseId));
+        List<UUID> baseIds = item.isBaseDetached() ? List.of() : item.getPercentBaseItemIds();
+        if (!baseIds.isEmpty() && kindOf(item) == PercentBaseKind.POSITION
+                && baseByItem.keySet().containsAll(baseIds)) {
+            // Several bases (V221): what the acts closed of them over what they are worth together.
+            BigDecimal closed = BigDecimal.ZERO;
+            BigDecimal base = BigDecimal.ZERO;
+            for (UUID id : baseIds) {
+                closed = closed.add(Objects.requireNonNullElse(closedByItem.get(id), BigDecimal.ZERO));
+                base = base.add(baseByItem.get(id));
+            }
+            return ratio(closed, base);
         }
         return ratio(ordinaryClosed.get(item.getType()), ordinaryBase.get(item.getType()));
     }

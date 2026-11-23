@@ -1,6 +1,6 @@
 # Masters rate Majstr — V218
 
-**Status:** built, not pushed. **Migration:** `V218__app_reviews.sql`. **PWA:** 1.87.0.
+**Status:** shipped 2026-11-23 (backend `1df6807`, PWA `07a398c`). **Migration:** `V218__app_reviews.sql`. **PWA:** 1.87.0.
 
 ## Why
 

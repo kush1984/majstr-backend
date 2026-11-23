@@ -318,7 +318,7 @@ public class EstimateService {
                             ? item.getSourceUnitPrice()
                             : (percent ? item.getQuantity() : item.getUnitPrice()))
                     .percentBaseKind(item.getPercentBaseKind())
-                    .percentBaseItemId(item.getPercentBaseItemId())
+                    .percentBaseItemIds(new ArrayList<>(item.getPercentBaseItemIds()))
                     .baseDetached(item.isBaseDetached())
                     .sourceItemId(item.getId())
                     .sortOrder(item.getSortOrder())
@@ -340,12 +340,18 @@ public class EstimateService {
                 .filter(c -> c.getSourceItemId() != null && c.getId() != null)
                 .collect(Collectors.toMap(EstimateItem::getSourceItemId, EstimateItem::getId));
         for (EstimateItem c : copies) {
-            if (c.getPercentBaseItemId() != null) {
-                UUID inCopy = copyBySourceId.get(c.getPercentBaseItemId());
-                c.setPercentBaseItemId(inCopy);
-                // The base did not make it into the copy at all — say so rather than silently
-                // measuring against nothing.
-                c.setBaseDetached(c.isBaseDetached() || inCopy == null);
+            if (!c.getPercentBaseItemIds().isEmpty()) {
+                List<UUID> inCopy = new ArrayList<>();
+                for (UUID id : c.getPercentBaseItemIds()) {
+                    UUID copied = copyBySourceId.get(id);
+                    if (copied != null) {
+                        inCopy.add(copied);
+                    }
+                }
+                // A base that did not make it into the copy at all — say so rather than silently
+                // measuring against less.
+                c.setBaseDetached(c.isBaseDetached() || inCopy.size() < c.getPercentBaseItemIds().size());
+                c.setPercentBaseItemIds(inCopy);
             }
         }
         // The same walls, so the calculator's own answers come along — re-asking a короб's розгортка
@@ -513,7 +519,7 @@ public class EstimateService {
         // a case null alongside MANUAL.
         String baseDescription = kind == null ? "суми" : switch (kind) {
             case TOTAL -> item.getType() == ItemType.MATERIAL ? "матеріалів" : "робіт";
-            case POSITION -> describePositionBase(item.getPercentBaseItemId());
+            case POSITION -> describePositionBase(item.getPercentBaseItemIds());
             case MANUAL -> "суми";
         };
         BigDecimal percent = item.getQuantity();
@@ -543,13 +549,17 @@ public class EstimateService {
         return "Кошторис від " + date;
     }
 
-    private String describePositionBase(UUID baseItemId) {
-        if (baseItemId == null) {
+    private String describePositionBase(List<UUID> baseItemIds) {
+        if (baseItemIds.isEmpty()) {
             return "позиції";
         }
-        return itemRepository.findById(baseItemId)
-                .map(base -> "«" + base.getName() + "»")
-                .orElse("видаленої позиції");
+        Map<UUID, EstimateItem> found = itemRepository.findAllById(baseItemIds).stream()
+                .collect(Collectors.toMap(EstimateItem::getId, i -> i));
+        if (!found.keySet().containsAll(baseItemIds)) {
+            return "видаленої позиції";
+        }
+        return baseItemIds.stream().map(id -> "«" + found.get(id).getName() + "»")
+                .collect(Collectors.joining(", "));
     }
 
     @Transactional(readOnly = true)
@@ -889,7 +899,7 @@ public class EstimateService {
                 .quantity(r.quantity())
                 .unitPrice(req.unitPrice())
                 .percentBaseKind(percentKindOf(req))
-                .percentBaseItemId(validBaseItemId(estimateId, req))
+                .percentBaseItemIds(validBaseItemIds(estimateId, req))
                 .measurementRefs(r.refs())
                 .quantityManual(r.manual())
                 .sortOrder(req.sortOrder() == null ? 0 : req.sortOrder())
@@ -1116,11 +1126,11 @@ public class EstimateService {
         item.setQuantity(r.quantity());
         item.setUnitPrice(req.unitPrice());
         item.setPercentBaseKind(percentKindOf(req));
-        item.setPercentBaseItemId(validBaseItemId(estimateId, req));
+        item.setPercentBaseItemIds(validBaseItemIds(estimateId, req));
         // Re-attaching a base is how the master undoes a detach; choosing one again means he wants
         // the live link back, and leaving the flag set would silently keep the amount frozen.
         item.setBaseDetached(item.getPercentBaseKind() == PercentBaseKind.POSITION
-                && item.getPercentBaseItemId() == null);
+                && item.getPercentBaseItemIds().isEmpty());
         item.setMeasurementRefs(r.refs());
         item.setQuantityManual(r.manual());
         if (req.sortOrder() != null) {
@@ -1313,7 +1323,7 @@ public class EstimateService {
     private void detachPercentagesPointingAt(UUID estimateId, List<UUID> deletedItemIds) {
         Set<UUID> gone = new HashSet<>(deletedItemIds);
         for (EstimateItem item : itemRepository.findByEstimateIdOrderBySortOrderAscIdAsc(estimateId)) {
-            if (item.getPercentBaseItemId() != null && gone.contains(item.getPercentBaseItemId())) {
+            if (item.getPercentBaseItemIds().stream().anyMatch(gone::contains)) {
                 item.setBaseDetached(true);
             }
         }
@@ -1472,23 +1482,25 @@ public class EstimateService {
     }
 
     /**
-     * The named base, but only if it is an ORDINARY line of THIS estimate.
+     * The named bases, but only those that are ORDINARY lines of THIS estimate, in the order named.
      *
      * <p>This is the entire cycle protection the feature has, and it is enough: a percentage may
      * never point at a percentage, so no chain of them can close on itself. There is no graph to
-     * walk and no cycle detection to get wrong. A base that fails the check is dropped to null
-     * rather than rejected — the client filters the picker the same way, so a value arriving here
-     * means a stale screen, not an argument worth a 400.</p>
+     * walk and no cycle detection to get wrong. A base that fails the check is dropped rather than
+     * rejected — the client filters the picker the same way, so a value arriving here means a stale
+     * screen, not an argument worth a 400.</p>
      */
-    private UUID validBaseItemId(UUID estimateId, EstimateItemRequest req) {
-        if (percentKindOf(req) != PercentBaseKind.POSITION || req.percentBaseItemId() == null) {
-            return null;
+    private List<UUID> validBaseItemIds(UUID estimateId, EstimateItemRequest req) {
+        List<UUID> named = req.baseItemIds();
+        if (percentKindOf(req) != PercentBaseKind.POSITION || named.isEmpty()) {
+            return new ArrayList<>();
         }
-        return itemRepository.findById(req.percentBaseItemId())
+        Set<UUID> valid = itemRepository.findAllById(named).stream()
                 .filter(base -> base.getEstimate().getId().equals(estimateId))
                 .filter(base -> base.getUnit() != Unit.PERCENT)
                 .map(EstimateItem::getId)
-                .orElse(null);
+                .collect(Collectors.toSet());
+        return new ArrayList<>(named.stream().filter(valid::contains).toList());
     }
 
     /**
@@ -1507,6 +1519,9 @@ public class EstimateService {
      *       giving 1 300 against the parent's 1 000;</li>
      *   <li><b>base is a WORK that is being marked up</b> → leave the percent; it already applies
      *       to a base that grew, and raising both would mark the line up twice;</li>
+     *   <li><b>several bases, some marked up and some not</b> (V221) → the percent that makes the
+     *       copy's amount exactly the parent's × factor: {@code p × f × (M + U) ÷ (f × M + U)},
+     *       with M the bases being marked up and U the rest — the two rules above are its ends;</li>
      *   <li><b>MANUAL base</b> → a sum typed by hand is not marked up, so treat it like a material
      *       and raise the percent;</li>
      *   <li><b>TOTAL base</b> → a «% від кошторису» line is always left alone. A WORK one rides the
@@ -1521,21 +1536,44 @@ public class EstimateService {
                                               BigDecimal factor) {
         PercentBaseKind kind = item.getPercentBaseKind() == null
                 ? PercentBaseKind.MANUAL : item.getPercentBaseKind();
-        boolean baseAlreadyMarkedUp = switch (kind) {
+        BigDecimal percent = item.getQuantity();
+        BigDecimal raised = percent.multiply(factor).setScale(QUANTITY_SCALE, MONEY_ROUNDING);
+        return switch (kind) {
             // A «% від кошторису» is left alone: a WORK one rides the works subtotal the markup grew,
             // a MATERIAL one passes through at cost like the materials it measures (margin there is a
             // manual edit in the copy).
-            case TOTAL -> true;
-            case MANUAL -> false;
+            case TOTAL -> percent;
+            case MANUAL -> raised;
             case POSITION -> {
-                EstimateItem base = item.getPercentBaseItemId() == null
-                        ? null : sourceById.get(item.getPercentBaseItemId());
-                yield base != null && toMarkUp.contains(base.getId());
+                BigDecimal marked = BigDecimal.ZERO;
+                BigDecimal unmarked = BigDecimal.ZERO;
+                boolean anyMarked = false;
+                boolean anyUnmarked = false;
+                for (UUID id : item.getPercentBaseItemIds()) {
+                    EstimateItem base = sourceById.get(id);
+                    if (base == null) {
+                        continue;
+                    }
+                    BigDecimal amount = base.getLineTotal() == null ? BigDecimal.ZERO : base.getLineTotal();
+                    if (toMarkUp.contains(id)) {
+                        marked = marked.add(amount);
+                        anyMarked = true;
+                    } else {
+                        unmarked = unmarked.add(amount);
+                        anyUnmarked = true;
+                    }
+                }
+                if (!anyMarked) {
+                    yield raised;
+                }
+                BigDecimal grown = marked.multiply(factor).add(unmarked);
+                if (!anyUnmarked || grown.signum() == 0) {
+                    yield percent;
+                }
+                yield percent.multiply(factor).multiply(marked.add(unmarked))
+                        .divide(grown, QUANTITY_SCALE, MONEY_ROUNDING);
             }
         };
-        return baseAlreadyMarkedUp
-                ? item.getQuantity()
-                : item.getQuantity().multiply(factor).setScale(QUANTITY_SCALE, MONEY_ROUNDING);
     }
 
     /**

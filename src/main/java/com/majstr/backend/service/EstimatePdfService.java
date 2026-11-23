@@ -464,12 +464,22 @@ public class EstimatePdfService {
             case MANUAL -> "від " + formatMoney(item.getUnitPrice());
             case TOTAL -> "від суми кошторису";
             case POSITION -> {
-                if (item.getPercentBaseItemId() == null && item.getLineTotal() != null
+                if (item.getPercentBaseItemIds().isEmpty() && item.getLineTotal() != null
                         && item.getLineTotal().signum() == 0) {
                     yield ""; // not chosen yet: the line is 0 ₴, nothing to explain to the client
                 }
-                EstimateItem base = byId.get(item.getPercentBaseItemId());
-                yield base == null ? "база видалена" : "від «" + base.getName() + "»";
+                List<String> names = new ArrayList<>();
+                for (UUID id : item.getPercentBaseItemIds()) {
+                    EstimateItem base = byId.get(id);
+                    if (base == null) {
+                        names = null;
+                        break;
+                    }
+                    names.add("«" + base.getName() + "»");
+                }
+                // Several bases are named one by one (owner ruling 2026-11-23): the client sees
+                // what the percentage is measured against.
+                yield names == null || names.isEmpty() ? "база видалена" : "від " + String.join(", ", names);
             }
         };
     }

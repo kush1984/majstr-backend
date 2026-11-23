@@ -1,6 +1,6 @@
 # Where a master works — V219
 
-**Status:** built, not pushed. **Migration:** `V219__user_region.sql`. **PWA:** 1.87.0 (with V218).
+**Status:** shipped 2026-11-23 (backend `1df6807`, PWA `07a398c`). **Migration:** `V219__user_region.sql`. **PWA:** 1.87.0 (with V218).
 
 ## Why
 

@@ -16,8 +16,12 @@ import lombok.EqualsAndHashCode;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 
 import java.math.BigDecimal;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.UUID;
 
 @Entity
@@ -117,14 +121,18 @@ public class EstimateItem {
     private PercentBaseKind percentBaseKind;
 
     /**
-     * The line this percentage is measured against ({@link PercentBaseKind#POSITION}).
+     * The lines this percentage is measured against ({@link PercentBaseKind#POSITION}) — the sum of
+     * their amounts, in the order he ticked them (V221: «% від кількох позицій»; one id before).
      *
-     * <p>A plain id rather than an association: the FK is {@code ON DELETE SET NULL}, and the row
-     * survives its base on purpose — deleting «Шафа» must not delete «Доставка 10 %» along with it.
-     * The master keeps the last computed amount and is told the base is gone.</p>
+     * <p>Plain ids rather than an association: the row survives its base on purpose — deleting
+     * «Шафа» must not delete «Доставка 10 %» along with it. The master keeps the last computed
+     * amount and is told the base is gone. Replaced, never mutated in place: Hibernate compares an
+     * array column by value.</p>
      */
-    @Column(name = "percent_base_item_id")
-    private UUID percentBaseItemId;
+    @JdbcTypeCode(SqlTypes.ARRAY)
+    @Column(name = "percent_base_item_ids", columnDefinition = "uuid[]", nullable = false)
+    @Builder.Default
+    private List<UUID> percentBaseItemIds = new ArrayList<>();
 
     /**
      * The live link is off: either the master typed the amount himself, or the base was deleted.

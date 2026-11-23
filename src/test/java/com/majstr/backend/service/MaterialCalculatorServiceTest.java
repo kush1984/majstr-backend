@@ -557,7 +557,7 @@ class MaterialCalculatorServiceTest {
         EstimateItem line = item(name, Unit.PERCENT, "15", Trade.TILING);
         line.setPercentBaseKind(kind);
         if (kind == PercentBaseKind.POSITION) {
-            line.setPercentBaseItemId(base.getId());
+            line.setPercentBaseItemIds(new java.util.ArrayList<>(List.of(base.getId())));
         }
         return line;
     }

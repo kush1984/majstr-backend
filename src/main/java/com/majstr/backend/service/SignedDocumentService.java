@@ -26,6 +26,7 @@ import org.springframework.stereotype.Component;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -165,8 +166,9 @@ public class SignedDocumentService {
                         estimate.getSignerPhone(), false),
                 items.stream().map(i -> new SignedSnapshot.EstimateLine(i.getId(), i.getType(), i.getName(),
                         i.getCategory(), i.getTrade(), i.getUnit(), i.getQuantity(), i.getUnitPrice(),
-                        i.getLineTotal(), i.getPercentBaseKind(), i.getPercentBaseItemId(),
-                        i.getBaseOriginLabel(), i.getSortOrder(), EstimateLineNote.forClient(i)))
+                        i.getLineTotal(), i.getPercentBaseKind(), null,
+                        i.getBaseOriginLabel(), i.getSortOrder(), EstimateLineNote.forClient(i),
+                        List.copyOf(i.getPercentBaseItemIds())))
                         .toList());
         String text = SignedSnapshot.canonical(doc);
         String hash = SignedSnapshot.sha256(text);
@@ -319,7 +321,7 @@ public class SignedDocumentService {
                 .id(l.id()).estimate(estimate).type(l.type()).name(l.name()).category(l.category())
                 .trade(l.trade()).unit(l.unit()).quantity(l.quantity()).unitPrice(l.unitPrice())
                 .lineTotal(l.lineTotal()).percentBaseKind(l.percentBaseKind())
-                .percentBaseItemId(l.percentBaseItemId()).baseOriginLabel(l.baseOriginLabel())
+                .percentBaseItemIds(new ArrayList<>(l.baseItemIds())).baseOriginLabel(l.baseOriginLabel())
                 .sortOrder(l.sortOrder()).note(l.note()).noteVisible(true).build()).toList();
         return new FrozenEstimate(contractor, project, client, estimate, items, row.getDocHash(),
                 doc.contractor().branded(), row.getPdfKey());
