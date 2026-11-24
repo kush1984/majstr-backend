@@ -94,6 +94,7 @@ public class EstimateService {
     private final EstimateItemRepository itemRepository;
     private final WorkActItemRepository workActItemRepository;
     private final WorkActRepository workActRepository;
+    private final ReopenGuard reopenGuard;
     private final ProjectService projectService;
     private final ProjectRepository projectRepository;
     private final CatalogService catalogService;
@@ -676,15 +677,9 @@ public class EstimateService {
         // from «За договором» (SIGNED-only) while the act's frozen lines keep counting in «Прийнято
         // актами» — and a reopened DRAFT becomes editable and deletable, making the drift permanent.
         // 409, same family as the delete-a-SIGNED-estimate refusal.
-        requireNotAddendum(estimate);
-        // Only DRAFT acts in the way: the master can delete those himself, so the refusal says so
-        // (owner, 2026-11-23). A SENT or SIGNED act is the client's — a new estimate is the way.
-        if (workActItemRepository.existsActLineForEstimateInStatus(estimateId, List.of(WorkActStatus.DRAFT))
-                && !workActItemRepository.existsActLineForEstimateInStatus(estimateId,
-                        List.of(WorkActStatus.SENT, WorkActStatus.SIGNED))) {
-            throw new WorkActConflictException("error.estimate.reopen-has-draft-act", "ESTIMATE_HAS_DRAFT_ACT");
-        }
-        requireNoActs(estimateId, "error.estimate.reopen-has-acts");
+        // The same answer the editor and the economy panel already showed (ReopenGuard): an
+        // ADDENDUM, a signed act, a sent one, or only drafts the master can delete himself.
+        reopenGuard.requireReopenable(estimate);
         applyReopen(estimate, ownerId);
         List<EstimateItem> items = itemRepository.findByEstimateIdOrderBySortOrderAscIdAsc(estimateId);
         return toResponse(estimate, items);
@@ -1715,7 +1710,8 @@ public class EstimateService {
                 // two null checks inside. The act half is asked for only when there IS a margin —
                 // a draft copy has no signed acts against it, and an ordinary estimate no margin.
                 crewMargin(estimate, items),
-                estimate.getKind()
+                estimate.getKind(),
+                reopenGuard.blockOf(estimate)
         );
     }
 

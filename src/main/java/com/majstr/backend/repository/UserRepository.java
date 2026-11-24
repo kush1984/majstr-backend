@@ -489,4 +489,21 @@ public interface UserRepository extends JpaRepository<User, UUID> {
     @Modifying(flushAutomatically = true, clearAutomatically = true)
     @Query(value = "DELETE FROM users WHERE id = :id", nativeQuery = true)
     int deleteCascading(@Param("id") UUID id);
+
+    /** Masters per oblast (V219), admins and testers left out — the admin's «скільки майстрів». */
+    @Query("""
+            SELECT u.region AS region, COUNT(u) AS masters FROM User u
+            WHERE u.role = com.majstr.backend.entity.Role.USER AND u.region IS NOT NULL
+            GROUP BY u.region
+            """)
+    List<RegionMasters> countMastersByRegion();
+
+    /** Masters who have not said where they work. */
+    @Query("SELECT COUNT(u) FROM User u WHERE u.role = com.majstr.backend.entity.Role.USER AND u.region IS NULL")
+    long countMastersWithoutRegion();
+
+    interface RegionMasters {
+        com.majstr.backend.entity.Region getRegion();
+        long getMasters();
+    }
 }

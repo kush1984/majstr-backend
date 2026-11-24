@@ -89,6 +89,9 @@ public interface EstimateItemRepository extends JpaRepository<EstimateItem, UUID
      * <p>Filters: not REJECTED (a rejected estimate's prices were never agreed to), WORK only
      * (materials price from receipts, not this), not PERCENT (a percentage is not a price), a
      * positive price (an unpriced draft line is not a quote).
+     *
+     * <p>The same rows feed the oblast medians (V222): one query, so the two levels can never
+     * disagree about what a master's price is.
      */
     @Query(value = """
             SELECT p.owner_id                                                  AS masterId,
@@ -98,10 +101,12 @@ public interface EstimateItemRepository extends JpaRepository<EstimateItem, UUID
                    ei.type                                                     AS type,
                    ei.unit                                                     AS unit,
                    percentile_cont(0.5) WITHIN GROUP (ORDER BY ei.unit_price)   AS perMasterMedianPrice,
-                   MIN(e.created_at)                                           AS firstSeen
+                   MIN(e.created_at)                                           AS firstSeen,
+                   MIN(u.region)                                               AS region
             FROM estimate_items ei
             JOIN estimates e ON e.id = ei.estimate_id
             JOIN projects p ON p.id = e.project_id
+            JOIN users u ON u.id = p.owner_id
             WHERE e.status <> 'REJECTED'
               AND NOT p.sample
               AND ei.type = 'WORK'
@@ -121,5 +126,8 @@ public interface EstimateItemRepository extends JpaRepository<EstimateItem, UUID
         String getUnit();
         java.math.BigDecimal getPerMasterMedianPrice();
         java.time.Instant getFirstSeen();
+        /** The master's oblast (V219), null when he has not said — {@code RegionalPriceService}
+         *  splits by it; the national median ignores it. One per master, so MIN is just a pick. */
+        String getRegion();
     }
 }

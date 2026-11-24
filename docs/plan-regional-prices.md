@@ -1,0 +1,170 @@
+# Regional prices — plan (not built)
+
+**Status:** step 1 built 2026-11-24 (V222, not pushed); steps 2–4 not started. Builds on V219 (`users.region`,
+[iteration-regions.md](iteration-regions.md)) and the community prices of V94 (`PriceInsightService`).
+Open-questions entry: «Community prices: one national median ignores regional cost differences».
+
+## What the owner wants
+
+1. **A new master gets his oblast's prices.** «Якщо реєструється майстер з Львівської області, то йому в
+   каталог мають іти Львівські ціни.»
+2. **A master can look at another oblast's prices.** A master's request: when he travels to work in
+   another oblast he wants to see what the works he cares about cost there. The owner: «це прям капець
+   як важливо для людей».
+
+## Where we are today
+
+- A new master's catalog is copied from ONE national default price list (owner_id NULL rows, per trade
+  since V220) — the same figure in every oblast.
+- Community prices (V94): a weekly two-level median of masters' estimate lines, a position counts with
+  `PriceInsightMath.MIN_MASTERS` = 3 masters after the trim. One median for the whole country; it only
+  proposes changes to the default (admin apply → `catalog_update_notices`).
+- `users.region` (V219): 24 oblasts + Kyiv city, NULL = not answered. Asked on the home screen AFTER the
+  first real object — i.e. after the catalog was already seeded. Nothing reads it.
+
+## The real problem: thin data
+
+A per-position median per oblast needs 3+ masters with that position in that oblast. Kyiv and Lviv
+will get there; most oblasts will not for most positions for a long time. So prices resolve in three
+levels, most precise first:
+
+1. **Position × oblast median** — 3+ masters in the oblast have the position (after the trim).
+2. **Oblast index × national price** — one coefficient per oblast (later maybe per oblast × trade):
+   the ratio of the oblast's masters' prices to the national median, over every position both sides
+   have. Needs a few masters in the whole oblast, not per position. Shown as «орієнтовно».
+3. **National price** — the oblast has too little data even for an index; said plainly.
+
+No coefficient typed by hand from internet price lists: that is guessing, and masters see through it.
+The index is computed from our own masters' data only.
+
+Every regional figure carries its level, the number of masters behind it and the date of the run.
+
+## How it looks to a master
+
+### 1. A new master's catalog in his oblast's prices
+
+- Ask the oblast on the «Чим займаєтесь?» screen at registration, BEFORE the catalog is seeded (today
+  it is asked too late for that). Optional, like the trades.
+- Seeding resolves each copied position through levels 1 → 2 → 3.
+- A master who answers later (existing accounts, «Пізніше»): his catalog is never rewritten silently.
+  A notice instead — «У Львівській області ціни інші — оновити N позицій?» — through the same
+  `catalog_update_notices` flow V94 uses. Only positions he never edited himself; his own prices are
+  never overwritten.
+
+### 2. «Ціни по областях» — another oblast's prices
+
+- Catalog → «Ціни по областях»: pick an oblast; the same trades and categories as his catalog; for each
+  work three figures — his own, that oblast's (e.g. «320 ₴ · 7 майстрів», or «орієнтовно»), the
+  national one. Search by work name.
+- Read-only; nothing is written to his catalog unless he taps to take a price (later, if asked).
+- Later step: an object's own oblast (a Lviv master working in Kyiv), and the estimate's add-position
+  hint shows that oblast's prices.
+
+### 3. Privacy
+
+- Only medians are shown — never one master's price, name or town.
+- For ANOTHER oblast the threshold rises to 5 masters per position: in a small oblast with three
+  masters, each could otherwise work out his neighbours' prices. The own oblast may stay at 3
+  (owner's call, below).
+
+## Order of work
+
+1. **Foundation (no visible change for masters).**
+   - The oblast asked at registration (trades screen).
+   - A weekly job writes medians per position × oblast and the index per oblast into their own table
+     (trade, name, unit, region, median, masters count, level, run date); the national median stays.
+   - Admin: masters per oblast, and how many positions have level-1 data in each.
+   - This step shows whether there is enough data for step 2 at all.
+2. **«Ціни по областях» viewer** — the master's request.
+3. **Regional seeding** for new masters, and the «оновити N позицій» notice for those who answer later.
+4. **The object's own oblast** and regional hints while adding a position to an estimate.
+
+## Step 1 as built (2026-11-24)
+
+- **V222** `regional_price` (region, name key, sample name, type, unit, median, masters, min, max,
+  run time; CHECK masters ≥ 3) and `regional_index` (region → factor, masters, positions, run time).
+  **V223** `regional_baseline` (name key, sample name, type, unit, median, oblasts, run time; CHECK
+  oblasts ≥ 3) — the «country» the factor is measured against (see below for why it is not V94's).
+  No trade column: estimate lines carry none, the key is the national one (fuzzy name, type, unit).
+- **`RegionalPriceService`** — weekly in `PriceInsightRefreshJob` after the national run, in its own
+  transaction (`REQUIRES_NEW`); a failure is reported to Sentry and leaves the national candidates
+  alone. All three tables are deleted and rewritten on every run — nothing accumulates.
+- **Admin «🗺 Ціни по областях»** (`GET /api/admin/regional-prices`, `POST …/refresh`) — every oblast
+  with the masters who named it, positions with an oblast median, the factor (and how many masters /
+  positions it rests on); masters without an oblast; positions with a country baseline; the run time.
+  «Перерахувати зараз» instead of waiting for Saturday.
+- **PWA 1.89.0** — «У якій області працюєте?» on «Чим займаєтесь?» (optional), before the catalog.
+- Tests: `RegionalPriceIntegrationTest` (3 masters make an oblast median, 2 do not; the baseline is one
+  vote per oblast and ignores a master without one; factor 1.167 from 111/117/122 %; two oblasts are
+  not a country; a rerun replaces rows), `PriceInsightRefreshJobTest`, `TradesOnboardingPage.test.tsx`.
+
+## How it is computed (keep this in sync with `RegionalPriceService`)
+
+Owner, 2026-11-24: «все ретельно документуй, щоб ми памятали як все рахується». Every Saturday 02:00
+Kyiv (`app.price-insight.refresh-cron`), right after the national community run, or on «Перерахувати
+зараз» in the admin.
+
+**0. Input — one number per master per position.** `EstimateItemRepository.aggregatePerMasterWorkPrices`
+(the same query the national V94 run reads, so the two never disagree about a master's price):
+
+- lines of estimates that are not REJECTED, on objects that are not the training sample;
+- `type = WORK` only, not `PERCENT`, `unit_price > 0` (materials, percentages and unpriced drafts are
+  not quotes);
+- grouped per master × exact lowercased name × type × unit → that master's MEDIAN `unit_price`
+  (Postgres `percentile_cont(0.5)`), plus his `users.region` (NULL = not said).
+
+In Java the exact names fold by `CatalogNameKey` (the fuzzy key the catalog uses) — a position is
+(fuzzy name, type, unit). A master with several spellings of one position becomes one number: the
+plain median of his spellings. So each master has **at most one number per position**, however many
+estimates he wrote.
+
+**1. Oblast median (`regional_price`).** For each position and each oblast: that oblast's masters'
+numbers → the IQR trim (`PriceInsightMath.trimmedMedian`: drop values outside Q1 − 1.5·IQR … Q3 +
+1.5·IQR) → if 3+ masters remain, their median (2 decimals), with min/max of the survivors. Fewer than
+3 → no row; the oblast simply has no figure for that work.
+
+**2. Country baseline (`regional_baseline`).** For each position: every oblast that has at least one
+master pricing it gets ONE vote — the plain median of its masters' numbers (no trim, any count, even
+one master). If 3+ oblasts voted, the baseline is the plain median of those votes (2 decimals).
+Masters without an oblast take no part.
+
+*Why not the V94 national median.* V94 gives every master one vote, so the oblasts where most of our
+masters work set «the country»: with half of them in Kyiv and Lviv, every other oblast reads
+«cheaper than the country» when it means «cheaper than Kyiv and Lviv». One vote per oblast makes the
+baseline the price of a typical oblast. V94 stays as it is — it still drives the admin's «Від майстрів»
+proposals for the default catalog, which is a different question (what a NEW master is given).
+
+**3. Oblast factor (`regional_index`).** For each oblast: every number of its masters on a position
+that HAS a baseline, as a percent of that baseline (4 decimals); each master's percents → their plain
+median (one ratio per master, so a master with 50 positions counts once); the masters' ratios → the
+IQR trim → if 3+ masters remain, their median ÷ 100, rounded HALF_UP to 3 decimals. `masters_count` =
+masters left after the trim, `positions_count` = distinct positions compared. 1.10 = this oblast's
+masters charge 10 % more than a typical oblast.
+
+**Example** (the integration test): one work priced by Волинь 400 / 420 / 440, Тернопіль 300 / 320,
+Рівне 360, and a master with no oblast at 1000. Oblast medians: only Волинь (420; Тернопіль has two
+masters). Votes: Волинь 420, Тернопіль 310, Рівне 360 → baseline 360 (the 1000 is not there). Волинь's
+ratios 111.11 / 116.67 / 122.22 % → factor 1.167.
+
+**What reads it.** Only the admin page today. Step 2's «орієнтовно» price for a work an oblast has no
+median for = `regional_baseline.median_price × regional_index.factor`, both from the same run; a work
+with neither → the plain baseline, said as «по країні»; nothing at all → nothing shown.
+
+**Thresholds in one place.** `PriceInsightMath.MIN_MASTERS` = 3 (oblast median, factor);
+`RegionalPriceService.MIN_REGIONS` = 3 (baseline). Changing either changes what the admin sees on the
+next run; nothing is stored that would need migrating.
+
+## Decisions waiting for the owner
+
+1. **«Ціни по областях»: FREE or PRO?** Proposal: FREE sees his own oblast, PRO sees every oblast.
+2. **Threshold:** 3 masters (as today) or 5? Proposal: 5 for another oblast, 3 for his own.
+3. **Start step 1 now** (data and admin only), look at the real per-oblast figures in a week, then
+   decide about the viewer?
+
+## Not decided / later
+
+- The data source is estimate lines (what masters actually charge). Whether imported price lists
+  («Перенести в Majstr») or catalog edits should count too — not discussed.
+- A third-party price app (`bud.work.pricefreeua`, «Будівельні розцінки UA») was looked at
+  2026-11-24: its data is not taken. At most its region model is studied from screenshots, or the
+  developer is asked about a licence.

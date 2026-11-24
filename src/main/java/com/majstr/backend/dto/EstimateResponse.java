@@ -43,5 +43,8 @@ public record EstimateResponse(
         CrewMarginResponse crewMargin,
         /** REGULAR, or ADDENDUM — «Матеріали за чеками / Додатково до акта № N», written by a signed
          *  act. The editor reads it to drop «Створити акт»: those lines were accepted by that act. */
-        EstimateKind kind
+        EstimateKind kind,
+        /** Why this SIGNED estimate cannot be reopened now, and what to do — null when it can (or
+         *  is not signed). The editor shows it instead of offering a button that would refuse. */
+        ReopenBlock reopenBlock
 ) {}

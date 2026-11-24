@@ -54,6 +54,7 @@ class ObjectExpenseServiceTest {
     @Mock PaymentReceiptRepository paymentReceiptRepository;
     @Mock ProjectReceiptRepository projectReceiptRepository;
     @Mock MaterialRefundCalculator refundCalculator;
+    @Mock ReopenGuard reopenGuard;
 
     // The REAL gate (backed by PlanConfig) so the PRO/FREE decision is genuinely tested.
     private final DefaultFeatureGuard featureGuard = new DefaultFeatureGuard();
@@ -61,7 +62,7 @@ class ObjectExpenseServiceTest {
     private ObjectExpenseService service() {
         return new ObjectExpenseService(expenseRepository, estimateRepository, estimateItemRepository, projectService,
                 userRepository, featureGuard, paymentService, workActItemRepository, workActReceiptRepository,
-                paymentReceiptRepository, projectReceiptRepository, refundCalculator);
+                paymentReceiptRepository, projectReceiptRepository, refundCalculator, reopenGuard);
     }
 
     /** The works axis sums two queries (act lines + act receipts) and adds them — both are

@@ -98,6 +98,13 @@ class EstimateServiceTest {
 
     @InjectMocks private EstimateService estimateService;
 
+    /** The REAL guard over the mocked act repositories — its answer is what the reopen tests pin. */
+    @org.junit.jupiter.api.BeforeEach
+    void realReopenGuard() {
+        org.springframework.test.util.ReflectionTestUtils.setField(estimateService, "reopenGuard",
+                new ReopenGuard(workActItemRepository, workActRepository));
+    }
+
     private final UUID ownerId = UUID.randomUUID();
     private final UUID otherUserId = UUID.randomUUID();
     private final UUID projectId = UUID.randomUUID();
@@ -1687,14 +1694,16 @@ class EstimateServiceTest {
     void reopen_isRefusedWhileAnyLiveActStandsOnTheEstimate() {
         // B-59: DRAFT and SENT count too. A SENT act is already on the client's phone, and the
         // master reopening the estimate underneath it is exactly how the two papers stop agreeing.
+        // Since 2026-11-24 the refusal names what to do: a SENT act goes back to draft and away.
         Estimate signed = signedEstimate();
         given(estimateRepository.findById(estimateId)).willReturn(Optional.of(signed));
-        givenAnActStandsOnTheEstimate();
+        given(workActItemRepository.findLiveActsOnEstimate(estimateId))
+                .willReturn(java.util.List.<Object[]>of(new Object[] {"3", com.majstr.backend.entity.WorkActStatus.SENT}));
 
         assertThatThrownBy(() -> estimateService.reopen(estimateId, ownerId))
                 .isInstanceOf(WorkActConflictException.class)
                 .extracting(e -> ((WorkActConflictException) e).getCode())
-                .isEqualTo("ESTIMATE_HAS_SIGNED_ACTS");
+                .isEqualTo("ESTIMATE_HAS_SENT_ACT");
         assertThat(signed.getStatus()).isEqualTo(EstimateStatus.SIGNED);
     }
 

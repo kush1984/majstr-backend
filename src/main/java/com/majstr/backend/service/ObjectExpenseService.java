@@ -74,6 +74,7 @@ public class ObjectExpenseService {
     private final PaymentReceiptRepository paymentReceiptRepository;
     private final ProjectReceiptRepository projectReceiptRepository;
     private final MaterialRefundCalculator refundCalculator;
+    private final ReopenGuard reopenGuard;
 
     @Transactional
     public ExpenseResponse add(UUID objectId, UUID ownerId, ExpenseRequest req) {
@@ -283,7 +284,7 @@ public class ObjectExpenseService {
             EstimateKind kind = EstimateKind.valueOf((String) row[10]);
             panels.add(new SignedEstimatePanelResponse(
                     id, name, works, materials, markup, discount, total, counted, signedAt, kind,
-                    markupRate, discountRate, margins.get(id)));
+                    markupRate, discountRate, margins.get(id), reopenGuard.blockOfSigned(id, kind)));
         }
         return panels;
     }

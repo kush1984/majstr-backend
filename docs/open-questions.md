@@ -1477,6 +1477,15 @@ one-line summary — keep the item in the file as a record.
 - **Update (2026-11-23, V219 — status unchanged):** the master's oblast is now collected
   (`users.region`, [iteration-regions.md](iteration-regions.md)); nothing reads it yet. Next: answers per
   oblast in the admin, then a per-region median with the national one as the fallback.
+- **Update (2026-11-24 — status unchanged):** the owner wants a new master's catalog in his oblast's
+  prices, and a viewer of another oblast's prices (a master's request). Plan, three-level resolution
+  (position × oblast → oblast index → national), order of work and the owner's pending decisions:
+  [plan-regional-prices.md](plan-regional-prices.md).
+- **Update (2026-11-24, V222 + V223 — status unchanged):** step 1 built — oblast medians, a country
+  baseline (one vote per oblast, so masters clustering in Kyiv/Lviv do not set «the country») and oblast
+  factors computed weekly, shown in the admin only; the oblast asked at «Чим займаєтесь?». Recipe:
+  the plan's «How it is computed». Next: read the real per-oblast
+  figures, then decide FREE/PRO and the threshold for the viewer (step 2).
 
 ### Community prices: custom (master-invented) trades' positions
 - **Status:** OPEN

@@ -187,6 +187,7 @@
             <button class="navlink" data-view="insights">💡 Від майстрів</button>
             <button class="navlink" data-view="broadcasts">✉️ Розсилки</button>
             <button class="navlink" data-view="visits">👀 Відвідування</button>
+            <button class="navlink" data-view="regions">🗺 Ціни по областях</button>
             <button class="navlink" data-view="reviews">⭐ Відгуки <span id="reviewsUnread" class="badge PRO" hidden></span></button>
             <button class="navlink logout" id="logoutBtn">Вийти</button>
         </aside>
@@ -282,6 +283,22 @@
                         <span id="pageInfo" style="align-self:center">сторінка 1 / 1</span>
                         <button id="nextPage">→</button>
                     </div>
+                </section>
+            </section>
+
+            <!-- ===== PRICES BY OBLAST, STEP 1 (V222) ===== -->
+            <section id="view-regions" class="view" hidden>
+                <h1>Ціни по областях — скільки даних</h1>
+                <p class="hint">
+                    Майстри цього поки не бачать. Рахується щосуботи разом з ринковими цінами (або кнопкою нижче).
+                    «Позицій з медіаною» — роботи, які в області ціною вказали 3+ майстри. «Ціна по країні» для порівняння —
+                    медіана медіан областей (кожна область — один голос), лише для робіт, які ціною вказали майстри з 3+ областей.
+                    «Коефіцієнт» — наскільки ціни майстрів області вищі чи нижчі за неї (1,10 = на 10 % дорожче за середню область);
+                    з'являється від 3 майстрів області. Деталі: docs/plan-regional-prices.md, «How it is computed».
+                </p>
+                <section class="card">
+                    <p><button type="button" id="regionsRefresh">Перерахувати зараз</button></p>
+                    <div id="regionsBox"><p class="muted">Завантаження…</p></div>
                 </section>
             </section>
 
@@ -732,7 +749,48 @@
         if (name === 'broadcasts' && !broadcastsLoaded) { broadcastsLoaded = true; loadBroadcasts(); }
         if (name === 'visits' && !visitsLoaded) { visitsLoaded = true; loadVisits(); }
         if (name === 'reviews') loadReviews();
+        if (name === 'regions') loadRegions();
     }
+
+    // ================= PRICES BY OBLAST, STEP 1 (V222) =================
+    const REGION_LABEL = {
+        VINNYTSIA: 'Вінницька', VOLYN: 'Волинська', DNIPRO: 'Дніпропетровська', DONETSK: 'Донецька',
+        ZHYTOMYR: 'Житомирська', ZAKARPATTIA: 'Закарпатська', ZAPORIZHZHIA: 'Запорізька',
+        IVANO_FRANKIVSK: 'Івано-Франківська', KYIV_OBLAST: 'Київська', KIROVOHRAD: 'Кіровоградська',
+        LUHANSK: 'Луганська', LVIV: 'Львівська', MYKOLAIV: 'Миколаївська', ODESA: 'Одеська',
+        POLTAVA: 'Полтавська', RIVNE: 'Рівненська', SUMY: 'Сумська', TERNOPIL: 'Тернопільська',
+        KHARKIV: 'Харківська', KHERSON: 'Херсонська', KHMELNYTSKYI: 'Хмельницька', CHERKASY: 'Черкаська',
+        CHERNIVTSI: 'Чернівецька', CHERNIHIV: 'Чернігівська', KYIV_CITY: 'м. Київ',
+    };
+    const factorFormat = new Intl.NumberFormat('uk-UA', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    function renderRegions(data) {
+        const box = document.getElementById('regionsBox');
+        const total = data.regions.reduce((s, r) => s + r.masters, 0);
+        const when = data.computedAt ? dateFormat.format(new Date(data.computedAt)) : 'ще не рахувалось';
+        box.innerHTML = `<p class="muted" style="margin:0 0 8px">Вказали область: <b>${numberFormat.format(total)}</b>
+            · не вказали: <b>${numberFormat.format(data.mastersWithoutRegion)}</b>
+            · робіт з ціною по країні: <b>${numberFormat.format(data.baselinePositions)}</b> · розрахунок: ${escapeHtml(when)}</p>
+            <table><thead><tr><th>Область</th><th>Майстрів</th><th>Позицій з медіаною</th><th>Коефіцієнт</th></tr></thead><tbody>`
+            + data.regions.map(r => `<tr${r.masters === 0 ? ' class="muted"' : ''}>
+                <td>${escapeHtml(REGION_LABEL[r.region] || r.region)}</td>
+                <td>${numberFormat.format(r.masters)}</td>
+                <td>${numberFormat.format(r.positionsWithMedian)}</td>
+                <td>${r.factor == null ? '<span class="muted">—</span>'
+                    : `${factorFormat.format(r.factor)} <span class="muted">(${r.factorMasters} майстр., ${r.factorPositions} поз.)</span>`}</td></tr>`).join('')
+            + '</tbody></table>';
+    }
+    async function loadRegions() {
+        const resp = await api('/admin/regional-prices');
+        if (!resp.ok) { document.getElementById('regionsBox').innerHTML = '<p class="muted">Не вдалося завантажити.</p>'; return; }
+        renderRegions(await resp.json());
+    }
+    document.getElementById('regionsRefresh').addEventListener('click', async (e) => {
+        e.target.disabled = true;
+        const resp = await api('/admin/regional-prices/refresh', { method: 'POST' });
+        e.target.disabled = false;
+        if (!resp.ok) { alert('Не вдалося перерахувати'); return; }
+        renderRegions(await resp.json());
+    });
 
     // ================= REVIEWS OF MAJSTR (V218) =================
     const REVIEW_STATUS = { NEW: 'Нове', PUBLISHED: 'На сайті', HIDDEN: 'Приховано' };
@@ -751,17 +809,17 @@
         const fmt = iso => iso ? dateFormat.format(new Date(iso)) : '—';
         const stars = n => '★'.repeat(n) + '<span class="muted">' + '★'.repeat(5 - n) + '</span>';
         box.innerHTML = `<p class="muted" style="margin:0 0 8px">Середня оцінка: <b>${avg.toFixed(1)}</b> з ${rows.length} · нових: <b>${unread}</b></p>
-            <table><thead><tr><th>Оцінка</th><th>Відгук</th><th class="hide-mobile">Майстер</th><th>Коли</th><th>Статус</th><th></th></tr></thead><tbody>`
+            <table><thead><tr><th>Оцінка</th><th>Відгук · від кого</th><th>Коли</th><th>Статус</th><th></th></tr></thead><tbody>`
             + rows.map(r => {
                 const actions = [];
                 if (r.status !== 'PUBLISHED' && r.publishConsent) actions.push(`<button type="button" class="rv-act primary" data-id="${r.id}" data-value="PUBLISHED">Опублікувати</button>`);
                 if (r.status !== 'HIDDEN') actions.push(`<button type="button" class="rv-act" data-id="${r.id}" data-value="HIDDEN">${r.status === 'PUBLISHED' ? 'Зняти з сайту' : 'Прочитано'}</button>`);
                 if (r.status === 'HIDDEN') actions.push(`<button type="button" class="rv-act" data-id="${r.id}" data-value="NEW">Нове</button>`);
-                const who = [r.fullName, r.email, r.phone].filter(Boolean).map(escapeHtml).join('<br>');
+                // Who wrote it sits under the words — a separate column hid on a phone.
+                const who = [r.fullName || 'без імені', r.email, r.phone].filter(Boolean).map(escapeHtml).join(' · ');
                 return `<tr${r.status === 'NEW' ? ' style="font-weight:600"' : ''}>
                     <td style="white-space:nowrap; color:#d97706">${stars(r.rating)}</td>
-                    <td>${r.text ? escapeHtml(r.text) : '<span class="muted">без тексту</span>'}${r.publishConsent ? '<br><span class="muted">✓ можна показати</span>' : ''}${r.source === 'PROMPT' ? ' <span class="muted">· з підказки</span>' : ''}</td>
-                    <td class="hide-mobile">${who}</td>
+                    <td>${r.text ? escapeHtml(r.text) : '<span class="muted">без тексту</span>'}${r.publishConsent ? '<br><span class="muted">✓ можна показати</span>' : ''}${r.source === 'PROMPT' ? ' <span class="muted">· з підказки</span>' : ''}<br><span style="font-weight:400">👤 ${who}</span></td>
                     <td class="muted">${fmt(r.createdAt)}</td>
                     <td>${REVIEW_STATUS[r.status] || r.status}</td>
                     <td style="white-space:nowrap">${actions.join(' ')}</td></tr>`;

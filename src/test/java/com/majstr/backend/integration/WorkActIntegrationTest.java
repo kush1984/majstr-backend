@@ -1016,9 +1016,12 @@ class WorkActIntegrationTest extends IntegrationTestBase {
                 .isEqualTo(EstimateStatus.DRAFT);
     }
 
-    /** A SENT act is on the client's phone: reopening is refused as for a signed one. */
+    /**
+     * A SENT act is on the client's phone: reopening is refused, and (owner, 2026-11-24) the estimate
+     * and its economy panel say so BEFORE the tap, naming the act — back to draft, delete, reopen.
+     */
     @Test
-    void reopeningWithASentAct_isRefusedAsForASignedOne() {
+    void reopeningWithASentAct_isRefusedAndNamedUpFront_untilItIsBackInDraftAndDeleted() {
         User owner = newOwner();
         Project p = newProject(owner);
         Estimate est = signedEstimateWithLine(p, "Робота", "100.000", "145.00");
@@ -1027,12 +1030,29 @@ class WorkActIntegrationTest extends IntegrationTestBase {
         setSingleLine(act.id(), owner.getId(), est.getId(), lineId, "60.000", "145.00");
         markSent(act.id());
 
+        var expected = new com.majstr.backend.dto.ReopenBlock(
+                com.majstr.backend.dto.ReopenBlock.Reason.SENT_ACT, java.util.List.of(act.number()));
+        assertThat(estimateService.get(est.getId(), owner.getId()).reopenBlock()).isEqualTo(expected);
+        assertThat(objectExpenseService.economy(p.getId(), owner.getId()).estimates())
+                .singleElement()
+                .extracting(com.majstr.backend.dto.SignedEstimatePanelResponse::reopenBlock)
+                .isEqualTo(expected);
         assertThatThrownBy(() -> estimateService.reopen(est.getId(), owner.getId()))
                 .isInstanceOf(WorkActConflictException.class)
                 .extracting(e -> ((WorkActConflictException) e).getCode())
-                .isEqualTo("ESTIMATE_HAS_SIGNED_ACTS");
+                .isEqualTo("ESTIMATE_HAS_SENT_ACT");
         assertThat(estimateRepository.findById(est.getId()).orElseThrow().getStatus())
                 .isEqualTo(EstimateStatus.SIGNED);
+
+        // What the message tells him to do works: back to draft, delete, reopen.
+        workActService.changeStatus(act.id(), WorkActStatus.DRAFT, owner.getId());
+        assertThat(estimateService.get(est.getId(), owner.getId()).reopenBlock().reason())
+                .isEqualTo(com.majstr.backend.dto.ReopenBlock.Reason.DRAFT_ACT);
+        workActService.delete(act.id(), owner.getId());
+        assertThat(estimateService.get(est.getId(), owner.getId()).reopenBlock()).isNull();
+        estimateService.reopen(est.getId(), owner.getId());
+        assertThat(estimateRepository.findById(est.getId()).orElseThrow().getStatus())
+                .isEqualTo(EstimateStatus.DRAFT);
     }
 
     /**

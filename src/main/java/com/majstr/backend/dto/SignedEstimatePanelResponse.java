@@ -45,5 +45,7 @@ public record SignedEstimatePanelResponse(
         BigDecimal discountRate,
         /** «Бригаді / Твоя націнка» — present only on a duplicate made with a MARKUP, absent
          *  (null) on everything else. Owner-only: see {@link CrewMarginResponse}. */
-        CrewMarginResponse crewMargin
+        CrewMarginResponse crewMargin,
+        /** Why «Перевідкрити для змін» would refuse, null when it would not ({@code ReopenGuard}). */
+        ReopenBlock reopenBlock
 ) {}

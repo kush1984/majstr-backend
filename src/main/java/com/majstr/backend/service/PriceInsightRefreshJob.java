@@ -1,5 +1,6 @@
 package com.majstr.backend.service;
 
+import com.majstr.backend.config.BackgroundErrors;
 import com.majstr.backend.repository.PriceInsightCandidateRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -31,6 +32,7 @@ public class PriceInsightRefreshJob {
     private static final long ADVISORY_LOCK_KEY = 827_100_940_1L;
 
     private final PriceInsightService priceInsightService;
+    private final RegionalPriceService regionalPriceService;
     private final PriceInsightCandidateRepository candidateRepository;
 
     @Scheduled(cron = "${app.price-insight.refresh-cron:0 0 2 ? * SAT}", zone = "Europe/Kyiv")
@@ -41,5 +43,13 @@ public class PriceInsightRefreshJob {
             return;
         }
         priceInsightService.weeklyRefresh();
+        // Prices by oblast (V222) in their own transaction: a failure there must not take the
+        // national candidates down with it, and it is reported rather than thrown.
+        try {
+            regionalPriceService.weeklyRefresh();
+        } catch (RuntimeException e) {
+            log.error("regional prices weekly refresh failed", e);
+            BackgroundErrors.capture("regional-price-refresh", e);
+        }
     }
 }

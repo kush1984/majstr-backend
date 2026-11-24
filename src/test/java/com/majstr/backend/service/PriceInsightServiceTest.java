@@ -67,6 +67,7 @@ class PriceInsightServiceTest {
         @Override public String getUnit() { return unit; }
         @Override public BigDecimal getPerMasterMedianPrice() { return perMasterMedianPrice; }
         @Override public Instant getFirstSeen() { return firstSeen; }
+        @Override public String getRegion() { return null; }
     }
 
     private static Row row(UUID master, String name, String price) {

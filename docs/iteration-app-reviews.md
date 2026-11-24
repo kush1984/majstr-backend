@@ -20,9 +20,14 @@ other masters see it. Two jobs: what to fix (every rating reaches us), and proof
   consent at all. `POST /api/app-reviews`.
 - **Admin «⭐ Відгуки».** Unread first, average rating, the master's email and phone to answer him.
   «Опублікувати» only on a consented one, «Прочитано» / «Зняти з сайту», «Нове». Unread count on the menu.
-- **majstr.pro «Що кажуть майстри».** Between «Для кого» and «Контроль»: the 6 newest published with
-  text — stars, the words, «Олена К. · Плитка», and figures read live: months in Majstr, estimates,
-  signed by clients. No reviews or no backend → no section (the landing still paints instantly).
+- **majstr.pro «Що кажуть майстри».** Between «Для кого» and «Контроль»: the 6 newest published —
+  stars, the words if any, «Олена К.» and months in Majstr (read live). No reviews or no backend → no
+  section (the landing still paints instantly).
+- **Follow-up 2026-11-24 (owner).** The first published review was stars-only and never appeared: the
+  landing dropped reviews without text while the admin let them be published. Now a stars-only review
+  shows; trades and the estimate / signed counts are no longer rendered (too much room — the public API
+  still returns them); the admin list puts who wrote it (name · email · phone) under the text, since
+  the «Майстер» column was hidden on a phone.
 
 ## Rules (why they hold)
 

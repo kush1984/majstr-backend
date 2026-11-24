@@ -17,11 +17,24 @@ class PriceInsightRefreshJobTest {
 
     @Mock PriceInsightService priceInsightService;
     @Mock PriceInsightCandidateRepository candidateRepository;
+    @Mock RegionalPriceService regionalPriceService;
     @InjectMocks PriceInsightRefreshJob job;
 
     @Test
     void weeklyRefresh_runsWhenTheAdvisoryLockIsAcquired() {
         given(candidateRepository.tryAdvisoryXactLock(anyLong())).willReturn(true);
+
+        job.weeklyRefresh();
+
+        verify(priceInsightService).weeklyRefresh();
+        verify(regionalPriceService).weeklyRefresh();
+    }
+
+    /** The oblast run (V222) is reported, never allowed to undo the national one. */
+    @Test
+    void weeklyRefresh_aFailingRegionalRunDoesNotThrow() {
+        given(candidateRepository.tryAdvisoryXactLock(anyLong())).willReturn(true);
+        given(regionalPriceService.weeklyRefresh()).willThrow(new IllegalStateException("boom"));
 
         job.weeklyRefresh();
 
@@ -36,5 +49,6 @@ class PriceInsightRefreshJobTest {
 
         // The whole point of the guard: no double (or interleaved) run on a second instance.
         verify(priceInsightService, never()).weeklyRefresh();
+        verify(regionalPriceService, never()).weeklyRefresh();
     }
 }

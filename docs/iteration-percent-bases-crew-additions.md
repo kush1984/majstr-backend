@@ -1,6 +1,6 @@
 # «% від кількох позицій», a markup copy's additions, and reopening a signed estimate — V221
 
-**Status:** built, not pushed. **Migration:** `V221__percent_of_several_positions.sql`. **PWA:** on top of 1.87.0.
+**Status:** shipped 2026-11-23 (backend `f0f9142` + `1a48e7d`, PWA 1.88.0 `5889ee5` + `8cf2bdb`). **Migration:** `V221__percent_of_several_positions.sql`.
 
 ## Why
 
@@ -57,6 +57,24 @@ object, never with acts — «якщо є акти створені, то одн
   the deposit as an advance not yet earned.
 - The signed banner puts its button under the text (on a phone the label broke into four lines), and a
   «%» row keeps «25 %» on one line beside a long list of bases.
+
+### Follow-up 2026-11-24: a blocked reopen says why up front
+
+The owner: «Перевідкрити для змін» belongs in the economy panel's ⋮ too, and when something stands in
+the way, the tap (and the estimate screen) must say why and what to do — not offer a confirmation
+that then refuses.
+
+- `ReopenGuard` (new) is the one rule: ADDENDUM / SIGNED_ACT / SENT_ACT / DRAFT_ACT, with the act
+  numbers; `EstimateResponse.reopenBlock` and `SignedEstimatePanelResponse.reopenBlock` carry it, and
+  `reopen` refuses from it. A SENT act now has its own code `ESTIMATE_HAS_SENT_ACT` («поверніть акт у
+  чернетку й видаліть»), since the master can clear it himself.
+- PWA 1.89.0: the signed banner shows the reason and «Відкрити акти» instead of the button; the
+  economy panel's ⋮ gains «Перевідкрити для змін» (reason dialog, or the usual confirmation, then the
+  editor). Tests: `ReopenGuardTest`, `WorkActIntegrationTest` (a SENT act: named on the estimate and
+  the panel, back to draft, deleted, reopened), `reopenBlock.test.ts`, `ObjectEconomySection.test.tsx`.
+
+Also 2026-11-24 (PWA 1.88.1 + admin): a stars-only app review shows on majstr.pro; trades and estimate
+counts are no longer rendered there; the admin review list shows who wrote each one on a phone too.
 
 ## Tests
 
