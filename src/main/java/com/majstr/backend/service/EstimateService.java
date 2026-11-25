@@ -1292,7 +1292,8 @@ public class EstimateService {
         BigDecimal factor = BigDecimal.ONE.add((discount ? percent.negate() : percent).movePointLeft(2));
         // A «%» line is skipped, and that is NOT a silent loss the master can hit (review B-54,
         // which asked for the skip to be reported): `canPickForMarkup` in the editor offers only
-        // WORK lines with a real unit, so the picker cannot put one in this list. A «%» line has no
+        // lines with a real unit — works and materials alike since 2026-11-25 — so the picker
+        // cannot put one in this list. A «%» line has no
         // price to raise — its amount follows the base, which the markup has just moved, so it
         // rises on its own; raising the PERCENT too is the duplicate's job (`markedUpPercent`),
         // where the whole sheet is being re-priced at once. Reporting a skip in the response would

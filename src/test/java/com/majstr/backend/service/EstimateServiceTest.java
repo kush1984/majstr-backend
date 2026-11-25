@@ -2017,6 +2017,21 @@ class EstimateServiceTest {
     }
 
     @Test
+    void markItemsUp_raisesAMATERIALlineToo() {
+        // Training 2026-11-24: masters price their buying and carrying into materials, and the
+        // editor's picker now offers material lines — the server must lift them like any work.
+        EstimateItem line = item(ItemType.MATERIAL, "Клей для плитки", "1", "400");
+        line.setEstimate(ownedEstimate(ownerId));
+        givenOwnedEstimate();
+        given(itemRepository.findAllById(List.of(line.getId()))).willReturn(List.of(line));
+
+        estimateService.markItemsUp(estimateId, List.of(line.getId()),
+                new BigDecimal("10"), false, ownerId);
+
+        assertThat(line.getUnitPrice()).isEqualByComparingTo("440");
+    }
+
+    @Test
     void markItemsUp_roundsAtTheSCALEmoneyIsSTOREDat() {
         // Review B-47. 333 × 1.15 = 382.95 and it STAYS 382.95: rounding to the hryvnia looked
         // tidy here and was a catastrophe on a cheap position bought by the thousand.
