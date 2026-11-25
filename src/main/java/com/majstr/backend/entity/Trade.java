@@ -10,6 +10,8 @@ public enum Trade {
     FLOORING,
     DEMOLITION,
     METAL,
+    DOORS_WINDOWS,
+    CLIMATE,
     GENERAL,
     OTHER
 }

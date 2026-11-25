@@ -22,6 +22,8 @@ public final class TradeLabel {
             entry(Trade.FLOORING, "Підлоги"),
             entry(Trade.DEMOLITION, "Демонтаж"),
             entry(Trade.METAL, "Металоконструкції"),
+            entry(Trade.DOORS_WINDOWS, "Двері та вікна"),
+            entry(Trade.CLIMATE, "Клімат і вентиляція"),
             entry(Trade.GENERAL, "Загальні роботи"),
             entry(Trade.OTHER, "Інше")
     );

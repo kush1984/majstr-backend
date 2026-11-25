@@ -79,7 +79,10 @@ class FlooringNormsOnLiveDataIntegrationTest extends IntegrationTestBase {
                         "Монтаж електричної теплої підлоги (мат/кабель) [M2]",
                         "Підключення теплої підлоги до терморегулятора [PIECE]",
                         // V177: no figure for how much finished layer a bag of dry mix yields.
-                        "Стяжка з пінополістиролбетону [M2]");
+                        "Стяжка з пінополістиролбетону [M2]",
+                        // V224's Lviv-gap additions carry no norm yet, like V176's (open question).
+                        "Укладання кварцвінілу на самоклеючій основі [M2]",
+                        "Покриття плінтуса лаком [LINEAR_METER]");
     }
 
     /** V177 — the market review's additions, by the owner's ruling. */
@@ -133,7 +136,8 @@ class FlooringNormsOnLiveDataIntegrationTest extends IntegrationTestBase {
         assertThat(count("""
                 SELECT count(*) FROM catalog_templates WHERE trade = 'FLOORING' AND type = 'WORK'
                 """)).isEqualTo(54 + 14 + 7 - 4 // V167: four duplicate wordings left the library
-                        + 11 - 1);             // V176: the market review's additions, one duplicate out
+                        + 11 - 1               // V176: the market review's additions, one duplicate out
+                        + 2);                  // V224: the Lviv price sheet's gaps
     }
 
     /** «Checked, consumes nothing» is a RECORDED verdict and needs BOTH nulls together (V127's

@@ -13,7 +13,7 @@ title — read the twin before changing what a bullet guards); per-area narrativ
 - **Stack pinned:** Spring Boot 4 / Java 21 / PostgreSQL 17 + Flyway / Jackson 3 (`tools.jackson.*`). Don't bump without reason.
 - **Secrets from env only** (`JWT_SECRET` has no default). **English only** in code, comments, SQL, docs.
 - **Layering** `controller → service → repository`; controllers return DTOs; `passwordHash` never leaves.
-- **Schema = Flyway only** (`ddl-auto: validate`). New `V<N>__…sql`, **latest is V223** (V183, V185 skipped);
+- **Schema = Flyway only** (`ddl-auto: validate`). New `V<N>__…sql`, **latest is V224** (V183, V185 skipped);
   never edit an applied migration; a self-check `RAISE EXCEPTION`s only about its own work, else `WARNING`.
 - **Tests + green `./gradlew build` before any push** (Claude runs it; Docker must be up). Controller tests =
   Mockito standalone; DB/filters = `…IntegrationTest` on Testcontainers.
@@ -109,6 +109,7 @@ One line per invariant; the reasoning is in the twin in docs/architecture-index-
 - **A default bundle is a SEQUENCE, not a set (V112)** — `sort_order` is the content; template items carry no price (resolved by name at apply — a miss is 0 ₴, so names are copied exactly and checked).
 - **A default bundle is a JOB (V148)** — protection first, cleanup last, ≥ 6 lines; rewritten in place; a catalog RENAME rewrites bundle lines, forks and norms in the same migration (V158 shape).
 - **DRYWALL is filed by PHASE, and a refresh guard must be TRADE-AWARE (V116)** — phase categories; a price migration queues PRICE_DRIFT, never writes a master's price; a migration inserting a template re-runs V118's ranking.
+- **Doors/windows and climate are trades (V224, iteration-lviv-gap-positions)** — `DOORS_WINDOWS`, `CLIMATE` after METAL in the enum, six CHECKs and V118's rank; no default bundles (`template_trade_override` untouched); established names (короїд, ондулін, Армстронг) are never renamed (owner).
 - **Every trade holds its own positions (V220, iteration-trade-catalogs)** — `catalog_items` is unique per (owner, TRADE, name, type, unit): a shared library position is a row in each trade, own folder, own price; seeding copies per trade; nothing re-files (`sharedTrades` gone); a line arriving by NAME goes through `CatalogFiling` (one trade → it, several → the estimate's, else none); `TradeCatalogsIntegrationTest` holds every trade to it.
 - **An estimate line explains itself, by COPY (V119)** — `estimate_items.description` is a snapshot copied at catalog add, duplicate, consolidation and `applyTemplates`; not on `EstimateItemRequest`.
 - **A finish level is a BUNDLE, and it explains itself (V121)** — Q1/Q2/Q4 are bundles; `estimates.quality_note` is a snapshot at apply time that nothing renders yet.

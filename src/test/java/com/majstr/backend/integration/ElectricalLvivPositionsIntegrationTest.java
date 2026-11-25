@@ -77,10 +77,17 @@ class ElectricalLvivPositionsIntegrationTest extends IntegrationTestBase {
         jdbc.update("INSERT INTO user_trades (user_id, trade) VALUES (?, 'ELECTRICAL')", id);
         try {
             User user = userRepository.findWithTradesById(id).orElseThrow();
-            assertThat(catalogTemplateService.countNewFromCatalog(user)).isEqualTo(19);
+            // Plus whatever a later migration added to ELECTRICAL: «new» is everything above his version.
+            assertThat(catalogTemplateService.countNewFromCatalog(user)).isEqualTo(19 + addedLater(version()));
         } finally {
             jdbc.update("DELETE FROM users WHERE id = ?", id);
         }
+    }
+
+    private int addedLater(int version) {
+        return jdbc.queryForObject("""
+                SELECT count(*) FROM catalog_templates
+                 WHERE trade = 'ELECTRICAL' AND type = 'WORK' AND added_in_version > ?""", Integer.class, version);
     }
 
     private BigDecimal price(String name, String unit) {

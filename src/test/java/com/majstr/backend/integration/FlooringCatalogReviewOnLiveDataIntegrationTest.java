@@ -44,7 +44,10 @@ class FlooringCatalogReviewOnLiveDataIntegrationTest extends IntegrationTestBase
                         // V177's three deliberate gaps (see FlooringNormsOnLiveDataIntegrationTest).
                         "Монтаж електричної теплої підлоги (мат/кабель)",
                         "Підключення теплої підлоги до терморегулятора",
-                        "Стяжка з пінополістиролбетону");
+                        "Стяжка з пінополістиролбетону",
+                        // V224's Lviv-gap additions carry no norm yet, like V176's (open question).
+                        "Укладання кварцвінілу на самоклеючій основі",
+                        "Покриття плінтуса лаком");
     }
 
     @Test

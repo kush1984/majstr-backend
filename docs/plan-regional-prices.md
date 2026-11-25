@@ -1,6 +1,6 @@
 # Regional prices — plan (not built)
 
-**Status:** step 1 built 2026-11-24 (V222, not pushed); steps 2–4 not started. Builds on V219 (`users.region`,
+**Status:** step 1 shipped 2026-11-24 (V222 + V223, backend `abf54eb`, PWA 1.89.0 `d89d38b`); steps 2–4 not started. Builds on V219 (`users.region`,
 [iteration-regions.md](iteration-regions.md)) and the community prices of V94 (`PriceInsightService`).
 Open-questions entry: «Community prices: one national median ignores regional cost differences».
 
@@ -160,6 +160,49 @@ next run; nothing is stored that would need migrating.
 2. **Threshold:** 3 masters (as today) or 5? Proposal: 5 for another oblast, 3 for his own.
 3. **Start step 1 now** (data and admin only), look at the real per-oblast figures in a week, then
    decide about the viewer?
+
+## Market prices from other sources — discussed 2026-11-24, nothing decided
+
+**The need (owner).** Masters ask for prices «з таких от додатків, з rabotniki.ua» so they can
+orient themselves — and want to see them IN Majstr, «щоб не ходити в 5 чи 6 інших застосунків для
+порівняння, а щоб було все в одному місці». Our own medians (above) answer «what Majstr masters
+charge»; this is the other half, «what the market says».
+
+**The line we keep.** Looking at and comparing single prices from public sources is fine — a price
+is a fact. Copying one source's database wholesale (by script or by hand, every oblast × position)
+is not: Ukraine's 2023 copyright law protects databases, even non-creative ones, against extracting
+a substantial part, and masters who use both apps would recognise the figures. Claude declined to
+script an extraction of «Будівельні розцінки UA» (`bud.work.pricefreeua`); the owner may look at it
+himself as one source among several.
+
+**Options (from the discussion, cheapest first):**
+
+1. **Links out.** Beside a position: «Порівняти ціни: rabotniki.ua · kabanchik · …», each opening
+   that site's search for this work (in his oblast where the site supports it). One tap instead of
+   searching; legal; quick to build. No figures inside Majstr.
+2. **Our own market range «від–до», from many sources.** Quarterly, for the key works of the main
+   trades × oblasts, we compile a range from several public sources (rabotniki.ua, kabanchik, firms'
+   price lists, OLX, that app) and show OUR conclusion: «ринок: 280–350 ₴/м², Львівська, листопад
+   2026», with the date and «за відкритими джерелами». Aggregating facts into our own range is market
+   research (the default catalog was built this way); copying one source whole is what it must not be.
+   The owner (or a helper) collects; Claude turns the notes into ranges and a migration. Kept apart
+   from `regional_*` (masters' data) — never mixed into those medians.
+3. **Partnerships.** Write to rabotniki.ua, kabanchik and the app's developer (bkgeorgiy@gmail.com):
+   links and traffic from Majstr for their data, or a licence. Slow, the cleanest.
+4. **Our oblast medians** (step 1, already weekly) grow on their own; one «Ціни на ринку» block could
+   show both: «майстри Majstr у вашій області» and «ринок за відкритими джерелами».
+
+Claude's suggestion: 1 first (fast, useful now), 2 in parallel for the most-used trades.
+
+**Questions for the masters (owner's training, 2026-11-24 evening):**
+
+- Де ви зараз дивитесь ціни, коли рахуєте кошторис? Які сайти / застосунки (назвіть усі)?
+- Що саме шукаєте: ціну конкретної роботи, «від–до», ціну у своїй області чи в іншій?
+- Чого достатньо: посилання «порівняти на rabotniki.ua» одним тапом — чи треба цифри прямо в Majstr?
+- Довіряєте більше цінам інших майстрів Majstr (реальні кошториси) чи цінам із сайтів? Показувати обидва?
+- Як часто ціни мають оновлюватись, щоб їм вірити (місяць, квартал)?
+- Які 10 робіт для вас найважливіші, щоб почати з них?
+- Чи готові вказати свою область і чи показувати ваші ціни (анонімно, медіаною) іншим?
 
 ## Not decided / later
 

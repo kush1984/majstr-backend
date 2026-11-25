@@ -1484,7 +1484,11 @@ one-line summary — keep the item in the file as a record.
 - **Update (2026-11-24, V222 + V223 — status unchanged):** step 1 built — oblast medians, a country
   baseline (one vote per oblast, so masters clustering in Kyiv/Lviv do not set «the country») and oblast
   factors computed weekly, shown in the admin only; the oblast asked at «Чим займаєтесь?». Recipe:
-  the plan's «How it is computed». Next: read the real per-oblast
+  the plan's «How it is computed».
+- **Update (2026-11-24 — status unchanged):** masters also want MARKET prices from other sites/apps
+  inside Majstr («все в одному місці»). Options (links out, our own multi-source «від–до» range,
+  partnerships) and the questions for the owner's training: plan-regional-prices.md «Market prices
+  from other sources». Waits for the masters' answers. Next: read the real per-oblast
   figures, then decide FREE/PRO and the threshold for the viewer (step 2).
 
 ### Community prices: custom (master-invented) trades' positions
@@ -4366,6 +4370,11 @@ one-line summary — keep the item in the file as a record.
   additions in V176's shape ([iteration-electrical-lviv-positions.md](iteration-electrical-lviv-positions.md)).
   The cable-by-section rows (16–35 / від 50 мм²), the earthing strip and the tray parts are the ones a
   norm would answer (a metre of cable, of strip, of lid); the rest are client-chosen devices or labour.
+- **Update (2026-11-25, V224 — status unchanged, still OPEN):** 161 more un-normed additions from
+  the Lviv price sheet, incl. the two new trades DOORS_WINDOWS and CLIMATE
+  ([iteration-lviv-gap-positions.md](iteration-lviv-gap-positions.md)). FLOORING's two are named in
+  the flooring norm tests. Owner: re-check the whole library's prices every 2–3 months — V176 was
+  2026-10-25, so the next pass is due ≈ late January 2027.
 
 ---
 

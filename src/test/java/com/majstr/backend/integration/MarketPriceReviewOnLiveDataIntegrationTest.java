@@ -259,7 +259,11 @@ class MarketPriceReviewOnLiveDataIntegrationTest extends IntegrationTestBase {
         jdbc.update("INSERT INTO user_trades (user_id, trade) VALUES (?, 'DEMOLITION')", id);
         try {
             User user = userRepository.findWithTradesById(id).orElseThrow();
-            assertThat(catalogTemplateService.countNewFromCatalog(user)).isEqualTo(7);
+            // Plus whatever a later migration added to DEMOLITION: «new» is everything above his version.
+            int later = jdbc.queryForObject("""
+                    SELECT count(*) FROM catalog_templates
+                     WHERE trade = 'DEMOLITION' AND type = 'WORK' AND added_in_version > ?""", Integer.class, version);
+            assertThat(catalogTemplateService.countNewFromCatalog(user)).isEqualTo(7 + later);
         } finally {
             jdbc.update("DELETE FROM users WHERE id = ?", id);
         }
