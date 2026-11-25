@@ -46,6 +46,7 @@ class CatalogControllerTest {
     @Mock private CatalogService catalogService;
     @Mock private CatalogTemplateService catalogTemplateService;
     @Mock private UserRepository userRepository;
+    @Mock private com.majstr.backend.service.PriceHintService priceHintService;
     @InjectMocks private CatalogController controller;
 
     private MockMvc mockMvc;
@@ -186,5 +187,24 @@ class CatalogControllerTest {
                 .andExpect(status().isNoContent());
 
         verify(catalogTemplateService).acceptUpdateNotice(userId, noticeId);
+    }
+
+    @Test
+    void priceHint_answersTheFigure_or204WhenThereIsNone() throws Exception {
+        given(priceHintService.hint(userId, "Монтаж мауерлату", com.majstr.backend.entity.Unit.LINEAR_METER))
+                .willReturn(java.util.Optional.of(new com.majstr.backend.dto.PriceHintResponse(
+                        "OBLAST", new java.math.BigDecimal("180"), 4, com.majstr.backend.entity.Region.LVIV, null)));
+        mockMvc.perform(get("/api/catalog/price-hint")
+                        .param("name", "Монтаж мауерлату").param("unit", "LINEAR_METER"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.level").value("OBLAST"))
+                .andExpect(jsonPath("$.price").value(180))
+                .andExpect(jsonPath("$.mastersCount").value(4))
+                .andExpect(jsonPath("$.region").value("LVIV"));
+
+        given(priceHintService.hint(userId, "Щось своє", com.majstr.backend.entity.Unit.PIECE))
+                .willReturn(java.util.Optional.empty());
+        mockMvc.perform(get("/api/catalog/price-hint").param("name", "Щось своє").param("unit", "PIECE"))
+                .andExpect(status().isNoContent());
     }
 }

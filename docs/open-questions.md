@@ -1490,6 +1490,10 @@ one-line summary — keep the item in the file as a record.
   partnerships) and the questions for the owner's training: plan-regional-prices.md «Market prices
   from other sources». Waits for the masters' answers. Next: read the real per-oblast
   figures, then decide FREE/PRO and the threshold for the viewer (step 2).
+- **Update (2026-11-25 — status unchanged):** the price hint is built and FREE — «Ринок, <область>: ~N ₴»
+  under the price field (oblast median → baseline × factor → library price), «Порівняти ↗» opens a
+  web search of rabotniki.ua; no live fetching from other sites. Owner decided: threshold 3 masters
+  for any oblast; the other-oblast viewer is PRO and still to build (step 2).
 
 ### Community prices: custom (master-invented) trades' positions
 - **Status:** OPEN

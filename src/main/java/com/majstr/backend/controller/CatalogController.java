@@ -10,13 +10,16 @@ import com.majstr.backend.dto.CatalogSyncRequest;
 import com.majstr.backend.dto.CatalogSyncResponse;
 import com.majstr.backend.dto.CatalogResetResponse;
 import com.majstr.backend.dto.CatalogUpdateNoticeResponse;
+import com.majstr.backend.dto.PriceHintResponse;
 import com.majstr.backend.dto.TemplateUpdatesResponse;
 import com.majstr.backend.entity.ItemType;
+import com.majstr.backend.entity.Unit;
 import com.majstr.backend.exception.ResourceNotFoundException;
 import com.majstr.backend.repository.UserRepository;
 import com.majstr.backend.security.UserPrincipal;
 import com.majstr.backend.service.CatalogService;
 import com.majstr.backend.service.CatalogTemplateService;
+import com.majstr.backend.service.PriceHintService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -50,6 +53,7 @@ public class CatalogController {
     private final CatalogService catalogService;
     private final CatalogTemplateService catalogTemplateService;
     private final UserRepository userRepository;
+    private final PriceHintService priceHintService;
 
     @Operation(summary = "Create a catalog item",
             description = "Offline-authored creates may send a client-generated UUID in the "
@@ -85,6 +89,18 @@ public class CatalogController {
                                             @RequestParam(required = false, defaultValue = "10") int limit,
                                             @AuthenticationPrincipal UserPrincipal principal) {
         return catalogService.search(principal.id(), q, type, limit);
+    }
+
+    @Operation(summary = "Market price hint for a work position",
+            description = "The median in my oblast, else the country baseline × my oblast's factor, else "
+                    + "the library's price — by the position's name key, works only. 204 when none.")
+    @GetMapping("/price-hint")
+    public ResponseEntity<PriceHintResponse> priceHint(@RequestParam("name") String name,
+                                                       @RequestParam("unit") Unit unit,
+                                                       @AuthenticationPrincipal UserPrincipal principal) {
+        return priceHintService.hint(principal.id(), name, unit)
+                .map(ResponseEntity::ok)
+                .orElseGet(() -> ResponseEntity.noContent().build());
     }
 
     @Operation(summary = "Update a catalog item")

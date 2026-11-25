@@ -21,6 +21,11 @@ public interface RegionalPriceRepository extends JpaRepository<RegionalPrice, UU
     @Query("SELECT r.region AS region, COUNT(r) AS positions FROM RegionalPrice r GROUP BY r.region")
     List<RegionCount> countByRegion();
 
+    /** Level 1 of a price hint: this position's median in the master's oblast. */
+    java.util.Optional<RegionalPrice> findFirstByRegionAndNameKeyAndItemTypeAndUnit(
+            com.majstr.backend.entity.Region region, String nameKey,
+            com.majstr.backend.entity.ItemType itemType, com.majstr.backend.entity.Unit unit);
+
     /** The newest row — when the weekly run last wrote. */
     java.util.Optional<RegionalPrice> findTopByOrderByComputedAtDesc();
 

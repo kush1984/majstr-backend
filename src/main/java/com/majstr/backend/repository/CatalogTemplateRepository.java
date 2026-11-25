@@ -18,6 +18,10 @@ import java.util.UUID;
 @Repository
 public interface CatalogTemplateRepository extends JpaRepository<CatalogTemplate, UUID> {
 
+    /** Every library row of one type and unit — a price hint keys them by name in Java
+     *  ({@code CatalogNameKey}), the one place that rule lives. */
+    List<CatalogTemplate> findByTypeAndUnit(ItemType type, com.majstr.backend.entity.Unit unit);
+
     /** Templates for any of the user's trades — merged set for generalists, in the library's own
      *  order (V118), which is the order the copies are numbered in. */
     List<CatalogTemplate> findByTradeInOrderBySortOrderAsc(Collection<Trade> trades);

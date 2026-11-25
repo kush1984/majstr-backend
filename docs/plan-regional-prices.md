@@ -98,6 +98,17 @@ Every regional figure carries its level, the number of masters behind it and the
   vote per oblast and ignores a master without one; factor 1.167 from 111/117/122 %; two oblasts are
   not a country; a rerun replaces rows), `PriceInsightRefreshJobTest`, `TradesOnboardingPage.test.tsx`.
 
+## Price hint as built (2026-11-25)
+
+The part of step 4 a master asked for first («коли я ставлю ціну… щоб підказувало ± ціну по ринку»),
+FREE for everyone (owner). `GET /api/catalog/price-hint` → `PriceHintService`: his oblast's median
+(`OBLAST`, «Ринок, Львівська обл.: ~350 ₴ за м² · майстрів: 7») → baseline × his factor
+(`OBLAST_ESTIMATE`, «Орієнтовно…») → the library price (`COUNTRY`, «По країні…»). Name matched by
+`CatalogNameKey` only; works only; 204 = no line. PWA `PriceHint` under the price field of an estimate
+line and of a catalog position, with «Порівняти ↗» opening a web search of rabotniki.ua (option 1 of
+«Market prices from other sources»). Owner decisions the same day: threshold 3 masters for any oblast;
+the «Ціни по областях» viewer of OTHER oblasts is PRO and not built yet.
+
 ## How it is computed (keep this in sync with `RegionalPriceService`)
 
 Owner, 2026-11-24: «все ретельно документуй, щоб ми памятали як все рахується». Every Saturday 02:00
@@ -156,8 +167,8 @@ next run; nothing is stored that would need migrating.
 
 ## Decisions waiting for the owner
 
-1. **«Ціни по областях»: FREE or PRO?** Proposal: FREE sees his own oblast, PRO sees every oblast.
-2. **Threshold:** 3 masters (as today) or 5? Proposal: 5 for another oblast, 3 for his own.
+1. ~~**«Ціни по областях»: FREE or PRO?**~~ **Decided 2026-11-25 (owner):** the price hint is FREE; the viewer of other oblasts is PRO.
+2. ~~**Threshold:** 3 masters (as today) or 5?~~ **Decided 2026-11-25 (owner): 3 for every oblast, his own and another** — no separate threshold of 5; the "Privacy" section above is superseded on this point.
 3. **Start step 1 now** (data and admin only), look at the real per-oblast figures in a week, then
    decide about the viewer?
 
