@@ -235,6 +235,11 @@ last six months (prices rise); a catalog price always counts — it is his price
 країні» is the country baseline first, the library only without one — the same figure as the «По
 областях» country column, so one work never shows two different «по країні».
 
+**Markup copies do not count (owner, 2026-11-26).** «Наші ціни — середні по країні, ними майстри
+користуються; націнка — заробіток бригадира: сьогодні +15 %, завтра 30, потім 5 — такі скачки ламають
+ціни.» A copy made with a markup or a discount is left out; the original estimate and the catalog — the
+base prices — count. So a brigadier's catalog counts as it is.
+
 **Questions for the masters (owner's training, 2026-11-24 evening):**
 
 - Де ви зараз дивитесь ціни, коли рахуєте кошторис? Які сайти / застосунки (назвіть усі)?

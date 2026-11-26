@@ -196,4 +196,25 @@ class PriceInsightAggregationIntegrationTest extends IntegrationTestBase {
                 .singleElement()
                 .satisfies(r -> assertThat(r.getPerMasterMedianPrice()).isEqualByComparingTo("300.00"));
     }
+
+    @Test
+    void aCopyWithMarkupOrDiscount_isTheMastersEarning_andDoesNotCount() {
+        // Owner, 2026-11-26: «то заробіток бригадира… отакі скачки будуть нам ламати ціни».
+        User m = master("Бригадир");
+        Estimate base = estimate(m, EstimateStatus.DRAFT);
+        line(base, ItemType.WORK, Unit.M2, "Позиція з націнкою унікальна", "100.00");
+        Estimate markup = estimateRepository.save(Estimate.builder().project(base.getProject())
+                .status(EstimateStatus.SENT).countInEconomy(true).duplicatedFromId(base.getId())
+                .markupPercent(new BigDecimal("30")).crewPriced(true).build());
+        line(markup, ItemType.WORK, Unit.M2, "Позиція з націнкою унікальна", "130.00");
+        Estimate discount = estimateRepository.save(Estimate.builder().project(base.getProject())
+                .status(EstimateStatus.SENT).countInEconomy(true).duplicatedFromId(base.getId())
+                .markupPercent(new BigDecimal("-10")).build());
+        line(discount, ItemType.WORK, Unit.M2, "Позиція з націнкою унікальна", "90.00");
+
+        assertThat(itemRepository.aggregatePerMasterWorkPrices().stream()
+                .filter(r -> r.getRawKey().equals("позиція з націнкою унікальна")))
+                .singleElement()
+                .satisfies(r -> assertThat(r.getPerMasterMedianPrice()).isEqualByComparingTo("100.00"));
+    }
 }

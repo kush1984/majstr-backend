@@ -1509,8 +1509,9 @@ one-line summary — keep the item in the file as a record.
   «З цінами області» chip now hides rows the server sent without a level (JSON `non_null`).
   Also: only estimates made in the last 6 months count (catalog prices always); the hint's «По країні»
   is the country baseline first, the library only without one — one figure with «По областях».
-  Still open (owner to decide later): crew-price originals and their marked-up client copies both count
-  in a master's median; a master's prices all go to his own oblast wherever the object is (step 4).
+  Owner decided: markup/discount copies do NOT count (one master's earning; the base prices do).
+  Still open: a master's prices all go to his own oblast wherever the object is (step 4); a markup
+  typed into the lines by hand cannot be told apart.
 
 ### Community prices: custom (master-invented) trades' positions
 - **Status:** OPEN

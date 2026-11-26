@@ -101,6 +101,13 @@ public interface EstimateItemRepository extends JpaRepository<EstimateItem, UUID
      * <p><b>Six months of estimates (owner, 2026-11-26)</b> — prices rise; a line from two years ago is
      * not today's price. Counted from when the estimate was MADE (a typo fixed in an old one does not
      * bring its prices back). His catalog price has no window: it is what he charges now.
+     *
+     * <p><b>No markup copies (owner, 2026-11-26)</b> — a copy made «з націнкою» or «зі знижкою» is one
+     * master's earning on top of the base price: +15 % today, +30 % tomorrow, −5 % for a friend. Counted,
+     * every such copy would push the market up for everyone, the crews included. The base prices — the
+     * original estimate and the catalog — count; the copy ({@code crew_priced} or a non-zero
+     * {@code markup_percent}, a discount too) does not. A markup typed by hand into the lines leaves no
+     * trace and cannot be told apart (open-questions, «An in-place markup leaves no trace»).
      */
     @Query(value = """
             SELECT x.owner_id                                                  AS masterId,
@@ -119,6 +126,8 @@ public interface EstimateItemRepository extends JpaRepository<EstimateItem, UUID
                   JOIN projects p ON p.id = e.project_id
                   WHERE e.status <> 'REJECTED'
                     AND e.created_at >= now() - interval '6 months'
+                    AND NOT e.crew_priced
+                    AND coalesce(e.markup_percent, 0) = 0
                     AND NOT p.sample
                     AND ei.type = 'WORK'
                     AND ei.unit <> 'PERCENT'
