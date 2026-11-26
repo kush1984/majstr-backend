@@ -1494,6 +1494,10 @@ one-line summary — keep the item in the file as a record.
   under the price field (oblast median → baseline × factor → library price), «Порівняти ↗» opens a
   web search of rabotniki.ua; no live fetching from other sites. Owner decided: threshold 3 masters
   for any oblast; the other-oblast viewer is PRO and still to build (step 2).
+- **Update (2026-11-25, PWA 1.93.0 — status unchanged):** step 2 built — catalog tab «По областях» (PRO):
+  for each work in his catalog his price, the chosen oblast's (median or «орієнтовно») and the country's.
+  Left: regional seeding for new masters and the «оновити N позицій» notice (step 3), the object's own
+  oblast (step 4), and taking a price from the viewer into his catalog if masters ask.
 
 ### Community prices: custom (master-invented) trades' positions
 - **Status:** OPEN

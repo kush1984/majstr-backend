@@ -38,5 +38,8 @@ public enum Feature {
      *  {@link #OBJECT_ECONOMY}/{@link #MEASUREMENTS} — see {@code PlanConfig}. No LLM involved. */
     WORK_ACTS,
     /** Voice notes in the Telegram bot (OpenAI transcription). FREE gets a short trial instead. */
-    VOICE_NOTES
+    VOICE_NOTES,
+    /** «Ціни по областях» — another oblast's prices for every work in his catalog
+     *  (plan-regional-prices.md, step 2). The price hint under the price field stays FREE. */
+    REGIONAL_PRICES
 }

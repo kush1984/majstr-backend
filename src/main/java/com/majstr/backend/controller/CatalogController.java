@@ -11,8 +11,10 @@ import com.majstr.backend.dto.CatalogSyncResponse;
 import com.majstr.backend.dto.CatalogResetResponse;
 import com.majstr.backend.dto.CatalogUpdateNoticeResponse;
 import com.majstr.backend.dto.PriceHintResponse;
+import com.majstr.backend.dto.RegionalCatalogPricesResponse;
 import com.majstr.backend.dto.TemplateUpdatesResponse;
 import com.majstr.backend.entity.ItemType;
+import com.majstr.backend.entity.Region;
 import com.majstr.backend.entity.Unit;
 import com.majstr.backend.exception.ResourceNotFoundException;
 import com.majstr.backend.repository.UserRepository;
@@ -20,6 +22,7 @@ import com.majstr.backend.security.UserPrincipal;
 import com.majstr.backend.service.CatalogService;
 import com.majstr.backend.service.CatalogTemplateService;
 import com.majstr.backend.service.PriceHintService;
+import com.majstr.backend.service.RegionalCatalogPriceService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -54,6 +57,7 @@ public class CatalogController {
     private final CatalogTemplateService catalogTemplateService;
     private final UserRepository userRepository;
     private final PriceHintService priceHintService;
+    private final RegionalCatalogPriceService regionalCatalogPriceService;
 
     @Operation(summary = "Create a catalog item",
             description = "Offline-authored creates may send a client-generated UUID in the "
@@ -101,6 +105,15 @@ public class CatalogController {
         return priceHintService.hint(principal.id(), name, unit)
                 .map(ResponseEntity::ok)
                 .orElseGet(() -> ResponseEntity.noContent().build());
+    }
+
+    @Operation(summary = "«Ціни по областях»: one oblast's prices for the works in my catalog (PRO)",
+            description = "Per catalog work: the oblast's median (3+ masters), else the country baseline × the "
+                    + "oblast's factor, plus the country figure. Only medians — never one master's price.")
+    @GetMapping("/regional-prices")
+    public RegionalCatalogPricesResponse regionalPrices(@RequestParam("region") Region region,
+                                                        @AuthenticationPrincipal UserPrincipal principal) {
+        return regionalCatalogPriceService.forRegion(principal.id(), region);
     }
 
     @Operation(summary = "Update a catalog item")

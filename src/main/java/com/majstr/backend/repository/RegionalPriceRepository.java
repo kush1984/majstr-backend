@@ -26,6 +26,9 @@ public interface RegionalPriceRepository extends JpaRepository<RegionalPrice, UU
             com.majstr.backend.entity.Region region, String nameKey,
             com.majstr.backend.entity.ItemType itemType, com.majstr.backend.entity.Unit unit);
 
+    /** Every position with a median in one oblast — «Ціни по областях». */
+    List<RegionalPrice> findByRegion(com.majstr.backend.entity.Region region);
+
     /** The newest row — when the weekly run last wrote. */
     java.util.Optional<RegionalPrice> findTopByOrderByComputedAtDesc();
 

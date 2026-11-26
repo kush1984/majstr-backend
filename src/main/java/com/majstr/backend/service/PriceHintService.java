@@ -76,8 +76,7 @@ public class PriceHintService {
             if (baseline.isPresent()) {
                 Optional<PriceHintResponse> estimate = indexRepository.findById(region).map(index ->
                         new PriceHintResponse("OBLAST_ESTIMATE",
-                                baseline.get().getMedianPrice().multiply(index.getFactor())
-                                        .divide(TEN, 0, RoundingMode.HALF_UP).multiply(TEN),
+                                oblastEstimate(baseline.get().getMedianPrice(), index.getFactor()),
                                 null, region, index.getComputedAt()));
                 if (estimate.isPresent()) {
                     return estimate;
@@ -93,5 +92,10 @@ public class PriceHintService {
                 .findFirst()
                 .or(() -> same.stream().findFirst())
                 .map(t -> new PriceHintResponse("COUNTRY", t.getSuggestedPrice(), null, null, null));
+    }
+
+    /** Level 2: the country baseline × the oblast's factor, to 10 ₴ — «орієнтовно» says it is not a median. */
+    static BigDecimal oblastEstimate(BigDecimal baseline, BigDecimal factor) {
+        return baseline.multiply(factor).divide(TEN, 0, RoundingMode.HALF_UP).multiply(TEN);
     }
 }

@@ -91,7 +91,8 @@ public final class PlanConfig {
                         Feature.SKETCH_IMPORT,
                         Feature.PROJECT_IMPORT,
                         Feature.WORK_ACTS,
-                        Feature.VOICE_NOTES
+                        Feature.VOICE_NOTES,
+                        Feature.REGIONAL_PRICES
                 )
         ));
 
@@ -115,7 +116,8 @@ public final class PlanConfig {
                         Feature.SKETCH_IMPORT,
                         Feature.PROJECT_IMPORT,
                         Feature.WORK_ACTS,
-                        Feature.VOICE_NOTES
+                        Feature.VOICE_NOTES,
+                        Feature.REGIONAL_PRICES
                 )
         ));
     }

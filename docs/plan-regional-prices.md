@@ -1,6 +1,6 @@
-# Regional prices — plan (not built)
+# Regional prices — plan (steps 1–2 built)
 
-**Status:** step 1 shipped 2026-11-24 (V222 + V223, backend `abf54eb`, PWA 1.89.0 `d89d38b`); steps 2–4 not started. Builds on V219 (`users.region`,
+**Status:** step 1 shipped 2026-11-24 (V222 + V223, backend `abf54eb`, PWA 1.89.0 `d89d38b`); the price hint (part of step 4) and step 2 «Ціни по областях» shipped 2026-11-25 (PWA 1.92.0, 1.93.0); steps 3 and the rest of 4 not started. Builds on V219 (`users.region`,
 [iteration-regions.md](iteration-regions.md)) and the community prices of V94 (`PriceInsightService`).
 Open-questions entry: «Community prices: one national median ignores regional cost differences».
 
@@ -164,6 +164,20 @@ with neither → the plain baseline, said as «по країні»; nothing at a
 **Thresholds in one place.** `PriceInsightMath.MIN_MASTERS` = 3 (oblast median, factor);
 `RegionalPriceService.MIN_REGIONS` = 3 (baseline). Changing either changes what the admin sees on the
 next run; nothing is stored that would need migrating.
+
+## «Ціни по областях» as built (2026-11-25, step 2)
+
+PRO (`Feature.REGIONAL_PRICES`, PRO + TEAM; FREE gets 403 and the PWA shows the pitch). Catalog → third
+tab «По областях» (`/catalog/regions`): an oblast picker (his own by default, else Kyiv), a line with
+that oblast's factor («Ціни тут +8 % до середніх по країні», or «замало майстрів» without one) and the
+run's date, a chip «З цінами області», search, and his catalog's works grouped by trade → folder. Each
+row: his price · the oblast's (median «майстрів: N», or «~N орієнтовно») · the country's (the baseline,
+else the library price). `GET /api/catalog/regional-prices?region=` → `RegionalCatalogPriceService`;
+rows carry the catalog item id only and the PWA joins them to the cached catalog. A work with no figure
+at all is not listed; `%` lines and materials never. Read-only — taking a price into his catalog is a
+later step if masters ask. Tests: `RegionalCatalogPriceIntegrationTest` (median, estimate 473,2 → 470,
+library fallback, name key, empty oblast, FREE refused), `CatalogControllerTest`,
+`RegionalPricesPage.test.tsx`.
 
 ## Decisions waiting for the owner
 

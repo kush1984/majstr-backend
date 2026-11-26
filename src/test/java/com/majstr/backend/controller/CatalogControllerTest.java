@@ -47,6 +47,7 @@ class CatalogControllerTest {
     @Mock private CatalogTemplateService catalogTemplateService;
     @Mock private UserRepository userRepository;
     @Mock private com.majstr.backend.service.PriceHintService priceHintService;
+    @Mock private com.majstr.backend.service.RegionalCatalogPriceService regionalCatalogPriceService;
     @InjectMocks private CatalogController controller;
 
     private MockMvc mockMvc;
@@ -206,5 +207,28 @@ class CatalogControllerTest {
                 .willReturn(java.util.Optional.empty());
         mockMvc.perform(get("/api/catalog/price-hint").param("name", "Щось своє").param("unit", "PIECE"))
                 .andExpect(status().isNoContent());
+    }
+
+    @Test
+    void regionalPrices_answersRowsForTheAskedOblast_andFreeIsRefused() throws Exception {
+        UUID itemId = UUID.randomUUID();
+        given(regionalCatalogPriceService.forRegion(userId, com.majstr.backend.entity.Region.KYIV_CITY))
+                .willReturn(new com.majstr.backend.dto.RegionalCatalogPricesResponse(
+                        com.majstr.backend.entity.Region.KYIV_CITY, new java.math.BigDecimal("1.200"), null,
+                        List.of(new com.majstr.backend.dto.RegionalCatalogPricesResponse.Row(itemId, "OBLAST",
+                                new java.math.BigDecimal("240"), 5, new java.math.BigDecimal("200")))));
+        mockMvc.perform(get("/api/catalog/regional-prices").param("region", "KYIV_CITY"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.region").value("KYIV_CITY"))
+                .andExpect(jsonPath("$.items[0].itemId").value(itemId.toString()))
+                .andExpect(jsonPath("$.items[0].level").value("OBLAST"))
+                .andExpect(jsonPath("$.items[0].regionalPrice").value(240))
+                .andExpect(jsonPath("$.items[0].countryPrice").value(200));
+
+        given(regionalCatalogPriceService.forRegion(userId, com.majstr.backend.entity.Region.LVIV))
+                .willThrow(new com.majstr.backend.feature.FeatureNotAvailableException(
+                        com.majstr.backend.feature.Feature.REGIONAL_PRICES, com.majstr.backend.entity.Plan.FREE));
+        mockMvc.perform(get("/api/catalog/regional-prices").param("region", "LVIV"))
+                .andExpect(status().isForbidden());
     }
 }

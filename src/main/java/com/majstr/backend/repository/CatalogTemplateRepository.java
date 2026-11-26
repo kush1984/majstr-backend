@@ -22,6 +22,9 @@ public interface CatalogTemplateRepository extends JpaRepository<CatalogTemplate
      *  ({@code CatalogNameKey}), the one place that rule lives. */
     List<CatalogTemplate> findByTypeAndUnit(ItemType type, com.majstr.backend.entity.Unit unit);
 
+    /** Every library row of one type — «Ціни по областях» keys the whole library at once. */
+    List<CatalogTemplate> findByType(ItemType type);
+
     /** Templates for any of the user's trades — merged set for generalists, in the library's own
      *  order (V118), which is the order the copies are numbered in. */
     List<CatalogTemplate> findByTradeInOrderBySortOrderAsc(Collection<Trade> trades);
