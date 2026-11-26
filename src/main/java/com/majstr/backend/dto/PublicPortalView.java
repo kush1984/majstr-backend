@@ -99,6 +99,9 @@ public record PublicPortalView(
             PublicEstimateView.Signature signature,
             /** Mirrors {@link PublicEstimateView#version()} — the portal signs a SECTION, so the
              *  version must travel per section, not per page (B-61). */
-            long version
+            long version,
+            /** Receipts the master shared for THIS estimate (and, on a consolidated one, its sources) —
+             *  shown under it, never in the object's «Фото об'єкта» (2026-11-26). */
+            List<PublicEstimateView.SharedPhoto> receiptPhotos
     ) {}
 }

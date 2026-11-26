@@ -17,6 +17,7 @@ import com.majstr.backend.entity.EstimateStatus;
 import com.majstr.backend.entity.ItemType;
 import com.majstr.backend.entity.PercentBaseKind;
 import com.majstr.backend.entity.Project;
+import com.majstr.backend.entity.ProjectPhoto;
 import com.majstr.backend.entity.ShareLinkKind;
 import com.majstr.backend.entity.ProjectShareLink;
 import com.majstr.backend.entity.ProjectStatus;
@@ -53,7 +54,9 @@ import java.text.DecimalFormatSymbols;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
@@ -272,7 +275,8 @@ public class PublicEstimateService {
 
     /** The SIGNATURE portal page for one object and the estimates it shows — the link and the preview alike. */
     private PublicPortalView signaturePortal(Project project, List<Estimate> visible) {
-        List<PublicPortalView.Section> sections = visible.stream().map(this::sectionOf).toList();
+        Map<UUID, List<PublicEstimateView.SharedPhoto>> receipts = receiptsByEstimate(project.getId());
+        List<PublicPortalView.Section> sections = visible.stream().map(e -> sectionOf(e, receipts)).toList();
         Client client = project.getClient();
         User contractor = project.getOwner();
         List<PublicEstimateView.SharedPhoto> sharedPhotos = projectPhotoService.sharedPhotos(project.getId())
@@ -376,7 +380,8 @@ public class PublicEstimateService {
         }
         List<Estimate> all = new ArrayList<>(deal.stream().filter(e -> e.getKind() != EstimateKind.ADDENDUM).toList());
         deal.stream().filter(e -> e.getKind() == EstimateKind.ADDENDUM).forEach(all::add);
-        return all.stream().map(this::sectionOf).toList();
+        Map<UUID, List<PublicEstimateView.SharedPhoto>> receipts = receiptsByEstimate(projectId);
+        return all.stream().map(e -> sectionOf(e, receipts)).toList();
     }
 
     /** SIGNED ∧ counted — what the ECONOMY portal shows, and the one rule both its page and the
@@ -727,7 +732,27 @@ public class PublicEstimateService {
                 markup, discount, markupPercent, discountPercent);
     }
 
-    private PublicPortalView.Section sectionOf(Estimate live) {
+    /** The object's estimate-linked shared photos, grouped by estimate — read once per page. */
+    private Map<UUID, List<PublicEstimateView.SharedPhoto>> receiptsByEstimate(UUID projectId) {
+        Map<UUID, List<PublicEstimateView.SharedPhoto>> out = new HashMap<>();
+        for (ProjectPhoto p : projectPhotoService.sharedEstimatePhotos(projectId)) {
+            out.computeIfAbsent(p.getEstimateId(), k -> new ArrayList<>())
+                    .add(new PublicEstimateView.SharedPhoto(p.getId(), p.getCaption()));
+        }
+        return out;
+    }
+
+    /** This estimate's receipts — a consolidated one also shows its sources', as the app does. */
+    private static List<PublicEstimateView.SharedPhoto> receiptsOf(
+            Estimate live, Map<UUID, List<PublicEstimateView.SharedPhoto>> byEstimate) {
+        List<PublicEstimateView.SharedPhoto> out = new ArrayList<>(byEstimate.getOrDefault(live.getId(), List.of()));
+        for (UUID source : live.getConsolidationSourceIds()) {
+            out.addAll(byEstimate.getOrDefault(source, List.of()));
+        }
+        return out;
+    }
+
+    private PublicPortalView.Section sectionOf(Estimate live, Map<UUID, List<PublicEstimateView.SharedPhoto>> receipts) {
         // A signed estimate's section reads as it was signed (B-76).
         Optional<SignedDocumentService.FrozenEstimate> frozen = signedDocuments.estimate(live);
         Estimate estimate = frozen.map(SignedDocumentService.FrozenEstimate::estimate).orElse(live);
@@ -750,7 +775,8 @@ public class PublicEstimateService {
                 t.markupPercent(),
                 t.discountPercent(),
                 signatureOf(estimate),
-                estimate.getVersion());
+                estimate.getVersion(),
+                receiptsOf(live, receipts));
     }
 
     private PublicEstimateView buildView(Estimate live) {
@@ -793,7 +819,8 @@ public class PublicEstimateService {
                 signatureOf(estimate),
                 sharedPhotos,
                 estimate.getVersion(),
-                PayoutDetails.of(live.getProject().getOwner(), live.getProject())
+                PayoutDetails.of(live.getProject().getOwner(), live.getProject()),
+                receiptsOf(live, receiptsByEstimate(project.getId()))
         );
     }
 

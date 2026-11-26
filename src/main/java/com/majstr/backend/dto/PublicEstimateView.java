@@ -45,7 +45,10 @@ public record PublicEstimateView(
         long version,
         /** Where the client pays the master (V217) — null when the master filled none. Always the
          *  master's CURRENT details, even on a signed page: a payout is not a printed value. */
-        PayTo payTo
+        PayTo payTo,
+        /** Receipts shared for THIS estimate (and a consolidated one's sources); {@link #sharedPhotos}
+         *  is the object's own photos only — another estimate's receipt is never here (2026-11-26). */
+        List<SharedPhoto> receiptPhotos
 ) {
     public record Contractor(
             String companyName,

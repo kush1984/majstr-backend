@@ -363,10 +363,31 @@ public class ProjectPhotoService {
         return open(storage, key, "Photo file not found");
     }
 
-    /** The object's SHARED photos, for the portal view (id + caption only). */
+    /**
+     * The object's SHARED photos that belong to the OBJECT — the client page's «Фото об'єкта». A photo
+     * linked to an estimate (a receipt parsed into it) is not one of them: it shows under that estimate
+     * only ({@link #sharedEstimatePhotos}). Owner, 2026-11-26: a receipt shared for estimate A showed on
+     * estimate B's page too.
+     */
     @Transactional(readOnly = true)
     public List<ProjectPhoto> sharedPhotos(UUID projectId) {
-        return photoRepository.findByProjectIdAndVisibilityOrderByCreatedAtDesc(projectId, PhotoVisibility.SHARED);
+        return photoRepository.findByProjectIdAndVisibilityOrderByCreatedAtDesc(projectId, PhotoVisibility.SHARED)
+                .stream()
+                .filter(p -> p.getEstimateId() == null && p.getEstimateNameSnapshot() == null)
+                .toList();
+    }
+
+    /**
+     * The SHARED photos linked to a live estimate of the object, for the client page to show under that
+     * estimate. A photo whose estimate was deleted (the link went NULL, the name snapshot stayed) is in
+     * neither list: nothing on the client's page says what it belonged to (owner, 2026-11-26).
+     */
+    @Transactional(readOnly = true)
+    public List<ProjectPhoto> sharedEstimatePhotos(UUID projectId) {
+        return photoRepository.findByProjectIdAndVisibilityOrderByCreatedAtDesc(projectId, PhotoVisibility.SHARED)
+                .stream()
+                .filter(p -> p.getEstimateId() != null)
+                .toList();
     }
 
     // ---- helpers --------------------------------------------------------------
