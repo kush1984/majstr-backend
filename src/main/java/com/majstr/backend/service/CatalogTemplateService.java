@@ -83,7 +83,11 @@ public class CatalogTemplateService {
                 catalogRepository.findByOwnerIdOrderByNameAsc(userId).stream()
                         .filter(item -> item.getSource() == CatalogItemSource.LIBRARY)
                         .filter(item -> key.equals(CatalogNameKey.of(item.getName())))
-                        .forEach(item -> item.setDefaultPrice(n.getNewPrice()));
+                        .forEach(item -> {
+                            // Our price again — out of the market medians until he changes it.
+                            item.setDefaultPrice(n.getNewPrice());
+                            item.setOwnPrice(false);
+                        });
             }
             n.close(CatalogUpdateNoticeResolution.ACCEPTED);
         });

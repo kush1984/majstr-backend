@@ -139,12 +139,14 @@ class CatalogTemplateServiceTest {
         given(noticeRepository.findByIdAndUserId(noticeId, userId)).willReturn(Optional.of(notice));
         CatalogItem selfEdited = CatalogItem.builder()
                 .name("Штукатурка стін").source(CatalogItemSource.LIBRARY).defaultPrice(new BigDecimal("310"))
+                .ownPrice(true)
                 .build();
         given(catalogRepository.findByOwnerIdOrderByNameAsc(userId)).willReturn(List.of(selfEdited));
 
         catalogTemplateService.acceptUpdateNotice(userId, noticeId);
 
         assertThat(selfEdited.getDefaultPrice()).isEqualByComparingTo("250");
+        assertThat(selfEdited.isOwnPrice()).as("our price again — out of the market medians (V225)").isFalse();
         assertThat(notice.getResolution()).isEqualTo(CatalogUpdateNoticeResolution.ACCEPTED);
     }
 

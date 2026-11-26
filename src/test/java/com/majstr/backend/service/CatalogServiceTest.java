@@ -4,6 +4,7 @@ import com.majstr.backend.dto.CatalogItemRequest;
 import com.majstr.backend.dto.CatalogItemResponse;
 import com.majstr.backend.dto.CatalogItemsOrderRequest;
 import com.majstr.backend.entity.CatalogItem;
+import com.majstr.backend.entity.CatalogItemSource;
 import com.majstr.backend.entity.ItemType;
 import com.majstr.backend.entity.Trade;
 import com.majstr.backend.entity.Unit;
@@ -190,6 +191,28 @@ class CatalogServiceTest {
 
         assertThat(existing.getTrade()).isEqualTo(Trade.ELECTRICAL);
         assertThat(existing.getCustomTrade()).isNull();
+    }
+
+    /** V225: only a price he set himself joins the market medians — a save that leaves the price alone
+     *  (a rename, a new folder) must not turn our library price into «his». */
+    @Test
+    void update_marksThePriceHisOnlyWhenHeChangedIt() {
+        UUID itemId = UUID.randomUUID();
+        CatalogItem library = CatalogItem.builder()
+                .id(itemId).owner(User.builder().id(ownerId).build())
+                .name("Шпаклювання стін").trade(Trade.PAINTER).source(CatalogItemSource.LIBRARY)
+                .type(ItemType.WORK).unit(Unit.M2).defaultPrice(new BigDecimal("180.00"))
+                .build();
+        given(catalogRepository.findById(itemId)).willReturn(Optional.of(library));
+
+        catalogService.update(itemId, new CatalogItemRequest("Шпаклювання стін", "Стіни", Trade.PAINTER, null,
+                ItemType.WORK, Unit.M2, new BigDecimal("180")), ownerId);
+        assertThat(library.isOwnPrice()).isFalse();
+
+        catalogService.update(itemId, new CatalogItemRequest("Шпаклювання стін", "Стіни", Trade.PAINTER, null,
+                ItemType.WORK, Unit.M2, new BigDecimal("220.00")), ownerId);
+        assertThat(library.isOwnPrice()).isTrue();
+        assertThat(library.getDefaultPrice()).isEqualByComparingTo("220");
     }
 
     // ---- offline authoring: client-provided id (X-Entity-Uuid) --------------

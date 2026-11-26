@@ -104,6 +104,17 @@ public class CatalogItem {
     @Builder.Default
     private CatalogItemSource source = CatalogItemSource.MANUAL;
 
+    /** The price is the master's own — typed, edited or imported — not the library's (V225). Only these
+     *  rows count in the weekly market medians; a library price never does, or every median would be ours. */
+    @Column(name = "own_price", nullable = false)
+    private boolean ownPrice;
+
+    /** The master set this price himself — the one door for every price he writes. */
+    public void setMasterPrice(BigDecimal price) {
+        this.defaultPrice = price;
+        this.ownPrice = true;
+    }
+
     /**
      * The master's own arrangement, 0-based within HIS catalog (V87).
      *

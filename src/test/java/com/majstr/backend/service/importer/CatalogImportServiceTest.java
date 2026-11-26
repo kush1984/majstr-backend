@@ -70,6 +70,7 @@ class CatalogImportServiceTest {
         assertThat(res.skipped()).isEqualTo(1);
         // The existing item's price was updated to the first matching row's value.
         assertThat(demolition.getDefaultPrice()).isEqualByComparingTo("150");
+        assertThat(demolition.isOwnPrice()).as("an imported price is his — it counts in the medians (V225)").isTrue();
 
         // Exactly one new item saved — with the batch trade, trimmed name, MATERIAL type.
         ArgumentCaptor<CatalogItem> saved = ArgumentCaptor.forClass(CatalogItem.class);
@@ -77,6 +78,7 @@ class CatalogImportServiceTest {
         assertThat(saved.getValue().getName()).isEqualTo("Фарба біла");
         assertThat(saved.getValue().getType()).isEqualTo(ItemType.MATERIAL);
         assertThat(saved.getValue().getTrade()).isEqualTo(Trade.ELECTRICAL);
+        assertThat(saved.getValue().isOwnPrice()).isTrue();
     }
 
     /** V220: the same name under ANOTHER trade is that trade's own position — a new row, the other untouched. */

@@ -1,5 +1,7 @@
 package com.majstr.backend.integration;
 
+import com.majstr.backend.entity.CatalogItem;
+import com.majstr.backend.entity.CatalogItemSource;
 import com.majstr.backend.entity.Estimate;
 import com.majstr.backend.entity.EstimateItem;
 import com.majstr.backend.entity.EstimateStatus;
@@ -9,6 +11,7 @@ import com.majstr.backend.entity.Project;
 import com.majstr.backend.entity.ProjectStatus;
 import com.majstr.backend.entity.Unit;
 import com.majstr.backend.entity.User;
+import com.majstr.backend.repository.CatalogItemRepository;
 import com.majstr.backend.repository.EstimateItemRepository;
 import com.majstr.backend.repository.EstimateRepository;
 import com.majstr.backend.repository.ProjectRepository;
@@ -35,6 +38,8 @@ class PriceInsightAggregationIntegrationTest extends IntegrationTestBase {
     @Autowired ProjectRepository projectRepository;
     @Autowired EstimateRepository estimateRepository;
     @Autowired EstimateItemRepository itemRepository;
+    @Autowired CatalogItemRepository catalogRepository;
+    @Autowired org.springframework.jdbc.core.JdbcTemplate jdbc;
 
     private User master(String label) {
         String unique = UUID.randomUUID().toString();
@@ -135,5 +140,60 @@ class PriceInsightAggregationIntegrationTest extends IntegrationTestBase {
                 .anyMatch(r -> r.getRawKey().equals("контрольна позиція унікальна"));
 
         assertThat(present).isTrue();
+    }
+
+    private void catalogRow(User owner, String name, String price, CatalogItemSource source, boolean ownPrice) {
+        catalogRepository.save(CatalogItem.builder()
+                .owner(owner).name(name).type(ItemType.WORK).unit(Unit.M2)
+                .defaultPrice(new BigDecimal(price)).source(source).ownPrice(ownPrice).build());
+    }
+
+    @Test
+    void hisOwnCatalogPriceCounts_besideHisLines_asOneMoreValue() {
+        // V225: a master who only sends PDFs, or keeps his rates in the catalog, still has a price.
+        User onlyCatalog = master("Каталог");
+        catalogRow(onlyCatalog, "Каталожна позиція унікальна", "400.00", CatalogItemSource.IMPORT, true);
+        User both = master("Обидва");
+        Estimate e = estimate(both, EstimateStatus.DRAFT);
+        line(e, ItemType.WORK, Unit.M2, "Каталожна позиція унікальна", "100.00");
+        line(e, ItemType.WORK, Unit.M2, "Каталожна позиція унікальна", "200.00");
+        catalogRow(both, "Каталожна позиція унікальна", "600.00", CatalogItemSource.LIBRARY, true);
+
+        List<EstimateItemRepository.PerMasterPriceRow> rows = itemRepository.aggregatePerMasterWorkPrices().stream()
+                .filter(r -> r.getRawKey().equals("каталожна позиція унікальна")).toList();
+
+        assertThat(rows).hasSize(2); // still one row per master
+        assertThat(rows.stream().filter(r -> r.getMasterId().equals(onlyCatalog.getId())).findFirst()
+                .orElseThrow().getPerMasterMedianPrice()).isEqualByComparingTo("400.00");
+        assertThat(rows.stream().filter(r -> r.getMasterId().equals(both.getId())).findFirst()
+                .orElseThrow().getPerMasterMedianPrice()).isEqualByComparingTo("200.00"); // 100, 200, 600
+    }
+
+    @Test
+    void aLibraryPriceHeNeverTouchedDoesNotCount() {
+        User m = master("Бібліотека");
+        catalogRow(m, "Бібліотечна позиція унікальна", "350.00", CatalogItemSource.LIBRARY, false);
+
+        boolean present = itemRepository.aggregatePerMasterWorkPrices().stream()
+                .anyMatch(r -> r.getRawKey().equals("бібліотечна позиція унікальна"));
+
+        assertThat(present).isFalse();
+    }
+
+    @Test
+    void anEstimateMadeMoreThanSixMonthsAgo_noLongerCounts() {
+        // Owner, 2026-11-26: prices rise — only the last six months of estimates.
+        User m = master("Давній");
+        Estimate old = estimate(m, EstimateStatus.SIGNED);
+        line(old, ItemType.WORK, Unit.M2, "Давня позиція унікальна", "100.00");
+        jdbc.update("UPDATE estimates SET created_at = now() - interval '7 months' WHERE id = ?", old.getId());
+        Estimate recent = estimate(m, EstimateStatus.DRAFT);
+        line(recent, ItemType.WORK, Unit.M2, "Давня позиція унікальна", "300.00");
+        jdbc.update("UPDATE estimates SET created_at = now() - interval '5 months' WHERE id = ?", recent.getId());
+
+        assertThat(itemRepository.aggregatePerMasterWorkPrices().stream()
+                .filter(r -> r.getRawKey().equals("давня позиція унікальна")))
+                .singleElement()
+                .satisfies(r -> assertThat(r.getPerMasterMedianPrice()).isEqualByComparingTo("300.00"));
     }
 }

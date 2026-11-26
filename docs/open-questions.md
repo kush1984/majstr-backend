@@ -1498,6 +1498,19 @@ one-line summary — keep the item in the file as a record.
   for each work in his catalog his price, the chosen oblast's (median or «орієнтовно») and the country's.
   Left: regional seeding for new masters and the «оновити N позицій» notice (step 3), the object's own
   oblast (step 4), and taking a price from the viewer into his catalog if masters ask.
+- **Update (2026-11-26, V225 + PWA 1.93.1 — status unchanged):** owner decided — the medians read the
+  master's catalog too: a price he typed, edited or imported (`catalog_items.own_price`), beside his
+  estimate lines (unsigned ones were always in; only REJECTED is out). A library price he never touched
+  stays out. «Порівняти» now offers four sites (rabotniki, kabanchik, budver, OLX). Our own multi-source
+  range «від–до» (plan, option 2) — later, once someone collects the prices.
+  Same day: «Порівняти» stands under every work, our figure or not; an old library wording (a master's
+  kept copy after V167-style merges, old lines) counts as the wording it became in both weekly runs and
+  gets the new wording's figures in the hint and «Ціни по областях» (`catalog_renamed_position`); the
+  «З цінами області» chip now hides rows the server sent without a level (JSON `non_null`).
+  Also: only estimates made in the last 6 months count (catalog prices always); the hint's «По країні»
+  is the country baseline first, the library only without one — one figure with «По областях».
+  Still open (owner to decide later): crew-price originals and their marked-up client copies both count
+  in a master's median; a master's prices all go to his own oblast wherever the object is (step 4).
 
 ### Community prices: custom (master-invented) trades' positions
 - **Status:** OPEN

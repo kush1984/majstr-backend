@@ -18,6 +18,7 @@ import com.majstr.backend.repository.CatalogUpdateNoticeRepository;
 import com.majstr.backend.repository.EstimateItemRepository;
 import com.majstr.backend.repository.PriceInsightCandidateRepository;
 import com.majstr.backend.service.catalog.CatalogNameKey;
+import com.majstr.backend.service.catalog.CatalogRenames;
 import com.majstr.backend.service.catalog.PriceInsightMath;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -67,6 +68,7 @@ public class PriceInsightService {
     private final PriceInsightCandidateRepository candidateRepository;
     private final CatalogInsightDismissalRepository dismissalRepository;
     private final CatalogUpdateNoticeRepository noticeRepository;
+    private final CatalogRenames renames;
 
     public record RefreshSummary(int priceDrift, int newPosition, int rejectedForLowN) {
     }
@@ -87,8 +89,10 @@ public class PriceInsightService {
 
         List<EstimateItemRepository.PerMasterPriceRow> rows = estimateItemRepository.aggregatePerMasterWorkPrices();
         Map<GroupKey, List<EstimateItemRepository.PerMasterPriceRow>> groups = new HashMap<>();
+        // An old library wording (a master's kept copy, his old lines) counts as the wording it became.
+        CatalogRenames.Lookup renamed = renames.load();
         for (EstimateItemRepository.PerMasterPriceRow row : rows) {
-            String key = CatalogNameKey.of(row.getName());
+            String key = CatalogNameKey.of(renamed.current(row.getName(), row.getUnit()));
             if (key.isEmpty()) {
                 continue;
             }
@@ -119,7 +123,9 @@ public class PriceInsightService {
                 continue;
             }
 
-            String sampleName = mostCorroboratedSpelling(groupRows);
+            List<EstimateItemRepository.PerMasterPriceRow> currentRows = groupRows.stream()
+                    .filter(r -> !renamed.renamed(r.getName(), r.getUnit())).toList();
+            String sampleName = mostCorroboratedSpelling(currentRows.isEmpty() ? groupRows : currentRows);
             Instant firstSeen = groupRows.stream()
                     .map(EstimateItemRepository.PerMasterPriceRow::getFirstSeen)
                     .min(Instant::compareTo).orElse(Instant.now());

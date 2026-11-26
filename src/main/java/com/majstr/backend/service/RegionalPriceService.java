@@ -12,6 +12,7 @@ import com.majstr.backend.repository.RegionalBaselineRepository;
 import com.majstr.backend.repository.RegionalIndexRepository;
 import com.majstr.backend.repository.RegionalPriceRepository;
 import com.majstr.backend.service.catalog.CatalogNameKey;
+import com.majstr.backend.service.catalog.CatalogRenames;
 import com.majstr.backend.service.catalog.PriceInsightMath;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -36,7 +37,8 @@ import java.util.UUID;
  * Prices by oblast, step 1 (V222 + V223, plan-regional-prices.md «How it is computed»): run weekly
  * beside the national community median, read by the admin only. Everything comes from the SAME
  * per-master rows the national median uses ({@link EstimateItemRepository#aggregatePerMasterWorkPrices}:
- * one median per master per exact spelling, WORK lines of non-rejected, non-sample estimates), folded
+ * one median per master per exact spelling, WORK lines of non-rejected, non-sample estimates plus his
+ * own catalog prices — V225), folded
  * here to ONE number per master per position (fuzzy name + type + unit).
  *
  * <ol>
@@ -69,6 +71,7 @@ public class RegionalPriceService {
     private final RegionalPriceRepository priceRepository;
     private final RegionalIndexRepository indexRepository;
     private final RegionalBaselineRepository baselineRepository;
+    private final CatalogRenames renames;
 
     public record RefreshSummary(int positions, int baselines, int regionsWithIndex) {
     }
@@ -82,8 +85,10 @@ public class RegionalPriceService {
     public RefreshSummary weeklyRefresh() {
         Instant now = Instant.now();
         Map<GroupKey, List<PerMasterPriceRow>> groups = new LinkedHashMap<>();
+        // An old library wording counts as the wording it became — the national run does the same.
+        CatalogRenames.Lookup renamed = renames.load();
         for (PerMasterPriceRow row : estimateItemRepository.aggregatePerMasterWorkPrices()) {
-            String key = CatalogNameKey.of(row.getName());
+            String key = CatalogNameKey.of(renamed.current(row.getName(), row.getUnit()));
             if (!key.isEmpty()) {
                 groups.computeIfAbsent(new GroupKey(key, row.getType(), row.getUnit()), k -> new ArrayList<>()).add(row);
             }
@@ -108,7 +113,7 @@ public class RegionalPriceService {
                     byRegion.computeIfAbsent(region, r -> new ArrayList<>()).add(value);
                 }
             });
-            String sampleName = mostCorroboratedSpelling(rows);
+            String sampleName = mostCorroboratedSpelling(currentSpellings(rows, renamed));
             byRegion.forEach((region, values) -> {
                 PriceInsightMath.TrimmedStats stats = PriceInsightMath.trimmedMedian(values);
                 if (stats != null) {
@@ -191,6 +196,12 @@ public class RegionalPriceService {
             }
         }
         return out;
+    }
+
+    /** The rows under today's wording, when any — so the name shown is never one the library dropped. */
+    private static List<PerMasterPriceRow> currentSpellings(List<PerMasterPriceRow> rows, CatalogRenames.Lookup renamed) {
+        List<PerMasterPriceRow> current = rows.stream().filter(r -> !renamed.renamed(r.getName(), r.getUnit())).toList();
+        return current.isEmpty() ? rows : current;
     }
 
     /** The spelling used by the most masters — the national run's rule. */

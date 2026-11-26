@@ -22,6 +22,7 @@ import com.majstr.backend.service.AdminRegionalPriceService;
 import com.majstr.backend.service.RegionalPriceService;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.jdbc.core.JdbcTemplate;
 
 import java.math.BigDecimal;
 import java.util.List;
@@ -41,6 +42,7 @@ class RegionalPriceIntegrationTest extends IntegrationTestBase {
     @Autowired EstimateRepository estimateRepository;
     @Autowired EstimateItemRepository itemRepository;
     @Autowired RegionalPriceService regionalPriceService;
+    @Autowired JdbcTemplate jdbc;
     @Autowired AdminRegionalPriceService adminRegionalPriceService;
     @Autowired RegionalPriceRepository priceRepository;
     @Autowired RegionalIndexRepository indexRepository;
@@ -142,5 +144,31 @@ class RegionalPriceIntegrationTest extends IntegrationTestBase {
         regionalPriceService.weeklyRefresh();
 
         assertThat(priceRepository.findAll().stream().filter(r -> r.getSampleName().equals(work))).hasSize(1);
+    }
+
+    @Test
+    void anOldWordingCountsAsTheWordingItBecame_andTheNewNameIsShown() {
+        String oldName = "Шліфування старе " + token;
+        String newName = "Шліфування нове " + token;
+        jdbc.update("""
+                INSERT INTO catalog_renamed_position (old_name_key, new_name_key, unit, renamed_in)
+                VALUES (lower(?), lower(?), 'M2', 'TEST')""", oldName, newName);
+        try {
+            masterPricing(Region.POLTAVA, oldName, "100.00");
+            masterPricing(Region.POLTAVA, oldName, "110.00");
+            masterPricing(Region.POLTAVA, newName, "120.00");
+
+            regionalPriceService.weeklyRefresh();
+
+            assertThat(priceRepository.findAll().stream()
+                    .filter(r -> r.getRegion() == Region.POLTAVA && r.getSampleName().contains(token)))
+                    .singleElement().satisfies(r -> {
+                        assertThat(r.getMastersCount()).as("two old + one new = one work, three masters").isEqualTo(3);
+                        assertThat(r.getMedianPrice()).isEqualByComparingTo("110");
+                        assertThat(r.getSampleName()).isEqualTo(newName);
+                    });
+        } finally {
+            jdbc.update("DELETE FROM catalog_renamed_position WHERE renamed_in = 'TEST'");
+        }
     }
 }

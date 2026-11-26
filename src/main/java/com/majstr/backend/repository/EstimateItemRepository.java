@@ -92,27 +92,47 @@ public interface EstimateItemRepository extends JpaRepository<EstimateItem, UUID
      *
      * <p>The same rows feed the oblast medians (V222): one query, so the two levels can never
      * disagree about what a master's price is.
+     *
+     * <p><b>His catalog counts too (V225, owner 2026-11-26)</b> — most masters send a PDF and never
+     * have it signed, and many state their rates in the catalog or import a price list. A catalog row
+     * joins his lines as one more price, but only when {@code own_price} (typed, edited or imported):
+     * a library price he never touched is OUR number, and counting it would make every median ours.
+     *
+     * <p><b>Six months of estimates (owner, 2026-11-26)</b> — prices rise; a line from two years ago is
+     * not today's price. Counted from when the estimate was MADE (a typo fixed in an old one does not
+     * bring its prices back). His catalog price has no window: it is what he charges now.
      */
     @Query(value = """
-            SELECT p.owner_id                                                  AS masterId,
-                   lower(trim(ei.name))                                        AS rawKey,
-                   MIN(ei.name)                                                AS name,
-                   MIN(ei.category)                                            AS category,
-                   ei.type                                                     AS type,
-                   ei.unit                                                     AS unit,
-                   percentile_cont(0.5) WITHIN GROUP (ORDER BY ei.unit_price)   AS perMasterMedianPrice,
-                   MIN(e.created_at)                                           AS firstSeen,
+            SELECT x.owner_id                                                  AS masterId,
+                   lower(trim(x.name))                                         AS rawKey,
+                   MIN(x.name)                                                 AS name,
+                   MIN(x.category)                                             AS category,
+                   x.type                                                      AS type,
+                   x.unit                                                      AS unit,
+                   percentile_cont(0.5) WITHIN GROUP (ORDER BY x.price)         AS perMasterMedianPrice,
+                   MIN(x.seen_at)                                              AS firstSeen,
                    MIN(u.region)                                               AS region
-            FROM estimate_items ei
-            JOIN estimates e ON e.id = ei.estimate_id
-            JOIN projects p ON p.id = e.project_id
-            JOIN users u ON u.id = p.owner_id
-            WHERE e.status <> 'REJECTED'
-              AND NOT p.sample
-              AND ei.type = 'WORK'
-              AND ei.unit <> 'PERCENT'
-              AND ei.unit_price > 0
-            GROUP BY p.owner_id, lower(trim(ei.name)), ei.type, ei.unit
+            FROM (SELECT p.owner_id, ei.name, ei.category, ei.type, ei.unit,
+                         ei.unit_price AS price, e.created_at AS seen_at
+                  FROM estimate_items ei
+                  JOIN estimates e ON e.id = ei.estimate_id
+                  JOIN projects p ON p.id = e.project_id
+                  WHERE e.status <> 'REJECTED'
+                    AND e.created_at >= now() - interval '6 months'
+                    AND NOT p.sample
+                    AND ei.type = 'WORK'
+                    AND ei.unit <> 'PERCENT'
+                    AND ei.unit_price > 0
+                  UNION ALL
+                  SELECT ci.owner_id, ci.name, ci.category, ci.type, ci.unit,
+                         ci.default_price, ci.created_at
+                  FROM catalog_items ci
+                  WHERE ci.own_price
+                    AND ci.type = 'WORK'
+                    AND ci.unit <> 'PERCENT'
+                    AND ci.default_price > 0) x
+            JOIN users u ON u.id = x.owner_id
+            GROUP BY x.owner_id, lower(trim(x.name)), x.type, x.unit
             """, nativeQuery = true)
     List<PerMasterPriceRow> aggregatePerMasterWorkPrices();
 

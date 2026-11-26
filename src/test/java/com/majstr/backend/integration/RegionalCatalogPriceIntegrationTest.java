@@ -10,6 +10,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.jdbc.core.JdbcTemplate;
 
+import java.math.BigDecimal;
 import java.util.Map;
 import java.util.UUID;
 import java.util.function.Function;
@@ -116,6 +117,23 @@ class RegionalCatalogPriceIntegrationTest extends IntegrationTestBase {
             assertThat(row.level()).isNull();
             assertThat(row.regionalPrice()).isNull();
             assertThat(row.countryPrice()).isEqualByComparingTo("170");
+        });
+    }
+
+    @Test
+    void anOldLibraryWordingHeStillCarries_showsTheNewWordingsFigures() {
+        master("PRO");
+        UUID kept = work("Монтаж заміна стояка пластик на пластик одна панель", "PIECE", 2800);
+        BigDecimal survivor = jdbc.queryForObject("""
+                SELECT suggested_price FROM catalog_templates
+                WHERE name = 'Монтаж (заміна) стояка каналізації (пластиковий на пластиковий) з проходом через одну панель'
+                  AND unit = 'PIECE'""", BigDecimal.class);
+
+        RegionalCatalogPricesResponse r = service.forRegion(userId, Region.LVIV);
+
+        assertThat(r.items()).anySatisfy(row -> {
+            assertThat(row.itemId()).isEqualTo(kept);
+            assertThat(row.countryPrice()).isEqualByComparingTo(survivor);
         });
     }
 

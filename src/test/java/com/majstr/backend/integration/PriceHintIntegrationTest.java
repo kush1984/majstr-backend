@@ -8,6 +8,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.jdbc.core.JdbcTemplate;
 
+import java.math.BigDecimal;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -95,6 +96,22 @@ class PriceHintIntegrationTest extends IntegrationTestBase {
         });
     }
 
+    /** «По країні» is ONE figure everywhere (owner, 2026-11-26): the country median first — the same as
+     *  «Ціни по областях» shows — and the library only when there is none. */
+    @Test
+    void noOblastFigure_butACountryMedian_isTheCountryFigure_notTheLibrarys() {
+        master("LVIV"); // his oblast has no median and no factor
+        jdbc.update("""
+                INSERT INTO regional_baseline (id, name_key, sample_name, item_type, unit, median_price, regions_count, computed_at)
+                VALUES (gen_random_uuid(), 'мауерлату монтаж', ?, 'WORK', 'LINEAR_METER', 185, 3, now())
+                """, NAME);
+
+        assertThat(service.hint(userId, NAME, Unit.LINEAR_METER)).get().satisfies(h -> {
+            assertThat(h.level()).isEqualTo("COUNTRY");
+            assertThat(h.price()).isEqualByComparingTo("185"); // not the library's 170
+        });
+    }
+
     @Test
     void anUnknownName_aWrongUnit_orAPercent_getNoHint() {
         master("LVIV");
@@ -102,5 +119,22 @@ class PriceHintIntegrationTest extends IntegrationTestBase {
         assertThat(service.hint(userId, "Монтаж чогось зовсім свого", Unit.LINEAR_METER)).isEmpty();
         assertThat(service.hint(userId, NAME, Unit.M2)).isEmpty();
         assertThat(service.hint(userId, NAME, Unit.PERCENT)).isEmpty();
+    }
+
+    @Test
+    void aWordingTheLibraryRenamed_getsTheNewWordingsFigure() {
+        // V167 merged this wording into «Монтаж (заміна) стояка каналізації …»; masters who owned both
+        // kept the old copy, and it used to get no hint at all.
+        master(null);
+        BigDecimal survivor = jdbc.queryForObject("""
+                SELECT suggested_price FROM catalog_templates
+                WHERE name = 'Монтаж (заміна) стояка каналізації (пластиковий на пластиковий) з проходом через одну панель'
+                  AND unit = 'PIECE'""", BigDecimal.class);
+
+        assertThat(service.hint(userId, "Монтаж заміна стояка пластик на пластик одна панель", Unit.PIECE))
+                .get().satisfies(h -> {
+                    assertThat(h.level()).isEqualTo("COUNTRY");
+                    assertThat(h.price()).isEqualByComparingTo(survivor);
+                });
     }
 }

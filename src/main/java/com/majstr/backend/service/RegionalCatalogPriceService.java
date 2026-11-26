@@ -21,6 +21,7 @@ import com.majstr.backend.repository.RegionalIndexRepository;
 import com.majstr.backend.repository.RegionalPriceRepository;
 import com.majstr.backend.repository.UserRepository;
 import com.majstr.backend.service.catalog.CatalogNameKey;
+import com.majstr.backend.service.catalog.CatalogRenames;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -41,7 +42,8 @@ import java.util.UUID;
  * nothing for that oblast. The country figure is the baseline, else the library's price.
  *
  * <p>Only medians leave here — never one master's price, name or town. Matched by
- * {@link CatalogNameKey} only, like the hint; read-only, nothing is written to his catalog.</p>
+ * {@link CatalogNameKey} only, like the hint — and, like the hint, an old library wording with no figure of
+ * its own takes the new wording's ({@link CatalogRenames}). Read-only, nothing is written to his catalog.</p>
  */
 @Service
 @RequiredArgsConstructor
@@ -54,6 +56,7 @@ public class RegionalCatalogPriceService {
     private final RegionalPriceRepository priceRepository;
     private final RegionalBaselineRepository baselineRepository;
     private final RegionalIndexRepository indexRepository;
+    private final CatalogRenames renames;
 
     @Transactional(readOnly = true)
     public RegionalCatalogPricesResponse forRegion(UUID userId, Region region) {
@@ -83,6 +86,7 @@ public class RegionalCatalogPriceService {
             }
         }
         Optional<RegionalIndex> index = indexRepository.findById(region);
+        CatalogRenames.Lookup renamed = renames.load();
 
         List<Row> rows = new ArrayList<>();
         for (CatalogItem item : catalogRepository.findByOwnerIdAndTypeOrderByNameAsc(userId, ItemType.WORK)) {
@@ -94,6 +98,10 @@ public class RegionalCatalogPriceService {
                 continue;
             }
             String k = key(nameKey, item.getUnit());
+            if (!oblast.containsKey(k) && !baseline.containsKey(k) && !library.containsKey(k)) {
+                // An old library wording he still carries: the figures of the wording it became.
+                k = key(CatalogNameKey.of(renamed.current(item.getName(), item.getUnit())), item.getUnit());
+            }
             RegionalPrice own = oblast.get(k);
             RegionalBaseline country = baseline.get(k);
 

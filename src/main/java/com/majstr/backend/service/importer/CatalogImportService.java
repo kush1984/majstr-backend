@@ -78,7 +78,7 @@ public class CatalogImportService {
             if (match != null) {
                 DedupPolicy policy = in.policy() != null ? in.policy() : defaultPolicy;
                 if (policy == DedupPolicy.UPDATE_PRICE) {
-                    match.setDefaultPrice(in.price());
+                    match.setMasterPrice(in.price());
                     updated++;
                 } else {
                     skipped++;
@@ -94,6 +94,7 @@ public class CatalogImportService {
                     .type(in.type())
                     .unit(in.unit())
                     .defaultPrice(in.price())
+                    .ownPrice(true)
                     .trade(trade)
                     .category(category)
                     .source(CatalogItemSource.IMPORT)

@@ -219,6 +219,22 @@ himself as one source among several.
 
 Claude's suggestion: 1 first (fast, useful now), 2 in parallel for the most-used trades.
 
+**Decided 2026-11-26 (owner): 1 now, 2 later.** «Порівняти:» under the price field offers rabotniki ·
+kabanchik · budver · OLX (PWA 1.93.1, `COMPARE_SITES` in `PriceHint.tsx`), each a Google `site:` search
+for the work — one URL shape that does not break when a site moves its own search page. Option 2 waits
+for someone to collect the prices. The row stands under every work, our figure or not (same day).
+
+**Renamed wordings (2026-11-26).** A master whose catalog kept an old library wording (V167 kept his copy
+when he already owned the new one) got no hint: the library no longer has that name. Every rename is
+recorded in `catalog_renamed_position`, so `CatalogRenames` answers the old wording with the new one's
+figures (hint and «Ціни по областях»), and both weekly runs count an old wording as the new one — one
+work, more masters. Only renames we recorded; never a «similar» name.
+
+**Six months, one «по країні» (owner, 2026-11-26).** Estimate lines count only from estimates made in the
+last six months (prices rise); a catalog price always counts — it is his price now. The hint's «По
+країні» is the country baseline first, the library only without one — the same figure as the «По
+областях» country column, so one work never shows two different «по країні».
+
 **Questions for the masters (owner's training, 2026-11-24 evening):**
 
 - Де ви зараз дивитесь ціни, коли рахуєте кошторис? Які сайти / застосунки (назвіть усі)?
@@ -231,8 +247,13 @@ Claude's suggestion: 1 first (fast, useful now), 2 in parallel for the most-used
 
 ## Not decided / later
 
-- The data source is estimate lines (what masters actually charge). Whether imported price lists
-  («Перенести в Majstr») or catalog edits should count too — not discussed.
+- ~~Whether imported price lists or catalog edits count too.~~ **Decided 2026-11-26 (owner): yes**
+  (V225). Most masters send a PDF and never have it signed, and many keep their rates in the catalog.
+  Estimate lines of every status but REJECTED were already in; now a catalog row joins them as one more
+  price of that master — only when `own_price` (typed, edited or imported). Every master is seeded with
+  hundreds of library positions at OUR price; counting those would make every median our library
+  price. Backfill: MANUAL/IMPORT rows; a LIBRARY row whose price differs from the same trade's library
+  row and is not an old price from a PRICE_DRIFT notice. «Оновити мою ціну» on a notice clears the flag.
 - A third-party price app (`bud.work.pricefreeua`, «Будівельні розцінки UA») was looked at
   2026-11-24: its data is not taken. At most its region model is studied from screenshots, or the
   developer is asked about a licence.

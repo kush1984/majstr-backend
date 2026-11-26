@@ -112,7 +112,7 @@ public class CatalogService {
             applyNote(existing, req.note(), List.of(existing.getName()), ownerId);
             existing.setCategory(normalizeCategory(req.category()));
             existing.setCustomTrade(customTrade);
-            existing.setDefaultPrice(priceOf(req));
+            existing.setMasterPrice(priceOf(req));
             // He typed a position he could not see (its trade is off his profile): it is his now,
             // or it would vanish from the screen he just saved it on.
             if (visibility(ownerId).hides(existing)) {
@@ -130,6 +130,7 @@ public class CatalogService {
                 .type(req.type())
                 .unit(req.unit())
                 .defaultPrice(priceOf(req))
+                .ownPrice(true)
                 .note(EstimateLineNote.clean(req.note()))
                 // The master typed this themselves — the only rows the admin insight screens
                 // treat as evidence about what our defaults are missing.
@@ -260,8 +261,8 @@ public class CatalogService {
         item.setCustomTrade(customTrade);
         item.setType(req.type());
         item.setUnit(req.unit());
-        item.setDefaultPrice(priceOf(req));
         if (repriced) {
+            item.setMasterPrice(priceOf(req));
             resolvePriceDrift(ownerId, List.of(oldName, item.getName()));
         }
         return CatalogItemResponse.from(item);
@@ -335,7 +336,7 @@ public class CatalogService {
                 continue;
             }
             CatalogItem item = found.get();
-            item.setDefaultPrice(u.defaultPrice());
+            item.setMasterPrice(u.defaultPrice());
             repriced.add(item.getName());
             updated++;
         }

@@ -49,10 +49,13 @@ class PriceInsightServiceTest {
     @Mock PriceInsightCandidateRepository candidateRepository;
     @Mock CatalogInsightDismissalRepository dismissalRepository;
     @Mock CatalogUpdateNoticeRepository noticeRepository;
+    @Mock com.majstr.backend.service.catalog.CatalogRenames renames;
 
     private PriceInsightService service() {
+        org.mockito.Mockito.lenient().when(renames.load())
+                .thenReturn(com.majstr.backend.service.catalog.CatalogRenames.Lookup.EMPTY);
         return new PriceInsightService(estimateItemRepository, templateRepository, catalogItemRepository,
-                candidateRepository, dismissalRepository, noticeRepository);
+                candidateRepository, dismissalRepository, noticeRepository, renames);
     }
 
     /** Minimal stub of the per-master aggregated-row projection. */

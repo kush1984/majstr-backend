@@ -15,6 +15,7 @@ import com.majstr.backend.repository.RegionalIndexRepository;
 import com.majstr.backend.repository.RegionalPriceRepository;
 import com.majstr.backend.repository.UserRepository;
 import com.majstr.backend.service.catalog.CatalogNameKey;
+import com.majstr.backend.service.catalog.CatalogRenames;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -34,13 +35,16 @@ import java.util.UUID;
  * <ol>
  *   <li>{@code OBLAST} — the position's median among 3+ masters of his oblast ({@code regional_price});</li>
  *   <li>{@code OBLAST_ESTIMATE} — the country baseline × his oblast's factor, rounded to 10 ₴;</li>
- *   <li>{@code COUNTRY} — the library's price (market-checked by V176 / V224), his own trades' row
- *       first when the library ships the position under several.</li>
+ *   <li>{@code COUNTRY} — the country baseline (one vote per oblast, 3+ oblasts), else the library's
+ *       price (market-checked by V176 / V224), his own trades' row first when the library ships the
+ *       position under several. The same «по країні» «Ціни по областях» shows (owner, 2026-11-26: one
+ *       word, one figure).</li>
  * </ol>
  *
  * <p>A position is found by {@link CatalogNameKey} only — case, punctuation, connecting words and word
  * order. No fuzzy match: a hint for a merely similar job is a wrong number the master may trust.
- * Works only: the regional tables and the library hold no materials.</p>
+ * Works only: the regional tables and the library hold no materials. A wording the library has since
+ * renamed ({@link CatalogRenames}) that finds nothing itself is answered with the new wording's figures.</p>
  */
 @Service
 @RequiredArgsConstructor
@@ -53,6 +57,7 @@ public class PriceHintService {
     private final RegionalBaselineRepository baselineRepository;
     private final RegionalIndexRepository indexRepository;
     private final CatalogTemplateRepository templateRepository;
+    private final CatalogRenames renames;
 
     @Transactional(readOnly = true)
     public Optional<PriceHintResponse> hint(UUID userId, String name, Unit unit) {
@@ -62,7 +67,19 @@ public class PriceHintService {
         }
         User user = userRepository.findWithTradesById(userId)
                 .orElseThrow(() -> new ResourceNotFoundException("User not found"));
+        Optional<PriceHintResponse> hint = hintFor(user, key, unit);
+        if (hint.isPresent()) {
+            return hint;
+        }
+        // An old library wording (his copy, or a line he wrote before the rename): the new one's figures.
+        String current = CatalogNameKey.of(renames.load().current(name, unit));
+        return current.equals(key) ? Optional.empty() : hintFor(user, current, unit);
+    }
+
+    private Optional<PriceHintResponse> hintFor(User user, String key, Unit unit) {
         Region region = user.getRegion();
+        Optional<RegionalBaseline> baseline = baselineRepository
+                .findFirstByNameKeyAndItemTypeAndUnit(key, ItemType.WORK, unit);
         if (region != null) {
             Optional<RegionalPrice> own = priceRepository
                     .findFirstByRegionAndNameKeyAndItemTypeAndUnit(region, key, ItemType.WORK, unit);
@@ -71,8 +88,6 @@ public class PriceHintService {
                 return Optional.of(new PriceHintResponse("OBLAST", p.getMedianPrice(), p.getMastersCount(),
                         region, p.getComputedAt()));
             }
-            Optional<RegionalBaseline> baseline = baselineRepository
-                    .findFirstByNameKeyAndItemTypeAndUnit(key, ItemType.WORK, unit);
             if (baseline.isPresent()) {
                 Optional<PriceHintResponse> estimate = indexRepository.findById(region).map(index ->
                         new PriceHintResponse("OBLAST_ESTIMATE",
@@ -82,6 +97,10 @@ public class PriceHintService {
                     return estimate;
                 }
             }
+        }
+        if (baseline.isPresent()) {
+            RegionalBaseline b = baseline.get();
+            return Optional.of(new PriceHintResponse("COUNTRY", b.getMedianPrice(), null, null, b.getComputedAt()));
         }
         List<CatalogTemplate> same = templateRepository.findByTypeAndUnit(ItemType.WORK, unit).stream()
                 .filter(t -> t.getSuggestedPrice() != null && t.getSuggestedPrice().signum() > 0)
