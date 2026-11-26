@@ -10,7 +10,6 @@ import com.majstr.backend.entity.ProjectMessage;
 import com.majstr.backend.entity.ProjectShareLink;
 import com.majstr.backend.entity.ShareLinkKind;
 import com.majstr.backend.exception.ResourceNotFoundException;
-import com.majstr.backend.push.PushService;
 import com.majstr.backend.repository.ProjectMessageRepository;
 import com.majstr.backend.repository.ProjectShareLinkRepository;
 import lombok.RequiredArgsConstructor;
@@ -51,7 +50,7 @@ public class MessageLinkService {
     private final ProjectMessageRepository messageRepository;
     private final ProjectService projectService;
     private final PortalProperties portalProperties;
-    private final PushService pushService;
+    private final MasterNotifier masterNotifier;
     private final MessageFileService messageFileService;
     private final PlatformTransactionManager transactionManager;
 
@@ -136,10 +135,13 @@ public class MessageLinkService {
             // open the app now rather than after the next coffee.
             String body = message.getAuthorName() + ": " + message.getMessage()
                     + (attached > 0 ? " 📎" + attached : "");
-            pushService.sendToUser(project.getOwner(),
+            // The bot says THAT a message came, not what it says: the client's words stay in the app.
+            masterNotifier.notify(project.getOwner(), new MasterNotifier.Notice(
                     "Нове повідомлення · " + project.getName(),
                     body,
-                    "/projects/" + project.getId());
+                    "/projects/" + project.getId(),
+                    "💬 Нове повідомлення від клієнта" + (attached > 0 ? " · 📎" + attached : "")
+                            + "\nОбʼєкт: " + project.getName()));
         } catch (RuntimeException e) {
             log.warn("Push for message {} on project {} failed: {}",
                     message.getId(), project.getId(), e.getMessage());

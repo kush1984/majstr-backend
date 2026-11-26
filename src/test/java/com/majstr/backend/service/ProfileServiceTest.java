@@ -46,6 +46,7 @@ class ProfileServiceTest {
     @Mock com.majstr.backend.service.AbuseLimits abuseLimits;
     @Mock org.springframework.transaction.PlatformTransactionManager transactionManager;
     @Mock CatalogTemplateService catalogTemplateService;
+    @Mock HelpOfferService helpOfferService;
     @InjectMocks ProfileService profileService;
 
     private final UUID userId = UUID.randomUUID();

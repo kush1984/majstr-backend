@@ -5,6 +5,9 @@ import com.majstr.backend.entity.TelegramLink;
 import com.majstr.backend.entity.TelegramLinkCode;
 import com.majstr.backend.repository.TelegramLinkCodeRepository;
 import com.majstr.backend.repository.TelegramLinkRepository;
+import com.majstr.backend.repository.UserRepository;
+import com.majstr.backend.entity.User;
+import com.majstr.backend.exception.ResourceNotFoundException;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -32,14 +35,34 @@ public class TelegramLinkService {
     private final TelegramLinkRepository linkRepository;
     private final TelegramLinkCodeRepository codeRepository;
     private final BotProperties props;
+    private final UserRepository userRepository;
 
-    public record Status(boolean available, boolean linked, String username, String botUsername) {}
+    /** {@code notifications}: the app's notifications also go to the chat (V226) — the PWA's switch. */
+    public record Status(boolean available, boolean linked, String username, String botUsername,
+                         boolean notifications) {}
 
     @Transactional(readOnly = true)
     public Status status(UUID userId) {
         Optional<TelegramLink> link = linkRepository.findById(userId);
+        boolean notify = userRepository.findById(userId).map(User::isTelegramNotify).orElse(false);
         return new Status(available(), link.isPresent(), link.map(TelegramLink::getUsername).orElse(null),
-                props.telegramUsername());
+                props.telegramUsername(), notify);
+    }
+
+    /** The «Сповіщення в Telegram» switch — the caller's own row only. */
+    @Transactional
+    public Status setNotify(UUID userId, boolean enabled) {
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new ResourceNotFoundException("User not found"));
+        user.setTelegramNotify(enabled);
+        return status(userId);
+    }
+
+    /** Where a notification for this master goes: his chat, when he has one AND keeps notifications on. */
+    @Transactional(readOnly = true)
+    public Optional<Long> notifyChat(UUID userId) {
+        boolean on = userRepository.findById(userId).map(User::isTelegramNotify).orElse(false);
+        return on ? chatFor(userId) : Optional.empty();
     }
 
     /** A fresh deep link; null when the bot is not configured here. Earlier codes stop working. */
@@ -85,6 +108,23 @@ public class TelegramLinkService {
     @Transactional(readOnly = true)
     public Optional<Long> chatFor(UUID userId) {
         return linkRepository.findById(userId).map(TelegramLink::getChatId);
+    }
+
+    /**
+     * «📱 Поділитися номером» (V226): the master's own number, kept apart from the profile's phone — it is for
+     * us to reach him, never printed. A second share overwrites the first. False when it is not a phone.
+     */
+    @Transactional
+    public boolean saveContactPhone(UUID userId, String raw) {
+        String phone = ContactPhone.normalize(raw);
+        if (phone == null) {
+            return false;
+        }
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new ResourceNotFoundException("User not found"));
+        user.setContactPhone(phone);
+        user.setContactPhoneAt(Instant.now());
+        return true;
     }
 
     @Transactional

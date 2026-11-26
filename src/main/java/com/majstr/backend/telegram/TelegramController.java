@@ -1,5 +1,9 @@
 package com.majstr.backend.telegram;
 
+import com.majstr.backend.dto.TelegramNotificationsRequest;
+import jakarta.validation.Valid;
+import org.springframework.web.bind.annotation.PutMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import com.majstr.backend.security.UserPrincipal;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
@@ -36,6 +40,13 @@ public class TelegramController {
     @PostMapping("/link")
     public LinkResponse link(@AuthenticationPrincipal UserPrincipal principal) {
         return new LinkResponse(links.createLink(principal.id()));
+    }
+
+    @Operation(summary = "Turn the app's notifications in the linked chat on or off (the caller's own)")
+    @PutMapping("/notifications")
+    public TelegramLinkService.Status notifications(@Valid @RequestBody TelegramNotificationsRequest req,
+                                                    @AuthenticationPrincipal UserPrincipal principal) {
+        return links.setNotify(principal.id(), req.enabled());
     }
 
     @Operation(summary = "Unlink the chat")

@@ -177,7 +177,9 @@ public class AdminUserService {
                 user.getTrialStartedAt(),
                 referredByEmail,
                 invitedCount,
-                invitedPaidCount
+                invitedPaidCount,
+                user.getContactPhone(),
+                user.getContactPhoneAt()
         );
     }
 

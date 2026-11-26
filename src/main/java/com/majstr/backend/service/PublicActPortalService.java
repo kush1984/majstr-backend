@@ -21,7 +21,6 @@ import com.majstr.backend.exception.DocumentChangedException;
 import com.majstr.backend.exception.ResourceNotFoundException;
 import com.majstr.backend.exception.WorkActSignedException;
 import com.majstr.backend.exception.WorkActValidationException;
-import com.majstr.backend.push.PushService;
 import com.majstr.backend.repository.EstimateRepository;
 import com.majstr.backend.repository.ProjectMessageRepository;
 import com.majstr.backend.repository.ProjectShareLinkRepository;
@@ -71,11 +70,10 @@ public class PublicActPortalService {
     private final ActSignedCopyService signedCopy;
     private final SignedDocumentService signedDocuments;
     private final ActReceiptCompleteness receiptCompleteness;
-    private final AfterCommit afterCommit;
     private final ActReceiptDuplicateGuard receiptDuplicateGuard;
     private final ActLineBinder lineBinder;
     private final WorkActReceiptService receiptService;
-    private final PushService pushService;
+    private final MasterNotifier masterNotifier;
     private final MessageSource messages;
     private final PlatformTransactionManager transactionManager;
     private final PdfRenderLog pdfRenderLog;
@@ -173,10 +171,11 @@ public class PublicActPortalService {
                 .authorIp(clientIp)
                 .build());
         User contractor = project.getOwner();
-        pushService.sendToUser(contractor,
+        masterNotifier.notify(contractor, new MasterNotifier.Notice(
                 messages.getMessage("push.question.title", null, LocalizationConfig.UKRAINIAN),
                 "«Акт № " + act.getNumber() + "»: " + saved.getMessage(),
-                "/projects/" + project.getId());
+                "/projects/" + project.getId(),
+                "💬 Клієнт поставив питання до акта № " + act.getNumber() + "\nОбʼєкт: " + project.getName()));
         return QuestionResponse.from(saved);
     }
 
@@ -339,7 +338,9 @@ public class PublicActPortalService {
         User owner = act.getProject().getOwner();
         String body = "Акт № " + act.getNumber();
         String url = "/projects/" + act.getProject().getId();
-        afterCommit.run(() -> pushService.sendToUser(owner, title, body, url));
+        // After the commit (B-81) — MasterNotifier waits for it on both channels.
+        masterNotifier.notify(owner, new MasterNotifier.Notice(title, body, url,
+                "✅ Клієнт підписав акт № " + act.getNumber() + "\nОбʼєкт: " + act.getProject().getName()));
     }
 
     // ---- helpers ----------------------------------------------------------

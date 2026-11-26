@@ -57,6 +57,15 @@ public class AsyncExecutorsConfig {
         return executor("bot-", 2, 200, true);
     }
 
+    /**
+     * The bot's notifications to masters (iteration-master-contact): one short HTTP call each, apart from the
+     * parses and taps so a burst of signatures never waits behind a model call — and never makes them wait.
+     */
+    @Bean
+    ThreadPoolTaskExecutor telegramNotifyExecutor() {
+        return executor("tg-notify-", 2, 500, true);
+    }
+
     /** Button taps in the bot: database work only, so they never wait behind a parse (review S-12). */
     @Bean
     ThreadPoolTaskExecutor botTapExecutor() {

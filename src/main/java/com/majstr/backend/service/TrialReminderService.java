@@ -3,7 +3,6 @@ package com.majstr.backend.service;
 import com.majstr.backend.config.BillingProperties;
 import com.majstr.backend.email.EmailService;
 import com.majstr.backend.entity.User;
-import com.majstr.backend.push.PushService;
 import com.majstr.backend.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -41,7 +40,7 @@ public class TrialReminderService {
     private final BillingProperties props;
     private final UserRepository userRepository;
     private final EmailService emailService;
-    private final PushService pushService;
+    private final MasterNotifier masterNotifier;
 
     @Scheduled(cron = "${app.billing.trial-reminder-cron:0 30 9 * * *}")
     @Transactional
@@ -57,12 +56,11 @@ public class TrialReminderService {
         for (User user : due) {
             long daysLeft = Math.max(1, ChronoUnit.DAYS.between(now, user.getPlanExpiresAt()) + 1);
             emailService.sendTrialEndingEmail(user, user.getPlanExpiresAt(), daysLeft);
-            pushService.sendToUser(user,
-                    "Пробний PRO закінчується",
-                    daysLeft == 1
-                            ? "Завтра останній день. Продовжте підписку, щоб не втратити функції PRO."
-                            : "Лишилось днів: " + daysLeft + ". Продовжте підписку, щоб не втратити функції PRO.",
-                    "/profile");
+            String body = daysLeft == 1
+                    ? "Завтра останній день. Продовжте підписку, щоб не втратити функції PRO."
+                    : "Лишилось днів: " + daysLeft + ". Продовжте підписку, щоб не втратити функції PRO.";
+            masterNotifier.notify(user, new MasterNotifier.Notice("Пробний PRO закінчується", body, "/profile",
+                    "⏳ Пробний PRO закінчується. " + body));
             // Stamped even if a channel was skipped: the point of this field is "we already spoke
             // to him today", and re-running the job must not turn one silent channel into two
             // messages on the one that works.

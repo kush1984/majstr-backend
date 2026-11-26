@@ -55,6 +55,7 @@ public class ProfileService {
     private final PlatformTransactionManager transactionManager;
     private final AbuseLimits abuseLimits;
     private final CatalogTemplateService catalogTemplateService;
+    private final HelpOfferService helpOfferService;
 
     /** Stamp privacy-policy consent (one-time login modal for users who predate the
      *  registration checkbox). Idempotent — a prior stamp is kept. */
@@ -170,7 +171,23 @@ public class ProfileService {
         if (user.getHelpRequestedAt() == null) {
             user.setHelpRequestedAt(Instant.now());
         }
+        // Why the card stood when he tapped (V226) — the admin's call list says it. Decided here, never sent
+        // by the client; null when he asked without the card in front of him.
+        user.setHelpReason(helpOfferService.reasonFor(user));
         user.setHelpHandledAt(null);
+        return response(user);
+    }
+
+    /**
+     * «Додати номер із Telegram до документів?» (V226): the number he shared with the bot becomes the profile's
+     * phone — the one documents print — only by this tap, and only while the profile has none.
+     */
+    @Transactional
+    public UserResponse usePhoneFromTelegram(UUID userId) {
+        User user = loadUser(userId);
+        if (user.getContactPhone() != null && (user.getPhone() == null || user.getPhone().isBlank())) {
+            user.setPhone(user.getContactPhone());
+        }
         return response(user);
     }
 

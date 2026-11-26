@@ -58,7 +58,10 @@ public record AdminUserDetail(
         // and how many they invited / of those paid.
         String referredByEmail,
         long invitedCount,
-        long invitedPaidCount
+        long invitedPaidCount,
+        // The number he shared with the Telegram bot (V226) — the admin calls on it; never printed.
+        String contactPhone,
+        Instant contactPhoneAt
 ) {
     /** Estimate counts split by status, plus the total. */
     public record EstimateBreakdown(long total, long draft, long sent, long signed, long rejected) {}

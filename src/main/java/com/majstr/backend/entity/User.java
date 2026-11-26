@@ -229,6 +229,24 @@ public class User {
     @Column(name = "help_handled_at")
     private Instant helpHandledAt;
 
+    /** Why the help card was offered when he asked for the call (V226) — the admin's call list says it. */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "help_reason", length = 20)
+    private HelpReason helpReason;
+
+    /** Send the app's notifications to his linked Telegram chat too (V226). On by default. */
+    @Builder.Default
+    @Column(name = "telegram_notify", nullable = false)
+    private boolean telegramNotify = true;
+
+    /** His own number, shared with the bot (V226) — how we reach him. NEVER printed on a document and
+     *  never shown to a client, unlike {@link #phone}; it reaches {@link #phone} only by his tap. */
+    @Column(name = "contact_phone", length = 32)
+    private String contactPhone;
+
+    @Column(name = "contact_phone_at")
+    private Instant contactPhoneAt;
+
     /** Where he works (V219) — the oblast prices will be split by. NULL = not answered yet. */
     @Enumerated(EnumType.STRING)
     @Column(name = "region", length = 30)

@@ -45,12 +45,13 @@ class MessageFileRetentionServiceTest {
     @Mock ProjectMessageFileRepository fileRepository;
     @Mock com.majstr.backend.storage.StorageService storage;
     @Mock PushService pushService;
+    @org.mockito.Mock com.majstr.backend.telegram.TelegramNotifier telegramNotifier;
 
     private static final int RETENTION_DAYS = 180;
     private static final int GRACE_DAYS = 14;
 
     private MessageFileRetentionService service() {
-        return new MessageFileRetentionService(fileRepository, storage, pushService,
+        return new MessageFileRetentionService(fileRepository, storage, new com.majstr.backend.service.MasterNotifier(pushService, telegramNotifier, new com.majstr.backend.service.AfterCommit()),
                 RETENTION_DAYS, GRACE_DAYS, 200);
     }
 

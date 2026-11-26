@@ -1044,6 +1044,13 @@
 
     // «Залиште телефон — передзвонимо» (V191): who asked, with the number they left; a call marked
     // done (V193) drops below the open ones, so the top of the list is always who to call next.
+    // V226: why the card stood when he asked, and the number he shared with the Telegram bot.
+    const HELP_REASON = { NO_OBJECT: 'немає обʼєкта', NOT_SENT: 'не надсилав клієнту' };
+    function telegramPhone(contact, shown) {
+        if (!contact || contact === shown) return contact ? ' <span class="muted">· Telegram</span>' : '';
+        return '<br><a href="tel:' + encodeURIComponent(contact) + '">' + escapeHtml(contact) + '</a> <span class="muted">· Telegram</span>';
+    }
+
     async function loadHelpRequests() {
         const resp = await api('/admin/metrics/help-requests');
         if (!resp.ok) return;
@@ -1055,8 +1062,8 @@
         box.innerHTML = rows.length === 0
             ? '<p class="muted">Ще ніхто не просив.</p>'
             : `<p class="muted" style="margin:0 0 8px">Чекають дзвінка: <b>${open}</b> з ${rows.length}</p>
-               <table><thead><tr><th>Телефон</th><th>Email</th><th class="hide-mobile">Ім'я</th><th>Коли</th><th></th></tr></thead><tbody>`
-              + rows.map(r => `<tr${r.handledAt ? ' class="muted"' : ''}><td><a href="tel:${escapeHtml(r.phone)}">${escapeHtml(r.phone)}</a></td><td>${escapeHtml(r.email)}</td><td class="hide-mobile">${r.fullName ? escapeHtml(r.fullName) : '<span class="muted">—</span>'}</td><td class="muted">${fmt(r.requestedAt)}</td><td><button type="button" class="help-handled" data-user="${r.userId}" data-handled="${r.handledAt ? 'false' : 'true'}">${r.handledAt ? '✓ оброблено · скасувати' : 'Оброблено'}</button></td></tr>`).join('')
+               <table><thead><tr><th>Телефон</th><th>Причина</th><th>Email</th><th class="hide-mobile">Ім'я</th><th>Коли</th><th></th></tr></thead><tbody>`
+              + rows.map(r => `<tr${r.handledAt ? ' class="muted"' : ''}><td><a href="tel:${escapeHtml(r.phone)}">${escapeHtml(r.phone)}</a>${telegramPhone(r.contactPhone, r.phone)}</td><td>${HELP_REASON[r.reason] || '<span class="muted">—</span>'}</td><td>${escapeHtml(r.email)}</td><td class="hide-mobile">${r.fullName ? escapeHtml(r.fullName) : '<span class="muted">—</span>'}</td><td class="muted">${fmt(r.requestedAt)}</td><td><button type="button" class="help-handled" data-user="${r.userId}" data-handled="${r.handledAt ? 'false' : 'true'}">${r.handledAt ? '✓ оброблено · скасувати' : 'Оброблено'}</button></td></tr>`).join('')
               + `</tbody></table>`;
         box.querySelectorAll('.help-handled').forEach(btn => btn.addEventListener('click', async () => {
             btn.disabled = true;
@@ -1089,6 +1096,7 @@
             <p>Телефон: ${d.phone
                 ? '<a href="tel:' + encodeURIComponent(d.phone) + '"><b>' + escapeHtml(d.phone) + '</b></a>'
                 : '<span class="muted">—</span>'}
+               ${d.contactPhone ? '&nbsp;·&nbsp; <a href="tel:' + encodeURIComponent(d.contactPhone) + '">' + escapeHtml(d.contactPhone) + '</a> <span class="muted">· Telegram</span>' : ''}
                &nbsp;·&nbsp; Email: <a href="mailto:${encodeURIComponent(d.email)}">${escapeHtml(d.email)}</a> ${yn(d.emailVerified)}</p>
             <p>Трейди: ${(d.trades || []).join(', ') || '—'}</p>
             <p>План: <span class="badge ${d.plan}">${d.plan}</span>
@@ -1417,6 +1425,14 @@
         'submit': 'Кнопка форми (порахувати / надіслати)',
         'link:mailto': 'Написати на пошту',
         'register:email-fix': 'Прийняли підказку «Може, …@gmail.com?»',
+        // SEO pages (2026-11-26): every sign-up button named, so one «link:/register» splits into where it was.
+        'sample:after-table': 'Зразок кошторису: під таблицею',
+        'sample:sticky': 'Зразок кошторису: закріплена кнопка внизу',
+        'sample:final': 'Зразок кошторису: унизу сторінки',
+        'act:final': 'Зразок акта: унизу сторінки',
+        'calc:top': 'Калькулятор: «Ви майстер?» під формою',
+        'calc:after-result': 'Калькулятор: після результату',
+        'calc:final': 'Калькулятор: унизу сторінки',
     };
     const ERROR_NAMES = {
         'server:email_already_registered': 'Пошта вже зареєстрована',

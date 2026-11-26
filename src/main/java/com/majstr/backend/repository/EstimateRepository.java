@@ -120,6 +120,15 @@ public interface EstimateRepository extends JpaRepository<Estimate, UUID> {
             """)
     List<OwnerSource> findOwnersWithEstimateIn(@Param("statuses") Collection<EstimateStatus> statuses);
 
+    /** ONE master's half of {@link #findOwnersWithEstimateIn}: an estimate of his (not the sample) reached one of
+     *  {@code statuses} — the help card's «nothing handed to a client yet» (V226). */
+    @Query("""
+            SELECT COUNT(e) > 0 FROM Estimate e
+            WHERE e.project.owner.id = :ownerId AND e.status IN :statuses AND e.project.sample = false
+            """)
+    boolean existsForOwnerWithStatusIn(@Param("ownerId") java.util.UUID ownerId,
+                                       @Param("statuses") Collection<EstimateStatus> statuses);
+
     /** The two estimate funnel steps, grouped by referral source — same rules as the aggregates
      *  above (masters only, distinct owners), so the by-source rows sum to the funnel. */
     @Query("""

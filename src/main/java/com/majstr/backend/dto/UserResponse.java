@@ -67,7 +67,10 @@ public record UserResponse(
         // When he answered «Чим займаєтесь?» (V193) — null means the PWA still asks it.
         Instant tradesOnboardedAt,
         // Where he works (V219) — null means the home screen still asks it.
-        Region region
+        Region region,
+        // The number he shared with the Telegram bot (V226) — for us to reach him, NEVER printed. The PWA
+        // offers to copy it into {@code phone} while that is empty; only his tap does it.
+        String contactPhone
 ) {
     /** {@code customTrades} is a separate explicit query, deliberately NOT a lazy collection on
      *  {@link User} — this factory is called from many places (auth, profile, billing), and riding
@@ -110,7 +113,8 @@ public record UserResponse(
                 user.getPayoutLink(),
                 user.getHelpRequestedAt(),
                 user.getTradesOnboardedAt(),
-                user.getRegion()
+                user.getRegion(),
+                user.getContactPhone()
         );
     }
 

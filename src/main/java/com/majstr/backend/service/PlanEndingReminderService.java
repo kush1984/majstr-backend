@@ -2,7 +2,6 @@ package com.majstr.backend.service;
 
 import com.majstr.backend.email.EmailService;
 import com.majstr.backend.entity.User;
-import com.majstr.backend.push.PushService;
 import com.majstr.backend.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -34,7 +33,7 @@ public class PlanEndingReminderService {
 
     private final UserRepository userRepository;
     private final EmailService emailService;
-    private final PushService pushService;
+    private final MasterNotifier masterNotifier;
 
     @Scheduled(cron = "${app.billing.plan-ending-reminder-cron:0 35 9 * * *}")
     @Transactional
@@ -48,10 +47,9 @@ public class PlanEndingReminderService {
             }
             long daysLeft = Math.max(1, ChronoUnit.DAYS.between(now, user.getPlanExpiresAt()) + 1);
             emailService.sendPlanEndingEmail(user, user.getPlanExpiresAt(), daysLeft);
-            pushService.sendToUser(user,
-                    daysLeft == 1 ? "PRO закінчується завтра" : "PRO закінчується через " + daysLeft + " дн.",
-                    "Далі буде FREE: частина функцій вимкнеться, дані лишаться. Продовжте PRO в профілі.",
-                    "/profile");
+            String title = daysLeft == 1 ? "PRO закінчується завтра" : "PRO закінчується через " + daysLeft + " дн.";
+            String body = "Далі буде FREE: частина функцій вимкнеться, дані лишаться. Продовжте PRO в профілі.";
+            masterNotifier.notify(user, new MasterNotifier.Notice(title, body, "/profile", "⏳ " + title + ". " + body));
             // Stamped even when a channel was skipped (no VAPID key, no email key): this field
             // means «this stage was said», and a rerun must not say it again on the channel that works.
             user.setPlanEndingRemindedAt(now);

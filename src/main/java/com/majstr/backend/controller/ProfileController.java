@@ -1,7 +1,9 @@
 package com.majstr.backend.controller;
 
 import com.majstr.backend.dto.CustomTradeRequest;
+import com.majstr.backend.dto.HelpOfferResponse;
 import com.majstr.backend.dto.HelpRequest;
+import com.majstr.backend.service.HelpOfferService;
 import com.majstr.backend.dto.ProfileTradesRequest;
 import com.majstr.backend.dto.ProfileUpdateRequest;
 import com.majstr.backend.dto.RegionRequest;
@@ -20,6 +22,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.DeleteMapping;
+import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -41,6 +44,7 @@ import java.util.UUID;
 public class ProfileController {
 
     private final ProfileService profileService;
+    private final HelpOfferService helpOfferService;
     private final UserRepository userRepository;
     private final UserTradeRepository userTradeRepository;
 
@@ -78,6 +82,20 @@ public class ProfileController {
     public UserResponse requestHelp(@Valid @RequestBody HelpRequest req,
                                     @AuthenticationPrincipal UserPrincipal principal) {
         return profileService.requestHelp(principal.id(), req);
+    }
+
+    @Operation(summary = "The home screen's setup-help card: why it stands now, or 204 for no card")
+    @GetMapping("/help-offer")
+    public ResponseEntity<HelpOfferResponse> helpOffer(@AuthenticationPrincipal UserPrincipal principal) {
+        return helpOfferService.offer(principal.id())
+                .map(ResponseEntity::ok)
+                .orElseGet(() -> ResponseEntity.noContent().build());
+    }
+
+    @Operation(summary = "Put the number shared with the Telegram bot into the profile (only while it has none)")
+    @PostMapping("/phone-from-telegram")
+    public UserResponse phoneFromTelegram(@AuthenticationPrincipal UserPrincipal principal) {
+        return profileService.usePhoneFromTelegram(principal.id());
     }
 
     @Operation(summary = "Set the name, phone and company a document prints (asked before the first send)")

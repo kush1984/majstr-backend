@@ -41,6 +41,6 @@ public class HelpRequestService {
     private static HelpRequestLead lead(User u) {
         return new HelpRequestLead(u.getId(), u.getEmail(), u.getFullName(),
                 u.getHelpPhone() != null ? u.getHelpPhone() : u.getPhone(),
-                u.getHelpRequestedAt(), u.getHelpHandledAt());
+                u.getHelpRequestedAt(), u.getHelpHandledAt(), u.getHelpReason(), u.getContactPhone());
     }
 }

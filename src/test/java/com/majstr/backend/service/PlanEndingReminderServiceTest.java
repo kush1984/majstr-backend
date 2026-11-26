@@ -7,7 +7,6 @@ import com.majstr.backend.push.PushService;
 import com.majstr.backend.repository.UserRepository;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
@@ -32,7 +31,15 @@ class PlanEndingReminderServiceTest {
     @Mock UserRepository userRepository;
     @Mock EmailService emailService;
     @Mock PushService pushService;
-    @InjectMocks PlanEndingReminderService service;
+    @org.mockito.Mock com.majstr.backend.telegram.TelegramNotifier telegramNotifier;
+    PlanEndingReminderService service;
+
+    /** A real MasterNotifier over the mocked push: the assertions below still read the push itself. */
+    @org.junit.jupiter.api.BeforeEach
+    void build() {
+        service = new PlanEndingReminderService(userRepository, emailService,
+                new MasterNotifier(pushService, telegramNotifier, new AfterCommit()));
+    }
 
     private static final Instant NOW = Instant.parse("2026-11-11T09:35:00Z");
 

@@ -149,6 +149,9 @@ one-line summary — keep the item in the file as a record.
   master's permission; email is the other channel and is not always on either.
 - **Notes / options:** «Майстер отримає сповіщення», or say it only when the sign response reports a
   push was sent.
+- **Update (2026-11-26, V226 — status unchanged):** a master with the Telegram bot now also gets the
+  signature in his chat (`MasterNotifier`), which makes the promise truer for him — not for one with
+  neither push nor the bot.
 
 ### Tile in the app: boxes and the other layouts
 - **Status:** OPEN
@@ -931,6 +934,17 @@ one-line summary — keep the item in the file as a record.
   through the record's own service like undo/move. About half a day with tests. Wait to see whether masters
   actually talk to it this way before building.
 
+### Admin broadcasts through Telegram
+- **Status:** DEFERRED (2026-11-26, iteration-master-contact)
+- **Since:** 2026-11-26
+- **Context:** V226 made the bot an OUTWARD channel (`MasterNotifier` → `TelegramNotifier`), but only for
+  events about the master's own objects and plan. Admin broadcasts (V180, six segments) still go by email
+  only.
+- **Notes / options:** a broadcast through the bot would reach masters who never read email — but a bot
+  that advertises gets blocked, and a block unlinks the chat (403 → `unlinkChat`), which also kills the
+  signature notifications. If ever: opt-in per master, separate from «Сповіщення в Telegram», rare, and
+  never on the same day as a reminder.
+
 ### Inbox parse budget and the bot's evening reminder
 - **Status:** OPEN
 - **Since:** 2026-10-31, majster-bot
@@ -1046,6 +1060,9 @@ one-line summary — keep the item in the file as a record.
   bean** rather than a branch inside `AutoRenewService`: a bug in a reminder must not be able to
   reach a path that charges cards. Doing the same here means a third bean or a shared helper — not
   folding this into the charge job. Still OPEN because the auto-renew half was not touched.
+- **Update (2026-11-26, V226 — status unchanged):** trial-ending and PRO-ending reminders now go through
+  `MasterNotifier` (push + Telegram). The T-3 auto-renew reminder is still email-only; adding it is one
+  `masterNotifier.notify(...)` beside the email.
 
 ### Auto-renew: recurring-charge clause in the public offer
 - **Status:** OPEN

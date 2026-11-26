@@ -47,6 +47,7 @@ class MessageLinkServiceTest {
     @Mock ProjectMessageRepository messageRepository;
     @Mock ProjectService projectService;
     @Mock PushService pushService;
+    @org.mockito.Mock com.majstr.backend.telegram.TelegramNotifier telegramNotifier;
     @Mock MessageFileService messageFileService;
     @Mock org.springframework.transaction.PlatformTransactionManager transactionManager;
 
@@ -56,7 +57,7 @@ class MessageLinkServiceTest {
     private MessageLinkService service() {
         PortalProperties portal = new PortalProperties("https://api.majstr.pro");
         return new MessageLinkService(linkRepository, messageRepository, projectService, portal,
-                pushService, messageFileService, transactionManager);
+                new com.majstr.backend.service.MasterNotifier(pushService, telegramNotifier, new com.majstr.backend.service.AfterCommit()), messageFileService, transactionManager);
     }
 
     @Test

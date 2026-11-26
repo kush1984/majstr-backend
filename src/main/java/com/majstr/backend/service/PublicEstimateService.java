@@ -30,7 +30,6 @@ import com.majstr.backend.exception.ResourceNotFoundException;
 import com.majstr.backend.exception.WorkActConflictException;
 import com.majstr.backend.feature.Feature;
 import com.majstr.backend.feature.FeatureGuard;
-import com.majstr.backend.push.PushService;
 import com.majstr.backend.entity.PaymentReceipt;
 import com.majstr.backend.repository.EstimateItemRepository;
 import com.majstr.backend.repository.ProjectMessageRepository;
@@ -85,11 +84,10 @@ public class PublicEstimateService {
     private final EstimateService estimateService;
     private final ProjectPhotoService projectPhotoService;
     private final FeatureGuard featureGuard;
-    private final PushService pushService;
+    private final MasterNotifier masterNotifier;
     private final WorkActItemRepository workActItemRepository;
     private final MaterialRefundCalculator refundCalculator;
     private final MessageSource messages;
-    private final AfterCommit afterCommit;
     private final SignedDocumentService signedDocuments;
     private final PlatformTransactionManager transactionManager;
     private final PortalPreviewTokens previewTokens;
@@ -517,8 +515,10 @@ public class PublicEstimateService {
                 LocalizationConfig.UKRAINIAN);
         String body = pushBody(estimate);
         // After the commit (review B-96): sent from inside the transaction, a signature that then
-        // rolled back still told the master «підписано» — the act sign learned this in B-81.
-        afterCommit.run(() -> pushService.sendToUser(contractor, title, body, "/projects/" + project.getId()));
+        // rolled back still told the master «підписано» — the act sign learned this in B-81. MasterNotifier
+        // waits for the commit itself. The bot's line names no client and no sum: the push carries those.
+        masterNotifier.notify(contractor, new MasterNotifier.Notice(title, body, "/estimates/" + estimate.getId(),
+                "✍️ Клієнт підписав " + estimateLabel(estimate, "кошторис") + "\nОбʼєкт: " + project.getName()));
     }
 
     /**
@@ -574,10 +574,13 @@ public class PublicEstimateService {
         String body = estimate.getName() == null || estimate.getName().isBlank()
                 ? question.getMessage()
                 : "«" + estimate.getName() + "»: " + question.getMessage();
-        pushService.sendToUser(contractor,
+        masterNotifier.notify(contractor, new MasterNotifier.Notice(
                 messages.getMessage("push.question.title", null, LocalizationConfig.UKRAINIAN),
                 body,
-                "/projects/" + estimate.getProject().getId());
+                "/projects/" + estimate.getProject().getId(),
+                // The client's words stay in the app: the bot only says there is something to read.
+                "💬 Клієнт поставив питання до " + estimateLabel(estimate, "кошторису")
+                        + "\nОбʼєкт: " + estimate.getProject().getName()));
         return saved;
     }
 
@@ -864,6 +867,12 @@ public class PublicEstimateService {
     }
 
     /** «Питання по кошторису» push body / project name pairing for the sign push. */
+    /** «кошторис «Ванна»» in the case the sentence needs — the client-safe name (no «+20%»), or the noun alone. */
+    private static String estimateLabel(Estimate estimate, String noun) {
+        String name = ClientSafeName.of(estimate.getName());
+        return name == null || name.isBlank() ? noun : noun + " «" + name + "»";
+    }
+
     private static String pushBody(Estimate estimate) {
         String projectName = estimate.getProject().getName();
         return estimate.getName() == null || estimate.getName().isBlank()

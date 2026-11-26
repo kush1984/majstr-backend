@@ -73,6 +73,7 @@ class PublicEstimateServiceTest {
     @Mock private ProjectPhotoService projectPhotoService;
     @Mock private FeatureGuard featureGuard;
     @Mock private PushService pushService;
+    @org.mockito.Mock com.majstr.backend.telegram.TelegramNotifier telegramNotifier;
     @Mock private WorkActItemRepository workActItemRepository;
     @Mock private SignedDocumentService signedDocuments;
     @Mock private org.springframework.transaction.PlatformTransactionManager transactionManager;
@@ -95,8 +96,9 @@ class PublicEstimateServiceTest {
         messages.setFallbackToSystemLocale(false);
         publicService = new PublicEstimateService(shareLinkRepository, projectShareLinkRepository,
                 paymentReceiptRepository, estimateRepository, itemRepository,
-                messageRepository, estimateService, projectPhotoService, featureGuard, pushService,
-                workActItemRepository, refundCalculator, messages, new AfterCommit(), signedDocuments,
+                messageRepository, estimateService, projectPhotoService, featureGuard,
+                new MasterNotifier(pushService, telegramNotifier, new AfterCommit()),
+                workActItemRepository, refundCalculator, messages, signedDocuments,
                 transactionManager, previewTokens, projectRepository);
     }
 
@@ -294,11 +296,34 @@ class PublicEstimateServiceTest {
         assertThat(view.signature()).isNotNull();
         assertThat(view.signature().signerName()).isEqualTo("Олена Іваненко");
         // Contractor is pushed a real-time signing notification.
+        // Both open the estimate itself (iteration-master-contact).
         verify(pushService).sendToUser(
                 eq(estimate.getProject().getOwner()),
                 contains("підписав(ла) кошторис"),
                 eq("Квартира на Хрещатику"),
-                contains("/projects/"));
+                eq("/estimates/" + estimate.getId()));
+        // The bot says what happened and where — never who signed or for how much.
+        verify(telegramNotifier).send(eq(estimate.getProject().getOwner().getId()),
+                org.mockito.ArgumentMatchers.argThat(text -> text.startsWith("✍️ Клієнт підписав кошторис")
+                        && text.contains("Квартира на Хрещатику") && !text.contains("Олена") && !text.contains("₴")),
+                eq("/estimates/" + estimate.getId()));
+    }
+
+    /** A Telegram that throws (a full pool, an outage) costs the master the message, never the signature. */
+    @Test
+    void sign_aFailingTelegram_neverFailsTheSignature() {
+        org.mockito.BDDMockito.willThrow(new IllegalStateException("telegram down"))
+                .given(telegramNotifier).send(any(), any(), any());
+        Estimate estimate = sampleEstimate();
+        given(shareLinkRepository.findByToken(token)).willReturn(Optional.of(usableLink(estimate)));
+        given(itemRepository.findByEstimateIdOrderBySortOrderAscIdAsc(estimate.getId()))
+                .willReturn(List.of(workItem(estimate)));
+
+        PublicEstimateView view = publicService.sign(token,
+                new SignRequest("Олена Іваненко", "+380671234567", 0L), "203.0.113.42");
+
+        assertThat(estimate.getStatus()).isEqualTo(EstimateStatus.SIGNED);
+        assertThat(view.signature()).isNotNull();
     }
 
     /** The phone is optional (2026-10-15): the name signs, a blank phone is stored as no phone. */

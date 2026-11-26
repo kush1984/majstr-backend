@@ -39,12 +39,13 @@ class TrialReminderServiceTest {
     @Mock private UserRepository userRepository;
     @Mock private EmailService emailService;
     @Mock private PushService pushService;
+    @org.mockito.Mock com.majstr.backend.telegram.TelegramNotifier telegramNotifier;
 
     private TrialReminderService service() {
         BillingProperties props = new BillingProperties("tok", "https://api.monobank.ua",
                 new BigDecimal("299"), 30, new BigDecimal("1494"), new BigDecimal("2748"), 3,
                 "http://ret", "http://hook", true, 3, 30, 15, 3, new BigDecimal("149"));
-        return new TrialReminderService(props, userRepository, emailService, pushService);
+        return new TrialReminderService(props, userRepository, emailService, new com.majstr.backend.service.MasterNotifier(pushService, telegramNotifier, new com.majstr.backend.service.AfterCommit()));
     }
 
     private static User trialEndingIn(long days) {

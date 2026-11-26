@@ -17,7 +17,6 @@ import com.majstr.backend.exception.DocumentChangedException;
 import com.majstr.backend.exception.ResourceNotFoundException;
 import com.majstr.backend.exception.WorkActSignedException;
 import com.majstr.backend.exception.WorkActValidationException;
-import com.majstr.backend.push.PushService;
 import com.majstr.backend.repository.EstimateRepository;
 import com.majstr.backend.repository.ProjectMessageRepository;
 import com.majstr.backend.repository.ProjectShareLinkRepository;
@@ -60,7 +59,7 @@ class PublicActPortalServiceTest {
     @Mock ActReceiptReconciler receiptReconciler;
     @Mock ActSignedCopyService signedCopy;
     @Mock WorkActReceiptService receiptService;
-    @Mock PushService pushService;
+    @Mock MasterNotifier masterNotifier;
     @Mock org.springframework.context.MessageSource messages;
     @Mock ActReceiptCompleteness receiptCompleteness;
     @Mock ActLineBinder lineBinder;
@@ -200,7 +199,9 @@ class PublicActPortalServiceTest {
         assertThat(a.getSignerIp()).isEqualTo("1.2.3.4");
         assertThat(a.getDocHash()).hasSize(64); // hex SHA-256
         assertThat(view.status()).isEqualTo("SIGNED");
-        verify(pushService).sendToUser(any(), anyString(), anyString(), anyString());
+        // The master is told on push and Telegram alike — and the bot's line names the act, not the client.
+        verify(masterNotifier).notify(any(), org.mockito.ArgumentMatchers.argThat(n ->
+                n.telegram() != null && n.telegram().contains("акт № ") && !n.telegram().contains("Олена")));
         // The client signing from his own phone is the ORDINARY way an act is signed, so the
         // cross-table receipt settle (B-04) has to run here and not only on the offline path —
         // a paper filed both at the till and on the act double-counts identically either way.

@@ -16,7 +16,6 @@ import com.majstr.backend.entity.ShareLinkKind;
 import com.majstr.backend.entity.User;
 import com.majstr.backend.entity.WorkActStatus;
 import com.majstr.backend.exception.ResourceNotFoundException;
-import com.majstr.backend.push.PushService;
 import com.majstr.backend.repository.EstimateShareLinkRepository;
 import com.majstr.backend.repository.ProjectMessageRepository;
 import com.majstr.backend.repository.ProjectShareLinkRepository;
@@ -72,7 +71,7 @@ public class PaymentNoticeService {
     private final EstimateShareLinkRepository estimateLinks;
     private final ProjectMessageRepository messageRepository;
     private final MessageFileService messageFileService;
-    private final PushService pushService;
+    private final MasterNotifier masterNotifier;
     private final PaymentService paymentService;
     private final PaymentReceiptReader receiptReader;
     private final ProjectService projectService;
@@ -270,10 +269,15 @@ public class PaymentNoticeService {
                     + (saved.attached() > 0 ? " · квитанція 📎" + saved.attached() : "")
                     + (recorded ? ". Квитанція збігається — записано в гроші об’єкта."
                                 : ". Перевірте, чи прийшли кошти, і підтвердьте в грошах об’єкта.");
-            pushService.sendToUser(saved.owner(),
+            // The amount is the client's own figure; the bot leaves out who sent it — the app shows that.
+            masterNotifier.notify(saved.owner(), new MasterNotifier.Notice(
                     "💰 Повідомлення про оплату · " + saved.projectName(),
                     body,
-                    "/projects/" + saved.projectId());
+                    "/projects/" + saved.projectId(),
+                    "💰 Клієнт повідомив про оплату " + hryvnias(amount)
+                            + "\nОбʼєкт: " + saved.projectName()
+                            + (recorded ? "\nКвитанція збігається — записано в гроші обʼєкта."
+                                        : "\nПеревірте, чи прийшли кошти, і підтвердьте в застосунку.")));
         } catch (RuntimeException e) {
             log.warn("Push for payment notice {} on project {} failed: {}",
                     saved.messageId(), saved.projectId(), e.getMessage());

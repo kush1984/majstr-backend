@@ -48,13 +48,40 @@ public final class TelegramReplies {
     public static final String LINKED = """
             Готово, бот підключено ✅
 
-            Пишіть або надиктовуйте мікрофоном клавіатури, що треба зробити чи записати, наприклад:
+            Тепер я одразу скажу вам тут, коли клієнт підпише кошторис чи акт, напише повідомлення або \
+            повідомить про оплату. Вимкнути можна в застосунку: Профіль → «Telegram-бот».
+
+            А ще пишіть або надиктовуйте мікрофоном клавіатури, що треба зробити чи записати, наприклад:
             • на Бандери докупити 3 мішки клею і грунт
             • Сихів — додати в кошторис демонтаж плитки 12 квадратів
             • подзвонити електрику
             • дав Василю 2000 на плитку
 
             Я розкладу по обʼєктах. Що не зрозумію — залишу у «Вхідних» у застосунку.""";
+
+    /** Right after the bind, with the reply-keyboard button that shares his own number (V226). */
+    public static final String ASK_CONTACT =
+            "Поділіться, будь ласка, своїм номером кнопкою нижче — щоб ми могли швидко зв'язатися, якщо щось "
+                    + "піде не так. Клієнтам і в документах він не показується. 👇";
+
+    public static final String SHARE_CONTACT_BUTTON = "📱 Поділитися номером";
+
+    /** The second button under the share one: takes the keyboard away (it stays open until one is pressed). */
+    public static final String SKIP_CONTACT_BUTTON = "Не зараз";
+
+    /** Shown greyed in the empty input field while the keyboard is open. */
+    public static final String CONTACT_PLACEHOLDER = "Поділіться номером кнопкою нижче 👇";
+
+    public static final String CONTACT_SKIPPED =
+            "Добре. Поділитися номером можна будь-коли — надішліть /phone.";
+
+    public static final String CONTACT_SAVED = "Дякую, номер збережено ✅";
+
+    /** A forwarded or someone else's contact card: only his own number is taken. */
+    public static final String CONTACT_NOT_YOURS =
+            "Це не ваш номер. Щоб поділитися своїм, натисніть кнопку «📱 Поділитися номером».";
+
+    public static final String CONTACT_INVALID = "Не вдалося прочитати номер. Спробуйте ще раз кнопкою нижче.";
 
     public static final String LINK_EXPIRED =
             "Посилання застаріло або вже використане. Відкрийте застосунок → Профіль → «Telegram-бот» ще раз.";

@@ -4,7 +4,6 @@ import com.majstr.backend.config.BackgroundErrors;
 import io.sentry.SentryLevel;
 import com.majstr.backend.entity.ProjectMessageFile;
 import com.majstr.backend.entity.User;
-import com.majstr.backend.push.PushService;
 import com.majstr.backend.repository.ProjectMessageFileRepository;
 import com.majstr.backend.storage.StorageService;
 import lombok.extern.slf4j.Slf4j;
@@ -55,18 +54,18 @@ public class MessageFileRetentionService {
 
     private final ProjectMessageFileRepository fileRepository;
     private final StorageService storage;
-    private final PushService pushService;
+    private final MasterNotifier masterNotifier;
 
     public MessageFileRetentionService(
             ProjectMessageFileRepository fileRepository,
             StorageService storage,
-            PushService pushService,
+            MasterNotifier masterNotifier,
             @Value("${app.message-files.retention-days:180}") int retentionDays,
             @Value("${app.message-files.grace-days:14}") int graceDays,
             @Value("${app.message-files.batch-size:200}") int batchSize) {
         this.fileRepository = fileRepository;
         this.storage = storage;
-        this.pushService = pushService;
+        this.masterNotifier = masterNotifier;
         this.retentionDays = retentionDays;
         this.graceDays = graceDays;
         this.batchSize = batchSize;
@@ -154,8 +153,10 @@ public class MessageFileRetentionService {
                 : files.size() + " файлів у повідомленнях до " + where + " буде видалено через "
                         + graceDays + " дн. Відкрийте потрібні, щоб зберегти.";
         try {
-            pushService.sendToUser(owner, "Файли будуть видалені", body,
-                    "/projects/" + files.get(0).getMessage().getProject().getId());
+            // Push only — no Telegram line (null): housekeeping, and the file shows the warning in the app too.
+            // The bot is kept for what a client did and for the plan, so the master never mutes it as noise.
+            masterNotifier.notify(owner, new MasterNotifier.Notice("Файли будуть видалені", body,
+                    "/projects/" + files.get(0).getMessage().getProject().getId(), null));
         } catch (RuntimeException e) {
             // Fail-soft: a notification that does not go out must not roll back the warning. The file
             // also carries the warning in the app itself, so the master still sees it on the object.

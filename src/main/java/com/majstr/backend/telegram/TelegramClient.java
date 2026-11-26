@@ -6,6 +6,7 @@ import com.majstr.backend.config.HttpClients;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
+import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.RestClient;
 import tools.jackson.databind.JsonNode;
 
@@ -49,6 +50,65 @@ public class TelegramClient implements VoiceAudio {
         body.put("chat_id", chatId);
         JsonNode result = call("sendMessage", body);
         return result != null && result.has("message_id") ? result.get("message_id").asLong() : null;
+    }
+
+    /** What became of a notification (iteration-master-contact). */
+    public enum Delivery { SENT, BLOCKED, FAILED }
+
+    /**
+     * A notification to the master — unlike {@link #sendMessage}, it says WHY it did not arrive: {@code BLOCKED}
+     * is Telegram's 403 (the master blocked the bot, or deleted his account), and the caller unlinks the chat;
+     * anything else is {@code FAILED} and changes nothing.
+     */
+    public Delivery deliver(long chatId, String text, List<List<Button>> keyboard) {
+        if (!props.enabled()) {
+            return Delivery.FAILED;
+        }
+        Map<String, Object> body = message(text, keyboard);
+        body.put("chat_id", chatId);
+        try {
+            JsonNode response = post("sendMessage", body);
+            return response != null && response.path("ok").asBoolean(false) ? Delivery.SENT : Delivery.FAILED;
+        } catch (HttpClientErrorException e) {
+            if (e.getStatusCode().value() == 403) {
+                return Delivery.BLOCKED;
+            }
+            log.warn("Telegram notification failed: HTTP {}", e.getStatusCode().value());
+            return Delivery.FAILED;
+        } catch (RuntimeException e) {
+            log.warn("Telegram notification failed: {}", e.getClass().getSimpleName());
+            return Delivery.FAILED;
+        }
+    }
+
+    /**
+     * A message with the reply keyboard that shares the master's own number (Telegram's {@code request_contact})
+     * and a «Не зараз» button under it. {@code is_persistent}: the keyboard stays OPEN under the input field
+     * instead of folding into a small icon nobody finds (owner, 2026-11-26) — until the number comes or he
+     * declines, and then the bot takes it away ({@link #sendRemovingKeyboard}).
+     */
+    public void askForContact(long chatId, String text, String buttonText, String declineText, String placeholder) {
+        Map<String, Object> body = new HashMap<>();
+        body.put("chat_id", chatId);
+        body.put("text", text);
+        body.put("link_preview_options", Map.of("is_disabled", true));
+        body.put("reply_markup", Map.of(
+                "keyboard", List.of(
+                        List.of(Map.of("text", buttonText, "request_contact", true)),
+                        List.of(Map.of("text", declineText))),
+                "is_persistent", true,
+                "resize_keyboard", true,
+                "input_field_placeholder", placeholder));
+        call("sendMessage", body);
+    }
+
+    /** A plain message that also takes the reply keyboard away (after the number came, or was refused). */
+    public void sendRemovingKeyboard(long chatId, String text) {
+        Map<String, Object> body = new HashMap<>();
+        body.put("chat_id", chatId);
+        body.put("text", text);
+        body.put("reply_markup", Map.of("remove_keyboard", true));
+        call("sendMessage", body);
     }
 
     /** False when Telegram refused the edit (a bad button, a message too old to edit). */
@@ -138,17 +198,22 @@ public class TelegramClient implements VoiceAudio {
             return null;
         }
         try {
-            JsonNode response = http.post()
-                    .uri("https://api.telegram.org/bot" + props.telegramToken() + "/" + method)
-                    .contentType(MediaType.APPLICATION_JSON)
-                    .body(body)
-                    .retrieve()
-                    .body(JsonNode.class);
+            JsonNode response = post(method, body);
             return response != null && response.path("ok").asBoolean(false) ? response.get("result") : null;
         } catch (RuntimeException e) {
             // The message carries the URL, and the URL carries the token — log the method only.
             log.warn("Telegram {} failed: {}", method, e.getClass().getSimpleName());
             return null;
         }
+    }
+
+    /** The bare POST; a 4xx/5xx throws. The URL carries the token — never let it reach a log. */
+    private JsonNode post(String method, Map<String, Object> body) {
+        return http.post()
+                .uri("https://api.telegram.org/bot" + props.telegramToken() + "/" + method)
+                .contentType(MediaType.APPLICATION_JSON)
+                .body(body)
+                .retrieve()
+                .body(JsonNode.class);
     }
 }

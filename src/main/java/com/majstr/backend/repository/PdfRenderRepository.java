@@ -27,6 +27,9 @@ public interface PdfRenderRepository extends JpaRepository<PdfRender, UUID> {
             """)
     List<OwnerSource> findOwnersWithPdf(@Param("reader") PdfRender.Reader reader);
 
+    /** ONE master's half of {@link #findOwnersWithPdf}: has he made a PDF in the app (V226 help card). */
+    boolean existsByOwnerIdAndReader(java.util.UUID ownerId, PdfRender.Reader reader);
+
     @Query("SELECT COUNT(r) FROM PdfRender r WHERE r.reader = :reader")
     long countByReader(@Param("reader") PdfRender.Reader reader);
 

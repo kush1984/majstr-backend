@@ -13,7 +13,7 @@ title — read the twin before changing what a bullet guards); per-area narrativ
 - **Stack pinned:** Spring Boot 4 / Java 21 / PostgreSQL 17 + Flyway / Jackson 3 (`tools.jackson.*`). Don't bump without reason.
 - **Secrets from env only** (`JWT_SECRET` has no default). **English only** in code, comments, SQL, docs.
 - **Layering** `controller → service → repository`; controllers return DTOs; `passwordHash` never leaves.
-- **Schema = Flyway only** (`ddl-auto: validate`). New `V<N>__…sql`, **latest is V225** (V183, V185 skipped);
+- **Schema = Flyway only** (`ddl-auto: validate`). New `V<N>__…sql`, **latest is V226** (V183, V185 skipped);
   never edit an applied migration; a self-check `RAISE EXCEPTION`s only about its own work, else `WARNING`.
 - **Tests + green `./gradlew build` before any push** (Claude runs it; Docker must be up). Controller tests =
   Mockito standalone; DB/filters = `…IntegrationTest` on Testcontainers.
@@ -39,6 +39,8 @@ One line per invariant; the reasoning is in the twin in docs/architecture-index-
 - **Refresh tokens** — hashed at rest (SHA-256), rotated, swept daily; **the PWA must single-flight `/refresh`** or a burst of 401s self-logs-out.
 - **Email verification is soft** — `@Async` fail-soft; email editable only while unverified. `SendReadiness`: the master's own send needs a NAME, our letter also a verified email.
 - **Web push** — VAPID, `@Async`, env-gated fail-soft; `deliver()` MUST pass `Encoding.AES128GCM` (legacy `aesgcm` → FCM 403).
+- **`MasterNotifier` is the one door to tell a master (V226, iteration-master-contact)** — push + the same news in his Telegram chat (linked ∧ `telegram_notify`), both after the commit, each fail-soft on its own pool; the bot's line never carries the client's name, words or any crew price; a 403 unlinks the chat.
+- **`users.contact_phone` is never printed (V226)** — the number shared with the bot (`contact.user_id == from.id` only); for us to reach him; it becomes `users.phone` only by his tap (`/api/profile/phone-from-telegram`, while empty).
 - **Client portal is project-level** — `project_share_links` + `estimates.portal_visible`; the ECONOMY portal has NO picker (SIGNED ∧ counted + ADDENDUM); `?t=` is the single-estimate path, not legacy; previews `?v=`/`?vp=` are a stateless 10-min HMAC pass.
 - **Portal rate limit = three greedy buckets (P0, iteration-p0-meetup)** — per IP+link reads 120/min, writes 10/min, a per-IP ceiling 300; `/api/public/**` answers in Ukrainian.
 - **DRAFT → SENT only when the link LEAVES the app (P1, iteration-p1-meetup)** — minting or publishing changes no status; `…/mark-sent` after a real share; email marks itself; acts still flip on publish.

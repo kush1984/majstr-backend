@@ -125,7 +125,14 @@ public class TelegramBot {
     }
 
     private static boolean isCommand(String text) {
-        return text.startsWith("/start") || text.equals("/help") || text.equals("/stop");
+        return text.startsWith("/start") || text.equals("/help") || text.equals("/stop") || text.equals("/phone")
+                // The contact keyboard's «Не зараз» is an answer to the bot, never a note for «Вхідні».
+                || text.equals(TelegramReplies.SKIP_CONTACT_BUTTON);
+    }
+
+    private void askForContact(long chatId, String text) {
+        client.askForContact(chatId, text, TelegramReplies.SHARE_CONTACT_BUTTON, TelegramReplies.SKIP_CONTACT_BUTTON,
+                TelegramReplies.CONTACT_PLACEHOLDER);
     }
 
     public void handle(JsonNode update) {
@@ -159,10 +166,25 @@ public class TelegramBot {
             String username = message.path("from").path("username").asString(null);
             boolean bound = links.bind(code, chatId, username).isPresent();
             client.sendMessage(chatId, bound ? TelegramReplies.LINKED : TelegramReplies.LINK_EXPIRED, null);
+            if (bound) {
+                askForContact(chatId, TelegramReplies.ASK_CONTACT);
+            }
             return;
         }
         if (user.isEmpty()) {
             client.sendMessage(chatId, TelegramReplies.HELLO_UNLINKED, null);
+            return;
+        }
+        if (message.hasNonNull("contact")) {
+            onContact(chatId, user.get(), message);
+            return;
+        }
+        if (text.equals("/phone")) {
+            askForContact(chatId, TelegramReplies.ASK_CONTACT);
+            return;
+        }
+        if (text.equals(TelegramReplies.SKIP_CONTACT_BUTTON)) {
+            client.sendRemovingKeyboard(chatId, TelegramReplies.CONTACT_SKIPPED);
             return;
         }
         if (text.equals("/help")) {
@@ -192,6 +214,25 @@ public class TelegramBot {
         Long working = client.sendMessage(chatId, TelegramReplies.WORKING, null);
         InboxService.Outcome done = inbox.process(ownerId, received.entry().id());
         show(chatId, working, done, ownerId);
+    }
+
+    /**
+     * «📱 Поділитися номером» (V226). Only his OWN number is taken: a contact card carries the {@code user_id} of
+     * whose number it is, and a forwarded card of a client or a supplier must not become «the master's phone».
+     */
+    private void onContact(long chatId, UUID ownerId, JsonNode message) {
+        JsonNode contact = message.get("contact");
+        long from = message.path("from").path("id").asLong(0);
+        long owner = contact.path("user_id").asLong(0);
+        if (from == 0 || owner != from) {
+            client.sendMessage(chatId, TelegramReplies.CONTACT_NOT_YOURS, null);
+            return;
+        }
+        if (!links.saveContactPhone(ownerId, contact.path("phone_number").asString(""))) {
+            askForContact(chatId, TelegramReplies.CONTACT_INVALID);
+            return;
+        }
+        client.sendRemovingKeyboard(chatId, TelegramReplies.CONTACT_SAVED);
     }
 
     /** The polling path, and the webhook's refusals: the same verdict, now answered. */
