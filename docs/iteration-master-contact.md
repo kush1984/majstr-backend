@@ -1,6 +1,6 @@
 # Keeping masters in touch (V226, PWA 1.94.0)
 
-**Status:** built 2026-11-26, not pushed yet (waiting for the owner's OK). **Prompt:** «зробити так, щоб майстри
+**Status:** shipped 2026-11-26 (backend `8122530`, PWA 1.94.1 `6c138e9`). **Prompt:** «зробити так, щоб майстри
 були з нами на зв'язку» — four linked changes in both repos.
 
 ## 1. The bot tells the master (backend)
