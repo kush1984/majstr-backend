@@ -31,7 +31,7 @@ class CatalogImportParserTest {
                 {"Штроба в бетоні", "пог.м", "1 200,50 грн"},          // LINEAR_METER, 1200.50
                 {"Демонтаж перегородок", "кв.м", "150"},               // M2, 150 (WORK — no marker)
                 {"Грунтовка глибокого проникнення", "шт", "80"},       // MATERIAL by name marker
-                {"Фарбування стін", "відро", "200"},                   // unit unrecognized → issue
+                {"Фарбування стін", "жменя", "200"},                   // unit unrecognized → issue («відро» is BUCKET since V229)
                 {"Разом", "", "1630,50"},                              // total → skipped
                 {"", "", ""},                                          // empty → skipped
         });
