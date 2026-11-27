@@ -680,8 +680,18 @@ public class InboxService {
         return new PaymentReceiptRequest(truncate(item.getText().trim(), 255), item.getAmount(), today(), false);
     }
 
-    /** One line appended to the draft, through the same door dictation commits through. */
+    /**
+     * The template's own empty row of that work takes the quantity (its price stays his, and the reply
+     * shows it); otherwise one line is appended, through the same door dictation commits through.
+     */
     private UUID appendLine(UUID ownerId, InboxItem item) {
+        Optional<EstimateItemResponse> filled = estimateService.fillEmptyLine(item.getEstimateId(),
+                item.getText(), item.getUnit(), item.getQuantity(), ownerId);
+        if (filled.isPresent()) {
+            item.setFilledLine(true);
+            item.setUnitPrice(filled.get().unitPrice());
+            return filled.get().id();
+        }
         Set<UUID> before = estimateService.get(item.getEstimateId(), ownerId).items().stream()
                 .map(EstimateItemResponse::id).collect(Collectors.toCollection(HashSet::new));
         EstimateResponse after = estimateService.appendItems(item.getEstimateId(), List.of(new ImportItem(
@@ -706,6 +716,7 @@ public class InboxService {
             unapply(ownerId, locked);
             locked.setStatus(next);
             locked.setRecordId(null);
+            locked.setFilledLine(false);
             return itemRepository.save(locked);
         });
         if (done == null) {
@@ -723,7 +734,13 @@ public class InboxService {
             case SHOPPING -> shoppingListService.delete(project, ownerId, record);
             case TASK -> taskService.delete(project, record, ownerId);
             case NOTE -> noteService.delete(project, record, ownerId);
-            case ESTIMATE_LINE -> estimateService.deleteItem(item.getEstimateId(), record, ownerId);
+            case ESTIMATE_LINE -> {
+                if (item.isFilledLine()) {
+                    estimateService.emptyFilledLine(item.getEstimateId(), record, ownerId);
+                } else {
+                    estimateService.deleteItem(item.getEstimateId(), record, ownerId);
+                }
+            }
             case EXPENSE -> {
                 if (project != null) {
                     expenseService.delete(project, record, ownerId);

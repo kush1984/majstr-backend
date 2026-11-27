@@ -255,6 +255,47 @@ class InboxIntegrationTest extends IntegrationTestBase {
     }
 
     @Test
+    void aTemplatesEmptyRowTakesTheQuantity_atItsOwnPrice_andUndoEmptiesItAgain() {
+        UUID row = insert("""
+                insert into estimate_items (id, estimate_id, type, name, category, unit, quantity, unit_price,
+                        line_total, base_detached, sort_order, quantity_manual)
+                values (?, ?, 'WORK', 'Демонтаж плитки', 'Підготовчі роботи', 'M2', 0, 224.00, 0, false, 0, false)""",
+                draft);
+        model.answer = objects -> List.of(
+                parsed("ESTIMATE_LINE", n(objects, "Бандери 12"), true, "демонтаж плитки", "12", "м2", null));
+
+        InboxService.Outcome done = send("бандери в кошторис демонтаж плитки 12 квадратів");
+
+        assertThat(count("select count(*) from estimate_items where estimate_id = ?", draft)).isEqualTo(1);
+        assertThat(count("select count(*) from estimate_items where id = ? and quantity = 12 and unit_price = 224"
+                + " and line_total = 2688 and category = 'Підготовчі роботи'", row)).isEqualTo(1);
+        assertThat(done.entry().items().get(0).unitPrice()).isEqualByComparingTo("224");
+
+        inbox.undo(master, done.entry().id());
+
+        assertThat(count("select count(*) from estimate_items where id = ? and quantity = 0 and line_total = 0",
+                row)).isEqualTo(1);
+    }
+
+    @Test
+    void twoEmptyRowsOfThatWorkAreNotAGuess_theLineIsAppended() {
+        for (int i = 0; i < 2; i++) {
+            insert("""
+                    insert into estimate_items (id, estimate_id, type, name, unit, quantity, unit_price,
+                            line_total, base_detached, sort_order, quantity_manual)
+                    values (?, ?, 'WORK', 'Демонтаж плитки', 'M2', 0, 224.00, 0, false, ?, false)""", draft, i);
+        }
+        model.answer = objects -> List.of(
+                parsed("ESTIMATE_LINE", n(objects, "Бандери 12"), true, "демонтаж плитки", "12", "м2", null));
+
+        send("бандери в кошторис демонтаж плитки 12 квадратів");
+
+        assertThat(count("select count(*) from estimate_items where estimate_id = ?", draft)).isEqualTo(3);
+        assertThat(count("select count(*) from estimate_items where estimate_id = ? and quantity = 12", draft))
+                .isEqualTo(1);
+    }
+
+    @Test
     void withEveryEstimateSignedTheLineAsks_andTheMastersTapCreatesExtraWorks() {
         jdbc.update("update estimates set status = 'SIGNED' where id = ?", draft);
         model.answer = objects -> List.of(

@@ -93,6 +93,14 @@ public class InboxItem {
     @Column(name = "record_id")
     private UUID recordId;
 
+    /**
+     * An estimate line that filled an existing empty row ({@code record_id}) instead of appending one:
+     * undo empties that row again, never deletes it (V228).
+     */
+    @Builder.Default
+    @Column(name = "filled_line", nullable = false)
+    private boolean filledLine = false;
+
     @Enumerated(EnumType.STRING)
     @Column(name = "issue", length = 16)
     private Issue issue;

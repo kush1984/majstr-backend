@@ -1081,6 +1081,50 @@ public class EstimateService {
         return recalculatedResponse(estimate);
     }
 
+    /**
+     * «Демонтаж плитки 12 м²» from the bot lands in the template's own «к-сть?» row instead of a
+     * second «Демонтаж плитки» beside it (owner's test 2026-11-27): the ONE line of that name and unit
+     * whose quantity is still zero and not tied to measurements gets the quantity; its price, section and
+     * note stay his. Two such rows, or none, is not a guess — empty, and the caller appends.
+     */
+    @Transactional
+    public Optional<EstimateItemResponse> fillEmptyLine(UUID estimateId, String name, Unit unit,
+                                                        BigDecimal quantity, UUID ownerId) {
+        Estimate estimate = loadOwned(estimateId, ownerId);
+        requireNotSigned(estimate);
+        if (name == null || unit == null || unit == Unit.PERCENT || quantity == null || quantity.signum() <= 0) {
+            return Optional.empty();
+        }
+        List<EstimateItem> items = itemRepository.findByEstimateIdOrderBySortOrderAscIdAsc(estimateId);
+        List<EstimateItem> empty = items.stream()
+                .filter(i -> i.getUnit() == unit)
+                .filter(i -> i.getName().trim().equalsIgnoreCase(name.trim()))
+                .filter(i -> i.getQuantity().signum() == 0)
+                .filter(i -> i.getMeasurementRefs() == null || i.getMeasurementRefs().isBlank()
+                        || "[]".equals(i.getMeasurementRefs().trim()))
+                .toList();
+        if (empty.size() != 1) {
+            return Optional.empty();
+        }
+        EstimateItem line = empty.get(0);
+        line.setQuantity(quantity.setScale(QUANTITY_SCALE, MONEY_ROUNDING));
+        line.setQuantityManual(true);
+        EstimateMath.recalculate(items);
+        return Optional.of(EstimateItemResponse.from(line));
+    }
+
+    /** Undo of {@link #fillEmptyLine}: the row is the template's again, «к-сть?». A line gone already is a no-op. */
+    @Transactional
+    public void emptyFilledLine(UUID estimateId, UUID itemId, UUID ownerId) {
+        requireNotSigned(loadOwned(estimateId, ownerId));
+        List<EstimateItem> items = itemRepository.findByEstimateIdOrderBySortOrderAscIdAsc(estimateId);
+        items.stream().filter(i -> i.getId().equals(itemId)).findFirst().ifPresent(line -> {
+            line.setQuantity(BigDecimal.ZERO.setScale(QUANTITY_SCALE, MONEY_ROUNDING));
+            line.setQuantityManual(false);
+            EstimateMath.recalculate(items);
+        });
+    }
+
     @Transactional
     public EstimateItemResponse updateItem(UUID estimateId,
                                            UUID itemId,

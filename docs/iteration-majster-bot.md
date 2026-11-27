@@ -226,3 +226,13 @@ model, the unused columns (`telegram_message_id`, `telegram_chat_id` reads, `pro
 - **A misheard row could not be fixed:** `ShoppingListItemUpdateRequest.name` renames a MANUAL row (by hand or
   from the bot); a calculated or receipt row keeps its name. PWA: «Назва» in the row's editor, MANUAL only.
 - «Виправ …» by voice is an open question (not built).
+
+## Fill the template's empty row (owner's video test, 2026-11-27, V228)
+
+«В кошторис — демонтаж плитки 12 квадратів» into a draft made from a template appended line 19 «Демонтаж
+плитки 12 м²» under «Без категорії» beside the template's own «Демонтаж плитки — к-сть?» in «Підготовчі роботи»:
+two demolitions in one estimate. Now `EstimateService.fillEmptyLine` goes first: the ONE line of that name (case-
+insensitive) and unit with quantity 0 and no measurement refs takes the quantity — its price, section and note
+stay; the bot's reply shows the line's own price. Two such rows or none → appended as before. `inbox_item.filled_line`
+(V228) remembers it, so «Скасувати» / «Інший обʼєкт» empty the row again (`emptyFilledLine`) instead of deleting
+it. Tests: `InboxIntegrationTest.aTemplatesEmptyRowTakesTheQuantity_…`, `twoEmptyRowsOfThatWorkAreNotAGuess_…`.
