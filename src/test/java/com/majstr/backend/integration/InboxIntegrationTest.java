@@ -75,6 +75,7 @@ class InboxIntegrationTest extends IntegrationTestBase {
     @Autowired com.majstr.backend.service.ai.AiAccess aiAccess;
     private final FakeSpeech speechToText = new FakeSpeech();
     private final com.majstr.backend.service.inbox.VoiceAudio voiceAudio = fileId -> new byte[] {1, 2, 3};
+    @Autowired com.majstr.backend.repository.ClientRepository clientRepository;
     @Autowired TelegramLinkService linkService;
     @Autowired TelegramLinkCodeRepository codeRepository;
     @Autowired TelegramLinkRepository linkRepository;
@@ -463,6 +464,50 @@ class InboxIntegrationTest extends IntegrationTestBase {
     }
 
     @Test
+    void threeBagsOfAdhesiveAreThreeBags_notThreePieces() {
+        model.answer = objects -> List.of(
+                parsed("SHOPPING", n(objects, "Бандери 12"), true, "клей", "3", "мішок", null));
+
+        send("на бандери докупити три мішки клею");
+
+        assertThat(count("""
+                select count(*) from shopping_list_item i join shopping_list l on l.id = i.shopping_list_id
+                where l.project_id = ? and i.name = 'Клей' and i.quantity = 3 and i.unit = 'BAG'""", bandery))
+                .isEqualTo(1);
+    }
+
+    @Test
+    void theHintNamesHisClientsAndThePeopleOfHisEarlierNotes_notHisObjects() {
+        inbox.receive(master, InboxEntry.Source.PWA, "на Бандери дав Василю 2000, Петро привезе плитку",
+                null, null);
+        speechToText.heard = "на бандери купити ґрунт";
+        model.answer = objects -> List.of();
+
+        InboxService.Outcome received = inbox.receiveVoice(master, 777_010L, 5L, "file-10", 4, false);
+        inbox.process(master, received.entry().id());
+
+        // «Ігор» is the client from setUp; «Бандери» is an object's word, and the hint names it as the object.
+        assertThat(speechToText.people).contains("Ігор", "Василю", "Петро").doesNotContain("Бандери");
+    }
+
+    @Test
+    void aWorkTheCatalogDoesNotPrice_takesThePriceOfTheTemplatesEmptyRow() {
+        UUID row = insert("""
+                insert into estimate_items (id, estimate_id, type, name, unit, quantity, unit_price,
+                        line_total, base_detached, sort_order, quantity_manual)
+                values (?, ?, 'WORK', 'Монтаж плінтуса', 'LINEAR_METER', 0, 95.00, 0, false, 0, false)""", draft);
+        model.answer = objects -> List.of(
+                parsed("ESTIMATE_LINE", n(objects, "Бандери 12"), true, "монтаж плінтуса", "14", null, null));
+
+        InboxService.Outcome done = send("бандери в кошторис монтаж плінтуса 14");
+
+        assertThat(done.entry().items().get(0).status()).isEqualTo(InboxItem.Status.APPLIED);
+        assertThat(count("select count(*) from estimate_items where estimate_id = ?", draft)).isEqualTo(1);
+        assertThat(count("select count(*) from estimate_items where id = ? and quantity = 14 and unit_price = 95",
+                row)).isEqualTo(1);
+    }
+
+    @Test
     void aFailedTranscriptionIsFailed_andRetryHearsItAgain() {
         speechToText.fail = true;
         InboxService.Outcome received = inbox.receiveVoice(master, 777_002L, 5L, "file-2", 5, false);
@@ -640,7 +685,7 @@ class InboxIntegrationTest extends IntegrationTestBase {
         return new InboxService(entryRepository, itemRepository, projectRepository, estimateRepository,
                 catalogItemRepository, synonymRepository, model, limiter, projectService, shoppingListService,
                 taskService, noteService, estimateService, expenseService, paymentService, cashFlowService,
-                transactionManager, aiAccess, speechToText, voiceAudio, userRepository);
+                transactionManager, aiAccess, speechToText, voiceAudio, userRepository, clientRepository);
     }
 
     private static int n(List<ObjectRef> objects, String name) {
@@ -694,12 +739,15 @@ class InboxIntegrationTest extends IntegrationTestBase {
                     new com.majstr.backend.config.VoiceProperties("gpt-4o-mini-transcribe", 60, 10, 900));
         }
 
+        List<String> people = List.of();
+
         @Override
-        public String transcribe(byte[] audio, List<String> names) {
+        public String transcribe(byte[] audio, List<String> names, List<String> who) {
             if (fail) {
                 throw new com.majstr.backend.exception.AiExtractionException("error.ai.unavailable");
             }
             objectNames = names;
+            people = who;
             return heard;
         }
     }

@@ -22,7 +22,8 @@ import java.util.Map;
 /**
  * A voice note → its text (majster-bot voice). OpenAI's transcription endpoint, because Anthropic has no
  * speech-to-text; the audio is sent once and kept nowhere. The object names go in as the {@code prompt},
- * so «Куликів» or «Липки» come back spelled the way the master's list spells them.
+ * so «Куликів» or «Липки» come back spelled the way the master's list spells them — and so do the names of
+ * the people he talks about: «дав Василю 2000» came back «давла стелю 2000» with no Василь in the hint.
  *
  * <p>One global hourly ceiling, like {@code AiFlowBudget} for the text flows: a burst of strangers cannot
  * run up the bill. A failure is an {@link AiExtractionException}; the inbox turns it into FAILED, and
@@ -37,6 +38,7 @@ public class SpeechToText {
     /** The prompt is a hint, not a list to recite: a few hundred characters is what the model reads. */
     private static final int PROMPT_MAX = 600;
     private static final String PROMPT_LEAD = "Будівельні роботи на обʼєктах";
+    private static final String PEOPLE_LEAD = "Люди: ";
     /**
      * Brands a master names out loud, spelled as the shop spells them: without them «Церезіт CM 11» came back
      * «це резіт, це 111». A hint for the ear only — nothing here reaches the catalog, which names no brand.
@@ -63,6 +65,11 @@ public class SpeechToText {
     }
 
     public String transcribe(byte[] audio, List<String> objectNames) {
+        return transcribe(audio, objectNames, List.of());
+    }
+
+    /** {@code people}: names the master is likely to say — his clients, the names in his earlier notes. */
+    public String transcribe(byte[] audio, List<String> objectNames, List<String> people) {
         if (!enabled()) {
             throw new AiExtractionException("error.ai.unavailable");
         }
@@ -80,7 +87,7 @@ public class SpeechToText {
         form.add("model", voice.model());
         form.add("language", "uk");
         form.add("response_format", "json");
-        String prompt = prompt(objectNames);
+        String prompt = prompt(objectNames, people);
         if (!prompt.isEmpty()) {
             form.add("prompt", prompt);
         }
@@ -111,13 +118,27 @@ public class SpeechToText {
     }
 
     static String prompt(List<String> objectNames) {
+        return prompt(objectNames, List.of());
+    }
+
+    /** The lead, the objects, the people, the brands — the people give way first, then the objects. */
+    static String prompt(List<String> objectNames, List<String> people) {
         // The lead always comes first, so a prompt echoed back on silence is recognised by heard().
         String objects = objectNames == null || objectNames.isEmpty() ? "" : String.join(", ", objectNames);
         String head = PROMPT_LEAD + ": " + objects + ". ";
         int room = PROMPT_MAX - MATERIALS.length();
         if (head.length() > room) {
-            head = head.substring(0, Math.max(PROMPT_LEAD.length(), room - 2)) + ". ";
+            return head.substring(0, Math.max(PROMPT_LEAD.length(), room - 2)) + ". " + MATERIALS;
         }
-        return head + MATERIALS;
+        StringBuilder who = new StringBuilder();
+        for (String name : people == null ? List.<String>of() : people) {
+            String next = (who.isEmpty() ? PEOPLE_LEAD : who + ", ") + name;
+            if (head.length() + next.length() + 2 > room) {
+                break;
+            }
+            who.setLength(0);
+            who.append(next);
+        }
+        return head + (who.isEmpty() ? "" : who + ". ") + MATERIALS;
     }
 }

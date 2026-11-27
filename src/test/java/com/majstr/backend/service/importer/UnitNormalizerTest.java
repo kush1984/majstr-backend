@@ -39,6 +39,21 @@ class UnitNormalizerTest {
     }
 
     @Test
+    void recognizesTheShopsOwnCounts_inTheFormsSaidAfterANumber() {
+        assertThat(UnitNormalizer.normalize("мішки")).isEqualTo(Unit.BAG);
+        assertThat(UnitNormalizer.normalize("мішків")).isEqualTo(Unit.BAG);
+        assertThat(UnitNormalizer.normalize("міш.")).isEqualTo(Unit.BAG);
+        assertThat(UnitNormalizer.normalize("пачки")).isEqualTo(Unit.PACK);
+        assertThat(UnitNormalizer.normalize("уп.")).isEqualTo(Unit.PACK);
+        assertThat(UnitNormalizer.normalize("упаковок")).isEqualTo(Unit.PACK);
+        assertThat(UnitNormalizer.normalize("відра")).isEqualTo(Unit.BUCKET);
+        assertThat(UnitNormalizer.normalize("каністри")).isEqualTo(Unit.CANISTER);
+        assertThat(UnitNormalizer.normalize("рулонів")).isEqualTo(Unit.ROLL);
+        assertThat(UnitNormalizer.normalize("листів")).isEqualTo(Unit.SHEET);
+        assertThat(UnitNormalizer.normalize("лист.")).isEqualTo(Unit.SHEET);
+    }
+
+    @Test
     void recognizesSquareMetreKilometreAndCount() {
         assertThat(UnitNormalizer.normalize("м.кв.")).isEqualTo(Unit.M2); // "м.кв." → мкв
         assertThat(UnitNormalizer.normalize("м.кв")).isEqualTo(Unit.M2);

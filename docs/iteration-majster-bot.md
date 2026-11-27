@@ -236,3 +236,18 @@ insensitive) and unit with quantity 0 and no measurement refs takes the quantity
 stay; the bot's reply shows the line's own price. Two such rows or none → appended as before. `inbox_item.filled_line`
 (V228) remembers it, so «Скасувати» / «Інший обʼєкт» empty the row again (`emptyFilledLine`) instead of deleting
 it. Tests: `InboxIntegrationTest.aTemplatesEmptyRowTakesTheQuantity_…`, `twoEmptyRowsOfThatWorkAreNotAGuess_…`.
+
+## The empty row's price; names in the voice hint (2026-11-27)
+
+- **A work the catalog cannot price** but the draft's template row holds («Монтаж плінтуса — к-сть? × 95»): `evaluate`
+  asks `EstimateService.findEmptyLine` first and takes that ONE row's unit and price, so the line is filed into the
+  row instead of waiting on «немає ціни в каталозі». Two rows or none — the old question.
+- **The transcription hint names people** («Люди: …», after the objects, before the brands; they give way first
+  within the 600 characters): the master's clients' names and the capitalised words INSIDE his last 100 messages
+  («дав Василю», «, Петро привезе»), most frequent first, without the objects' own words. «дав Василю 2000» came back
+  «давла стелю 2000» with only the objects in the hint. There is no crew list to read.
+- **The shop's own counts (V229)**: `Unit` gains BAG «міш.», PACK «уп.», BUCKET «відр.», CANISTER «кан.»,
+  ROLL «рул.», SHEET «лист.» — short like «шт», so nothing declines. The bot's prompt said «мішок» → «шт»; it
+  now passes the unit he said, and `UnitNormalizer` reads every case form after a number («мішки», «мішків»,
+  «пачок», «відра», «каністри», «рулонів», «листів»). Also in dictation, the price-list / receipt importers, the
+  PDF (`UnitLabel`) and the portal's `UNIT_LABEL`. PWA 1.95.1: `UNITS` + `units.*` / `unitOptions.*`.

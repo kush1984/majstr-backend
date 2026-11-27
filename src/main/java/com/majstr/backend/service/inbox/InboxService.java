@@ -1,5 +1,9 @@
 package com.majstr.backend.service.inbox;
 
+import java.util.regex.Pattern;
+import java.util.regex.Matcher;
+import com.majstr.backend.repository.ClientRepository;
+import com.majstr.backend.entity.Client;
 import java.util.concurrent.TimeUnit;
 import java.time.Instant;
 import java.time.Duration;
@@ -122,6 +126,7 @@ public class InboxService {
     private final SpeechToText speechToText;
     private final VoiceAudio voiceAudio;
     private final UserRepository userRepository;
+    private final ClientRepository clientRepository;
 
     /** An object the master can file things under. */
     public record ObjectChoice(UUID id, String name) {}
@@ -291,8 +296,9 @@ public class InboxService {
         List<ObjectChoice> objects = activeObjects(ownerId);
         if (entry.getVoiceFileId() != null) {
             // The audio is fetched and heard here, outside any transaction, and only the text is kept.
+            List<String> objectNames = objects.stream().map(ObjectChoice::name).toList();
             String heard = speechToText.transcribe(voiceAudio.fetch(entry.getVoiceFileId()),
-                    objects.stream().map(ObjectChoice::name).toList());
+                    objectNames, peopleNames(ownerId, objectNames));
             entry.setRawText(heard);
             entry.setVoiceFileId(null);
             entry = entryRepository.save(entry);
@@ -779,6 +785,7 @@ public class InboxService {
     /** Pick the estimate an estimate line goes into, then say why the item still waits, if it does. */
     private void evaluate(UUID ownerId, InboxItem item) {
         int open = resolveEstimate(item);
+        priceFromEmptyRow(ownerId, item);
         Issue issue = issueOf(item);
         if (issue == null && forwarded(item.getEntryId())) {
             // Someone else's words: ready, but filed only on the master's «Записати».
@@ -787,6 +794,26 @@ public class InboxService {
         // No DRAFT to land in: «Додаткові роботи» only when nothing is open at all; a SENT one is the master's pick.
         boolean noneOpen = issue == Issue.ESTIMATE && open == 0 && openEstimates(item.getProjectId()).isEmpty();
         item.setIssue(noneOpen ? Issue.NO_DRAFT : issue);
+    }
+
+    /**
+     * No unit or no price from the catalog, but the chosen draft holds the template's own empty row of that
+     * work with both: the row answers what the catalog could not (the row is where {@link #appendLine} puts it).
+     */
+    private void priceFromEmptyRow(UUID ownerId, InboxItem item) {
+        if (item.getKind() != Kind.ESTIMATE_LINE || item.getEstimateId() == null
+                || (item.getUnit() != null && item.getUnitPrice() != null)) {
+            return;
+        }
+        estimateService.findEmptyLine(item.getEstimateId(), item.getText(), item.getUnit(), ownerId)
+                .ifPresent(row -> {
+                    if (item.getUnit() == null) {
+                        item.setUnit(row.unit());
+                    }
+                    if (item.getUnitPrice() == null && row.unitPrice() != null && row.unitPrice().signum() > 0) {
+                        item.setUnitPrice(row.unitPrice());
+                    }
+                });
     }
 
     private boolean forwarded(UUID entryId) {
@@ -868,6 +895,47 @@ public class InboxService {
                 .orElse(Set.of());
         return new Catalog(CatalogFiling.forMatching(catalogItemRepository.findByOwnerIdOrderByNameAsc(ownerId),
                 profile, null), synonyms);
+    }
+
+    /** A name inside a sentence: after a lowercase word, a digit or a comma, capitalised, three letters or more. */
+    private static final Pattern NAME_IN_TEXT =
+            Pattern.compile("(?<=[\\p{Ll}\\d,]\\s)(\\p{Lu}[\\p{Ll}ʼ']{2,})");
+    private static final int MAX_PEOPLE = 20;
+
+    /**
+     * Names the master is likely to say in a voice note, for the transcription hint: his clients' names and the
+     * capitalised words INSIDE his earlier messages («дав Василю», «Петро привезе»), most frequent first. There
+     * is no crew list to read; a word that starts a sentence is not taken — every sentence starts capitalised.
+     */
+    List<String> peopleNames(UUID ownerId, List<String> objectNames) {
+        // An object's own words («на Зубрівській») are in the hint already, as the object.
+        Set<String> objectWords = new HashSet<>();
+        for (String name : objectNames) {
+            objectWords.addAll(List.of(name.split("[\\s,.«»\"]+")));
+        }
+        Map<String, Integer> seen = new LinkedHashMap<>();
+        for (InboxEntry e : entryRepository.findTop100ByOwnerIdAndStatusInOrderByCreatedAtDesc(ownerId,
+                EnumSet.allOf(InboxEntry.Status.class))) {
+            if (e.getRawText() == null) {
+                continue;
+            }
+            Matcher m = NAME_IN_TEXT.matcher(e.getRawText());
+            while (m.find()) {
+                seen.merge(m.group(1), 1, Integer::sum);
+            }
+        }
+        for (Client c : clientRepository.findByOwnerIdOrderByFullNameAsc(ownerId)) {
+            for (String part : c.getFullName().trim().split("\\s+")) {
+                if (part.length() >= 3 && Character.isUpperCase(part.charAt(0))
+                        && part.chars().allMatch(Character::isLetter)) {
+                    seen.merge(part, 1, Integer::sum);
+                }
+            }
+        }
+        return seen.entrySet().stream()
+                .filter(e -> !objectWords.contains(e.getKey()))
+                .sorted(Map.Entry.<String, Integer>comparingByValue().reversed())
+                .map(Map.Entry::getKey).limit(MAX_PEOPLE).toList();
     }
 
     private static Kind kindOf(String raw) {

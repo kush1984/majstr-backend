@@ -160,7 +160,8 @@ public class InboxExtractor {
                 «аванс»); if nothing was said, a short neutral word («витрата», «оплата»).
               - quantity: how many, for SHOPPING and ESTIMATE_LINE. 0 when not said.
               - unit: "м2", "м.п.", "м", "шт", "кг", "т", "м3", "л", "год", "компл", "точка", "день",
-                "мішок" → "шт". "" when not said.
+                "мішок", "уп" (пачка, упаковка), "відро", "каністра", "рулон", "лист" — the unit he said
+                («три мішки клею» → quantity 3, unit "мішок"). "" when not said.
               - unitPrice: a price PER UNIT he actually said for an ESTIMATE_LINE. 0 otherwise — never
                 invent one.
               - amount: the money for EXPENSE / INCOME, in hryvnia. 0 when not said.

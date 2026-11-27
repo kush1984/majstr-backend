@@ -1096,13 +1096,7 @@ public class EstimateService {
             return Optional.empty();
         }
         List<EstimateItem> items = itemRepository.findByEstimateIdOrderBySortOrderAscIdAsc(estimateId);
-        List<EstimateItem> empty = items.stream()
-                .filter(i -> i.getUnit() == unit)
-                .filter(i -> i.getName().trim().equalsIgnoreCase(name.trim()))
-                .filter(i -> i.getQuantity().signum() == 0)
-                .filter(i -> i.getMeasurementRefs() == null || i.getMeasurementRefs().isBlank()
-                        || "[]".equals(i.getMeasurementRefs().trim()))
-                .toList();
+        List<EstimateItem> empty = emptyLines(items, name, unit);
         if (empty.size() != 1) {
             return Optional.empty();
         }
@@ -1111,6 +1105,33 @@ public class EstimateService {
         line.setQuantityManual(true);
         EstimateMath.recalculate(items);
         return Optional.of(EstimateItemResponse.from(line));
+    }
+
+    /**
+     * The ONE empty «к-сть?» row of that work, read only: the bot takes its unit and price when the catalog has
+     * none, so «демонтаж 12 квадратів» does not wait on «немає ціни в каталозі» while the row beside it is priced.
+     * {@code unit} null = any unit, still exactly one row.
+     */
+    @Transactional(readOnly = true)
+    public Optional<EstimateItemResponse> findEmptyLine(UUID estimateId, String name, Unit unit, UUID ownerId) {
+        loadOwned(estimateId, ownerId);
+        if (name == null || unit == Unit.PERCENT) {
+            return Optional.empty();
+        }
+        List<EstimateItem> empty = emptyLines(itemRepository.findByEstimateIdOrderBySortOrderAscIdAsc(estimateId),
+                name, unit);
+        return empty.size() == 1 ? Optional.of(EstimateItemResponse.from(empty.get(0))) : Optional.empty();
+    }
+
+    /** Rows of that name (and unit, when given) whose quantity is still zero and not tied to measurements. */
+    private static List<EstimateItem> emptyLines(List<EstimateItem> items, String name, Unit unit) {
+        return items.stream()
+                .filter(i -> i.getUnit() != Unit.PERCENT && (unit == null || i.getUnit() == unit))
+                .filter(i -> i.getName().trim().equalsIgnoreCase(name.trim()))
+                .filter(i -> i.getQuantity().signum() == 0)
+                .filter(i -> i.getMeasurementRefs() == null || i.getMeasurementRefs().isBlank()
+                        || "[]".equals(i.getMeasurementRefs().trim()))
+                .toList();
     }
 
     /** Undo of {@link #fillEmptyLine}: the row is the template's again, «к-сть?». A line gone already is a no-op. */

@@ -24,6 +24,16 @@ class SpeechToTextTest {
     }
 
     @Test
+    void thePeopleFollowTheObjects_andGiveWayFirst() {
+        assertThat(SpeechToText.prompt(List.of("Липки"), List.of("Василь", "Петро")))
+                .startsWith("Будівельні роботи на обʼєктах: Липки. Люди: Василь, Петро. Матеріали: Церезіт");
+        String crowded = SpeechToText.prompt(List.of("Липки"), Collections.nCopies(200, "Костянтин"));
+        assertThat(crowded.length()).isLessThanOrEqualTo(600);
+        assertThat(crowded).contains("Люди: Костянтин").contains("Церезіт (Ceresit)");
+        assertThat(SpeechToText.prompt(List.of("Липки"), List.of())).doesNotContain("Люди");
+    }
+
+    @Test
     void theObjectNamesAreTheHint_andAShortOne() {
         assertThat(SpeechToText.prompt(List.of("Будинок в Куликові", "Липки")))
                 .startsWith("Будівельні роботи на обʼєктах: Будинок в Куликові, Липки. Матеріали: Церезіт");

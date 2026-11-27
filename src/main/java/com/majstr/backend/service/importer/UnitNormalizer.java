@@ -60,6 +60,22 @@ public final class UnitNormalizer {
             // litre — primer, paint, adhesive (V126)
             Map.entry("л", Unit.LITRE), Map.entry("літр", Unit.LITRE), Map.entry("літрів", Unit.LITRE),
             Map.entry("літра", Unit.LITRE), Map.entry("l", Unit.LITRE),
+            // the shop's own counts (V229) — every case form a master says after a number
+            Map.entry("міш", Unit.BAG), Map.entry("мішок", Unit.BAG), Map.entry("мішки", Unit.BAG),
+            Map.entry("мішка", Unit.BAG), Map.entry("мішків", Unit.BAG), Map.entry("мішку", Unit.BAG),
+            Map.entry("bag", Unit.BAG),
+            Map.entry("уп", Unit.PACK), Map.entry("упак", Unit.PACK), Map.entry("упаковка", Unit.PACK),
+            Map.entry("упаковки", Unit.PACK), Map.entry("упаковок", Unit.PACK), Map.entry("пач", Unit.PACK),
+            Map.entry("пачка", Unit.PACK), Map.entry("пачки", Unit.PACK), Map.entry("пачок", Unit.PACK),
+            Map.entry("pack", Unit.PACK),
+            Map.entry("відр", Unit.BUCKET), Map.entry("відро", Unit.BUCKET), Map.entry("відра", Unit.BUCKET),
+            Map.entry("відер", Unit.BUCKET),
+            Map.entry("кан", Unit.CANISTER), Map.entry("каністра", Unit.CANISTER),
+            Map.entry("каністри", Unit.CANISTER), Map.entry("каністр", Unit.CANISTER),
+            Map.entry("рул", Unit.ROLL), Map.entry("рулон", Unit.ROLL), Map.entry("рулони", Unit.ROLL),
+            Map.entry("рулона", Unit.ROLL), Map.entry("рулонів", Unit.ROLL), Map.entry("roll", Unit.ROLL),
+            Map.entry("лист", Unit.SHEET), Map.entry("листи", Unit.SHEET), Map.entry("листа", Unit.SHEET),
+            Map.entry("листів", Unit.SHEET), Map.entry("sheet", Unit.SHEET),
             // percent
             Map.entry("%", Unit.PERCENT), Map.entry("відс", Unit.PERCENT), Map.entry("процент", Unit.PERCENT)
     );

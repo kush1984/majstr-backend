@@ -115,7 +115,8 @@ public class DictationExtractor {
                 do not translate, do not invent a more official wording, do not add anything he
                 did not say. This name is matched against his own price list afterwards.
               - unit: the unit as an abbreviation — "м2", "м.п.", "м", "шт", "кг", "т", "м3",
-                "год", "компл", "точка", "день". An empty string "" when no unit was said.
+                "год", "компл", "точка", "день", "мішок", "уп", "відро", "каністра", "рулон", "лист".
+                An empty string "" when no unit was said.
                 «квадратів»/«квадратних метрів» = "м2", «погонних» = "м.п.", «штук» = "шт".
               - quantity: how many, as a number (25, 1.5). 0 when no quantity was said.
               - unitPrice: the price PER UNIT in hryvnia, and ONLY when he said one («по 250

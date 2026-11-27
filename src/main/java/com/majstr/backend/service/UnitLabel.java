@@ -28,7 +28,13 @@ public final class UnitLabel {
             entry(Unit.KM,           "км"),
             entry(Unit.DAY,          "день"),
             entry(Unit.FLOOR,        "поверх"),
-            entry(Unit.LITRE,        "л")
+            entry(Unit.LITRE,        "л"),
+            entry(Unit.BAG,          "міш."),
+            entry(Unit.PACK,         "уп."),
+            entry(Unit.BUCKET,       "відр."),
+            entry(Unit.CANISTER,     "кан."),
+            entry(Unit.ROLL,         "рул."),
+            entry(Unit.SHEET,        "лист.")
     );
 
     private UnitLabel() {}
