@@ -4,6 +4,7 @@ import jakarta.validation.constraints.DecimalMax;
 import jakarta.validation.constraints.DecimalMin;
 import jakarta.validation.constraints.Digits;
 import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Size;
 
 import java.math.BigDecimal;
 import java.util.Map;
@@ -40,5 +41,7 @@ public record MaterialParamsRequest(
         // V168: a riser's length in METRES, a concrete's rebar ratio in KG/M3, a chase's section in CM2.
         Map<UUID, @NotNull @DecimalMin("0") @DecimalMax("100") @Digits(integer = 4, fraction = 3) BigDecimal> lengths,
         Map<UUID, @NotNull @DecimalMin("0") @DecimalMax("300") @Digits(integer = 4, fraction = 3) BigDecimal> reinforcements,
-        Map<UUID, @NotNull @DecimalMin("0") @DecimalMax("200") @Digits(integer = 4, fraction = 3) BigDecimal> chaseSections
+        Map<UUID, @NotNull @DecimalMin("0") @DecimalMax("200") @Digits(integer = 4, fraction = 3) BigDecimal> chaseSections,
+        // V227: a fence's sides, «25 + 15 + 25; 10» — text, read by FenceSides; blank forgets it.
+        Map<UUID, @NotNull @Size(max = 300) String> sides
 ) {}

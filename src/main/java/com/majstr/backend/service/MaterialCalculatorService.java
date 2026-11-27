@@ -301,8 +301,12 @@ public class MaterialCalculatorService {
         // fallback each norm without an allowance of its own uses, not a figure for the whole line.
         BigDecimal effectiveWaste = effectiveWaste(ownerId, wastePercent);
 
+        // A fence's sides travel only through the store (V227): text, so never on the query string.
+        Map<UUID, FenceSides> sides = new HashMap<>();
+        stored.sides().forEach((itemId, raw) -> FenceSides.parse(raw).ifPresent(f -> sides.put(itemId, f)));
+
         Computed computed = compute(works.stream().map(i -> CalcLine.of(i, layouts)).toList(),
-                ownerId, habits, effectiveWaste, perimeter, perPosition,
+                ownerId, habits, effectiveWaste, perimeter, perPosition, sides,
                 () -> sheetArea(pref(ownerId, MaterialPrefKey.GKL_SHEET)), null, null, laid);
 
         List<PositionMatch> matches = matches(works.stream().map(i -> CalcLine.of(i, layouts)).toList(), ownerId);
@@ -371,7 +375,7 @@ public class MaterialCalculatorService {
                                    BigDecimal tileBoxArea, OwnNorm ownNorm) {
         BigDecimal effectiveWaste = effectiveWaste(null, wastePercent);
         return compute(lines, null, Habits.anonymous(this, jointMm), effectiveWaste, perimeter,
-                perPosition == null ? Map.of() : perPosition, () -> null, tileBoxArea, ownNorm, Map.of());
+                perPosition == null ? Map.of() : perPosition, Map.of(), () -> null, tileBoxArea, ownNorm, Map.of());
     }
 
     /**
@@ -638,7 +642,7 @@ public class MaterialCalculatorService {
      */
     private Computed compute(List<CalcLine> works, UUID ownerId, Habits habits, BigDecimal effectiveWaste,
                              BigDecimal perimeter, Map<NormBasis, Map<UUID, BigDecimal>> perPosition,
-                             Supplier<BigDecimal> sheetAreaRead, BigDecimal tileBoxArea, OwnNorm ownNorm,
+                             Map<UUID, FenceSides> fenceSides, Supplier<BigDecimal> sheetAreaRead, BigDecimal tileBoxArea, OwnNorm ownNorm,
                              Map<UUID, Laid> laid) {
         Lookup byKey = normsByKey(works, ownerId);
 
@@ -702,6 +706,24 @@ public class MaterialCalculatorService {
                 BigDecimal per = visitors ? ownNorm.qtyPerUnit() : coefficient(norm, material, habits, item.layout());
                 boolean own = visitors || norm.getOwner() != null;
                 NormBasis basis = norm.getBasis();
+                if (basis == NormBasis.SIDES) {
+                    // Whole pieces per SIDE plus one per RUN (V227) — the line's м.п. cannot say either.
+                    FenceSides sides = fenceSides.get(item.id());
+                    BigDecimal module = norm.getBaselineParam();
+                    if (sides == null || module == null || module.signum() <= 0) {
+                        parameters.add(new MissingParameter(basis.name(), material.displayName(),
+                                item.id(), item.name(), null));
+                        continue;
+                    }
+                    BigDecimal perRun = norm.getQtyPerRun() == null ? BigDecimal.ZERO : norm.getQtyPerRun();
+                    BigDecimal amount = per.multiply(BigDecimal.valueOf(sides.pieces(module)))
+                            .add(perRun.multiply(BigDecimal.valueOf(sides.runCount())));
+                    bucket(buckets, material).add(norm, new MaterialSourceLine(
+                            item.id(), item.name(), item.unit(), scaled(sides.total()),
+                            per, norm.getId(), own,
+                            basis, scaled(module), scaled(amount)), amount, effectiveWaste);
+                    continue;
+                }
                 Map<UUID, BigDecimal> answers = perPosition.get(basis);
                 if (basis != NormBasis.QUANTITY) {
                     // Per POSITION, not per estimate: this box's own розгортка, this layer's own
@@ -1406,6 +1428,8 @@ public class MaterialCalculatorService {
      * amount, which buys material for a loss that nobody has.</p>
      */
     private static final class Bucket {
+        private static final Set<Unit> COUNTED_UNITS = Set.of(Unit.PIECE, Unit.SET, Unit.POINT);
+
         private final Material material;
         private final List<MaterialSourceLine> sources = new ArrayList<>();
         private BigDecimal total = BigDecimal.ZERO;
@@ -1424,11 +1448,15 @@ public class MaterialCalculatorService {
          * allowance does not apply: with it, 1 × 1,10 rounded up to whole pieces bought TWO breakers
          * for one (norms audit 2026-11-02, §1.1 — 80 library norms). Fasteners counted per m² or per
          * metre, and anything sold in a pack, keep the allowance.
+         *
+         * <p>«Per piece of work» is any COUNTED unit — a set or a point counts the same way (calculator
+         * review 2026-11-27): one «монтаж фурнітури відкатних воріт» bought two gate kits, one
+         * «вивід по точках» two wall elbows.</p>
          */
         private static boolean countedPiece(MaterialNorm norm, Material material) {
             BigDecimal qty = norm.getQtyPerUnit();
-            return norm.getUnit() == Unit.PIECE
-                    && material.getUnit() == Unit.PIECE
+            return COUNTED_UNITS.contains(norm.getUnit())
+                    && COUNTED_UNITS.contains(material.getUnit())
                     && material.getPackageSize() == null
                     && norm.getBasis() == NormBasis.QUANTITY
                     && qty != null && qty.signum() > 0
@@ -1442,7 +1470,8 @@ public class MaterialCalculatorService {
          */
         private void add(MaterialNorm norm, MaterialSourceLine source, BigDecimal amount,
                          BigDecimal fallbackWaste) {
-            BigDecimal percent = norm.getWastePercent().signum() > 0
+            // NULL = his allowance; a figure — 0 included (V227) — is the norm's own.
+            BigDecimal percent = norm.getWastePercent() != null
                     ? norm.getWastePercent()
                     : countedPiece(norm, material) ? BigDecimal.ZERO : fallbackWaste;
             accumulate(source, amount, percent, norm.getSortOrder());

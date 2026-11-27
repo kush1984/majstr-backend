@@ -65,9 +65,16 @@ public class EstimateMaterialParam {
     @Column(name = "basis", nullable = false, length = 20, updatable = false)
     private NormBasis basis;
 
-    /** Metres for a perimeter or a розгортка, millimetres for a thickness. Always {@code > 0}. */
-    @Column(name = "value", nullable = false, precision = 12, scale = 3)
+    /**
+     * Metres for a perimeter or a розгортка, millimetres for a thickness. Always {@code > 0}; null
+     * exactly for {@link NormBasis#SIDES}, whose answer is {@link #textValue}.
+     */
+    @Column(name = "value", precision = 12, scale = 3)
     private BigDecimal value;
+
+    /** A fence's sides as {@code FenceSides#canonical} wrote them (V227); null for every figure. */
+    @Column(name = "text_value", length = 300)
+    private String textValue;
 
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;

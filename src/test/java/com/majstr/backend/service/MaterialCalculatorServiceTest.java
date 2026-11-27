@@ -368,6 +368,43 @@ class MaterialCalculatorServiceTest {
         assertThat(line.wastePercent()).isEqualByComparingTo("0");
     }
 
+    /** Calculator review 2026-11-27: a set or a point is counted like a piece — one gate kit, not two. */
+    @Test
+    void aSetPerSetAndAPiecePerPointTakeNoAllowance() {
+        Material kit = material("GATE_KIT", "Комплект фурнітури", Unit.SET, null, null);
+        given(item("Монтаж фурнітури воріт", Unit.SET, "1", Trade.METAL),
+                norm(Trade.METAL, "монтаж фурнітури воріт", Unit.SET, kit, "1"));
+        assertThat(only(calculate(new BigDecimal("10"), null)).quantity()).isEqualByComparingTo("1");
+
+        Material elbow = material("ELBOW", "Водорозетка", Unit.PIECE, null, null);
+        given(item("Виводи по точках", Unit.POINT, "8", Trade.PLUMBING),
+                norm(Trade.PLUMBING, "виводи по точках", Unit.POINT, elbow, "1"));
+        assertThat(only(calculate(new BigDecimal("10"), null)).quantity()).isEqualByComparingTo("8");
+    }
+
+    /**
+     * V227: a norm's own 0 is «no allowance», not «use the master's» — a fence panel bought whole. A
+     * norm with no figure of its own (NULL) still takes his.
+     */
+    @Test
+    void aNormsOwnZeroMeansNoAllowanceAndNoFigureMeansTheMasters() {
+        Material panel = material("PANEL", "Панель огорожі", Unit.PIECE, null, null);
+        Material post = material("POST", "Стовп", Unit.PIECE, null, null);
+        given(item("Монтаж секції", Unit.LINEAR_METER, "5", Trade.METAL),
+                wasted(norm(Trade.METAL, "монтаж секції", Unit.LINEAR_METER, panel, "0.4"), "0"),
+                norm(Trade.METAL, "монтаж секції", Unit.LINEAR_METER, post, "0.4"));
+
+        MaterialCalculationResponse result = calculate(new BigDecimal("10"), null);
+
+        CalculatedMaterialLine panels = result.materials().stream()
+                .filter(m -> m.materialId().equals(panel.getId())).findFirst().orElseThrow();
+        CalculatedMaterialLine posts = result.materials().stream()
+                .filter(m -> m.materialId().equals(post.getId())).findFirst().orElseThrow();
+        assertThat(panels.quantity()).isEqualByComparingTo("2");
+        assertThat(panels.wastePercent()).isEqualByComparingTo("0");
+        assertThat(posts.quantity()).isEqualByComparingTo("3");
+    }
+
     /** Pieces counted per m², or sold in a pack, are still bought with the allowance. */
     @Test
     void piecesPerSquareMetreOrInAPackKeepTheAllowance() {
@@ -833,7 +870,7 @@ class MaterialCalculatorServiceTest {
         given(floor, stepNorm(Trade.PLUMBING, "монтаж трубної системи тепла підлога з утеплювачем",
                 Unit.M2, pipe, "975", "150"));
         StoredMaterialParams stored = new StoredMaterialParams(null, Map.of(), Map.of(),
-                Map.of(floor.getId(), new BigDecimal("200")), Map.of(), Map.of(), Map.of());
+                Map.of(floor.getId(), new BigDecimal("200")), Map.of(), Map.of(), Map.of(), Map.of());
 
         MaterialCalculationResponse result = calculateWithSteps(stored, null);
         assertThat(result.parameters()).isEmpty();
@@ -844,6 +881,46 @@ class MaterialCalculatorServiceTest {
                 floor.getId() + ":1500");
         assertThat(typo.parameters()).singleElement()
                 .satisfies(p -> assertThat(p.parameter()).isEqualTo("STEP"));
+    }
+
+    // --- SIDES: a fence counted from its sides (V227) -----------------------------------------
+
+    /**
+     * 25 + 15 + 25 m in one run and a 10 m run past the gate: 10 + 6 + 10 + 4 = 30 panels on 30 + 2
+     * posts — no allowance on either, and until the sides are given, both are asked for, not guessed.
+     */
+    @Test
+    void aFenceIsCountedSideBySideWithAnEndPostPerRun() {
+        Material panel = material("PANEL_3D", "Панель 3D-огорожі", Unit.PIECE, null, null);
+        Material post = material("POST_3D", "Стовп для 3D-огорожі", Unit.PIECE, null, null);
+        EstimateItem fence = item("Монтаж секції 3D-сітки", Unit.LINEAR_METER, "75", Trade.METAL);
+        MaterialNorm panels = wasted(basisNorm(Trade.METAL, "монтаж секції 3d-сітки", Unit.LINEAR_METER,
+                panel, "1", NormBasis.SIDES, null), "0");
+        panels.setBaselineParam(new BigDecimal("2.5"));
+        MaterialNorm posts = wasted(basisNorm(Trade.METAL, "монтаж секції 3d-сітки", Unit.LINEAR_METER,
+                post, "1", NormBasis.SIDES, null), "0");
+        posts.setBaselineParam(new BigDecimal("2.5"));
+        posts.setQtyPerRun(BigDecimal.ONE);
+        given(fence, panels, posts);
+
+        MaterialCalculationResponse asked = calculateWith(StoredMaterialParams.EMPTY, PerPositionAnswers.NONE);
+        assertThat(asked.materials()).isEmpty();
+        assertThat(asked.parameters()).hasSize(2)
+                .allSatisfy(p -> {
+                    assertThat(p.parameter()).isEqualTo("SIDES");
+                    assertThat(p.estimateItemId()).isEqualTo(fence.getId());
+                    assertThat(p.suggested()).isNull();
+                });
+
+        StoredMaterialParams stored = new StoredMaterialParams(null, Map.of(), Map.of(), Map.of(), Map.of(),
+                Map.of(), Map.of(), Map.of(fence.getId(), "25 + 15 + 25; 10"));
+        MaterialCalculationResponse result = calculateWith(stored, PerPositionAnswers.NONE);
+
+        assertThat(result.parameters()).isEmpty();
+        assertThat(result.materials()).hasSize(2);
+        assertThat(lineOf(result, panel).quantity()).isEqualByComparingTo("30");
+        assertThat(lineOf(result, panel).wastePercent()).isEqualByComparingTo("0");
+        assertThat(lineOf(result, post).quantity()).isEqualByComparingTo("32");
     }
 
     // --- LENGTH / REINFORCEMENT / CHASE_SECTION: three more per-position figures (V168) -------
@@ -884,7 +961,7 @@ class MaterialCalculatorServiceTest {
                     assertThat(p.suggested()).isNull();
                 });
         StoredMaterialParams stored = new StoredMaterialParams(null, Map.of(), Map.of(), Map.of(), Map.of(),
-                Map.of(slab.getId(), new BigDecimal("120")), Map.of());
+                Map.of(slab.getId(), new BigDecimal("120")), Map.of(), Map.of());
         assertThat(only(calculateWith(stored, PerPositionAnswers.NONE)).baseQuantity())
                 .isEqualByComparingTo("1440"); // 12 м³ × 120 кг/м³
         assertThat(calculateWith(StoredMaterialParams.EMPTY,
@@ -1011,7 +1088,7 @@ class MaterialCalculatorServiceTest {
         given(walls, thicknessNorm(Trade.PAINTER, "штукатурка стін (до 2 см)",
                 Unit.M2, plaster, "0.95", "15"));
         StoredMaterialParams stored = new StoredMaterialParams(
-                null, Map.of(), Map.of(walls.getId(), new BigDecimal("10")), Map.of(), Map.of(), Map.of(), Map.of());
+                null, Map.of(), Map.of(walls.getId(), new BigDecimal("10")), Map.of(), Map.of(), Map.of(), Map.of(), Map.of());
 
         MaterialCalculationResponse result = calculate(stored, NO_WASTE, null, null, null);
 
@@ -1039,7 +1116,7 @@ class MaterialCalculatorServiceTest {
         StoredMaterialParams stored = new StoredMaterialParams(null,
                 Map.of(straight.getId(), new BigDecimal("0.5"),
                         round.getId(), new BigDecimal("0.8")),
-                Map.of(), Map.of(), Map.of(), Map.of(), Map.of());
+                Map.of(), Map.of(), Map.of(), Map.of(), Map.of(), Map.of());
 
         CalculatedMaterialLine line = calculate(stored, NO_WASTE, null,
                 straight.getId() + ":1.2", null).materials().get(0);
@@ -1057,7 +1134,7 @@ class MaterialCalculatorServiceTest {
         given(item("Монтаж на стелю", Unit.M2, "20", Trade.DRYWALL),
                 perimeterNorm(Trade.DRYWALL, "монтаж на стелю", Unit.M2, track, "1.05"));
         StoredMaterialParams stored =
-                new StoredMaterialParams(new BigDecimal("20"), Map.of(), Map.of(), Map.of(), Map.of(), Map.of(), Map.of());
+                new StoredMaterialParams(new BigDecimal("20"), Map.of(), Map.of(), Map.of(), Map.of(), Map.of(), Map.of(), Map.of());
 
         MaterialCalculationResponse result = calculate(stored, NO_WASTE, null, null, null);
 
@@ -1488,7 +1565,6 @@ class MaterialCalculatorServiceTest {
                 .unit(unit)
                 .material(material)
                 .qtyPerUnit(qty == null ? null : new BigDecimal(qty))
-                .wastePercent(BigDecimal.ZERO)
                 .basis(NormBasis.QUANTITY)
                 .build();
     }
@@ -1536,6 +1612,11 @@ class MaterialCalculatorServiceTest {
         norm.setBasis(basis);
         norm.setDefaultParam(defaultParam == null ? null : new BigDecimal(defaultParam));
         return norm;
+    }
+
+    private CalculatedMaterialLine lineOf(MaterialCalculationResponse result, Material material) {
+        return result.materials().stream().filter(m -> m.materialId().equals(material.getId()))
+                .findFirst().orElseThrow();
     }
 
     private MaterialCalculationResponse calculateWith(StoredMaterialParams stored, PerPositionAnswers answers) {

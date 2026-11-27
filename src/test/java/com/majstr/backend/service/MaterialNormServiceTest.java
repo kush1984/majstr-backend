@@ -282,7 +282,6 @@ class MaterialNormServiceTest {
                 .material(sheet)
                 .qtyPerUnit(qty == null ? null : new BigDecimal(qty))
                 .basis(NormBasis.QUANTITY)
-                .wastePercent(BigDecimal.ZERO)
                 .build();
     }
 }

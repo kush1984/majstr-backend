@@ -58,5 +58,12 @@ public enum NormBasis {
      * A chase's CROSS-SECTION in CM2 (V168): width × depth, which one SECTION number (a box's
      * розгортка, a sum) cannot say. amount = metres × cm² × qtyPerUnit (per cm² per metre).
      */
-    CHASE_SECTION
+    CHASE_SECTION,
+    /**
+     * A fence's SIDES (V227): a list, not a figure — «25 + 15 + 25; 10», see
+     * {@code FenceSides}. amount = qtyPerUnit × Σ⌈side ÷ module⌉ + qtyPerRun × runs, the module
+     * being {@code baseline_param} in metres (a 3D panel's 2,5). A panel per module of every side; a
+     * post per panel plus one per continuous run. Asked per POSITION, with no suggestion.
+     */
+    SIDES
 }

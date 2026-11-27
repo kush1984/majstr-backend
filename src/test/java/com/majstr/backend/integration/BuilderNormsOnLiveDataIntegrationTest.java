@@ -180,13 +180,25 @@ class BuilderNormsOnLiveDataIntegrationTest extends IntegrationTestBase {
                 .isEqualTo("SECTION");
     }
 
-    /** Batch 2's ruling: a shipped norm's own allowance would override the master's habit. */
+    /**
+     * Batch 2's ruling: a shipped norm's own allowance would override the master's habit — with ONE
+     * exception since V227. Ready-mix concrete is poured, not cut, so his cutting allowance says
+     * nothing about it: its loss is ДСТУ's 1,5 %, the volume placed is the coefficient.
+     */
     @Test
-    void noBuilderNormOverridesTheMastersCuttingAllowance() {
+    void noBuilderNormOverridesTheMastersCuttingAllowanceButConcrete() {
         assertThat(count("""
-                SELECT count(*) FROM material_norm
-                 WHERE owner_id IS NULL AND trade = 'BUILDER' AND waste_percent <> 0
+                SELECT count(*) FROM material_norm n JOIN material m ON m.id = n.material_id
+                 WHERE n.owner_id IS NULL AND n.trade = 'BUILDER' AND n.waste_percent IS NOT NULL
+                   AND m.code <> 'CONCRETE_READY'
                 """)).isZero();
+        assertThat(count("""
+                SELECT count(*) FROM material_norm n JOIN material m ON m.id = n.material_id
+                 WHERE n.owner_id IS NULL AND m.code = 'CONCRETE_READY'
+                   AND (n.waste_percent IS DISTINCT FROM 1.5 OR n.qty_per_unit NOT IN (1.0, 0.1, 0.001))
+                """)).isZero();
+        assertThat(qty("бетонування фундаменту з міксера (приймання, вібрування)", "CONCRETE_READY"))
+                .isEqualByComparingTo("1.0");
     }
 
     // ---- shared positions ----------------------------------------------------------------------

@@ -127,9 +127,19 @@ public class MaterialNorm {
     @Column(name = "baseline_param", precision = 15, scale = 4)
     private BigDecimal baselineParam;
 
-    @Builder.Default
-    @Column(name = "waste_percent", nullable = false, precision = 5, scale = 2)
-    private BigDecimal wastePercent = BigDecimal.ZERO;
+    /**
+     * Pieces bought once per continuous RUN of a {@link NormBasis#SIDES} norm (V227) — a fence's end
+     * post: a run of N panels stands on N + 1 posts. Null everywhere else.
+     */
+    @Column(name = "qty_per_run", precision = 15, scale = 4)
+    private BigDecimal qtyPerRun;
+
+    /**
+     * The norm's OWN allowance, overriding the master's (V227). NULL — almost every row — means «use
+     * his»; 0 is a statement that this material takes none (a fence panel bought whole).
+     */
+    @Column(name = "waste_percent", precision = 5, scale = 2)
+    private BigDecimal wastePercent;
 
     @Builder.Default
     @Column(name = "sort_order", nullable = false)

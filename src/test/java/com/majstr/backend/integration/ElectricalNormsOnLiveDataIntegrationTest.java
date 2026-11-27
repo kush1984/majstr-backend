@@ -121,7 +121,7 @@ class ElectricalNormsOnLiveDataIntegrationTest extends IntegrationTestBase {
                 """)).isEqualTo(39);
         assertThat(count("""
                 SELECT count(*) FROM material_norm
-                 WHERE owner_id IS NULL AND trade = 'ELECTRICAL' AND waste_percent <> 0
+                 WHERE owner_id IS NULL AND trade = 'ELECTRICAL' AND waste_percent IS NOT NULL
                 """)).isZero();
     }
 

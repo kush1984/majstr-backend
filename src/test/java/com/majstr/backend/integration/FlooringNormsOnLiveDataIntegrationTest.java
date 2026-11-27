@@ -178,7 +178,7 @@ class FlooringNormsOnLiveDataIntegrationTest extends IntegrationTestBase {
         assertThat(count("""
                 SELECT count(*) FROM material_norm
                  WHERE owner_id IS NULL AND (trade = 'FLOORING' OR trade IS NULL)
-                   AND waste_percent <> 0
+                   AND waste_percent IS NOT NULL
                 """)).isZero();
     }
 

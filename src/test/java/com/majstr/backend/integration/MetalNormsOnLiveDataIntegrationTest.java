@@ -6,6 +6,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 
 import java.math.BigDecimal;
 import java.util.List;
+import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -55,7 +56,30 @@ class MetalNormsOnLiveDataIntegrationTest extends IntegrationTestBase {
         assertThat(qty("монтаж профнастилу на паркан", "SCREW_ROOFING")).isEqualByComparingTo("6");
         assertThat(qty("монтаж покрівлі навісу з профнастилу", "SCREW_ROOFING")).isEqualByComparingTo("8");
         assertThat(qty("монтаж покрівлі навісу з полікарбонату", "THERMO_WASHER")).isEqualByComparingTo("4");
-        assertThat(qty("монтаж секції 3d-сітки", "PANEL_3D")).isEqualByComparingTo("0.4");
+    }
+
+    /**
+     * V227: the 3D fence counts from its SIDES — a panel per 2,5 m of every side, a post per panel
+     * plus one per run, neither with an allowance. The clamps stay per metre, a fastener.
+     */
+    @Test
+    void aThreeDFenceIsCountedFromItsSides() {
+        for (String code : List.of("PANEL_3D", "POST_3D")) {
+            Map<String, Object> n = jdbc.queryForMap("""
+                    SELECT n.basis, n.qty_per_unit, n.baseline_param, n.qty_per_run, n.waste_percent
+                      FROM material_norm n JOIN material m ON m.id = n.material_id
+                     WHERE n.owner_id IS NULL AND n.name_key = 'монтаж секції 3d-сітки' AND m.code = ?
+                    """, code);
+            assertThat(n.get("basis")).as(code).isEqualTo("SIDES");
+            assertThat((BigDecimal) n.get("qty_per_unit")).as(code).isEqualByComparingTo("1");
+            assertThat((BigDecimal) n.get("baseline_param")).as(code).isEqualByComparingTo("2.5");
+            assertThat((BigDecimal) n.get("waste_percent")).as(code).isEqualByComparingTo("0");
+        }
+        assertThat(jdbc.queryForObject("""
+                SELECT n.qty_per_run FROM material_norm n JOIN material m ON m.id = n.material_id
+                 WHERE n.owner_id IS NULL AND n.name_key = 'монтаж секції 3d-сітки' AND m.code = 'POST_3D'
+                """, BigDecimal.class)).isEqualByComparingTo("1");
+        assertThat(qty("монтаж секції 3d-сітки", "CLAMP_3D")).isEqualByComparingTo("1.2");
     }
 
     /** Ruling 1: a fixed figure per post — THICKNESS stops at 150 mm and a post hole does not. */
@@ -106,7 +130,8 @@ class MetalNormsOnLiveDataIntegrationTest extends IntegrationTestBase {
                 .isEqualTo(14);
         assertThat(count("""
                 SELECT count(*) FROM material_norm
-                 WHERE owner_id IS NULL AND trade = 'METAL' AND waste_percent <> 0
+                 WHERE owner_id IS NULL AND trade = 'METAL' AND waste_percent IS NOT NULL
+                   AND material_id NOT IN (SELECT id FROM material WHERE code IN ('PANEL_3D', 'POST_3D'))
                 """)).isZero();
     }
 

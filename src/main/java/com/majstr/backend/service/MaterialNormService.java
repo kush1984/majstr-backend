@@ -97,6 +97,9 @@ public class MaterialNormService {
                 // rescaled today, so nothing reads it yet — but a copy that dropped it would be a
                 // number with no record of what it assumed.
                 .baselineParam(base.getBaselineParam())
+                // A fence's end post (V227): without it a forked post norm would stand a run on
+                // one post too few.
+                .qtyPerRun(base.getQtyPerRun())
                 .wastePercent(base.getWastePercent())
                 .sortOrder(base.getSortOrder())
                 .build());

@@ -18,8 +18,10 @@ public record StoredMaterialParams(
         Map<UUID, BigDecimal> steps,
         Map<UUID, BigDecimal> lengths,
         Map<UUID, BigDecimal> reinforcements,
-        Map<UUID, BigDecimal> chaseSections
+        Map<UUID, BigDecimal> chaseSections,
+        // V227: a fence's sides, as text — «25 + 15 + 25; 10» (FenceSides#canonical).
+        Map<UUID, String> sides
 ) {
     public static final StoredMaterialParams EMPTY =
-            new StoredMaterialParams(null, Map.of(), Map.of(), Map.of(), Map.of(), Map.of(), Map.of());
+            new StoredMaterialParams(null, Map.of(), Map.of(), Map.of(), Map.of(), Map.of(), Map.of(), Map.of());
 }

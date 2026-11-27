@@ -126,7 +126,7 @@ class PlumbingNormsOnLiveDataIntegrationTest extends IntegrationTestBase {
         }
         assertThat(count("""
                 SELECT count(*) FROM material_norm
-                 WHERE owner_id IS NULL AND trade = 'PLUMBING' AND waste_percent <> 0
+                 WHERE owner_id IS NULL AND trade = 'PLUMBING' AND waste_percent IS NOT NULL
                 """)).isZero();
     }
 

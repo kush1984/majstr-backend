@@ -5,6 +5,7 @@ import com.majstr.backend.dto.StoredMaterialParams;
 import com.majstr.backend.entity.EstimateItem;
 import com.majstr.backend.entity.EstimateMaterialParam;
 import com.majstr.backend.entity.NormBasis;
+import com.majstr.backend.exception.MaterialParamValidationException;
 import com.majstr.backend.repository.EstimateItemRepository;
 import com.majstr.backend.repository.EstimateMaterialParamRepository;
 import lombok.RequiredArgsConstructor;
@@ -72,6 +73,7 @@ public class MaterialParamService {
         applyPerPosition(byKey, save, drop, estimateId, NormBasis.LENGTH, req.lengths());
         applyPerPosition(byKey, save, drop, estimateId, NormBasis.REINFORCEMENT, req.reinforcements());
         applyPerPosition(byKey, save, drop, estimateId, NormBasis.CHASE_SECTION, req.chaseSections());
+        applySides(byKey, save, drop, estimateId, req.sides());
 
         if (!drop.isEmpty()) {
             repository.deleteAll(drop);
@@ -126,6 +128,7 @@ public class MaterialParamService {
                     .estimateItemId(itemId)
                     .basis(param.getBasis())
                     .value(param.getValue())
+                    .textValue(param.getTextValue())
                     .build());
         }
         repository.saveAll(copies);
@@ -151,6 +154,52 @@ public class MaterialParamService {
                 continue;
             }
             apply(byKey, save, drop, estimateId, basis, entry.getKey(), entry.getValue());
+        }
+    }
+
+    /**
+     * A fence's sides (V227) — text, so it is READ before it is stored: a list we cannot count is a
+     * 400 the card can show, not a row the calculation would then quietly skip. What is stored is
+     * the canonical form, which is also what the card shows back, so «25,15» read as 25,15 m is on
+     * his screen rather than in our assumption. A blank answer forgets the row.
+     */
+    private void applySides(Map<Key, EstimateMaterialParam> byKey,
+                            List<EstimateMaterialParam> save, List<EstimateMaterialParam> drop,
+                            UUID estimateId, Map<UUID, String> answers) {
+        if (answers == null || answers.isEmpty()) {
+            return;
+        }
+        Set<UUID> known = itemRepository.findByEstimateIdOrderBySortOrderAscIdAsc(estimateId)
+                .stream().map(EstimateItem::getId).collect(Collectors.toSet());
+        for (Map.Entry<UUID, String> entry : answers.entrySet()) {
+            if (entry.getValue() == null || !known.contains(entry.getKey())) {
+                continue;
+            }
+            Key key = new Key(entry.getKey(), NormBasis.SIDES);
+            EstimateMaterialParam current = byKey.get(key);
+            if (entry.getValue().isBlank()) {
+                if (current != null) {
+                    drop.add(current);
+                    byKey.remove(key);
+                }
+                continue;
+            }
+            String canonical = FenceSides.parse(entry.getValue())
+                    .orElseThrow(() -> new MaterialParamValidationException("error.material-param.sides"))
+                    .canonical();
+            if (current != null) {
+                current.setTextValue(canonical);
+                save.add(current);
+                continue;
+            }
+            EstimateMaterialParam fresh = EstimateMaterialParam.builder()
+                    .estimateId(estimateId)
+                    .estimateItemId(entry.getKey())
+                    .basis(NormBasis.SIDES)
+                    .textValue(canonical)
+                    .build();
+            byKey.put(key, fresh);
+            save.add(fresh);
         }
     }
 
@@ -194,6 +243,7 @@ public class MaterialParamService {
         Map<UUID, BigDecimal> lengths = new LinkedHashMap<>();
         Map<UUID, BigDecimal> reinforcements = new LinkedHashMap<>();
         Map<UUID, BigDecimal> chaseSections = new LinkedHashMap<>();
+        Map<UUID, String> sides = new LinkedHashMap<>();
         for (EstimateMaterialParam param : params) {
             switch (param.getBasis()) {
                 case PERIMETER -> perimeter = param.getValue();
@@ -203,11 +253,12 @@ public class MaterialParamService {
                 case LENGTH -> lengths.put(param.getEstimateItemId(), param.getValue());
                 case REINFORCEMENT -> reinforcements.put(param.getEstimateItemId(), param.getValue());
                 case CHASE_SECTION -> chaseSections.put(param.getEstimateItemId(), param.getValue());
+                case SIDES -> sides.put(param.getEstimateItemId(), param.getTextValue());
                 default -> { /* QUANTITY is read off the line and is never asked for */ }
             }
         }
         return new StoredMaterialParams(perimeter, sections, thicknesses, steps, lengths, reinforcements,
-                chaseSections);
+                chaseSections, sides);
     }
 
     /** (position, question) — the pair the two partial unique indexes enforce. */

@@ -13,7 +13,7 @@ title — read the twin before changing what a bullet guards); per-area narrativ
 - **Stack pinned:** Spring Boot 4 / Java 21 / PostgreSQL 17 + Flyway / Jackson 3 (`tools.jackson.*`). Don't bump without reason.
 - **Secrets from env only** (`JWT_SECRET` has no default). **English only** in code, comments, SQL, docs.
 - **Layering** `controller → service → repository`; controllers return DTOs; `passwordHash` never leaves.
-- **Schema = Flyway only** (`ddl-auto: validate`). New `V<N>__…sql`, **latest is V226** (V183, V185 skipped);
+- **Schema = Flyway only** (`ddl-auto: validate`). New `V<N>__…sql`, **latest is V227** (V183, V185 skipped);
   never edit an applied migration; a self-check `RAISE EXCEPTION`s only about its own work, else `WARNING`.
 - **Tests + green `./gradlew build` before any push** (Claude runs it; Docker must be up). Controller tests =
   Mockito standalone; DB/filters = `…IntegrationTest` on Testcontainers.
@@ -75,6 +75,7 @@ One line per invariant; the reasoning is in the twin in docs/architecture-index-
 - **Dictation is text, never audio** — `AiFlow.DICTATION` parse/commit; an unmatched position comes back flagged, never 0 ₴; `CatalogMatcher` decides (Dice, `MIN_SCORE` 0.6 + `MIN_MARGIN` 0.1, ties refused); FREE needs a verified email.
 - **The shopping list is where the material answer lands (V126)** — object-scoped, FREE, no price, never writes an `ObjectExpense`; a recalculation replaces its own `source_estimate_id` rows; rows never merged; creating writes lock the object (`getOrCreate`).
 - **The calculator answers «скільки купити» (V127)** — norms keyed by name+unit, filtered by the POSITION's trade; unit read off the position, never converted; `PERCENT` lines out of coverage; `PERIMETER` asked, never derived; rounding UP; nothing stored.
+- **A norm's own allowance: NULL = his, 0 = none (V227, iteration-calculator-review-2026-11)** — `countedPiece` covers PIECE/SET/POINT; ready-mix concrete = placed volume + 1,5 %; a 3D fence counts by `SIDES` (text answer «25 + 15; 10», `FenceSides`, `qty_per_run` = the end post per run).
 - **TILING + PAINTER norms, and the habits nothing was reading (V137, V138, V139)** — a stored preference needs a reader AND a door; habits rescale linearly, never an owned norm; per-position params (`sections`, `thicknesses`, `steps`, …) are separate query params; suggestions pre-filled visibly.
 - **An ANSWER the calculator asked for belongs to the estimate, not the browser (V142)** — `estimate_material_param` keyed by (position, basis); no `requireNotSigned`; value > 0, a cleared field deletes; the query string wins per question.
 - **A coefficient is the MASTER's, and it forks on write** — `owner_id` is inside `ux_material_norm`; `MaterialNormService.saveOwn` copies the default and answers with the row it wrote; resolution is `preferOwn` on the read path.

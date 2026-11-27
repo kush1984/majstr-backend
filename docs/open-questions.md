@@ -4417,6 +4417,28 @@ one-line summary — keep the item in the file as a record.
 
 ---
 
+### Calculator review 2026-11: what is queued
+
+- **Status:** OPEN
+- **Since:** 2026-11-27, V227 ([iteration-calculator-review-2026-11.md](iteration-calculator-review-2026-11.md))
+- **Context:** step 1 (own allowance, sets/points, concrete, 3D fence by sides) shipped. Queued, one
+  at a time, each with a before→after table for the owner first:
+  1. Grout for mosaic 0,6 → ~1,1–1,4 kg/m² (6 positions + the public calculator); clinker floor
+     0,8 → by format; «кабанчик» 0,5 → ~0,7 — these UNDER-buy.
+  2. «Напівсуха стяжка механізована (з фіброю)» buys 80 kg/m² of bagged mix — should be cement +
+     sand + fibre.
+  3. Tile adhesive C1 for 300×300 / 300×600 (5,2 / 7,8) reads high — check against sheets.
+  4. Parquet lacquer at sanding: 2 coats (0,22 l/m²), usually 3.
+  5. Missing companions: paving on «гарцовка» (cement + sand), facade plaster «по сітці» (mesh), OSB
+     on screed (fixings); airless and 3D-panel paint at the wall-paint 0,22.
+  6. Owner to decide: «Цементно-піщана стяжка» — bagged mix (today) or cement + sand; «перегородки 2
+     сторони» — the master types both faces (V127 ruling) while the public calculator doubles one
+     face; a hint on the materials screen?
+- **Notes:** the read-only (signed) estimate row still keeps the (i) as its own column — owner,
+  2026-11-27: leave as is.
+
+---
+
 ## Resolved
 
 (nothing yet — when items close, move them here with a one-line resolution and the commit SHA)
