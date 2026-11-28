@@ -1,6 +1,6 @@
 # Objects past the FREE cap are view-only
 
-- **Status:** 🛠 BUILT 2026-11-28, waiting for the owner's local test — not pushed.
+- **Status:** ✅ PUSHED 2026-11-28 — backend `a6f2340`, PWA `b034a06` (1.96.0).
 - **Migrations:** none (computed from the rows: `projects.created_at`, `sample`, `paid_at`, `transferred_at`,
   `estimates_created`).
 - **PWA:** 1.96.0.

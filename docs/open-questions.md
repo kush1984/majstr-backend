@@ -985,7 +985,7 @@ one-line summary — keep the item in the file as a record.
   instead of a hard FREE wall). Tie-in: plan-downgrade-with-over-limit-data.
 
 ### FREE estimate cap: delete→create loophole (concurrent vs lifetime)
-- **Status:** IN_PROGRESS (2026-11-28) — built with the read-only objects: the cap counts
+- **Status:** RESOLVED 2026-11-28 (backend `a6f2340`) — shipped with the read-only objects: the cap counts
   `projects.estimates_created` (never decremented), still 3 (owner). See
   [iteration-read-only-objects.md](iteration-read-only-objects.md).
 - **Since:** 2026-07-03
@@ -1344,7 +1344,7 @@ one-line summary — keep the item in the file as a record.
   the public offer must now state THREE recurring cadences (monthly / 6-month / annual), not two.
 
 ### Plan downgrade with over-limit data
-- **Status:** IN_PROGRESS (2026-11-28) — built, not yet pushed: on FREE only the first 2 objects ever made
+- **Status:** RESOLVED 2026-11-28 (backend `a6f2340`, PWA `b034a06`): on FREE only the first 2 objects ever made
   (plus the sample and a one-off paid object) change; the rest are view-only — open, share, PDF and money
   stay. Owner's decision, blocked at once on release. See
   [iteration-read-only-objects.md](iteration-read-only-objects.md).
@@ -1389,8 +1389,8 @@ one-line summary — keep the item in the file as a record.
 
 
 ### Pay 149 ₴ to unlock ONE existing view-only object
-- **Status:** IN_PROGRESS (2026-11-28) — owner: «таке робимо». Built with the read-only objects, not yet
-  pushed: «Розблокувати →» on the banner, `checkout-object?unlock=`, `POST /api/projects/{id}/unlock`.
+- **Status:** RESOLVED 2026-11-28 (backend `a6f2340`, PWA `b034a06`) — owner: «таке робимо»: «Розблокувати →»
+  on the banner, `checkout-object?unlock=`, `POST /api/projects/{id}/unlock`.
 - **Since:** 2026-11-28, iteration-read-only-objects
 - **Context:** past the first 2 FREE objects an object is view-only, and only PRO brings it back. The
   one-off purchase (V214) is spent by a CREATE only, so a lapsed master with one live job among his old
