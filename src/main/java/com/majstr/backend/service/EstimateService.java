@@ -35,6 +35,7 @@ import com.majstr.backend.exception.WorkActConflictException;
 import com.majstr.backend.feature.Feature;
 import com.majstr.backend.feature.FeatureGuard;
 import com.majstr.backend.feature.LimitService;
+import com.majstr.backend.feature.ObjectWriteGuard;
 import com.majstr.backend.repository.SignedDocumentRepository;
 import com.majstr.backend.repository.CatalogItemRepository;
 import com.majstr.backend.repository.EstimateItemRepository;
@@ -104,6 +105,7 @@ public class EstimateService {
     private final SignedDocumentRepository signedDocumentRepository;
     private final StorageCleanup storageCleanup;
     private final LimitService limitService;
+    private final ObjectWriteGuard objectWriteGuard;
     /** The crew margin is PRO-tier like the economy panel it mirrors (review B-75). */
     private final FeatureGuard featureGuard;
     private final MeasurementService measurementService;
@@ -172,8 +174,28 @@ public class EstimateService {
      */
     @Transactional
     public EstimateResponse createFromImport(UUID projectId, ImportEstimateData data, UUID ownerId) {
+        return createFromImport(projectId, data, ownerId, false);
+    }
+
+    /**
+     * {@link #createFromImport(UUID, ImportEstimateData, UUID)} onto an object this same commit has just
+     * made for it («Перенести в Majstr», V201): such an object is read-only on FREE
+     * ({@code ObjectWriteGuard}), but must still receive the estimate it was created to hold. The
+     * per-object estimate cap applies as always.
+     */
+    @Transactional
+    public EstimateResponse createFromImportIntoNewObject(UUID projectId, ImportEstimateData data, UUID ownerId) {
+        return createFromImport(projectId, data, ownerId, true);
+    }
+
+    private EstimateResponse createFromImport(UUID projectId, ImportEstimateData data, UUID ownerId,
+                                              boolean objectJustMade) {
         Project project = projectService.loadOwned(projectId, ownerId);
-        limitService.requireCanAddEstimate(ownerId, projectId);
+        if (objectJustMade) {
+            limitService.requireEstimateRoom(ownerId, projectId);
+        } else {
+            limitService.requireCanAddEstimate(ownerId, projectId);
+        }
         Estimate estimate = Estimate.builder()
                 .project(project)
                 .name(normalize(data.name()))
@@ -636,6 +658,7 @@ public class EstimateService {
         if (!estimate.getProject().getOwner().getId().equals(ownerId)) {
             throw new AccessDeniedException("Estimate does not belong to the current user");
         }
+        objectWriteGuard.requireWritable(estimate.getProject());
         if (estimate.getStatus() == EstimateStatus.SIGNED) {
             throw new EstimateSignedException();
         }
@@ -670,6 +693,7 @@ public class EstimateService {
     @Transactional
     public EstimateResponse reopen(UUID estimateId, UUID ownerId) {
         Estimate estimate = loadOwned(estimateId, ownerId);
+        objectWriteGuard.requireWritable(estimate.getProject());
         if (estimate.getStatus() != EstimateStatus.SIGNED) {
             throw new InvalidEstimateStatusException("error.estimate.not-signed-reopen");
         }
@@ -714,6 +738,7 @@ public class EstimateService {
     @Transactional
     public EstimateResponse setCountInEconomy(UUID estimateId, boolean value, UUID ownerId) {
         Estimate estimate = loadOwned(estimateId, ownerId);
+        objectWriteGuard.requireWritable(estimate.getProject());
         if (estimate.getKind() == EstimateKind.ADDENDUM) {
             throw new WorkActConflictException("error.estimate.addendum-locked", "ESTIMATE_ADDENDUM_LOCKED");
         }
@@ -1482,7 +1507,10 @@ public class EstimateService {
         }
     }
 
-    private static Estimate requireNotSigned(Estimate estimate) {
+    private Estimate requireNotSigned(Estimate estimate) {
+        // A read-only object (FREE past its first objects) is not his to change — the same door,
+        // because every write path already passes through it (iteration-read-only-objects).
+        objectWriteGuard.requireWritable(estimate.getProject());
         if (estimate.getStatus() == EstimateStatus.SIGNED) {
             throw new EstimateSignedException();
         }

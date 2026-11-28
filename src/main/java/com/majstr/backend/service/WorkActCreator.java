@@ -12,6 +12,7 @@ import com.majstr.backend.exception.WorkActConflictException;
 import com.majstr.backend.exception.WorkActOpenException;
 import com.majstr.backend.feature.Feature;
 import com.majstr.backend.feature.FeatureGuard;
+import com.majstr.backend.feature.ObjectWriteGuard;
 import com.majstr.backend.repository.WorkActRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.access.AccessDeniedException;
@@ -37,6 +38,7 @@ class WorkActCreator {
     private final WorkActResponseFactory responseFactory;
     private final ProjectService projectService;
     private final FeatureGuard featureGuard;
+    private final ObjectWriteGuard objectWriteGuard;
 
     /**
      * One create attempt in its own transaction. Public so Spring's transaction proxy actually
@@ -68,6 +70,7 @@ class WorkActCreator {
         Project project = projectService.loadOwned(projectId, ownerId);
         User owner = project.getOwner();
         featureGuard.requireFeature(owner, Feature.WORK_ACTS);
+        objectWriteGuard.requireWritable(project);
 
         List<WorkAct> acts = workActRepository.findByProjectIdOrderByIssuedAtDescCreatedAtDesc(projectId);
         acts.stream()

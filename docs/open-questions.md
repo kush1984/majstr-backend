@@ -621,7 +621,9 @@ one-line summary — keep the item in the file as a record.
 ---
 
 ### «Перенести в Majstr» skips the FREE object cap — bounded, not closed
-- **Status:** OPEN
+- **Status:** OPEN — narrowed 2026-11-28: a transferred object is view-only on FREE
+  ([iteration-read-only-objects.md](iteration-read-only-objects.md)), so the door now gives history to
+  look at and share, not objects to work in. Still uncapped by the lifetime count.
 - **Since:** Transfer iteration (2026-11-12, V201)
 - **Context:** The owner chose that objects created by moving existing estimates in do not count
   toward the FREE lifetime cap (`projects.transferred_at`). That is a door around the cap: any
@@ -983,7 +985,9 @@ one-line summary — keep the item in the file as a record.
   instead of a hard FREE wall). Tie-in: plan-downgrade-with-over-limit-data.
 
 ### FREE estimate cap: delete→create loophole (concurrent vs lifetime)
-- **Status:** OPEN
+- **Status:** IN_PROGRESS (2026-11-28) — built with the read-only objects: the cap counts
+  `projects.estimates_created` (never decremented), still 3 (owner). See
+  [iteration-read-only-objects.md](iteration-read-only-objects.md).
 - **Since:** 2026-07-03
 - **Context:** `LimitService.requireCanAddEstimate` counts **concurrent** estimates
   (`countByProjectId`), so a FREE user can delete an estimate to free a slot and
@@ -1340,7 +1344,10 @@ one-line summary — keep the item in the file as a record.
   the public offer must now state THREE recurring cadences (monthly / 6-month / annual), not two.
 
 ### Plan downgrade with over-limit data
-- **Status:** OPEN
+- **Status:** IN_PROGRESS (2026-11-28) — built, not yet pushed: on FREE only the first 2 objects ever made
+  (plus the sample and a one-off paid object) change; the rest are view-only — open, share, PDF and money
+  stay. Owner's decision, blocked at once on release. See
+  [iteration-read-only-objects.md](iteration-read-only-objects.md).
 - **Since:** step 4
 - **Context:** PRO user with 7 active projects downgrades to FREE (limit 2). What happens? Today: nothing — limit only enforced on CREATE. They can edit / view existing 7 projects but can't make new ones until they delete down to 2.
 - **Notes / options:** Either current "soft enforcement" is fine (UX-friendly), or block writes to over-limit resources too. Pick before billing lands.
@@ -1380,6 +1387,17 @@ one-line summary — keep the item in the file as a record.
   behind the over-limit gate (paying is online).
 - **Next:** offer it to 2–3 masters of the closed PRO group before building.
 
+
+### Pay 149 ₴ to unlock ONE existing view-only object
+- **Status:** IN_PROGRESS (2026-11-28) — owner: «таке робимо». Built with the read-only objects, not yet
+  pushed: «Розблокувати →» on the banner, `checkout-object?unlock=`, `POST /api/projects/{id}/unlock`.
+- **Since:** 2026-11-28, iteration-read-only-objects
+- **Context:** past the first 2 FREE objects an object is view-only, and only PRO brings it back. The
+  one-off purchase (V214) is spent by a CREATE only, so a lapsed master with one live job among his old
+  objects has no small way to keep working on it.
+- **Notes / options:** offer «Тільки цей обʼєкт — 149 ₴» on the view-only banner; the webhook (or the
+  credit spend) stamps `paid_at` on THAT object, which `ObjectWriteGuard` already treats as writable. The
+  owner's call.
 ### Team plan: actual multi-user workspaces
 - **Status:** OPEN
 - **Since:** step 4

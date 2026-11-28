@@ -97,7 +97,7 @@ public class MeasurementService {
      */
     @Transactional
     public MeasurementsResponse addRoom(UUID objectId, UUID ownerId, MeasurementRoomRequest req, UUID requestedId) {
-        requireMeasurements(objectId, ownerId);
+        requireMeasurementsWritable(objectId, ownerId);
         if (requestedId != null) {
             var existing = roomRepository.findById(requestedId);
             if (existing.isPresent()) {
@@ -119,7 +119,7 @@ public class MeasurementService {
 
     @Transactional
     public MeasurementsResponse updateRoom(UUID objectId, UUID roomId, UUID ownerId, MeasurementRoomRequest req) {
-        requireMeasurements(objectId, ownerId);
+        requireMeasurementsWritable(objectId, ownerId);
         MeasurementRoom room = loadRoom(objectId, roomId);
         room.setName(req.name().trim());
         room.setFloor(blankToNull(req.floor()));
@@ -135,7 +135,7 @@ public class MeasurementService {
 
     @Transactional
     public MeasurementsResponse deleteRoom(UUID objectId, UUID roomId, UUID ownerId) {
-        requireMeasurements(objectId, ownerId);
+        requireMeasurementsWritable(objectId, ownerId);
         // Idempotent: a replayed offline delete of an already-gone room is a no-op, not a 404.
         roomRepository.findByIdAndProjectId(roomId, objectId)
                 .ifPresent(roomRepository::delete); // items cascade (FK)
@@ -157,7 +157,7 @@ public class MeasurementService {
     @Transactional
     public MeasurementsResponse addItem(UUID objectId, UUID roomId, UUID ownerId,
                                         MeasurementItemRequest req, UUID requestedId) {
-        requireMeasurements(objectId, ownerId);
+        requireMeasurementsWritable(objectId, ownerId);
         loadRoom(objectId, roomId); // authorize the room belongs to the object
         if (requestedId != null) {
             var existing = itemRepository.findById(requestedId);
@@ -185,7 +185,7 @@ public class MeasurementService {
     @Transactional
     public MeasurementsResponse updateItem(UUID objectId, UUID roomId, UUID itemId, UUID ownerId,
                                            MeasurementItemRequest req) {
-        requireMeasurements(objectId, ownerId);
+        requireMeasurementsWritable(objectId, ownerId);
         loadRoom(objectId, roomId);
         MeasurementItem item = loadItem(roomId, itemId);
         item.setName(req.name().trim());
@@ -201,7 +201,7 @@ public class MeasurementService {
 
     @Transactional
     public MeasurementsResponse deleteItem(UUID objectId, UUID roomId, UUID itemId, UUID ownerId) {
-        requireMeasurements(objectId, ownerId);
+        requireMeasurementsWritable(objectId, ownerId);
         loadRoom(objectId, roomId);
         // Idempotent: a replayed offline delete of an already-gone element is a no-op, not a 404.
         itemRepository.findByIdAndRoomId(itemId, roomId).ifPresent(itemRepository::delete);
@@ -218,7 +218,7 @@ public class MeasurementService {
     @Transactional
     public MeasurementsResponse createFromSketch(UUID objectId, UUID ownerId,
                                                  List<com.majstr.backend.dto.SketchCommitRequest.Room> rooms) {
-        requireMeasurements(objectId, ownerId);
+        requireMeasurementsWritable(objectId, ownerId);
         int roomOrder = 0;
         for (var room : rooms) {
             MeasurementRoom saved = roomRepository.save(MeasurementRoom.builder()
@@ -249,7 +249,7 @@ public class MeasurementService {
     @Transactional
     public MeasurementsResponse createImported(UUID objectId, UUID ownerId,
                                                List<com.majstr.backend.dto.ProjectImportCommitRequest.Room> rooms) {
-        requireMeasurements(objectId, ownerId);
+        requireMeasurementsWritable(objectId, ownerId);
         int roomOrder = 0;
         for (var room : rooms) {
             MeasurementRoom saved = roomRepository.save(MeasurementRoom.builder()
@@ -329,6 +329,13 @@ public class MeasurementService {
                 .orElseThrow(() -> new ResourceNotFoundException("User not found: " + ownerId));
         featureGuard.requireFeature(user, Feature.MEASUREMENTS);
         projectService.loadOwned(objectId, ownerId); // existence + ownership (404 / 403)
+    }
+
+    /** {@link #requireMeasurements} for a change: the object must be one the master may still change
+     *  (iteration-read-only-objects). */
+    private void requireMeasurementsWritable(UUID objectId, UUID ownerId) {
+        requireMeasurements(objectId, ownerId);
+        projectService.loadWritable(objectId, ownerId);
     }
 
     private MeasurementRoom loadRoom(UUID objectId, UUID roomId) {

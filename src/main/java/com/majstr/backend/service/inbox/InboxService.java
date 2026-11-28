@@ -43,6 +43,7 @@ import com.majstr.backend.entity.Trade;
 import com.majstr.backend.entity.Unit;
 import com.majstr.backend.config.LocalizationConfig;
 import com.majstr.backend.exception.LimitExceededException;
+import com.majstr.backend.exception.ObjectReadOnlyException;
 import com.majstr.backend.exception.ResourceNotFoundException;
 import com.majstr.backend.repository.CatalogItemRepository;
 import com.majstr.backend.repository.CatalogItemSynonymRepository;
@@ -140,7 +141,8 @@ public class InboxService {
     }
 
     /** Something the master must hear that is not about one item. */
-    public enum Notice { ESTIMATE_LIMIT, VERIFY_EMAIL }
+    /** OBJECT_READ_ONLY: the object is not his to change on his plan (iteration-read-only-objects). */
+    public enum Notice { ESTIMATE_LIMIT, VERIFY_EMAIL, OBJECT_READ_ONLY }
 
     /** The name of the estimate a master's tap creates for lines that found every estimate signed. */
     static final String EXTRA_WORKS = "Додаткові роботи";
@@ -431,6 +433,8 @@ public class InboxService {
                 estimateService.createForProject(project, new EstimateCreateRequest(null, null, EXTRA_WORKS), ownerId);
             } catch (LimitExceededException e) {
                 notice = Notice.ESTIMATE_LIMIT;
+            } catch (ObjectReadOnlyException e) {
+                notice = Notice.OBJECT_READ_ONLY;
             }
         }
         for (InboxItem item : items) {

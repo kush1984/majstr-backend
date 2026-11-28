@@ -50,7 +50,7 @@ class ProjectNoteServiceTest {
 
         service.add(objectId, ownerId, new NoteRequest("  Архітектор Олег ", "   ", "  ключі в консьєржа\nдруга лінія  "));
 
-        verify(projectService).loadOwned(objectId, ownerId); // ownership first
+        verify(projectService).loadWritable(objectId, ownerId); // ownership first
         ArgumentCaptor<ProjectNote> saved = ArgumentCaptor.forClass(ProjectNote.class);
         verify(noteRepository).save(saved.capture());
         ProjectNote note = saved.getValue();
@@ -85,7 +85,7 @@ class ProjectNoteServiceTest {
 
         service.update(objectId, noteId, ownerId, new NoteRequest("Сантехнік", "+380671234567", "new body"));
 
-        verify(projectService).loadOwned(objectId, ownerId);
+        verify(projectService).loadWritable(objectId, ownerId);
         assertThat(existing.getTitle()).isEqualTo("Сантехнік");
         assertThat(existing.getPhone()).isEqualTo("+380671234567");
         assertThat(existing.getBody()).isEqualTo("new body");

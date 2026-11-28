@@ -86,6 +86,13 @@ public class ProjectController {
         return projectService.update(id, req, principal.id());
     }
 
+    @Operation(summary = "Unlock a view-only object with a bought object credit — it becomes a paid object "
+            + "for good (409 OBJECT_NOT_LOCKED / NO_OBJECT_CREDIT)")
+    @PostMapping("/{id}/unlock")
+    public ProjectResponse unlock(@PathVariable UUID id, @AuthenticationPrincipal UserPrincipal principal) {
+        return projectService.unlock(id, principal.id());
+    }
+
     @Operation(summary = "Change project status")
     @PatchMapping("/{id}/status")
     public ProjectResponse updateStatus(@PathVariable UUID id,

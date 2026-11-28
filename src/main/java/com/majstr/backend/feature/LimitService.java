@@ -51,6 +51,7 @@ public class LimitService {
     private final ProjectRepository projectRepository;
     private final PaymentRepository paymentRepository;
     private final BillingProperties billingProperties;
+    private final ObjectWriteGuard objectWriteGuard;
 
     /**
      * Reserve one object slot for a create. The FREE cap counts objects EVER created
@@ -83,19 +84,35 @@ public class LimitService {
     }
 
     /**
-     * Enforces the per-project estimate cap (FREE). Counts ALL estimates of the
-     * project (any status — abuse is via drafts), so deleting one frees a slot.
-     * The caller must have already verified the project belongs to the user.
+     * The door for a NEW estimate on an object: the object must be one the master may still change
+     * ({@link ObjectWriteGuard}), and the per-object estimate cap (FREE) must have room. The caller
+     * must have already verified the project belongs to the user.
      */
     @Transactional
     public void requireCanAddEstimate(UUID userId, UUID projectId) {
+        objectWriteGuard.requireWritable(projectId);
+        requireEstimateRoom(userId, projectId);
+    }
+
+    /**
+     * The per-object estimate cap alone — for the object «Перенести в Majstr» has just created in
+     * this same commit, which is read-only on FREE from then on but must receive what it was made for.
+     *
+     * <p>Counts estimates EVER made on the object ({@code projects.estimates_created}, never
+     * decremented), not the live rows: deleting a draft no longer frees a slot, which was the endless
+     * delete-and-recreate door (iteration-read-only-objects). The live count is the floor, for a row
+     * whose counter lags it.</p>
+     */
+    @Transactional
+    public void requireEstimateRoom(UUID userId, UUID projectId) {
         User user = userRepository.findByIdForUpdate(userId)
                 .orElseThrow(() -> new ResourceNotFoundException("User not found: " + userId));
         int max = limitOn(user, projectId, Limit.MAX_ESTIMATES_PER_PROJECT);
         if (max < 0) {
             return; // unlimited
         }
-        long current = estimateRepository.countByProjectId(projectId);
+        long current = Math.max(projectRepository.estimatesCreated(projectId),
+                estimateRepository.countByProjectId(projectId));
         if (current >= max) {
             throw new LimitExceededException(Limit.MAX_ESTIMATES_PER_PROJECT, max, user.getPlan());
         }
@@ -105,9 +122,15 @@ public class LimitService {
      * Enforces the per-object photo cap. Progress (MANUAL) and receipt (RECEIPT) photos
      * have separate budgets so receipts don't eat the progress cap. Counts live photos of
      * that source on the object. The caller must have verified the object belongs to the user.
+     *
+     * <p>A progress photo is the object's content, so a read-only object refuses it
+     * ({@link ObjectWriteGuard}); a receipt photo is the object's money, which stays recordable.</p>
      */
     @Transactional
     public void requireCanAddPhoto(UUID userId, UUID projectId, PhotoSource source) {
+        if (source != PhotoSource.RECEIPT) {
+            objectWriteGuard.requireWritable(projectId);
+        }
         User user = userRepository.findByIdForUpdate(userId)
                 .orElseThrow(() -> new ResourceNotFoundException("User not found: " + userId));
         Limit limit = source == PhotoSource.RECEIPT

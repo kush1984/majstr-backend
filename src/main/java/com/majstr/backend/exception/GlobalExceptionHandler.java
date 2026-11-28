@@ -343,6 +343,23 @@ public class GlobalExceptionHandler {
         return ResponseEntity.status(HttpStatus.FORBIDDEN).body(body);
     }
 
+    @ExceptionHandler(ObjectReadOnlyException.class)
+    public ResponseEntity<ErrorResponse> handleObjectReadOnly(ObjectReadOnlyException ex, HttpServletRequest req) {
+        int max = ex.getWritableObjects();
+        ErrorResponse body = ErrorResponse.coded(HttpStatus.FORBIDDEN.value(),
+                HttpStatus.FORBIDDEN.getReasonPhrase(),
+                msg("error.object.read-only", max, msg(pluralKey("plural.projects", max))),
+                req.getRequestURI(), "OBJECT_READ_ONLY");
+        return ResponseEntity.status(HttpStatus.FORBIDDEN).body(body);
+    }
+
+    @ExceptionHandler(ObjectUnlockException.class)
+    public ResponseEntity<ErrorResponse> handleObjectUnlock(ObjectUnlockException ex, HttpServletRequest req) {
+        ErrorResponse body = ErrorResponse.coded(HttpStatus.CONFLICT.value(),
+                HttpStatus.CONFLICT.getReasonPhrase(), msg(ex.getMessage()), req.getRequestURI(), ex.getCode());
+        return ResponseEntity.status(HttpStatus.CONFLICT).body(body);
+    }
+
     @ExceptionHandler(EmailNotVerifiedException.class)
     public ResponseEntity<ErrorResponse> handleEmailNotVerified(EmailNotVerifiedException ex, HttpServletRequest req) {
         ErrorResponse body = ErrorResponse.coded(HttpStatus.FORBIDDEN.value(),

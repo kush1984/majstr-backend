@@ -295,6 +295,9 @@ class IdorMatrixIntegrationTest extends IntegrationTestBase {
         c.add(json("PUT", "/api/projects/{id}", B_PROJECT, a.project));
         c.add(json("PATCH", "/api/projects/{id}/status", B_PROJECT_STATUS, a.project));
         c.add(del("/api/projects/{id}", a.project));
+        // A view-only object unlocked with a credit (iteration-read-only-objects). The checkout that carries
+        // one as a QUERY parameter is no route of its own here; BillingWebhookControllerTest pins its guard.
+        c.add(post("/api/projects/{id}/unlock", a.project));
 
         // --- the catalog and its notices ----------------------------------------
         c.add(json("PUT", "/api/catalog/{id}", B_CATALOG_ITEM, a.catalogItem));

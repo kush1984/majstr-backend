@@ -196,7 +196,7 @@ public class ProjectPhotoService {
      */
     @Transactional
     public ProjectPhotoResponse setFolder(UUID projectId, UUID photoId, UUID ownerId, String folder) {
-        requirePhotos(projectId, ownerId);
+        requirePhotosWritable(projectId, ownerId);
         ProjectPhoto photo = loadPhoto(projectId, photoId);
         photo.setFolder(canonicalFolder(projectId, normalizeFolder(folder)));
         return ProjectPhotoResponse.from(photo);
@@ -215,7 +215,7 @@ public class ProjectPhotoService {
     /** Create an EMPTY folder ahead of its photos (master decision). Idempotent on the name. */
     @Transactional
     public ProjectPhotoFolderResponse createFolder(UUID projectId, UUID ownerId, String name) {
-        requirePhotos(projectId, ownerId);
+        requirePhotosWritable(projectId, ownerId);
         String value = normalizeFolder(name);
         if (value == null || ProjectPhoto.FOLDER_RECEIPTS.equals(value)) {
             throw new PhotoFolderValidationException("error.photos.folder-name-invalid");
@@ -228,7 +228,7 @@ public class ProjectPhotoService {
      *  must never silently re-file someone's photos. */
     @Transactional
     public void deleteFolder(UUID projectId, UUID folderId, UUID ownerId) {
-        requirePhotos(projectId, ownerId);
+        requirePhotosWritable(projectId, ownerId);
         ProjectPhotoFolder folder = folderRepository.findByIdAndProjectId(folderId, projectId)
                 .orElseThrow(() -> new ResourceNotFoundException("Folder not found: " + folderId));
         if (photoRepository.existsByProjectIdAndFolderIgnoreCase(projectId, folder.getName())) {
@@ -331,7 +331,7 @@ public class ProjectPhotoService {
 
     @Transactional
     public void delete(UUID projectId, UUID photoId, UUID ownerId) {
-        requirePhotos(projectId, ownerId);
+        requirePhotosWritable(projectId, ownerId);
         ProjectPhoto photo = loadPhoto(projectId, photoId);
         photoRepository.delete(photo);
         // The file goes AFTER the row, never before it (B-25).
@@ -395,6 +395,13 @@ public class ProjectPhotoService {
     private void requirePhotos(UUID projectId, UUID ownerId) {
         featureGuard.requireFeature(loadUser(ownerId), Feature.PHOTO_REPORTS);
         projectService.loadOwned(projectId, ownerId); // 403 on a foreign object, 404 if unknown
+    }
+
+    /** {@link #requirePhotos} for re-filing or removing photos: a read-only object keeps them as they
+     *  are (iteration-read-only-objects). Showing one to the client stays open — that is sharing. */
+    private void requirePhotosWritable(UUID projectId, UUID ownerId) {
+        featureGuard.requireFeature(loadUser(ownerId), Feature.PHOTO_REPORTS);
+        projectService.loadWritable(projectId, ownerId);
     }
 
     private ProjectPhoto loadPhoto(UUID projectId, UUID photoId) {

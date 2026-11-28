@@ -9,9 +9,11 @@ import com.majstr.backend.entity.Project;
 import com.majstr.backend.entity.ProjectPhoto;
 import com.majstr.backend.entity.ProjectStatus;
 import com.majstr.backend.entity.User;
+import com.majstr.backend.exception.ObjectUnlockException;
 import com.majstr.backend.exception.ResourceNotFoundException;
 import com.majstr.backend.feature.Limit;
 import com.majstr.backend.feature.LimitService;
+import com.majstr.backend.feature.ObjectWriteGuard;
 import com.majstr.backend.repository.SignedDocumentRepository;
 import com.majstr.backend.repository.ProjectMessageRepository;
 import com.majstr.backend.repository.EstimateRepository;
@@ -37,6 +39,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.function.Predicate;
 import java.util.stream.Stream;
 
 @Slf4j
@@ -50,6 +53,7 @@ public class ProjectService {
     private final UserRepository userRepository;
     private final ClientService clientService;
     private final LimitService limitService;
+    private final ObjectWriteGuard objectWriteGuard;
     private final ProjectPhotoRepository photoRepository;
     private final ProjectReceiptRepository projectReceiptRepository;
     private final ProjectMessageFileRepository messageFileRepository;
@@ -138,9 +142,10 @@ public class ProjectService {
         Map<UUID, EstimateSummary> summaries = loadLatestEstimateSummaries(projectIds);
         Map<UUID, Long> unread = loadUnreadCounts(projectIds);
         Map<UUID, StageFlags> flags = loadStageFlags(projectIds);
+        Predicate<Project> writable = objectWriteGuard.writableIn(projects.get(0).getOwner());
         List<ProjectResponse> all = projects.stream()
                 .map(p -> toResponse(p, summaries.get(p.getId()), unread.getOrDefault(p.getId(), 0L),
-                        flags.get(p.getId())))
+                        flags.get(p.getId()), !writable.test(p)))
                 .toList();
         return stage == null ? all : all.stream().filter(r -> r.stage() == stage).toList();
     }
@@ -153,6 +158,7 @@ public class ProjectService {
     @Transactional
     public ProjectResponse update(UUID id, ProjectRequest req, UUID ownerId) {
         Project project = loadOwned(id, ownerId);
+        objectWriteGuard.requireWritable(project);
         project.setName(req.name().trim());
         // Blank clears it (V192): an address typed by mistake can be taken back on edit.
         project.setAddress(normalize(req.address()));
@@ -251,6 +257,49 @@ public class ProjectService {
         return project;
     }
 
+    /** {@link #loadOwned} for a change to the object's content: the object must also be one the
+     *  master's plan still lets him change ({@link ObjectWriteGuard}, iteration-read-only-objects). */
+    public Project loadWritable(UUID id, UUID ownerId) {
+        Project project = loadOwned(id, ownerId);
+        objectWriteGuard.requireWritable(project);
+        return project;
+    }
+
+    /**
+     * The object checkout may carry «unlock THIS object» only for one of his objects that is view-only
+     * now (iteration-read-only-objects) — checked before he pays, so 149 ₴ is never spent on nothing.
+     */
+    @Transactional(readOnly = true)
+    public void requireUnlockable(UUID id, UUID ownerId) {
+        requireLocked(loadOwned(id, ownerId));
+    }
+
+    /**
+     * Spend one bought object credit (V214) on an EXISTING view-only object: it becomes a paid object
+     * for good — writable on FREE, PRO's per-object caps, the logo. The user row is locked first, the
+     * same lock {@code LimitService.reserveProjectSlot} spends a credit under, so one credit is never
+     * spent twice. A writable object is refused rather than charged.
+     */
+    @Transactional
+    public ProjectResponse unlock(UUID id, UUID ownerId) {
+        User owner = userRepository.findByIdForUpdate(ownerId)
+                .orElseThrow(() -> new ResourceNotFoundException("User not found: " + ownerId));
+        Project project = loadOwned(id, ownerId);
+        requireLocked(project);
+        if (owner.getObjectCredits() <= 0) {
+            throw new ObjectUnlockException("error.object.unlock.no-credit", "NO_OBJECT_CREDIT");
+        }
+        owner.setObjectCredits(owner.getObjectCredits() - 1);
+        project.setPaidAt(Instant.now());
+        return withSummary(project);
+    }
+
+    private void requireLocked(Project project) {
+        if (objectWriteGuard.isWritable(project)) {
+            throw new ObjectUnlockException("error.object.unlock.not-locked", "OBJECT_NOT_LOCKED");
+        }
+    }
+
     /** Stamp completedAt when entering COMPLETED (only if unset), clear it when leaving. */
     /**
      * A finished or cancelled object archives its shopping list; reopening it brings the list back.
@@ -281,16 +330,17 @@ public class ProjectService {
         EstimateSummary summary = loadLatestEstimateSummaries(List.of(project.getId())).get(project.getId());
         long unread = messageRepository.countByProjectIdAndReadFalse(project.getId());
         StageFlags flags = loadStageFlags(List.of(project.getId())).get(project.getId());
-        return toResponse(project, summary, unread, flags);
+        return toResponse(project, summary, unread, flags, !objectWriteGuard.isWritable(project));
     }
 
     private static ProjectResponse toResponse(Project project, EstimateSummary summary, long unreadQuestions,
-                                              StageFlags flags) {
+                                              StageFlags flags, boolean readOnly) {
         boolean hasSigned = flags != null && flags.hasSigned();
         boolean hasSent = flags != null && flags.hasSent();
         return summary == null
-                ? ProjectResponse.from(project, null, null, unreadQuestions, hasSigned, hasSent)
-                : ProjectResponse.from(project, summary.total(), summary.status(), unreadQuestions, hasSigned, hasSent);
+                ? ProjectResponse.from(project, null, null, unreadQuestions, hasSigned, hasSent, readOnly)
+                : ProjectResponse.from(project, summary.total(), summary.status(), unreadQuestions, hasSigned, hasSent,
+                        readOnly);
     }
 
     private Map<UUID, Long> loadUnreadCounts(Collection<UUID> projectIds) {

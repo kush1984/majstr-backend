@@ -230,9 +230,16 @@ public class TransferService {
                     projectIds.add(projectId);
                 }
             }
-            estimateService.createFromImport(projectId, new ImportEstimateData(blankToNull(doc.estimateName()),
+            ImportEstimateData estimate = new ImportEstimateData(blankToNull(doc.estimateName()),
                     doc.items().stream().map(l -> new ImportItem(l.type(), l.name(), l.section(), l.unit(),
-                            l.quantity(), l.unitPrice())).toList()), ownerId);
+                            l.quantity(), l.unitPrice())).toList());
+            // An object made by this commit is read-only on FREE (it sits outside the cap) yet must
+            // receive what it was made for; an existing object goes through the ordinary door.
+            if (created.containsValue(projectId)) {
+                estimateService.createFromImportIntoNewObject(projectId, estimate, ownerId);
+            } else {
+                estimateService.createFromImport(projectId, estimate, ownerId);
+            }
             estimates++;
             if (doc.depositAmount() != null && doc.depositAmount().signum() > 0) {
                 paymentService.addReceipt(projectId, ownerId, new PaymentReceiptRequest(DEPOSIT_LABEL,

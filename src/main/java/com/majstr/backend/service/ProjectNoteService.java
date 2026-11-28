@@ -48,7 +48,7 @@ public class ProjectNoteService {
      */
     @Transactional
     public NoteResponse add(UUID objectId, UUID ownerId, NoteRequest req, UUID requestedId) {
-        projectService.loadOwned(objectId, ownerId);
+        projectService.loadWritable(objectId, ownerId);
         if (requestedId != null) {
             var existing = noteRepository.findById(requestedId);
             if (existing.isPresent()) {
@@ -70,7 +70,7 @@ public class ProjectNoteService {
 
     @Transactional
     public NoteResponse update(UUID objectId, UUID noteId, UUID ownerId, NoteRequest req) {
-        projectService.loadOwned(objectId, ownerId);
+        projectService.loadWritable(objectId, ownerId);
         ProjectNote note = loadNote(objectId, noteId);
         note.setTitle(trimToNull(req.title()));
         note.setPhone(trimToNull(req.phone()));
@@ -82,7 +82,7 @@ public class ProjectNoteService {
      *  a 404 on replay would surface to the master as "не збережено в хмару". */
     @Transactional
     public void delete(UUID objectId, UUID noteId, UUID ownerId) {
-        projectService.loadOwned(objectId, ownerId);
+        projectService.loadWritable(objectId, ownerId);
         noteRepository.findByIdAndProjectId(noteId, objectId).ifPresent(noteRepository::delete);
     }
 

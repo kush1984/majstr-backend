@@ -96,6 +96,7 @@ class EstimateServiceTest {
     @org.mockito.Spy private HeavyWork heavyWork = new HeavyWork(1, 1, 0);
     @Mock private PdfRenderLog pdfRenderLog;
 
+    @Mock private com.majstr.backend.feature.ObjectWriteGuard objectWriteGuard;
     @InjectMocks private EstimateService estimateService;
 
     /** The REAL guard over the mocked act repositories — its answer is what the reopen tests pin. */

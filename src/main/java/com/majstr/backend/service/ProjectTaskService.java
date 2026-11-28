@@ -44,7 +44,7 @@ public class ProjectTaskService {
     /** Optionally under a CLIENT-PROVIDED id, so a replayed offline create returns the first row. */
     @Transactional
     public TaskResponse add(UUID objectId, UUID ownerId, TaskRequest req, UUID requestedId) {
-        projectService.loadOwned(objectId, ownerId);
+        projectService.loadWritable(objectId, ownerId);
         if (requestedId != null) {
             var existing = taskRepository.findById(requestedId);
             if (existing.isPresent()) {
@@ -64,7 +64,7 @@ public class ProjectTaskService {
 
     @Transactional
     public TaskResponse update(UUID objectId, UUID taskId, UUID ownerId, TaskUpdateRequest req) {
-        projectService.loadOwned(objectId, ownerId);
+        projectService.loadWritable(objectId, ownerId);
         ProjectTask task = taskRepository.findByIdAndProjectId(taskId, objectId)
                 .orElseThrow(() -> new ResourceNotFoundException("Task not found: " + taskId));
         if (req.body() != null && !req.body().isBlank()) {
@@ -79,7 +79,7 @@ public class ProjectTaskService {
     /** Idempotent, like a note's: a replayed delete of a task already gone is not an error. */
     @Transactional
     public void delete(UUID objectId, UUID taskId, UUID ownerId) {
-        projectService.loadOwned(objectId, ownerId);
+        projectService.loadWritable(objectId, ownerId);
         taskRepository.findByIdAndProjectId(taskId, objectId).ifPresent(taskRepository::delete);
     }
 }

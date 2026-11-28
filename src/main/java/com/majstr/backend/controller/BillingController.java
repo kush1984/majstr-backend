@@ -7,6 +7,8 @@ import com.majstr.backend.entity.BillingPeriod;
 import com.majstr.backend.repository.UserTradeRepository;
 import com.majstr.backend.security.UserPrincipal;
 import com.majstr.backend.service.BillingService;
+import com.majstr.backend.service.ProjectService;
+import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -17,7 +19,10 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+
+import java.util.UUID;
 
 /**
  * Subscription billing. {@code POST /checkout} (authed) starts a PRO purchase and
@@ -33,6 +38,7 @@ public class BillingController {
 
     private final BillingService billingService;
     private final UserTradeRepository userTradeRepository;
+    private final ProjectService projectService;
 
     @Operation(summary = "Start a PRO checkout — returns the monobank payment page URL to redirect to")
     @SecurityRequirement(name = "bearer-jwt")
@@ -48,8 +54,15 @@ public class BillingController {
             + "the webhook adds an object credit that the next object created at the FREE cap spends")
     @SecurityRequirement(name = "bearer-jwt")
     @PostMapping("/checkout-object")
-    public CheckoutResponse checkoutObject(@AuthenticationPrincipal UserPrincipal principal) {
-        return billingService.checkoutObject(principal.id());
+    public CheckoutResponse checkoutObject(
+            @Parameter(description = "A view-only object of his to unlock with this payment: checked now, "
+                    + "carried back on the return URL (`&unlock=`) where the PWA spends the credit on it")
+            @RequestParam(required = false) UUID unlock,
+            @AuthenticationPrincipal UserPrincipal principal) {
+        if (unlock != null) {
+            projectService.requireUnlockable(unlock, principal.id());
+        }
+        return billingService.checkoutObject(principal.id(), unlock);
     }
 
     @Operation(summary = "Start the one-time self-serve 5-day PRO trial (FREE only, no card) — returns the updated profile")

@@ -7,6 +7,7 @@ import com.majstr.backend.dto.WorkActResponse;
 import com.majstr.backend.dto.WorkActSignOfflineRequest;
 import com.majstr.backend.dto.WorkActUpdateRequest;
 import com.lowagie.text.DocumentException;
+import com.majstr.backend.feature.ObjectWriteGuard;
 import com.majstr.backend.entity.Estimate;
 import com.majstr.backend.entity.EstimateItem;
 import com.majstr.backend.entity.EstimateKind;
@@ -93,6 +94,7 @@ public class WorkActService {
     private final EstimateItemRepository estimateItemRepository;
     private final PlatformTransactionManager transactionManager;
     private final PdfRenderLog pdfRenderLog;
+    private final ObjectWriteGuard objectWriteGuard;
 
     // ---- reads (owner-scoped, ungated) ------------------------------------
 
@@ -353,7 +355,9 @@ public class WorkActService {
         // FOR UPDATE, and before anything else (B-60): a receipt or a line landing between this
         // read and the commit would be billed by «Прийнято актами» while sitting outside the
         // document the client signed. Every writer takes the same lock, so one of the two waits.
-        WorkAct act = requireNotSigned(loadOwnedForUpdate(id, ownerId));
+        // Not loadOwnedForUpdate: the client signing on paper is a fact the master records, not a
+        // change of his — it stays open on a read-only object like the portal's own signature.
+        WorkAct act = requireNotSigned(requireOwned(workActRepository.findByIdForUpdate(id), id, ownerId));
         // The paper is signed and frozen here, its copy mailed to the client: «Виконавець» must have a
         // name, or the act keeps an empty one forever (V190 review — the live PDF's check never sees it).
         SendReadiness.masterSendsItself(act.getProject().getOwner());
@@ -487,7 +491,13 @@ public class WorkActService {
      * interleave is a child write and the SIGNATURE, and the act row is the only row both touch.
      */
     WorkAct loadOwnedForUpdate(UUID id, UUID ownerId) {
-        return requireOwned(workActRepository.findByIdForUpdate(id), id, ownerId);
+        return requireWritable(requireOwned(workActRepository.findByIdForUpdate(id), id, ownerId));
+    }
+
+    /** The act's object must be one the master may still change (iteration-read-only-objects). */
+    WorkAct requireWritable(WorkAct act) {
+        objectWriteGuard.requireWritable(act.getProject());
+        return act;
     }
 
     private static WorkAct requireOwned(java.util.Optional<WorkAct> found, UUID id, UUID ownerId) {

@@ -682,6 +682,19 @@ class BillingServiceTest {
     }
 
     @Test
+    void checkoutObject_toUnlockAnObject_carriesItsIdBackOnTheReturnUrl() {
+        UUID uid = UUID.randomUUID();
+        UUID object = UUID.randomUUID();
+        given(userRepository.findById(uid)).willReturn(Optional.of(verifiedFreeUser(uid)));
+        given(paymentRepository.save(any(Payment.class))).willAnswer(i -> withId(i.getArgument(0)));
+        given(monobankClient.createInvoice(eq(14900L), eq(980), anyString(), anyString(), any(),
+                eq("http://ret?for=object&unlock=" + object)))
+                .willReturn(new MonobankClient.InvoiceCreated("inv-obj", "http://pay"));
+
+        assertThat(service(props("tok")).checkoutObject(uid, object).pageUrl()).isEqualTo("http://pay");
+    }
+
+    @Test
     void webhook_successForAnObject_addsACreditAndGrantsNoPro() {
         UUID uid = UUID.randomUUID();
         User user = freeUser(uid);

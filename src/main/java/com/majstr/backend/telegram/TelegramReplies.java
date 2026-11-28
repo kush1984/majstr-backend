@@ -183,6 +183,9 @@ public final class TelegramReplies {
         if (outcome.notice() == InboxService.Notice.ESTIMATE_LIMIT) {
             text.append("⚠️ Новий кошторис не створено: на безкоштовному плані до 3 кошторисів на обʼєкт.\n");
         }
+        if (outcome.notice() == InboxService.Notice.OBJECT_READ_ONLY) {
+            text.append("⚠️ Обʼєкт лише для перегляду: на безкоштовному плані змінювати можна тільки перші 2 обʼєкти. Оформіть PRO в застосунку.\n");
+        }
         for (String failed : outcome.failures()) {
             text.append("⚠️ Не вдалося записати «").append(failed).append("» — залишив у «Вхідних».\n");
         }

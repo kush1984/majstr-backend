@@ -29,6 +29,21 @@ public interface ProjectRepository extends JpaRepository<Project, UUID> {
     /** Objects «Перенести в Majstr» created for this master (V201) — what its own bound counts. */
     long countByOwnerIdAndTransferredAtIsNotNull(UUID ownerId);
 
+    /**
+     * The master's objects in the order they count toward the FREE cap — oldest first, outside the
+     * cap left out: the training sample (V197), a one-off paid object (V214, writable on its own) and
+     * a transferred one (V201, never writable on FREE). Archived rows stay in, or archiving would move
+     * the next object up. {@code ObjectWriteGuard} takes the first N.
+     */
+    @Query("SELECT p.id FROM Project p WHERE p.owner.id = :ownerId AND p.sample = false"
+            + " AND p.paidAt IS NULL AND p.transferredAt IS NULL ORDER BY p.createdAt ASC, p.id ASC")
+    List<UUID> findCappedIdsOldestFirst(@Param("ownerId") UUID ownerId,
+                                        org.springframework.data.domain.Pageable page);
+
+    /** Estimates ever made on this object (V39) — what the FREE per-object estimate cap counts. */
+    @Query("SELECT p.estimatesCreated FROM Project p WHERE p.id = :id")
+    int estimatesCreated(@Param("id") UUID id);
+
     /** The admin's object count: the training sample (V197) is not an object the master made. */
     long countByOwnerIdAndSampleFalse(UUID ownerId);
 

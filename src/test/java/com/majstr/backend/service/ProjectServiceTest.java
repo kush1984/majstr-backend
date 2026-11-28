@@ -51,7 +51,15 @@ class ProjectServiceTest {
     // updateStatus archives/unarchives the object's shopping list, so this one must not be null.
     @Mock com.majstr.backend.repository.ShoppingListRepository shoppingListRepository;
     @Mock com.majstr.backend.repository.ShoppingListItemRepository shoppingListItemRepository;
+    @Mock com.majstr.backend.feature.ObjectWriteGuard objectWriteGuard;
     @InjectMocks ProjectService projectService;
+
+    /** Every object writable unless a test says otherwise — the rule itself is ObjectWriteGuardTest's. */
+    @org.junit.jupiter.api.BeforeEach
+    void everyObjectWritable() {
+        org.mockito.Mockito.lenient().when(objectWriteGuard.isWritable(any())).thenReturn(true);
+        org.mockito.Mockito.lenient().when(objectWriteGuard.writableIn(any())).thenReturn(p -> true);
+    }
 
     private final UUID ownerId = UUID.randomUUID();
     private final UUID projectId = UUID.randomUUID();

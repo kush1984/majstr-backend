@@ -35,17 +35,23 @@ public record ProjectResponse(
         /** The client's page shows «Зведення» after the positions (V202); false = at the top. */
         boolean portalSummaryAtBottom,
         /** A one-off paid object (V214): PRO's per-object limits and the logo on its PDFs. */
-        boolean paid
+        boolean paid,
+        /** The master's plan leaves this object read-only (iteration-read-only-objects,
+         *  {@code ObjectWriteGuard}): open, share, print and record money, but no change. */
+        boolean readOnly,
+        /** Estimates ever made on this object (V39) — what the FREE per-object cap counts, deleted
+         *  ones included (iteration-read-only-objects). */
+        int estimatesCreated
 ) {
     /** Use when neither the latest-estimate summary nor the stage flags are loaded (e.g. a
      *  freshly created project, which by definition has no estimates yet). */
     public static ProjectResponse from(Project project) {
-        return from(project, null, null, 0L, false, false);
+        return from(project, null, null, 0L, false, false, false);
     }
 
     public static ProjectResponse from(Project project, BigDecimal latestEstimateTotal,
                                        EstimateStatus estimateStatus, long unreadQuestions,
-                                       boolean hasSigned, boolean hasSent) {
+                                       boolean hasSigned, boolean hasSent, boolean readOnly) {
         Client client = project.getClient();
         ObjectStage stage = ObjectStage.derive(project.getStatus(), project.getCompletedAt(), hasSigned, hasSent);
         return new ProjectResponse(
@@ -65,7 +71,9 @@ public record ProjectResponse(
                 project.getUpdatedAt(),
                 project.isSample(),
                 project.isPortalSummaryAtBottom(),
-                project.getPaidAt() != null
+                project.getPaidAt() != null,
+                readOnly,
+                project.getEstimatesCreated()
         );
     }
 }

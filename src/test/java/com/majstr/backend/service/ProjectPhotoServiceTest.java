@@ -416,8 +416,11 @@ class ProjectPhotoServiceTest {
 
     private void stubGate() {
         given(userRepository.findById(ownerId)).willReturn(Optional.of(freeUser()));
-        given(projectService.loadOwned(projectId, ownerId))
-                .willReturn(Project.builder().id(projectId).build());
+        // Reads take loadOwned, re-filing and removing take loadWritable (iteration-read-only-objects).
+        org.mockito.Mockito.lenient().when(projectService.loadOwned(projectId, ownerId))
+                .thenReturn(Project.builder().id(projectId).build());
+        org.mockito.Mockito.lenient().when(projectService.loadWritable(projectId, ownerId))
+                .thenReturn(Project.builder().id(projectId).build());
     }
 
     private MockMultipartFile file(byte[] bytes) {

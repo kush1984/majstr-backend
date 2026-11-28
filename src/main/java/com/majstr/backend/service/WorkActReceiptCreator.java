@@ -62,6 +62,7 @@ class WorkActReceiptCreator {
             return new Prepared(projectId, landed.get());
         }
         WorkActService.requireNotSigned(act);
+        actService.requireWritable(act);
         return new Prepared(projectId, null);
     }
 

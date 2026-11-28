@@ -170,8 +170,18 @@ public class BillingService {
      * back to the return page with {@code ?for=object}, which waits for the credit, not for PRO.
      */
     public CheckoutResponse checkoutObject(UUID userId) {
+        return checkoutObject(userId, null);
+    }
+
+    /**
+     * {@link #checkoutObject(UUID)} that brings the payer back with {@code &unlock=<id>}: the PWA spends
+     * the credit on that existing view-only object (iteration-read-only-objects). The caller has checked
+     * the object is his and locked; if the return page never runs, the credit waits like any other.
+     */
+    public CheckoutResponse checkoutObject(UUID userId, UUID unlockProjectId) {
         PendingCharge charge = inTransaction(() -> prepareObjectCheckout(userId));
-        String returnUrl = objectReturnUrl(props.returnUrl());
+        String returnUrl = objectReturnUrl(props.returnUrl())
+                + (unlockProjectId == null ? "" : "&unlock=" + unlockProjectId);
         if (charge == null) {
             return new CheckoutResponse(returnUrl); // dev simulation: already credited
         }

@@ -6,6 +6,7 @@ import com.majstr.backend.entity.PhotoSource;
 import com.majstr.backend.entity.Plan;
 import com.majstr.backend.entity.User;
 import com.majstr.backend.exception.LimitExceededException;
+import com.majstr.backend.exception.ObjectReadOnlyException;
 import com.majstr.backend.repository.EstimateRepository;
 import com.majstr.backend.repository.PaymentRepository;
 import com.majstr.backend.repository.ProjectPhotoRepository;
@@ -24,6 +25,10 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.BDDMockito.willThrow;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 
 @ExtendWith(MockitoExtension.class)
 class LimitServiceTest {
@@ -34,6 +39,7 @@ class LimitServiceTest {
     @Mock ProjectRepository projectRepository;
     @Mock PaymentRepository paymentRepository;
     @Mock BillingProperties billingProperties;
+    @Mock ObjectWriteGuard objectWriteGuard;
     @InjectMocks LimitService limitService;
 
     private final UUID userId = UUID.randomUUID();
@@ -111,7 +117,61 @@ class LimitServiceTest {
                 .doesNotThrowAnyException();
     }
 
+    @Test
+    void requireCanAddEstimate_countsEstimatesEverMade_soADeleteFreesNoSlot() {
+        // The delete-and-recreate door (iteration-read-only-objects): one live estimate left, but
+        // three were made here — the fourth is refused.
+        givenUserOnPlan(Plan.FREE);
+        given(projectRepository.estimatesCreated(projectId)).willReturn(3);
+        given(estimateRepository.countByProjectId(projectId)).willReturn(1L);
+
+        assertThatThrownBy(() -> limitService.requireCanAddEstimate(userId, projectId))
+                .isInstanceOf(LimitExceededException.class);
+    }
+
+    @Test
+    void requireCanAddEstimate_aLiveCountAboveALaggingCounterStillCounts() {
+        givenUserOnPlan(Plan.FREE);
+        given(projectRepository.estimatesCreated(projectId)).willReturn(0);
+        given(estimateRepository.countByProjectId(projectId)).willReturn(3L);
+
+        assertThatThrownBy(() -> limitService.requireCanAddEstimate(userId, projectId))
+                .isInstanceOf(LimitExceededException.class);
+    }
+
+    @Test
+    void requireCanAddEstimate_refusesAReadOnlyObjectBeforeAnyCount() {
+        willThrow(new ObjectReadOnlyException(projectId, 2)).given(objectWriteGuard).requireWritable(projectId);
+
+        assertThatThrownBy(() -> limitService.requireCanAddEstimate(userId, projectId))
+                .isInstanceOf(ObjectReadOnlyException.class);
+        verifyNoInteractions(estimateRepository);
+    }
+
+    @Test
+    void requireEstimateRoom_isTheCapAlone_forTheObjectATransferJustMade() {
+        givenUserOnPlan(Plan.FREE);
+        given(estimateRepository.countByProjectId(projectId)).willReturn(0L);
+
+        assertThatCode(() -> limitService.requireEstimateRoom(userId, projectId)).doesNotThrowAnyException();
+        verifyNoInteractions(objectWriteGuard);
+    }
+
     // ---- per-object photo caps (separate progress / receipt budgets) -------
+
+    @Test
+    void requireCanAddPhoto_aProgressPhotoNeedsAWritableObject_aReceiptPhotoDoesNot() {
+        willThrow(new ObjectReadOnlyException(projectId, 2)).given(objectWriteGuard).requireWritable(projectId);
+        assertThatThrownBy(() -> limitService.requireCanAddPhoto(userId, projectId, PhotoSource.MANUAL))
+                .isInstanceOf(ObjectReadOnlyException.class);
+
+        // A receipt is the object's money, which stays recordable on a view-only object.
+        givenUserOnPlan(Plan.FREE);
+        given(projectPhotoRepository.countByProjectIdAndSource(projectId, PhotoSource.RECEIPT)).willReturn(0L);
+        assertThatCode(() -> limitService.requireCanAddPhoto(userId, projectId, PhotoSource.RECEIPT))
+                .doesNotThrowAnyException();
+        verify(objectWriteGuard, times(1)).requireWritable(projectId); // the MANUAL call above, only
+    }
 
     @Test
     void requireCanAddPhoto_freeRejectsSixthProgressPhoto() {
